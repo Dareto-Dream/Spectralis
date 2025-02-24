@@ -16,6 +16,7 @@ namespace Spectralis
         private System.Windows.Forms.Button btnPrev;
         private System.Windows.Forms.Button btnNext;
         private System.Windows.Forms.Panel visualizerPanel;
+        private Spectralis.UI.AlbumArtPanel albumArtPanel;
         private System.Windows.Forms.Label lblTitle;
         private System.Windows.Forms.Label lblArtist;
         private System.Windows.Forms.Label lblTime;
@@ -42,6 +43,7 @@ namespace Spectralis
             this.btnPrev = new System.Windows.Forms.Button();
             this.btnNext = new System.Windows.Forms.Button();
             this.visualizerPanel = new System.Windows.Forms.Panel();
+            this.albumArtPanel = new Spectralis.UI.AlbumArtPanel();
             this.lblTitle = new System.Windows.Forms.Label();
             this.lblArtist = new System.Windows.Forms.Label();
             this.lblTime = new System.Windows.Forms.Label();
@@ -101,8 +103,11 @@ namespace Spectralis
             this.lblTime.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 
             this.visualizerPanel.Location = new System.Drawing.Point(0, 24);
-            this.visualizerPanel.Size = new System.Drawing.Size(1024, 550);
+            this.visualizerPanel.Size = new System.Drawing.Size(858, 550);
             this.visualizerPanel.BackColor = System.Drawing.Color.Black;
+
+            this.albumArtPanel.Location = new System.Drawing.Point(860, 24);
+            this.albumArtPanel.Size = new System.Drawing.Size(160, 160);
 
             this.SuspendLayout();
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
@@ -121,6 +126,7 @@ namespace Spectralis
             this.Controls.Add(this.lblArtist);
             this.Controls.Add(this.lblTime);
             this.Controls.Add(this.visualizerPanel);
+            this.Controls.Add(this.albumArtPanel);
             this.MainMenuStrip = this.menuStrip;
             this.MinimumSize = new System.Drawing.Size(1040, 807);
             this.Name = "Form1";
