@@ -46,8 +46,14 @@ namespace Spectralis.Audio
 
         public TrackInfo CurrentTrack { get; private set; }
 
-        public AudioEngine()
+        private readonly AudioEngineConfig _config;
+
+        public AudioEngine() : this(AudioEngineConfig.Default) { }
+
+        public AudioEngine(AudioEngineConfig config)
         {
+            _config = config;
+            _volume = config.InitialVolume;
             _positionTimer = new Timer(OnPositionTick, null, Timeout.Infinite, Timeout.Infinite);
         }
 
@@ -79,7 +85,7 @@ namespace Spectralis.Audio
                 else
                 {
                     _waveOut?.Dispose();
-                    _waveOut = new WasapiOut();
+                    _waveOut = CreateOutput();
                     _waveOut.PlaybackStopped += OnPlaybackStopped;
                     _waveOut.Init(_waveProvider);
                     _waveOut.Play();
@@ -150,6 +156,23 @@ namespace Spectralis.Audio
         {
             if (_reader != null)
                 PositionChanged?.Invoke(this, _reader.Position);
+        }
+
+        private IWavePlayer CreateOutput()
+        {
+            if (_config.PreferWasapi)
+            {
+                try
+                {
+                    return new WasapiOut(
+                        NAudio.CoreAudioApi.AudioClientShareMode.Shared,
+                        _config.BufferMilliseconds);
+                }
+                catch
+                {
+                }
+            }
+            return new DirectSoundOut(_config.BufferMilliseconds);
         }
 
         public void Dispose()
