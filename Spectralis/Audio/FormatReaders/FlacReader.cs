@@ -1,16 +1,15 @@
 using System;
-using NAudio.Flac;
 using NAudio.Wave;
 
 namespace Spectralis.Audio.FormatReaders
 {
     public class FlacReader : IAudioReader
     {
-        private readonly FlacReader _inner;
+        private readonly AudioFileReader _inner;
 
         public FlacReader(string filePath)
         {
-            _inner = new NAudio.Flac.FlacReader(filePath);
+            _inner = new AudioFileReader(filePath);
         }
 
         public WaveFormat WaveFormat => _inner.WaveFormat;
