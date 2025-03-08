@@ -19,10 +19,10 @@ namespace Spectralis.Audio
             {
                 var file = TagLib.File.Create(filePath);
 
-                info.Title = file.Tag.Title;
-                info.Artist = file.Tag.FirstPerformer ?? file.Tag.FirstAlbumArtist;
-                info.Album = file.Tag.Album;
-                info.Genre = file.Tag.FirstGenre;
+                info.Title = Normalize(file.Tag.Title);
+                info.Artist = Normalize(file.Tag.FirstPerformer ?? file.Tag.FirstAlbumArtist);
+                info.Album = Normalize(file.Tag.Album);
+                info.Genre = Normalize(file.Tag.FirstGenre);
                 info.Year = (int)file.Tag.Year;
                 info.TrackNumber = file.Tag.Track;
                 info.Duration = file.Properties.Duration;
@@ -49,6 +49,11 @@ namespace Spectralis.Audio
                 Title = Path.GetFileNameWithoutExtension(filePath),
                 Format = Path.GetExtension(filePath).TrimStart('.').ToUpperInvariant()
             };
+        }
+
+        private static string Normalize(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
     }
 }
