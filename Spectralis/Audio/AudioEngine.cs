@@ -45,6 +45,7 @@ namespace Spectralis.Audio
         public TimeSpan Duration => _reader?.Duration ?? TimeSpan.Zero;
 
         public TrackInfo CurrentTrack { get; private set; }
+        public Playlist Playlist { get; } = new Playlist();
 
         private readonly AudioEngineConfig _config;
 
@@ -149,7 +150,21 @@ namespace Spectralis.Audio
             {
                 _state = PlaybackState.Stopped;
                 TrackEnded?.Invoke(this, EventArgs.Empty);
+                AutoAdvance();
             }
+        }
+
+        private void AutoAdvance()
+        {
+            var next = Playlist.Next();
+            if (next == null) return;
+            try
+            {
+                var reader = FormatDetector.CreateReader(next.FilePath);
+                Load(reader, next);
+                Play();
+            }
+            catch { }
         }
 
         private void OnPositionTick(object state)
