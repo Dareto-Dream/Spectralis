@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
+using NAudio.CoreAudioApi;
 
 namespace Spectralis.Audio
 {
@@ -14,6 +14,7 @@ namespace Spectralis.Audio
         private PlaybackState _state = PlaybackState.Stopped;
         private float _volume = 0.8f;
         private Timer _positionTimer;
+        private readonly AudioEngineConfig _config;
 
         public event EventHandler<PlaybackState> StateChanged;
         public event EventHandler<TimeSpan> PositionChanged;
@@ -21,6 +22,8 @@ namespace Spectralis.Audio
         public event EventHandler<Exception> PlaybackError;
 
         public PlaybackState State => _state;
+        public Playlist Playlist { get; } = new Playlist();
+
         public float Volume
         {
             get => _volume;
@@ -37,17 +40,17 @@ namespace Spectralis.Audio
             get => _reader?.Position ?? TimeSpan.Zero;
             set
             {
-                if (_reader != null)
-                    _reader.Position = value;
+                if (_reader == null) return;
+                var clamped = TimeSpan.FromSeconds(Math.Max(0, Math.Min(value.TotalSeconds, Duration.TotalSeconds - 0.1)));
+                _reader.Position = clamped;
             }
         }
 
         public TimeSpan Duration => _reader?.Duration ?? TimeSpan.Zero;
 
-        public TrackInfo CurrentTrack { get; private set; }
-        public Playlist Playlist { get; } = new Playlist();
+        public AudioPosition AudioPosition => new AudioPosition(Position, Duration);
 
-        private readonly AudioEngineConfig _config;
+        public TrackInfo CurrentTrack { get; private set; }
 
         public AudioEngine() : this(AudioEngineConfig.Default) { }
 
@@ -124,6 +127,8 @@ namespace Spectralis.Audio
 
         public void SwitchFormat(IAudioReader newReader, TrackInfo info)
         {
+            if (newReader == null) return;
+
             var wasPlaying = _state == PlaybackState.Playing;
             Stop();
 
@@ -136,6 +141,19 @@ namespace Spectralis.Audio
             };
 
             if (wasPlaying) Play();
+        }
+
+        private void AutoAdvance()
+        {
+            var next = Playlist.Next();
+            if (next == null) return;
+            try
+            {
+                var reader = FormatDetector.CreateReader(next.FilePath);
+                Load(reader, next);
+                Play();
+            }
+            catch { }
         }
 
         private void OnPlaybackStopped(object sender, StoppedEventArgs e)
@@ -154,19 +172,6 @@ namespace Spectralis.Audio
             }
         }
 
-        private void AutoAdvance()
-        {
-            var next = Playlist.Next();
-            if (next == null) return;
-            try
-            {
-                var reader = FormatDetector.CreateReader(next.FilePath);
-                Load(reader, next);
-                Play();
-            }
-            catch { }
-        }
-
         private void OnPositionTick(object state)
         {
             if (_reader != null)
@@ -179,9 +184,7 @@ namespace Spectralis.Audio
             {
                 try
                 {
-                    return new WasapiOut(
-                        NAudio.CoreAudioApi.AudioClientShareMode.Shared,
-                        _config.BufferMilliseconds);
+                    return new WasapiOut(AudioClientShareMode.Shared, _config.BufferMilliseconds);
                 }
                 catch
                 {
