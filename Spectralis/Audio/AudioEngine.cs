@@ -128,6 +128,7 @@ namespace Spectralis.Audio
         public void SwitchFormat(IAudioReader newReader, TrackInfo info)
         {
             if (newReader == null) return;
+            if (info == null) return;
 
             var wasPlaying = _state == PlaybackState.Playing;
             Stop();
