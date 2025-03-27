@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
-using NAudio.Wave;
 using NAudio.CoreAudioApi;
+using NAudio.Wave;
 
 namespace Spectralis.Audio
 {
