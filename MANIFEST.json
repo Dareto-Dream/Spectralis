@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-02-14",
+    "current_date": "2025-03-31",
     "current_era": "winforms",
-    "current_phase": "W1",
+    "current_phase": "W2",
     "current_branch": "dev",
-    "last_checkpoint": null,
+    "last_checkpoint": "checkpoint W1 complete",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 14
+    "commits_completed": 62
   },
   "phases": [
     {
@@ -25,10 +25,10 @@
     {
       "phase": "W1",
       "era": "winforms",
-      "status": "pending",
+      "status": "complete",
       "dates": "Feb 15–Mar 31, 2025",
       "commits_planned": 48,
-      "commits_completed": 0,
+      "commits_completed": 48,
       "description": "Audio engine, format readers, device enumeration"
     },
     {
@@ -295,26 +295,31 @@
     {
       "id": "BUG-001",
       "name": "Format switch race condition",
-      "status": "pending",
+      "status": "partial_fix",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "5a617e7",
       "introduced_phase": "W1",
-      "partial_fix_in": null,
-      "partial_fix_phase": "W4",
+      "introduced_msg": "core: audio engine (play, pause, seek, stop) + TrackInfo model",
+      "partial_fix_in": "39e80d9",
+      "partial_fix_phase": "W1",
+      "partial_fix_msg": "fix: add guard to SwitchFormat (incomplete)",
       "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_phase": "A10",
+      "note": "Race in SwitchFormat: _reader/_waveProvider swapped without lock. Partial fix adds null guard only — race remains when Play() runs concurrently."
     },
     {
       "id": "BUG-002",
       "name": "Null reference on cover art",
-      "status": "pending",
+      "status": "injected",
       "severity": "low",
-      "introduced_in": null,
+      "introduced_in": "9dec10b",
       "introduced_phase": "W1",
+      "introduced_msg": "metadata extraction but cover art still scares me",
       "partial_fix_in": null,
       "partial_fix_phase": null,
       "full_fix_in": null,
-      "full_fix_phase": "A0"
+      "full_fix_phase": "A0",
+      "note": "MetadataExtractor.cs line 25: file.Tag.Pictures[0] throws IndexOutOfRangeException when tag has no cover art."
     },
     {
       "id": "BUG-003",
@@ -438,12 +443,12 @@
     }
   ],
   "notes": [
-    "W0 complete: 14 commits, Feb 2-14 2025. Project skeleton ready for audio engine work.",
-    "Next phase: W1 (Feb 15 - Mar 31, 48 commits). Build AudioEngine + format readers. Inject BUG-001 (format switch race) and BUG-002 (cover art null ref).",
-    "BUG-001 goes in during SwitchFormat() method — missing lock around _waveProvider assignment.",
-    "BUG-002 goes in MetadataExtractor when accessing file.Tag.Pictures[0] without null check.",
-    "Work on dev branch. Next model picks up at W1.",
-    "Bugs are injected naturally during feature commits, not separately.",
+    "W0 complete: 14 commits, Feb 2-14 2025.",
+    "W1 complete: 48 commits, Feb 15 - Mar 31 2025. Audio engine, 8 format readers, device enum, UI components, metadata extraction.",
+    "BUG-001 INJECTED at 5a617e7 (AudioEngine.SwitchFormat — no lock around _reader/_waveProvider swap). PARTIAL FIX at 39e80d9 (null guard only, race remains).",
+    "BUG-002 INJECTED at 9dec10b (MetadataExtractor.Extract — file.Tag.Pictures[0] no bounds check). Still live.",
+    "Next phase: W2 (Apr 1-20, 32 commits). SQLite library, metadata, folder watcher. No new bugs planned.",
+    "W2 uses System.Data.SQLite. Library schema: tracks(id,path,title,artist,album,genre,year,duration,bitrate,sample_rate,format,cover_path,date_added). Artists and Albums as denormalized columns for simplicity.",
     "At W4 end: merge dev -> staging -> main, tag v1.0.0.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
