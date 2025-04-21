@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-03-31",
+    "current_date": "2025-04-20",
     "current_era": "winforms",
-    "current_phase": "W2",
+    "current_phase": "W3",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint W1 complete",
+    "last_checkpoint": "checkpoint W2 complete",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 62
+    "commits_completed": 94
   },
   "phases": [
     {
@@ -34,11 +34,11 @@
     {
       "phase": "W2",
       "era": "winforms",
-      "status": "pending",
+      "status": "complete",
       "dates": "Apr 1–20, 2025",
       "commits_planned": 32,
-      "commits_completed": 0,
-      "description": "SQLite library, metadata, folder watcher"
+      "commits_completed": 32,
+      "description": "SQLite library, metadata, folder watcher, genre filter, album grid, FTS5, batch ops"
     },
     {
       "phase": "W3",
@@ -447,8 +447,8 @@
     "W1 complete: 48 commits, Feb 15 - Mar 31 2025. Audio engine, 8 format readers, device enum, UI components, metadata extraction.",
     "BUG-001 INJECTED at 5a617e7 (AudioEngine.SwitchFormat — no lock around _reader/_waveProvider swap). PARTIAL FIX at 39e80d9 (null guard only, race remains).",
     "BUG-002 INJECTED at 9dec10b (MetadataExtractor.Extract — file.Tag.Pictures[0] no bounds check). Still live.",
-    "Next phase: W2 (Apr 1-20, 32 commits). SQLite library, metadata, folder watcher. No new bugs planned.",
-    "W2 uses System.Data.SQLite. Library schema: tracks(id,path,title,artist,album,genre,year,duration,bitrate,sample_rate,format,cover_path,date_added). Artists and Albums as denormalized columns for simplicity.",
+    "W2 complete: 32 commits, Apr 1-20 2025. SQLite library with FTS5 search, folder watcher with debounce, album grid view, genre filter panel, Ctrl+L toggle, drag-drop to playlist, batch upsert, FTS5 maintenance, M3U export. No new bugs.",
+    "Next phase: W3 (Apr 21-May 10, 38 commits). GDI+ visualizers (spectrum, waveform, oscilloscope, VU meter), WASAPI loopback capture. BUG-003 injected here (IMMDevice not disposed in loopback path).",
     "At W4 end: merge dev -> staging -> main, tag v1.0.0.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
