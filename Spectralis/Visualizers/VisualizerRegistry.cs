@@ -17,6 +17,15 @@ namespace Spectralis.Visualizers
             Register("Oscilloscope", () => new OscilloscopeVisualizer());
             Register("VU Meter", () => new VuMeterVisualizer());
             Register("Circular Spectrum", () => new CircularSpectrumVisualizer());
+            Register("Mirror Spectrum", () => new MirrorSpectrumVisualizer());
+            Register("Frequency Heatmap", () => new FrequencyHeatmap());
+            Register("Particles", () => new ParticleVisualizer());
+            Register("Starfield", () => new StarfieldVisualizer());
+            Register("Lissajous", () => new LissajousVisualizer());
+            Register("3D Bar Spectrum", () => new BarSpectrumVisualizer3D());
+            Register("Neon Rings", () => new NeonRingsVisualizer());
+            Register("Beat Pulse", () => new BeatPulseVisualizer());
+            Register("Audio Reactive BG", () => new AudioReactiveBackground());
         }
 
         public void Register(string name, Func<IVisualizer> factory)
