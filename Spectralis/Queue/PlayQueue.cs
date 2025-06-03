@@ -9,6 +9,7 @@ namespace Spectralis.Queue
         private readonly List<PlayQueueItem> _items = new List<PlayQueueItem>();
         private List<int> _shuffleOrder;
         private int _currentIndex = -1;
+        private int _shufflePos = -1;
 
         public event EventHandler<PlayQueueItem> CurrentChanged;
         public event EventHandler QueueChanged;
@@ -47,6 +48,7 @@ namespace Spectralis.Queue
         {
             _items.Clear();
             _currentIndex = -1;
+            _shufflePos = -1;
             _shuffleOrder = null;
             IsShuffled = false;
             QueueChanged?.Invoke(this, EventArgs.Empty);
@@ -71,9 +73,15 @@ namespace Spectralis.Queue
         {
             IsShuffled = enabled;
             if (enabled)
+            {
                 RebuildShuffleOrder();
+                _shufflePos = 0;
+            }
             else
+            {
                 _shuffleOrder = null;
+                _shufflePos = -1;
+            }
         }
 
         private void RebuildShuffleOrder()
@@ -96,6 +104,8 @@ namespace Spectralis.Queue
         {
             if (index < 0 || index >= _items.Count) return null;
             _currentIndex = index;
+            if (IsShuffled && _shuffleOrder != null)
+                _shufflePos = _shuffleOrder.IndexOf(index);
             var item = Current;
             CurrentChanged?.Invoke(this, item);
             return item;
@@ -110,7 +120,7 @@ namespace Spectralis.Queue
 
             if (IsShuffled && _shuffleOrder != null)
             {
-                int nextPos = _currentIndex + 1;
+                int nextPos = _shufflePos + 1;
 
                 if (nextPos >= _shuffleOrder.Count)
                 {
@@ -122,7 +132,8 @@ namespace Spectralis.Queue
                     else return null;
                 }
 
-                _currentIndex = _shuffleOrder[nextPos];
+                _shufflePos = nextPos;
+                _currentIndex = _shuffleOrder[_shufflePos];
             }
             else
             {
@@ -145,9 +156,10 @@ namespace Spectralis.Queue
 
             if (IsShuffled && _shuffleOrder != null)
             {
-                int prevPos = _currentIndex - 1;
+                int prevPos = _shufflePos - 1;
                 if (prevPos < 0) return Current;
-                _currentIndex = _shuffleOrder[prevPos];
+                _shufflePos = prevPos;
+                _currentIndex = _shuffleOrder[_shufflePos];
             }
             else
             {
@@ -165,7 +177,7 @@ namespace Spectralis.Queue
             if (_items.Count == 0) return false;
             if (RepeatMode == RepeatMode.RepeatOne || RepeatMode == RepeatMode.RepeatAll) return true;
             if (IsShuffled && _shuffleOrder != null)
-                return _currentIndex < _shuffleOrder.Count - 1;
+                return _shufflePos < _shuffleOrder.Count - 1;
             return _currentIndex < _items.Count - 1;
         }
 
