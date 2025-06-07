@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-05-25",
+    "current_date": "2025-06-10",
     "current_era": "winforms",
     "current_phase": "W4",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint W3.5 complete",
+    "last_checkpoint": "checkpoint W4 complete — v1.0.0 tagged on main",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 164
+    "commits_completed": 188
   },
   "phases": [
     {
@@ -61,10 +61,10 @@
     {
       "phase": "W4",
       "era": "winforms",
-      "status": "pending",
+      "status": "complete",
       "dates": "May 26–Jun 10, 2025",
       "commits_planned": 24,
-      "commits_completed": 0,
+      "commits_completed": 24,
       "description": "Queue, shuffle, repeat modes",
       "release": "v1.0.0 to main after staging"
     },
@@ -442,14 +442,17 @@
     {
       "id": "BUG-012",
       "name": "Queue index out of sync after shuffle",
-      "status": "pending",
+      "status": "partial_fix",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "d222b3d",
       "introduced_phase": "W4",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
+      "introduced_msg": "queue: PlayQueue — add/remove/move, shuffle order, repeat modes, prev/next navigation",
+      "partial_fix_in": "050187d",
+      "partial_fix_phase": "W4",
+      "partial_fix_msg": "fix: queue shuffle Next() used _currentIndex as shuffle position — add _shufflePos tracker",
       "full_fix_in": null,
-      "full_fix_phase": null
+      "full_fix_phase": "A5",
+      "note": "Next() in shuffle mode used _currentIndex (item index in _items[]) directly as position in _shuffleOrder[], causing skips when shuffle was toggled mid-queue or after PlayAt(). Partial fix adds _shufflePos to track shuffle position separately, but Move() still doesn't update _shuffleOrder indices after drag-reorder — so shuffled navigation after a move can still land on the wrong track."
     }
   ],
   "notes": [
@@ -460,7 +463,8 @@
     "W2 complete: 32 commits, Apr 1-20 2025. SQLite library with FTS5 search, folder watcher with debounce, album grid view, genre filter panel, Ctrl+L toggle, drag-drop to playlist, batch upsert, FTS5 maintenance, M3U export. No new bugs.",
     "W3 complete: 38 commits, Apr 21-May 10 2025. 14 GDI+ visualizers (spectrum/waveform/oscilloscope/VU/circular/mirror/heatmap/particles/starfield/lissajous/3D bar/neon rings/beat pulse/reactive BG), WASAPI loopback, FFT+waveform buffers, smoother, pipeline coordinator. BUG-003 INJECTED at d58988e (MMDevice not disposed in Start()); PARTIAL FIX at d8f7236 (enumerator fixed, device still leaks).",
     "W3.5 complete: 32 commits, May 11-25 2025. IStreamingSource/StreamingRegistry abstraction, Spotify PKCE OAuth+playlists+recommendations, SoundCloud client_id API, Suno session, YouTube yt-dlp, streaming UI (search panel, history panel, status bar, auth dialog, menu), thumbnail cache, rate limiter, playback monitor. BUG-004 INJECTED at d6a9b92 (Spotify per-instance token race); PARTIAL FIX at dbc39df (static semaphore, source still uses per-instance cache). BUG-010 INJECTED at e32b1dc (SoundCloud null user field). BUG-011 INJECTED at e59c1ba (yt-dlp silent null return).",
-    "At W4 end: merge dev -> staging -> main, tag v1.0.0.",
+    "W4 complete: 24 commits, May 26-Jun 10 2025. PlayQueueItem+PlayQueue model (shuffle, repeat, auto-advance), QueuePersistence (JSON snapshot), QueuePanel (ListView+drag-reorder), transport controls, now-playing bar, system tray, media keys, global hotkeys, queue status bar, M3U import/export, drop target, queue stats+search. BUG-012 INJECTED at d222b3d (shuffle Next() used _currentIndex as shuffle pos). PARTIAL FIX at 050187d (adds _shufflePos, but Move() still invalidates shuffleOrder).",
+    "W4 end: merge dev -> staging -> main, tag v1.0.0.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
