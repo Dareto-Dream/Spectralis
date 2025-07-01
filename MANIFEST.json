@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-06-10",
-    "current_era": "winforms",
-    "current_phase": "W4",
+    "current_date": "2025-06-30",
+    "current_era": "avalonia",
+    "current_phase": "A1",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint W4 complete — v1.0.0 tagged on main",
+    "last_checkpoint": "checkpoint A0 complete — Avalonia shell, Core extracted, BUG-002 fixed",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 188
+    "commits_completed": 208
   },
   "phases": [
     {
@@ -71,10 +71,10 @@
     {
       "phase": "A0",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 11–30, 2025",
       "commits_planned": 20,
-      "commits_completed": 0,
+      "commits_completed": 20,
       "description": "Avalonia setup, Core extraction, architecture refactor"
     },
     {
@@ -310,16 +310,17 @@
     {
       "id": "BUG-002",
       "name": "Null reference on cover art",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "9dec10b",
       "introduced_phase": "W1",
       "introduced_msg": "metadata extraction but cover art still scares me",
       "partial_fix_in": null,
       "partial_fix_phase": null,
-      "full_fix_in": null,
+      "full_fix_in": "08eecf6",
       "full_fix_phase": "A0",
-      "note": "MetadataExtractor.cs line 25: file.Tag.Pictures[0] throws IndexOutOfRangeException when tag has no cover art."
+      "full_fix_msg": "fix: BUG-002 — MetadataExtractor checks Pictures.Length > 0 before indexing cover art",
+      "note": "WinForms MetadataExtractor.cs accessed file.Tag.Pictures[0] unconditionally. Core MetadataExtractor.cs guards with tag.Pictures != null && tag.Pictures.Length > 0."
     },
     {
       "id": "BUG-003",
@@ -464,7 +465,8 @@
     "W3 complete: 38 commits, Apr 21-May 10 2025. 14 GDI+ visualizers (spectrum/waveform/oscilloscope/VU/circular/mirror/heatmap/particles/starfield/lissajous/3D bar/neon rings/beat pulse/reactive BG), WASAPI loopback, FFT+waveform buffers, smoother, pipeline coordinator. BUG-003 INJECTED at d58988e (MMDevice not disposed in Start()); PARTIAL FIX at d8f7236 (enumerator fixed, device still leaks).",
     "W3.5 complete: 32 commits, May 11-25 2025. IStreamingSource/StreamingRegistry abstraction, Spotify PKCE OAuth+playlists+recommendations, SoundCloud client_id API, Suno session, YouTube yt-dlp, streaming UI (search panel, history panel, status bar, auth dialog, menu), thumbnail cache, rate limiter, playback monitor. BUG-004 INJECTED at d6a9b92 (Spotify per-instance token race); PARTIAL FIX at dbc39df (static semaphore, source still uses per-instance cache). BUG-010 INJECTED at e32b1dc (SoundCloud null user field). BUG-011 INJECTED at e59c1ba (yt-dlp silent null return).",
     "W4 complete: 24 commits, May 26-Jun 10 2025. PlayQueueItem+PlayQueue model (shuffle, repeat, auto-advance), QueuePersistence (JSON snapshot), QueuePanel (ListView+drag-reorder), transport controls, now-playing bar, system tray, media keys, global hotkeys, queue status bar, M3U import/export, drop target, queue stats+search. BUG-012 INJECTED at d222b3d (shuffle Next() used _currentIndex as shuffle pos). PARTIAL FIX at 050187d (adds _shufflePos, but Move() still invalidates shuffleOrder).",
-    "W4 end: merge dev -> staging -> main, tag v1.0.0.",
+    "W4 end: merged dev -> staging -> main, tagged v1.0.0 (Jun 10, 2025).",
+    "A0 complete: 20 commits, Jun 11-30 2025. Added Spectralis.Core (.NET 8), Spectralis.App (Avalonia 11.1), Spectralis.Tests (xUnit). Core interfaces: IAudioEngine, ITrackLoader, ILibrary, IAudioPipeline, IStreamingSource. Models: TrackInfo (ObservableObject), PlaybackState, RepeatMode. Infrastructure: AppPaths (cross-platform), ISpectralLogger. App: App.axaml + MainWindow stub. BUG-002 FIXED at 08eecf6.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
