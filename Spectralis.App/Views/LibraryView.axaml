@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:conv="using:Spectralis.App.Converters"
+             x:Class="Spectralis.App.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel"
+             Background="#12121C">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <Border Grid.Row="0" Background="#1A1A24" Padding="8,6">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox Grid.Column="0"
+                 Text="{Binding SearchQuery}"
+                 Watermark="Search library…"
+                 Background="#0E0E18" Foreground="White"
+                 BorderBrush="#333355" CornerRadius="4"/>
+        <Button Grid.Column="1" Content="Scan" Margin="8,0,0,0"
+                Command="{Binding LoadCommand}"
+                Background="#3D3D5C" Foreground="White" CornerRadius="4"/>
+      </Grid>
+    </Border>
+
+    <ListBox Grid.Row="1"
+             ItemsSource="{Binding Tracks}"
+             SelectedItem="{Binding SelectedTrack}"
+             Background="Transparent">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="8,4">
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="{Binding Title}" FontSize="13" Foreground="White"
+                         TextTrimming="CharacterEllipsis"/>
+              <TextBlock FontSize="11" Foreground="#888888" TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Artist}"/>
+                <Run Text=" — "/>
+                <Run Text="{Binding Album}"/>
+              </TextBlock>
+            </StackPanel>
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="12,0"
+                       FontSize="11" Foreground="#666666"
+                       Text="{Binding Duration, Converter={x:Static conv:TimeSpanConverter.Instance}}"/>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+  </Grid>
+</UserControl>
