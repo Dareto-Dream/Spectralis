@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:conv="using:Spectralis.App.Converters"
+             x:Class="Spectralis.App.Views.QueueView"
+             x:DataType="vm:QueueViewModel"
+             Background="#12121C">
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" Background="#1A1A24" Padding="8,6">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Button Content="&#x1F500;" FontSize="16" ToolTip.Tip="Shuffle"
+                Command="{Binding $parent[Window].DataContext.Player.ToggleShuffleCommand}"
+                Background="Transparent" Foreground="White" Padding="4"/>
+        <Button Content="&#x1F501;" FontSize="16" ToolTip.Tip="Repeat"
+                Command="{Binding $parent[Window].DataContext.Player.CycleRepeatCommand}"
+                Background="Transparent" Foreground="White" Padding="4"/>
+        <Separator Background="#333355" Width="1" Height="20" Margin="4,0"/>
+        <Button Content="Clear" Command="{Binding ClearCommand}"
+                Background="Transparent" Foreground="#CC4444" Padding="4,2"/>
+      </StackPanel>
+    </Border>
+
+    <ListBox Grid.Row="1"
+             ItemsSource="{Binding Items}"
+             SelectedItem="{Binding SelectedItem}"
+             Background="Transparent">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,3">
+            <TextBlock Grid.Column="0" Text="&#x25B6;" FontSize="10"
+                       Foreground="#6666AA" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="{Binding Track.Title}" FontSize="13" Foreground="White"
+                         TextTrimming="CharacterEllipsis"/>
+              <TextBlock Text="{Binding Track.Artist}" FontSize="11" Foreground="#888888"
+                         TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0"
+                       FontSize="11" Foreground="#666666"
+                       Text="{Binding Track.Duration, Converter={x:Static conv:TimeSpanConverter.Instance}}"/>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <Border Grid.Row="2" Background="#1A1A24" Padding="8,4">
+      <TextBlock Foreground="#666688" FontSize="11">
+        <Run Text="{Binding Items.Count}"/>
+        <Run Text=" tracks"/>
+      </TextBlock>
+    </Border>
+
+  </Grid>
+</UserControl>
