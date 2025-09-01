@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-06-30",
+    "current_date": "2025-08-31",
     "current_era": "avalonia",
-    "current_phase": "A1",
+    "current_phase": "A2",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A0 complete — Avalonia shell, Core extracted, BUG-002 fixed",
+    "last_checkpoint": "checkpoint A1 complete — Core audio pipeline, library, queue, streaming, App shell, ViewModels, views, services, design tokens",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 208
+    "commits_completed": 252
   },
   "phases": [
     {
@@ -80,11 +80,11 @@
     {
       "phase": "A1",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jul 1–Aug 31, 2025",
       "commits_planned": 44,
-      "commits_completed": 0,
-      "description": "Core audio engine (cross-platform), platform seams"
+      "commits_completed": 44,
+      "description": "Core audio pipeline (FftProcessor, WaveformBuffer, SpectrumSmoother, AudioPipeline), NaudioAudioEngine, library/queue/streaming ports, App ViewModels, AXAML views, PositionService, CoverArtService, HotkeyService, TrayService, design tokens, MainWindow wired"
     },
     {
       "phase": "A2",
@@ -93,7 +93,7 @@
       "dates": "Sep 1–Oct 15, 2025",
       "commits_planned": 28,
       "commits_completed": 0,
-      "description": "Library refactor, ObservableCollection"
+      "description": "Library browser improvements, tag editor Avalonia port, playlist system port, settings dialog"
     },
     {
       "phase": "A3",
@@ -102,7 +102,7 @@
       "dates": "Oct 16–Dec 15, 2025",
       "commits_planned": 56,
       "commits_completed": 0,
-      "description": "Visualizer abstraction, Skia GPU rendering (11 visualizers)"
+      "description": "Visualizer abstraction, Skia GPU rendering (11 visualizers ported)"
     },
     {
       "phase": "A4",
@@ -111,7 +111,7 @@
       "dates": "Dec 16–Jan 31, 2026",
       "commits_planned": 38,
       "commits_completed": 0,
-      "description": "Avalonia UI (MainWindow, playback controls, library)"
+      "description": "Streaming UI Avalonia port, capsule v4, scrobbling Avalonia, BPM analysis wired"
     },
     {
       "phase": "A5",
@@ -120,7 +120,7 @@
       "dates": "Feb 1–28, 2026",
       "commits_planned": 22,
       "commits_completed": 0,
-      "description": "Queue system (Avalonia rewrite)"
+      "description": "Queue system Avalonia rewrite with full drag-reorder, BUG-012 full fix"
     },
     {
       "phase": "A6",
@@ -129,7 +129,7 @@
       "dates": "Mar 1–31, 2026",
       "commits_planned": 26,
       "commits_completed": 0,
-      "description": "Lyrics system (LRC, sync, studio)"
+      "description": "Lyrics system (LRC, sync, Timing Studio, annotations)"
     },
     {
       "phase": "A7",
@@ -138,7 +138,7 @@
       "dates": "Apr 1–30, 2026",
       "commits_planned": 32,
       "commits_completed": 0,
-      "description": "Capsules (signed), reactive timelines"
+      "description": "Capsules (signed), reactive timelines, Album World"
     },
     {
       "phase": "A8",
@@ -165,14 +165,14 @@
       "dates": "Jun 11–18, 2026",
       "commits_planned": 14,
       "commits_completed": 0,
-      "description": "Final polish, release v1.0.0-avalonia → v5.0.0 on main",
+      "description": "Final polish, all remaining bug fixes, release v5.0.0",
       "release": "v5.0.0 to main after staging"
     }
   ],
   "modules": [
     {
       "name": "WinForms.AudioEngine",
-      "status": "pending",
+      "status": "complete",
       "phase": "W1",
       "introduced_bugs": ["BUG-001", "BUG-002"],
       "fixed_bugs": [],
@@ -180,7 +180,7 @@
     },
     {
       "name": "WinForms.Library",
-      "status": "pending",
+      "status": "complete",
       "phase": "W2",
       "introduced_bugs": [],
       "fixed_bugs": [],
@@ -188,7 +188,7 @@
     },
     {
       "name": "WinForms.Visualizers",
-      "status": "pending",
+      "status": "complete",
       "phase": "W3",
       "introduced_bugs": ["BUG-003"],
       "fixed_bugs": [],
@@ -196,7 +196,7 @@
     },
     {
       "name": "WinForms.Streaming",
-      "status": "pending",
+      "status": "complete",
       "phase": "W3.5",
       "introduced_bugs": ["BUG-004", "BUG-010", "BUG-011"],
       "fixed_bugs": [],
@@ -204,7 +204,7 @@
     },
     {
       "name": "WinForms.Queue",
-      "status": "pending",
+      "status": "complete",
       "phase": "W4",
       "introduced_bugs": ["BUG-012"],
       "fixed_bugs": [],
@@ -212,19 +212,35 @@
     },
     {
       "name": "Core.AudioEngine",
-      "status": "pending",
+      "status": "complete",
       "phase": "A0–A1",
       "introduced_bugs": ["BUG-009"],
       "fixed_bugs": ["BUG-002"],
-      "description": "Cross-platform refactor from WinForms, platform seams"
+      "description": "Cross-platform refactor from WinForms, platform seams, pipeline"
+    },
+    {
+      "name": "App.Shell",
+      "status": "complete",
+      "phase": "A1",
+      "introduced_bugs": [],
+      "fixed_bugs": [],
+      "description": "Avalonia ViewModels, views, services (Position/CoverArt/Hotkey/Tray), design tokens"
     },
     {
       "name": "Core.Library",
+      "status": "complete",
+      "phase": "A1",
+      "introduced_bugs": [],
+      "fixed_bugs": [],
+      "description": "LibraryDb, LibraryRepository, LibraryScanner, FolderWatcher, CoverArtStore"
+    },
+    {
+      "name": "App.Library",
       "status": "pending",
       "phase": "A2",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "ObservableCollection, SQLite migration to Core"
+      "description": "Tag editor Avalonia, playlist browser, advanced search"
     },
     {
       "name": "Core.Visualizers",
@@ -240,15 +256,15 @@
       "phase": "A4",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "Avalonia MainWindow, ReactiveUI"
+      "description": "Streaming UI, capsule v4, scrobbling Avalonia"
     },
     {
       "name": "App.Queue",
       "status": "pending",
       "phase": "A5",
       "introduced_bugs": [],
-      "fixed_bugs": [],
-      "description": "Queue panel, drag-reorder"
+      "fixed_bugs": ["BUG-012"],
+      "description": "Queue panel drag-reorder, BUG-012 full fix"
     },
     {
       "name": "Core.Lyrics",
@@ -279,7 +295,7 @@
       "status": "pending",
       "phase": "A9",
       "introduced_bugs": [],
-      "fixed_bugs": [],
+      "fixed_bugs": ["BUG-006", "BUG-008"],
       "description": "xUnit tests (245 total), packaging"
     },
     {
@@ -287,7 +303,7 @@
       "status": "pending",
       "phase": "A10",
       "introduced_bugs": [],
-      "fixed_bugs": ["BUG-001", "BUG-004", "BUG-005", "BUG-006", "BUG-007", "BUG-008", "BUG-009"],
+      "fixed_bugs": ["BUG-001", "BUG-004", "BUG-005", "BUG-007", "BUG-009", "BUG-010", "BUG-011"],
       "description": "Final bugs, cross-platform polish"
     }
   ],
@@ -403,14 +419,16 @@
     {
       "id": "BUG-009",
       "name": "WinForms event pattern in Core",
-      "status": "pending",
+      "status": "injected",
       "severity": "low",
-      "introduced_in": null,
+      "introduced_in": "f39e3b2",
       "introduced_phase": "A1",
+      "introduced_msg": "core: NaudioAudioEngine — WaveOutEvent, FormatReaderRegistry routing, AudioSampleTap integration",
       "partial_fix_in": null,
       "partial_fix_phase": null,
       "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_phase": "A10",
+      "note": "NaudioAudioEngine uses C# EventHandler delegates (TrackLoaded, PlaybackStarted, PlaybackPaused, PlaybackStopped) — standard WinForms/POCO event pattern. Core type consumed by ReactiveUI/Avalonia layer that prefers IObservable<T>. Not a crash bug, but the App layer works around it with lambda subscriptions rather than reactive chains."
     },
     {
       "id": "BUG-010",
@@ -462,11 +480,12 @@
     "BUG-001 INJECTED at 5a617e7 (AudioEngine.SwitchFormat — no lock around _reader/_waveProvider swap). PARTIAL FIX at 39e80d9 (null guard only, race remains).",
     "BUG-002 INJECTED at 9dec10b (MetadataExtractor.Extract — file.Tag.Pictures[0] no bounds check). Still live.",
     "W2 complete: 32 commits, Apr 1-20 2025. SQLite library with FTS5 search, folder watcher with debounce, album grid view, genre filter panel, Ctrl+L toggle, drag-drop to playlist, batch upsert, FTS5 maintenance, M3U export. No new bugs.",
-    "W3 complete: 38 commits, Apr 21-May 10 2025. 14 GDI+ visualizers (spectrum/waveform/oscilloscope/VU/circular/mirror/heatmap/particles/starfield/lissajous/3D bar/neon rings/beat pulse/reactive BG), WASAPI loopback, FFT+waveform buffers, smoother, pipeline coordinator. BUG-003 INJECTED at d58988e (MMDevice not disposed in Start()); PARTIAL FIX at d8f7236 (enumerator fixed, device still leaks).",
-    "W3.5 complete: 32 commits, May 11-25 2025. IStreamingSource/StreamingRegistry abstraction, Spotify PKCE OAuth+playlists+recommendations, SoundCloud client_id API, Suno session, YouTube yt-dlp, streaming UI (search panel, history panel, status bar, auth dialog, menu), thumbnail cache, rate limiter, playback monitor. BUG-004 INJECTED at d6a9b92 (Spotify per-instance token race); PARTIAL FIX at dbc39df (static semaphore, source still uses per-instance cache). BUG-010 INJECTED at e32b1dc (SoundCloud null user field). BUG-011 INJECTED at e59c1ba (yt-dlp silent null return).",
-    "W4 complete: 24 commits, May 26-Jun 10 2025. PlayQueueItem+PlayQueue model (shuffle, repeat, auto-advance), QueuePersistence (JSON snapshot), QueuePanel (ListView+drag-reorder), transport controls, now-playing bar, system tray, media keys, global hotkeys, queue status bar, M3U import/export, drop target, queue stats+search. BUG-012 INJECTED at d222b3d (shuffle Next() used _currentIndex as shuffle pos). PARTIAL FIX at 050187d (adds _shufflePos, but Move() still invalidates shuffleOrder).",
+    "W3 complete: 38 commits, Apr 21-May 10 2025. 14 GDI+ visualizers, WASAPI loopback, FFT+waveform buffers, smoother, pipeline coordinator. BUG-003 INJECTED at d58988e; PARTIAL FIX at d8f7236.",
+    "W3.5 complete: 32 commits, May 11-25 2025. IStreamingSource/StreamingRegistry, Spotify PKCE, SoundCloud, Suno, YouTube yt-dlp, streaming UI. BUG-004 INJECTED+PARTIAL FIX. BUG-010 INJECTED. BUG-011 INJECTED.",
+    "W4 complete: 24 commits, May 26-Jun 10 2025. PlayQueue, shuffle, repeat, QueuePanel, transport, tray, media keys, hotkeys. BUG-012 INJECTED+PARTIAL FIX.",
     "W4 end: merged dev -> staging -> main, tagged v1.0.0 (Jun 10, 2025).",
-    "A0 complete: 20 commits, Jun 11-30 2025. Added Spectralis.Core (.NET 8), Spectralis.App (Avalonia 11.1), Spectralis.Tests (xUnit). Core interfaces: IAudioEngine, ITrackLoader, ILibrary, IAudioPipeline, IStreamingSource. Models: TrackInfo (ObservableObject), PlaybackState, RepeatMode. Infrastructure: AppPaths (cross-platform), ISpectralLogger. App: App.axaml + MainWindow stub. BUG-002 FIXED at 08eecf6.",
+    "A0 complete: 20 commits, Jun 11-30 2025. Core (.NET 8) + App (Avalonia 11.1) + Tests (xUnit). Core interfaces, models, infrastructure, App shell. BUG-002 FIXED at 08eecf6.",
+    "A1 complete: 44 commits, Jul 1-Aug 31 2025. Core audio pipeline (FftProcessor, WaveformBuffer, AudioPipeline, NaudioAudioEngine), library (LibraryDb/Repo/Scanner/Watcher/CoverArtStore), queue (QueuePersistence), streaming (YouTubeSource, SoundCloudSource, SpotifySource, StreamingRegistry). App: ViewModels (Main/Player/Library/Queue), views (MainWindow, NowPlaying, Library, Queue), controls (SpectrumBars, WaveformView), services (Position, CoverArt, Hotkey, Tray, PipelineWiring), converters, Tokens.axaml. BUG-009 INJECTED at f39e3b2.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
