@@ -2,8 +2,11 @@ using System;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Infrastructure;
 using Spectralis.Core.Library;
+using Spectralis.Core.Playlists;
 using Spectralis.Core.Queue;
+using Spectralis.Core.Settings;
 using Spectralis.Core.Streaming;
+using Spectralis.Core.Tags;
 
 namespace Spectralis.App.Services
 {
@@ -16,12 +19,18 @@ namespace Spectralis.App.Services
         public QueueAutoAdvance AutoAdvance { get; }
         public StreamingRegistry Streaming { get; }
         public ISpectralLogger Logger { get; }
+        public PlaylistManager Playlists { get; }
+        public SettingsRepository Settings { get; }
+        public TagEditorService TagEditor { get; }
+        public CoverArtStore CoverArt { get; }
 
         private bool _disposed;
 
         public ServiceContainer()
         {
             Logger = new FileLogger(System.IO.Path.Combine(AppPaths.LogsDirectory, "spectralis.log"));
+
+            Settings = new SettingsRepository(AppPaths.SettingsFilePath);
 
             var opts = new AudioEngineOptions();
             AudioEngine = AudioEngineFactory.Create(opts);
@@ -31,6 +40,10 @@ namespace Spectralis.App.Services
             Queue = new PlayQueue();
             AutoAdvance = new QueueAutoAdvance(Queue, AudioEngine);
             Streaming = new StreamingRegistry();
+
+            Playlists = new PlaylistManager(Library.Db);
+            TagEditor = new TagEditorService();
+            CoverArt = new CoverArtStore(AppPaths.CoverArtCacheDirectory);
         }
 
         public void Dispose()
@@ -42,6 +55,7 @@ namespace Spectralis.App.Services
             Pipeline.Dispose();
             Library.Dispose();
             Streaming.Dispose();
+            Playlists.Dispose();
         }
     }
 }
