@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-08-31",
+    "current_date": "2025-10-15",
     "current_era": "avalonia",
-    "current_phase": "A2",
+    "current_phase": "A3",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A1 complete — Core audio pipeline, library, queue, streaming, App shell, ViewModels, views, services, design tokens",
+    "last_checkpoint": "checkpoint A2 complete — Playlists (static+smart), TagEditor (TagLib r/w), Settings, EQ effect, Scrobbling (Last.fm), ReplayGain, DuplicateDetector, AlbumArtResolver, BrowseViewModel, FileDialogService",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 252
+    "commits_completed": 280
   },
   "phases": [
     {
@@ -89,11 +89,11 @@
     {
       "phase": "A2",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Sep 1–Oct 15, 2025",
       "commits_planned": 28,
-      "commits_completed": 0,
-      "description": "Library browser improvements, tag editor Avalonia port, playlist system port, settings dialog"
+      "commits_completed": 28,
+      "description": "Playlist system (static+smart, evaluator), TagEditorService, Settings, EqualizerEffect, LastFmScrobbler, ReplayGainReader, DuplicateDetector, AlbumArtResolver, BrowseViewModel, FileDialogService, ScanProgressViewModel"
     },
     {
       "phase": "A3",
@@ -486,6 +486,7 @@
     "W4 end: merged dev -> staging -> main, tagged v1.0.0 (Jun 10, 2025).",
     "A0 complete: 20 commits, Jun 11-30 2025. Core (.NET 8) + App (Avalonia 11.1) + Tests (xUnit). Core interfaces, models, infrastructure, App shell. BUG-002 FIXED at 08eecf6.",
     "A1 complete: 44 commits, Jul 1-Aug 31 2025. Core audio pipeline (FftProcessor, WaveformBuffer, AudioPipeline, NaudioAudioEngine), library (LibraryDb/Repo/Scanner/Watcher/CoverArtStore), queue (QueuePersistence), streaming (YouTubeSource, SoundCloudSource, SpotifySource, StreamingRegistry). App: ViewModels (Main/Player/Library/Queue), views (MainWindow, NowPlaying, Library, Queue), controls (SpectrumBars, WaveformView), services (Position, CoverArt, Hotkey, Tray, PipelineWiring), converters, Tokens.axaml. BUG-009 INJECTED at f39e3b2.",
+    "A2 complete: 28 commits, Sep 1-Oct 15 2025. Playlist system (static+smart, SmartPlaylistEvaluator, PlaylistRepository, PlaylistManager), PlaylistViewModel, TagEditorService (TagLib r/w+.bak backup), TagEditorViewModel+Dialog, LibraryImportExport (M3U+PLS), AppSettings+SettingsRepository, SettingsViewModel+Dialog, EqualizerEffect (BiQuad 10-band), IScrobbler+LastFmScrobbler (MD5 sig), ScrobbleService, ReplayGainReader (Xiph+ID3v2), DuplicateDetector, LibraryScanProgress, AlbumArtResolver, BrowseViewModel, FileDialogService, ScanProgressViewModel. ServiceContainer expanded.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
