@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Controls.VisualizerPickerControl"
+             x:DataType="vm:VisualizerViewModel"
+             Background="#12121C">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <Border Grid.Row="0" Background="#0E0E18" Padding="8,6">
+      <TextBlock Text="Visualizers" FontSize="11" FontWeight="SemiBold"
+                 Foreground="#7B68EE" LetterSpacing="1.5"/>
+    </Border>
+
+    <ListBox Grid.Row="1" ItemsSource="{Binding Available}"
+             SelectedItem="{Binding Selected}"
+             Background="Transparent">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Margin="8,4">
+              <TextBlock Text="{Binding DisplayName}" FontSize="13" Foreground="White"/>
+              <TextBlock Text="{Binding Category}" FontSize="10" Foreground="#666688"/>
+            </StackPanel>
+            <Border Grid.Column="1" Background="#3D3D5C" CornerRadius="3"
+                    Padding="4,2" Margin="0,0,8,0" VerticalAlignment="Center"
+                    IsVisible="{Binding IsHardwareAccelerated}">
+              <TextBlock Text="GPU" FontSize="9" Foreground="#9B8EFF"/>
+            </Border>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+  </Grid>
+</UserControl>
