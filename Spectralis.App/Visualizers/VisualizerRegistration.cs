@@ -23,6 +23,8 @@ namespace Spectralis.App.Visualizers
             registry.Register(new VisualizerInfo { Id = "waterfall", DisplayName = "Waterfall", Category = "Spectrum", Factory = () => new WaterfallVisualizer() });
             registry.Register(new VisualizerInfo { Id = "spiral", DisplayName = "Spiral", Category = "Spectrum", Factory = () => new SpiralSpectrumVisualizer() });
             registry.Register(new VisualizerInfo { Id = "chromatic", DisplayName = "Chromatic", Category = "Spectrum", Factory = () => new ChromaticVisualizer() });
+            registry.Register(new VisualizerInfo { Id = "mosaic", DisplayName = "Mosaic", Category = "Spectrum", Factory = () => new MosaicVisualizer() });
+            registry.Register(new VisualizerInfo { Id = "reactive-gradient", DisplayName = "Reactive Gradient", Category = "Ambient", Factory = () => new AudioReactiveGradientVisualizer() });
         }
     }
 }
