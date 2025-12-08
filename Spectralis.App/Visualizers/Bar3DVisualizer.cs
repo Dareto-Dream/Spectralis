@@ -19,6 +19,7 @@ namespace Spectralis.App.Visualizers
 
             if (_offscreen == null || w != _lastW || h != _lastH)
             {
+                _offscreen?.Dispose();
                 _offscreen = SKSurface.Create(new SKImageInfo(w, h));
                 _lastW = w;
                 _lastH = h;
