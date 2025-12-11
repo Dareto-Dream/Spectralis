@@ -10,6 +10,13 @@ namespace Spectralis.App.Visualizers
         public override string Category => "Spectrum";
 
         private float _phase;
+        private readonly SKPaint _paint = new() { IsAntialias = true, Style = SKPaintStyle.Stroke };
+        private readonly SKPaint _glowPaint = new()
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 6f)
+        };
 
         protected override void RenderSkia(SKCanvas canvas, double width, double height)
         {
@@ -24,14 +31,6 @@ namespace Spectralis.App.Visualizers
             int rings = Math.Min(12, Spectrum.Length / 4);
             float ringStep = maxR / rings;
 
-            using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke };
-            using var glowPaint = new SKPaint
-            {
-                IsAntialias = true,
-                Style = SKPaintStyle.Stroke,
-                MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 6f)
-            };
-
             for (int r = 0; r < rings; r++)
             {
                 int band = r * Spectrum.Length / rings;
@@ -40,14 +39,25 @@ namespace Spectralis.App.Visualizers
                 float hue = (_phase * 60f + r * 30f) % 360f;
                 byte alpha = (byte)(100 + energy * 155);
 
-                paint.Color = HsvToColor(hue, 1f, 0.95f, alpha);
-                paint.StrokeWidth = 1.5f + energy * 3f;
-                glowPaint.Color = HsvToColor(hue, 0.8f, 0.8f, (byte)(alpha / 3));
-                glowPaint.StrokeWidth = paint.StrokeWidth + 4f;
+                _paint.Color = HsvToColor(hue, 1f, 0.95f, alpha);
+                _paint.StrokeWidth = 1.5f + energy * 3f;
+                _glowPaint.Color = HsvToColor(hue, 0.8f, 0.8f, (byte)(alpha / 3));
+                _glowPaint.StrokeWidth = _paint.StrokeWidth + 4f;
 
-                canvas.DrawCircle(cx, cy, radius, glowPaint);
-                canvas.DrawCircle(cx, cy, radius, paint);
+                canvas.DrawCircle(cx, cy, radius, _glowPaint);
+                canvas.DrawCircle(cx, cy, radius, _paint);
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _paint.Dispose();
+                _glowPaint.MaskFilter?.Dispose();
+                _glowPaint.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }
