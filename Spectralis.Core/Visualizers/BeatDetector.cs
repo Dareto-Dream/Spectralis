@@ -11,16 +11,30 @@ namespace Spectralis.Core.Visualizers
         private float _lastBeatEnergy;
         private long _lastBeatFrame;
         private long _frameCount;
-        private const float SensitivityMultiplier = 1.3f;
+        private float _sensitivityMultiplier;
+        private int _minFrameGap;
 
         public bool IsBeat { get; private set; }
         public float BeatStrength { get; private set; }
         public float CurrentEnergy { get; private set; }
+        public float Sensitivity
+        {
+            get => _sensitivityMultiplier;
+            set => _sensitivityMultiplier = Math.Clamp(value, 1.05f, 3f);
+        }
 
-        public BeatDetector(int historySize = 43)
+        public int MinFrameGap
+        {
+            get => _minFrameGap;
+            set => _minFrameGap = Math.Max(1, value);
+        }
+
+        public BeatDetector(int historySize = 43, float sensitivity = 1.3f, int minFrameGap = 8)
         {
             _historySize = historySize;
             _energyHistory = new Queue<float>(historySize);
+            _sensitivityMultiplier = Math.Clamp(sensitivity, 1.05f, 3f);
+            _minFrameGap = Math.Max(1, minFrameGap);
         }
 
         public void Process(in AudioFrame frame)
@@ -40,10 +54,10 @@ namespace Spectralis.Core.Visualizers
             foreach (float e in _energyHistory) avg += e;
             avg /= _energyHistory.Count;
 
-            bool beat = energy > avg * SensitivityMultiplier && (_frameCount - _lastBeatFrame) > 8;
+            bool beat = energy > avg * _sensitivityMultiplier && (_frameCount - _lastBeatFrame) > _minFrameGap;
 
             IsBeat = beat;
-            BeatStrength = avg > 0 ? Math.Clamp(energy / (avg * SensitivityMultiplier), 0f, 2f) : 0f;
+            BeatStrength = avg > 0 ? Math.Clamp(energy / (avg * _sensitivityMultiplier), 0f, 2f) : 0f;
 
             if (beat)
             {
