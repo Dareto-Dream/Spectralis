@@ -33,6 +33,12 @@ namespace Spectralis.App.Services
 
         public string CurrentId => _currentId;
 
+        public void SetBeatSensitivity(float sensitivity)
+        {
+            if (_canvas.CurrentVisualizer is SkiaVisualizerBase svb)
+                svb.SetBeatSensitivity(sensitivity);
+        }
+
         public void Dispose()
         {
             if (_disposed) return;
