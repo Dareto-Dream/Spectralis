@@ -88,6 +88,8 @@ namespace Spectralis.App.Visualizers
             return new SKColor((byte)(r * 255), (byte)(g * 255), (byte)(b * 255), alpha);
         }
 
+        public virtual void SetBeatSensitivity(float sensitivity) { }
+
         protected virtual void Dispose(bool disposing) { }
 
         public void Dispose()

@@ -37,6 +37,8 @@ namespace Spectralis.App.Controls
             if (Pipeline != null) Pipeline.FrameReady -= OnFrameReady;
         }
 
+        public IVisualizer? CurrentVisualizer => _visualizer;
+
         public void SetVisualizer(IVisualizer? viz)
         {
             _visualizer?.Dispose();
