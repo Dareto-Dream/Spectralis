@@ -16,13 +16,13 @@ namespace Spectralis.App.Visualizers
         protected override void RenderSkia(SKCanvas canvas, double width, double height)
         {
             canvas.Clear(new SKColor(0, 0, 8));
-            if (Spectrum.Length == 0) return;
+            if (Spectrum.Length == 0 || width < 1 || height < 1) return;
 
             _lines[_head] = (float[])Spectrum.Clone();
             _head = (_head + 1) % MaxLines;
 
-            float lineH = (float)height / MaxLines;
-            float barW = (float)width / Spectrum.Length;
+            float lineH = Math.Max(1f, (float)height / MaxLines);
+            float barW = Math.Max(0.5f, (float)width / Spectrum.Length);
 
             using var paint = new SKPaint { IsAntialias = false };
 
