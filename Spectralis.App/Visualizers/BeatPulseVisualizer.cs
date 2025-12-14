@@ -11,9 +11,14 @@ namespace Spectralis.App.Visualizers
         public override string DisplayName => "Beat Pulse";
         public override string Category => "Beat";
 
-        private readonly BeatDetector _beat = new();
+        private readonly BeatDetector _beat = new(sensitivity: 1.3f);
         private readonly List<(float R, float A, SKColor C)> _pulses = new();
         private float _phase;
+
+        public override void SetBeatSensitivity(float sensitivity)
+        {
+            _beat.Sensitivity = sensitivity;
+        }
 
         public override void OnFrameReady(in Spectralis.Core.Audio.AudioFrame frame)
         {
