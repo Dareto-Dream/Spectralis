@@ -1,4 +1,5 @@
 using System;
+using Spectralis.App.Visualizers;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Infrastructure;
 using Spectralis.Core.Library;
@@ -7,6 +8,7 @@ using Spectralis.Core.Queue;
 using Spectralis.Core.Settings;
 using Spectralis.Core.Streaming;
 using Spectralis.Core.Tags;
+using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Services
 {
@@ -23,6 +25,8 @@ namespace Spectralis.App.Services
         public SettingsRepository Settings { get; }
         public TagEditorService TagEditor { get; }
         public CoverArtStore CoverArt { get; }
+        public VisualizerRegistry VisualizerRegistry { get; }
+        public VisualizerScriptManager VisualizerScripts { get; }
 
         private bool _disposed;
 
@@ -44,6 +48,9 @@ namespace Spectralis.App.Services
             Playlists = new PlaylistManager(Library.Db);
             TagEditor = new TagEditorService();
             CoverArt = new CoverArtStore(AppPaths.CoverArtCacheDirectory);
+            VisualizerRegistry = new VisualizerRegistry();
+            VisualizerRegistration.RegisterAll(VisualizerRegistry);
+            VisualizerScripts = new VisualizerScriptManager(AppPaths.VisualizerScriptsDirectory);
         }
 
         public void Dispose()
