@@ -62,9 +62,10 @@ namespace Spectralis.App.Controls
         {
             base.Render(drawingContext);
             if (_visualizer == null) return;
+            if (Bounds.Width < 1 || Bounds.Height < 1) return;
 
-            int w = (int)Math.Max(1, Bounds.Width);
-            int h = (int)Math.Max(1, Bounds.Height);
+            int w = (int)Bounds.Width;
+            int h = (int)Bounds.Height;
 
             var info = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
             using var surface = SKSurface.Create(info);
