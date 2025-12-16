@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-10-15",
+    "current_date": "2025-12-15",
     "current_era": "avalonia",
-    "current_phase": "A3",
+    "current_phase": "A4",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A2 complete — Playlists (static+smart), TagEditor (TagLib r/w), Settings, EQ effect, Scrobbling (Last.fm), ReplayGain, DuplicateDetector, AlbumArtResolver, BrowseViewModel, FileDialogService",
+    "last_checkpoint": "checkpoint A3 complete — IVisualizer/IVisualizerRenderContext/VisualizerRegistry, BeatDetector, ColorPalette, SkiaVisualizerBase, 19 Skia visualizers, VisualizerCanvas (Skia render), VisualizerPickerControl, VisualizerView, VisualizerService, VisualizerAutoSwitch, VisualizerScriptHost (Jint), HtmlVisualizerHost stub, VisualizerScriptManager, VisualizerContextHelper, VisualizerPresetStore expanded, VisualizerSettingsViewModel, BeatSensitivity wiring, test suite (BeatDetector, VisualizerRegistry, ColorPalette, AudioFrameAdapter, VisualizerPresetStore, VisualizerContextHelper). BUG-003 FULLY FIXED. BUG-005 and BUG-006 partially fixed.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 280
+    "commits_completed": 336
   },
   "phases": [
     {
@@ -98,11 +98,11 @@
     {
       "phase": "A3",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Oct 16–Dec 15, 2025",
       "commits_planned": 56,
-      "commits_completed": 0,
-      "description": "Visualizer abstraction, Skia GPU rendering (11 visualizers ported)"
+      "commits_completed": 56,
+      "description": "IVisualizer/VisualizerRegistry, BeatDetector, ColorPalette, SkiaVisualizerBase, 19 Skia visualizers (bars, waveform, oscilloscope, VU, circular, mirror, heatmap, particles, starfield, lissajous, 3D bars, neon rings, beat pulse, reactive bg, waterfall, spiral, chromatic, mosaic, reactive gradient), VisualizerCanvas, VisualizerPickerControl, VisualizerScriptHost (Jint), HtmlVisualizerHost stub, VisualizerScriptManager, VisualizerContextHelper, VisualizerPresetStore, VisualizerSettingsViewModel, test suite. BUG-003 fixed. BUG-005/006 partial."
     },
     {
       "phase": "A4",
@@ -236,7 +236,7 @@
     },
     {
       "name": "App.Library",
-      "status": "pending",
+      "status": "complete",
       "phase": "A2",
       "introduced_bugs": [],
       "fixed_bugs": [],
@@ -244,11 +244,11 @@
     },
     {
       "name": "Core.Visualizers",
-      "status": "pending",
+      "status": "complete",
       "phase": "A3",
       "introduced_bugs": ["BUG-005", "BUG-006"],
       "fixed_bugs": ["BUG-003"],
-      "description": "Port 11 visualizers from GDI+ to Skia"
+      "description": "19 Skia visualizers, VisualizerRegistry, BeatDetector, ColorPalette, VisualizerContextHelper, scripted+HTML visualizer hosts"
     },
     {
       "name": "App.MainUI",
@@ -341,7 +341,7 @@
     {
       "id": "BUG-003",
       "name": "WASAPI loopback resource leak",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d58988e",
       "introduced_phase": "W3",
@@ -349,9 +349,10 @@
       "partial_fix_in": "d8f7236",
       "partial_fix_phase": "W3",
       "partial_fix_msg": "audio: LoopbackCaptureSafe disposes enumerator in finally (noticed original didn't)",
-      "full_fix_in": null,
+      "full_fix_in": "aa8b86e",
       "full_fix_phase": "A3",
-      "note": "LoopbackCapture.Start() creates MMDeviceEnumerator and MMDevice but neither is disposed — device held as COM ref until GC. LoopbackCaptureSafe fixes enumerator with finally{} but still doesn't dispose device after passing to WasapiLoopbackCapture."
+      "full_fix_msg": "fix: BUG-003 full fix — WasapiLoopbackCaptureAdapter disposes MMDeviceEnumerator+MMDevice",
+      "note": "LoopbackCapture.Start() creates MMDeviceEnumerator and MMDevice but neither is disposed — device held as COM ref until GC. Full fix in A3: WasapiLoopbackCaptureAdapter properly tracks enumerator, device, and capture; all disposed via DisposeCapture() helper."
     },
     {
       "id": "BUG-004",
@@ -371,26 +372,32 @@
     {
       "id": "BUG-005",
       "name": "FFT bounds check off-by-one",
-      "status": "pending",
+      "status": "partial_fix",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "9b220fc",
       "introduced_phase": "A3",
-      "partial_fix_in": null,
-      "partial_fix_phase": "A7",
+      "introduced_msg": "viz: particle system — beat-driven particle spawn, RGB fountain effect, BUG-005 injected",
+      "partial_fix_in": "64cf6d6",
+      "partial_fix_phase": "A3",
+      "partial_fix_msg": "fix: guard particle band index against spectrum length (partial)",
       "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_phase": "A10",
+      "note": "ParticleSystemVisualizer.RenderSkia() accessed Spectrum[i * Spectrum.Length / bandsToSpawn] — integer division can produce index equal to Spectrum.Length in edge cases. Partial fix adds Math.Min(..., Spectrum.Length-1) guard. Root cause (wrong indexing formula — should sample band average not first element) fixed in A10."
     },
     {
       "id": "BUG-006",
       "name": "3D visualizer GPU texture leak",
-      "status": "pending",
+      "status": "partial_fix",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "9246af4",
       "introduced_phase": "A3",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
+      "introduced_msg": "viz: 3D bars — isometric projection, face/top/side shading, SKSurface offscreen, BUG-006 injected",
+      "partial_fix_in": "7eeda81",
+      "partial_fix_phase": "A3",
+      "partial_fix_msg": "fix: dispose old offscreen surface before resize (partial, Dispose() still empty)",
       "full_fix_in": null,
-      "full_fix_phase": "A9"
+      "full_fix_phase": "A9",
+      "note": "Bar3DVisualizer reassigned _offscreen on window resize without calling Dispose() — GPU surface leaked each resize. Partial fix adds _offscreen?.Dispose() before reassign. Full fix in A9 also fixes the empty Dispose() override so the final surface is released when the visualizer is destroyed."
     },
     {
       "id": "BUG-007",
@@ -487,6 +494,7 @@
     "A0 complete: 20 commits, Jun 11-30 2025. Core (.NET 8) + App (Avalonia 11.1) + Tests (xUnit). Core interfaces, models, infrastructure, App shell. BUG-002 FIXED at 08eecf6.",
     "A1 complete: 44 commits, Jul 1-Aug 31 2025. Core audio pipeline (FftProcessor, WaveformBuffer, AudioPipeline, NaudioAudioEngine), library (LibraryDb/Repo/Scanner/Watcher/CoverArtStore), queue (QueuePersistence), streaming (YouTubeSource, SoundCloudSource, SpotifySource, StreamingRegistry). App: ViewModels (Main/Player/Library/Queue), views (MainWindow, NowPlaying, Library, Queue), controls (SpectrumBars, WaveformView), services (Position, CoverArt, Hotkey, Tray, PipelineWiring), converters, Tokens.axaml. BUG-009 INJECTED at f39e3b2.",
     "A2 complete: 28 commits, Sep 1-Oct 15 2025. Playlist system (static+smart, SmartPlaylistEvaluator, PlaylistRepository, PlaylistManager), PlaylistViewModel, TagEditorService (TagLib r/w+.bak backup), TagEditorViewModel+Dialog, LibraryImportExport (M3U+PLS), AppSettings+SettingsRepository, SettingsViewModel+Dialog, EqualizerEffect (BiQuad 10-band), IScrobbler+LastFmScrobbler (MD5 sig), ScrobbleService, ReplayGainReader (Xiph+ID3v2), DuplicateDetector, LibraryScanProgress, AlbumArtResolver, BrowseViewModel, FileDialogService, ScanProgressViewModel. ServiceContainer expanded.",
+    "A3 complete: 56 commits, Oct 16-Dec 15 2025. IVisualizer/IVisualizerRenderContext/VisualizerRegistry, BeatDetector (configurable sensitivity+gap), ColorPalette (Neon/Fire/Ocean/Mono+All), SkiaVisualizerBase, 19 Skia visualizers (spectrum-bars, waveform, oscilloscope, vu-meter, circular-spectrum, mirror, heatmap, particles, starfield, lissajous, bars-3d, neon-rings, beat-pulse, reactive-bg, waterfall, spiral, chromatic, mosaic, reactive-gradient), VisualizerCanvas, VisualizerPickerControl, VisualizerView, VisualizerService+AutoSwitch, VisualizerScriptHost (Jint sandbox), VisualizerScriptApi, VisualizerScriptManager, HtmlVisualizerHost stub, VisualizerContextHelper, VisualizerPresetStore expanded, VisualizerSettingsViewModel, AudioFrameAdapter. BUG-003 FULL FIX at aa8b86e. BUG-005 INJECTED at 9b220fc, PARTIAL FIX at 64cf6d6. BUG-006 INJECTED at 9246af4, PARTIAL FIX at 7eeda81.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
