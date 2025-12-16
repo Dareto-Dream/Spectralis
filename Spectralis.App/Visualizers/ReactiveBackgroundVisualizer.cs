@@ -1,5 +1,6 @@
 using System;
 using SkiaSharp;
+using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Visualizers
 {
@@ -14,10 +15,10 @@ namespace Spectralis.App.Visualizers
 
         protected override void RenderSkia(SKCanvas canvas, double width, double height)
         {
-            float energy = 0f;
-            for (int i = 0; i < Math.Min(16, Spectrum.Length); i++) energy += Spectrum[i];
-            energy /= Math.Max(1, Math.Min(16, Spectrum.Length));
-            _smoothEnergy = _smoothEnergy * 0.9f + energy * 0.1f;
+            float bass = VisualizerContextHelper.BassEnergy(Spectrum);
+            float mid = VisualizerContextHelper.MidEnergy(Spectrum);
+            float energy = bass * 0.7f + mid * 0.3f;
+            _smoothEnergy = VisualizerContextHelper.SmoothToward(_smoothEnergy, energy, 0.1f);
 
             _hue = (_hue + _smoothEnergy * 1.2f) % 360f;
             _val = 0.1f + _smoothEnergy * 0.6f;
