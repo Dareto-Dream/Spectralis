@@ -31,12 +31,13 @@ namespace Spectralis.App.Visualizers
             {
                 for (int col = 0; col < cols; col++)
                 {
-                    int band = (col * Spectrum.Length / cols + (int)(_timePhase * 5)) % Spectrum.Length;
+                    int band = Math.Abs((col * Spectrum.Length / cols + (int)(_timePhase * 5)) % Spectrum.Length);
                     float energy = Spectrum[band];
 
-                    float t = energy * (1f - row / (float)rows * 0.5f);
+                    float rowFade = 1f - row / (float)rows * 0.5f;
+                    float t = Math.Clamp(energy * rowFade, 0f, 1f);
                     var color = _palette.Sample(t);
-                    byte alpha = (byte)(60 + energy * 195);
+                    byte alpha = (byte)(60 + Math.Min(energy, 1f) * 195);
 
                     paint.Color = new SKColor(color.Red, color.Green, color.Blue, alpha);
                     canvas.DrawRoundRect(
