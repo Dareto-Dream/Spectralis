@@ -22,7 +22,8 @@ namespace Spectralis.App.Visualizers
             float keyW = w / keys;
 
             using var paint = new SKPaint { IsAntialias = true };
-            using var textPaint = new SKPaint { IsAntialias = true, TextSize = 10f, Color = new SKColor(160, 160, 200) };
+            float labelSize = Math.Clamp(keyW * 0.35f, 8f, 14f);
+            using var textPaint = new SKPaint { IsAntialias = true, TextSize = labelSize, Color = new SKColor(160, 160, 200) };
 
             for (int note = 0; note < keys; note++)
             {
@@ -42,7 +43,8 @@ namespace Spectralis.App.Visualizers
                     : HsvToColor(hue, 0.7f, 0.95f, (byte)(100 + energy * 155));
 
                 canvas.DrawRect(x + 1, h - barH, keyW - 2, barH, paint);
-                canvas.DrawText(NoteNames[note], x + keyW / 2f - 6f, h - 4f, textPaint);
+                float labelX = x + keyW / 2f - textPaint.MeasureText(NoteNames[note]) / 2f;
+                canvas.DrawText(NoteNames[note], labelX, h - 4f, textPaint);
             }
         }
     }
