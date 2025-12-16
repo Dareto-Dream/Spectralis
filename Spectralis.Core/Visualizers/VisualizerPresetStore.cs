@@ -55,5 +55,18 @@ namespace Spectralis.Core.Visualizers
             list.RemoveAll(p => p.Id == id);
             await SaveAsync(list);
         }
+
+        public async Task DeleteAllAsync(string visualizerId)
+        {
+            var list = await LoadAsync();
+            list.RemoveAll(p => p.VisualizerId == visualizerId);
+            await SaveAsync(list);
+        }
+
+        public async Task<List<VisualizerPreset>> GetForVisualizerAsync(string visualizerId)
+        {
+            var list = await LoadAsync();
+            return list.FindAll(p => p.VisualizerId == visualizerId);
+        }
     }
 }
