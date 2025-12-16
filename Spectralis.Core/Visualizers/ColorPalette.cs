@@ -29,9 +29,24 @@ namespace Spectralis.Core.Visualizers
             new SKColor(150, 150, 150),
             new SKColor(255, 255, 255));
 
+        public string Name { get; }
         private readonly SKColor[] _stops;
 
-        public ColorPalette(params SKColor[] stops) => _stops = stops;
+        public ColorPalette(params SKColor[] stops) : this(string.Empty, stops) { }
+
+        public ColorPalette(string name, params SKColor[] stops)
+        {
+            Name = name;
+            _stops = stops;
+        }
+
+        public static readonly ColorPalette[] All = { Neon, Fire, Ocean, Monochrome };
+
+        public SKColor SampleWithAlpha(float t, byte alpha)
+        {
+            var c = Sample(t);
+            return c.WithAlpha(alpha);
+        }
 
         public SKColor Sample(float t)
         {
