@@ -67,7 +67,8 @@ namespace Spectralis.Core.Capsule
         {
             var buf = new byte[4];
             int read = await stream.ReadAsync(buf);
-            if (read < 4) return;
+            if (read < 4) throw new InvalidDataException("File too small to be a valid capsule");
+            // Note: magic bytes not yet enforced — ZipArchive constructor below validates the format
         }
     }
 }
