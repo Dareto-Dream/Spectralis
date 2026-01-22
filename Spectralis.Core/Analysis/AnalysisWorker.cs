@@ -63,15 +63,16 @@ namespace Spectralis.Core.Analysis
             return mono;
         }
 
-        private float[] ComputeChromagram(float[] samples, int sampleRate)
+        private float[] ComputeChromagram(float[] samples, int sampleRate, System.Threading.CancellationToken ct = default)
         {
             var chroma = new float[12];
             int windowSize = sampleRate / 8;
-            int hopSize = windowSize / 4;
+            int hopSize = windowSize * 2;
             int frames = 0;
 
             for (int i = 0; i + windowSize < samples.Length; i += hopSize)
             {
+                ct.ThrowIfCancellationRequested();
                 for (int note = 0; note < 12; note++)
                 {
                     float freq = 261.63f * MathF.Pow(2f, note / 12f);
