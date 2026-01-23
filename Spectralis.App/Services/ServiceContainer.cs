@@ -1,6 +1,8 @@
 using System;
 using Spectralis.App.Visualizers;
+using Spectralis.Core.Analysis;
 using Spectralis.Core.Audio;
+using Spectralis.Core.Capsule;
 using Spectralis.Core.Infrastructure;
 using Spectralis.Core.Library;
 using Spectralis.Core.Playlists;
@@ -27,6 +29,9 @@ namespace Spectralis.App.Services
         public CoverArtStore CoverArt { get; }
         public VisualizerRegistry VisualizerRegistry { get; }
         public VisualizerScriptManager VisualizerScripts { get; }
+        public AnalysisWorker Analysis { get; }
+        public AnalysisCache AnalysisCache { get; }
+        public CapsuleReader CapsuleReader { get; }
 
         private bool _disposed;
 
@@ -51,6 +56,9 @@ namespace Spectralis.App.Services
             VisualizerRegistry = new VisualizerRegistry();
             VisualizerRegistration.RegisterAll(VisualizerRegistry);
             VisualizerScripts = new VisualizerScriptManager(AppPaths.VisualizerScriptsDirectory);
+            Analysis = new AnalysisWorker();
+            AnalysisCache = new AnalysisCache(AppPaths.AnalysisCachePath);
+            CapsuleReader = new CapsuleReader();
         }
 
         public void Dispose()
