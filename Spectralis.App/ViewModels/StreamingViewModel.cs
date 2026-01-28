@@ -40,6 +40,7 @@ namespace Spectralis.App.ViewModels
         private async Task SearchAsync()
         {
             if (string.IsNullOrWhiteSpace(SearchQuery)) return;
+            if (string.IsNullOrEmpty(SelectedSource)) { StatusMessage = "No streaming source available."; return; }
 
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
