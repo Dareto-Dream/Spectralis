@@ -38,7 +38,8 @@ namespace Spectralis.Core.Scrobbling
             {
                 artist_name = track.Artist ?? string.Empty,
                 track_name = track.Title ?? string.Empty,
-                release_name = track.Album ?? string.Empty
+                release_name = track.Album ?? string.Empty,
+                additional_info = new { music_service_name = "Spectralis" }
             };
 
             var listen = timestamp.HasValue
