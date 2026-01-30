@@ -14,6 +14,8 @@ namespace Spectralis.App.ViewModels
         public PlayerViewModel Player { get; }
         public LibraryViewModel Library { get; }
         public QueueViewModel Queue { get; }
+        public StreamingViewModel Streaming { get; }
+        public BpmViewModel Bpm { get; }
 
         [ObservableProperty] private bool _isLibraryVisible = true;
         [ObservableProperty] private bool _isQueueVisible = true;
@@ -25,9 +27,14 @@ namespace Spectralis.App.ViewModels
             Player = new PlayerViewModel(services);
             Library = new LibraryViewModel(services);
             Queue = new QueueViewModel(services);
+            Streaming = new StreamingViewModel(services.Streaming, services.Queue, services.AudioEngine);
+            Bpm = new BpmViewModel(services.Analysis, services.AnalysisCache);
 
             _services.AudioEngine.TrackLoaded += (s, t) =>
+            {
                 StatusMessage = $"Now playing: {t.Artist} — {t.Title}";
+                _ = Bpm.LoadTrackAsync(t.FilePath);
+            };
         }
 
         [RelayCommand]
