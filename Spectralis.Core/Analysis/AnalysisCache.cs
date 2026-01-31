@@ -46,9 +46,14 @@ namespace Spectralis.Core.Analysis
         public async Task SaveAsync()
         {
             string dir = Path.GetDirectoryName(_filePath)!;
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            string tmp = _filePath + ".tmp";
             var list = new List<CachedAnalysis>(_cache.Values);
-            await File.WriteAllTextAsync(_filePath, JsonSerializer.Serialize(list, _opts));
+            await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(list, _opts));
+            if (File.Exists(_filePath)) File.Delete(_filePath);
+            File.Move(tmp, _filePath);
         }
 
         public CachedAnalysis? Get(string filePath)
