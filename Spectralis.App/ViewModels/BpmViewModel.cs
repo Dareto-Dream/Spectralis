@@ -30,6 +30,13 @@ namespace Spectralis.App.ViewModels
 
         public async Task LoadTrackAsync(string filePath)
         {
+            if (filePath.StartsWith("streaming://", StringComparison.OrdinalIgnoreCase))
+            {
+                Bpm = 0f; Key = string.Empty; LoudnessLufs = 0f;
+                StatusMessage = "Analysis not available for streaming tracks";
+                return;
+            }
+
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
 
