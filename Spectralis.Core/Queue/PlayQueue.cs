@@ -68,7 +68,20 @@ namespace Spectralis.Core.Queue
             else if (from < _currentIndex && to >= _currentIndex) _currentIndex--;
             else if (from > _currentIndex && to <= _currentIndex) _currentIndex++;
 
-            if (IsShuffled) RebuildShuffleOrder();
+            if (IsShuffled && _shuffleOrder != null)
+            {
+                for (int i = 0; i < _shuffleOrder.Count; i++)
+                {
+                    int idx = _shuffleOrder[i];
+                    if (idx == from)
+                        _shuffleOrder[i] = to;
+                    else if (from < to && idx > from && idx <= to)
+                        _shuffleOrder[i] = idx - 1;
+                    else if (from > to && idx >= to && idx < from)
+                        _shuffleOrder[i] = idx + 1;
+                }
+            }
+
             QueueChanged?.Invoke(this, EventArgs.Empty);
         }
 
