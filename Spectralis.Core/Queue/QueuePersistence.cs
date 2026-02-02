@@ -54,9 +54,14 @@ namespace Spectralis.Core.Queue
             }
 
             string json = JsonSerializer.Serialize(snapshot, _opts);
-            string dir = Path.GetDirectoryName(_filePath)!;
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            await File.WriteAllTextAsync(_filePath, json);
+            string? dir = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            string tmp = _filePath + ".tmp";
+            await File.WriteAllTextAsync(tmp, json);
+            if (File.Exists(_filePath)) File.Delete(_filePath);
+            File.Move(tmp, _filePath);
         }
 
         public async Task<QueueSnapshot?> LoadAsync()
@@ -85,7 +90,7 @@ namespace Spectralis.Core.Queue
                     Artist = item.Artist,
                     Duration = item.Duration
                 };
-                queue.Enqueue(new PlayQueueItem(track));
+                queue.Add(new PlayQueueItem(track));
             }
 
             queue.SetShuffle(snapshot.IsShuffled);
