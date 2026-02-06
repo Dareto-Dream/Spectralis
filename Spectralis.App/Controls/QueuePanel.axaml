@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Spectralis.App.ViewModels"
+             xmlns:local="clr-namespace:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Controls.QueuePanel">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6" Spacing="4">
+      <TextBlock Text="Queue" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      <TextBlock Text="{Binding TotalCount, StringFormat='({0})'}" Opacity="0.5"
+                 VerticalAlignment="Center" Margin="2,0"/>
+      <Border Width="1" Background="{DynamicResource SeparatorColor}" Margin="4,0"/>
+      <Button Content="⇄" ToolTip.Tip="Shuffle" Width="28" Height="28"
+              Command="{Binding ToggleShuffleCommand}" Background="Transparent"/>
+      <Button Content="↺" ToolTip.Tip="Repeat" Width="28" Height="28"
+              Command="{Binding CycleRepeatCommand}" Background="Transparent"/>
+      <Button Content="✕ Clear" Height="28" Padding="6,0"
+              Command="{Binding ClearCommand}" Background="Transparent" Margin="4,0,0,0"/>
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Top" Margin="8,0,8,6">
+      <TextBox Text="{Binding SearchText, Mode=TwoWay}"
+               Watermark="Filter queue…" Height="28"/>
+    </StackPanel>
+
+    <ScrollViewer>
+      <ItemsControl ItemsSource="{Binding FilteredItems}"
+                    x:Name="QueueList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <local:QueueItemControl DataContext="{Binding}"
+                                    RemoveRequested="OnItemRemoveRequested"
+                                    MoveRequested="OnItemMoveRequested"/>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>
