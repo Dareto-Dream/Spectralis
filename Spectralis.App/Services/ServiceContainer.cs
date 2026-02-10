@@ -32,6 +32,8 @@ namespace Spectralis.App.Services
         public AnalysisWorker Analysis { get; }
         public AnalysisCache AnalysisCache { get; }
         public CapsuleReader CapsuleReader { get; }
+        public QueuePersistence QueuePersistence { get; }
+        public QueueService QueueService { get; }
 
         private bool _disposed;
 
@@ -59,6 +61,8 @@ namespace Spectralis.App.Services
             Analysis = new AnalysisWorker();
             AnalysisCache = new AnalysisCache(AppPaths.AnalysisCachePath);
             CapsuleReader = new CapsuleReader();
+            QueuePersistence = new QueuePersistence(AppPaths.QueueSnapshotPath);
+            QueueService = new QueueService(Queue, QueuePersistence);
         }
 
         public void Dispose()
@@ -71,6 +75,7 @@ namespace Spectralis.App.Services
             Library.Dispose();
             Streaming.Dispose();
             Playlists.Dispose();
+            QueueService.Dispose();
         }
     }
 }
