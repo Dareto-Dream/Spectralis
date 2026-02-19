@@ -44,11 +44,13 @@ namespace Spectralis.Core.Queue
 
             foreach (var item in queue.Items)
             {
+                if (string.IsNullOrEmpty(item.Track?.FilePath)) continue;
+                if (item.Track.FilePath.StartsWith("streaming://", StringComparison.OrdinalIgnoreCase)) continue;
                 snapshot.Items.Add(new QueueSnapshotItem
                 {
                     FilePath = item.Track.FilePath,
-                    Title = item.Track.Title,
-                    Artist = item.Track.Artist,
+                    Title = item.Track.Title ?? string.Empty,
+                    Artist = item.Track.Artist ?? string.Empty,
                     Duration = item.Track.Duration
                 });
             }
