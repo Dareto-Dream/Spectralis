@@ -36,8 +36,15 @@ namespace Spectralis.App.Services
         public void EnqueueNext(TrackInfo track)
         {
             int insertAt = _queue.CurrentIndex + 1;
-            if (insertAt > _queue.Count) insertAt = _queue.Count;
-            _queue.Add(new PlayQueueItem(track));
+            if (insertAt <= 0 || insertAt > _queue.Count)
+            {
+                _queue.Add(new PlayQueueItem(track));
+                return;
+            }
+            var item = new PlayQueueItem(track);
+            _queue.Add(item);
+            if (_queue.Count > 1)
+                _queue.Move(_queue.Count - 1, insertAt);
         }
 
         private void OnQueueChanged(object? sender, EventArgs e) => _dirty = true;
