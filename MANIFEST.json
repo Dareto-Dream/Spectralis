@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2026-01-31",
+    "current_date": "2026-02-28",
     "current_era": "avalonia",
-    "current_phase": "A5",
+    "current_phase": "A6",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A4 complete — BPM/Key analysis pipeline (BpmAnalyzer, KeyAnalyzer, AnalysisWorker, AnalysisCache, BeatGrid), streaming Avalonia port (StreamingViewModel, StreamingSearchView, StreamingService), capsule v4 (CapsuleReader/Writer, CapsuleViewModel, CapsuleService), scrobbling overhaul (ScrobbleService multi-scrobbler, offline queue, ListenBrainzScrobbler with music_service_name, ListeningHistoryViewModel, ScrobblingStatusViewModel), BpmViewModel with cache-first lookup, BeatGridOverlayControl, MetronomeView, MainViewModel wired to BPM auto-analysis. No new bugs. BUG-005/006 remain partial.",
+    "last_checkpoint": "checkpoint A5 complete — BUG-012 FULLY FIXED (PlayQueue.Move() now updates _shuffleOrder indices in-place). QueueEventArgs, QueuePersistence atomic write + streaming guard, QueueService (dirty-flag save, EnqueueNext insert fix), QueueViewModel enhanced (DragMoveCommand, FilteredItems, SearchText, ToggleShuffle, CycleRepeat, TotalCount/Duration), QueueItemControl (drag handle + remove button), QueuePanel (drag pointer events + row estimator), DragDropBehavior (Avalonia.Xaml.Interactivity), QueueContextMenuHelper, NowPlayingHighlight, PlaylistQueueBridge, QueueHistoryService (back/forward stack), QueueSearchViewModel (live filter + JumpTo). ServiceContainer wired QueuePersistence + QueueService. Tests: PlayQueueTests (9 cases incl. BUG-012 regression), QueuePersistenceTests, QueueViewModelTests.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 374
+    "commits_completed": 396
   },
   "phases": [
     {
@@ -116,11 +116,11 @@
     {
       "phase": "A5",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Feb 1–28, 2026",
       "commits_planned": 22,
-      "commits_completed": 0,
-      "description": "Queue system Avalonia rewrite with full drag-reorder, BUG-012 full fix"
+      "commits_completed": 22,
+      "description": "Queue system Avalonia rewrite with full drag-reorder, BUG-012 full fix — PlayQueue.Move() in-place shuffle index update, QueueItemControl, QueuePanel, DragDropBehavior, QueueService, QueueHistoryService, QueueSearchViewModel"
     },
     {
       "phase": "A6",
@@ -260,11 +260,11 @@
     },
     {
       "name": "App.Queue",
-      "status": "pending",
+      "status": "complete",
       "phase": "A5",
       "introduced_bugs": [],
       "fixed_bugs": ["BUG-012"],
-      "description": "Queue panel drag-reorder, BUG-012 full fix"
+      "description": "Queue panel drag-reorder, BUG-012 full fix — Move() updates _shuffleOrder in-place"
     },
     {
       "name": "Core.Lyrics",
@@ -440,15 +440,15 @@
     {
       "id": "BUG-012",
       "name": "Queue index out of sync after shuffle",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d222b3d",
       "introduced_phase": "W4",
       "partial_fix_in": "050187d",
       "partial_fix_phase": "W4",
-      "full_fix_in": null,
+      "full_fix_in": "7d75f7b",
       "full_fix_phase": "A5",
-      "note": "Next() in shuffle mode used _currentIndex as shuffle position. Partial fix adds _shufflePos. Move() still doesn't update _shuffleOrder indices after drag-reorder."
+      "note": "Next() in shuffle mode used _currentIndex as shuffle position. Partial fix adds _shufflePos. Full fix in A5: Move() now updates _shuffleOrder indices in-place (instead of RebuildShuffleOrder) so drag-reorder preserves shuffle traversal history."
     }
   ],
   "notes": [
@@ -465,6 +465,7 @@
     "A2 complete: 28 commits, Sep 1-Oct 15 2025.",
     "A3 complete: 56 commits, Oct 16-Dec 15 2025. BUG-003 FULL FIX at aa8b86e. BUG-005 INJECTED+PARTIAL FIX. BUG-006 INJECTED+PARTIAL FIX.",
     "A4 complete: 38 commits, Dec 16-Jan 31 2026. No new bugs. BUG-005/006 remain partial.",
+    "A5 complete: 22 commits, Feb 1-28 2026. BUG-012 FULLY FIXED at 7d75f7b (Move() in-place shuffle index update).",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
