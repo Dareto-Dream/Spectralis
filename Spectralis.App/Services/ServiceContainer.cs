@@ -5,6 +5,7 @@ using Spectralis.Core.Audio;
 using Spectralis.Core.Capsule;
 using Spectralis.Core.Infrastructure;
 using Spectralis.Core.Library;
+using Spectralis.Core.Lyrics;
 using Spectralis.Core.Playlists;
 using Spectralis.Core.Queue;
 using Spectralis.Core.Settings;
@@ -34,6 +35,8 @@ namespace Spectralis.App.Services
         public CapsuleReader CapsuleReader { get; }
         public QueuePersistence QueuePersistence { get; }
         public QueueService QueueService { get; }
+        public LyricsAnnotationStore LyricsAnnotations { get; }
+        public LyricsLoader LyricsLoader { get; }
 
         private bool _disposed;
 
@@ -63,6 +66,8 @@ namespace Spectralis.App.Services
             CapsuleReader = new CapsuleReader();
             QueuePersistence = new QueuePersistence(AppPaths.QueueSnapshotPath);
             QueueService = new QueueService(Queue, QueuePersistence);
+            LyricsAnnotations = new LyricsAnnotationStore();
+            LyricsLoader = new LyricsLoader();
         }
 
         public void Dispose()
