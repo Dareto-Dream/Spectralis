@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.LyricsAnnotationPanel"
+             Background="#0D0D14">
+
+  <Grid RowDefinitions="Auto, *, Auto">
+
+    <TextBlock Grid.Row="0"
+               Text="Annotations"
+               FontSize="11"
+               Foreground="#555"
+               TextTransform="Uppercase"
+               LetterSpacing="1"
+               Margin="12,8" />
+
+    <ListBox Grid.Row="1"
+             ItemsSource="{Binding Annotations}"
+             Background="Transparent"
+             BorderThickness="0">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <StackPanel Spacing="4" Margin="8,6">
+            <TextBlock Text="{Binding TimestampKey}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="#FF6EC7" />
+            <TextBlock Text="{Binding LineText}"
+                       FontSize="12"
+                       Foreground="#AAA"
+                       FontStyle="Italic" />
+            <TextBlock Text="{Binding Explanation}"
+                       FontSize="12"
+                       Foreground="#CCC"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <!-- Add annotation bar -->
+    <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="8">
+      <TextBox Grid.Column="0"
+               x:Name="NewAnnotationBox"
+               Watermark="Add annotation for current line…"
+               Background="#1A1A2E"
+               Foreground="White"
+               BorderBrush="#333"
+               Padding="8,6" />
+      <Button Grid.Column="1"
+              Content="Add"
+              Command="{Binding AddAnnotationCommand}"
+              CommandParameter="{Binding #NewAnnotationBox.Text}"
+              Margin="8,0,0,0"
+              Background="#2A2A4E"
+              Foreground="White"
+              Padding="12,6" />
+    </Grid>
+
+  </Grid>
+</UserControl>
