@@ -37,6 +37,7 @@ namespace Spectralis.App.Services
         public QueueService QueueService { get; }
         public LyricsAnnotationStore LyricsAnnotations { get; }
         public LyricsLoader LyricsLoader { get; }
+        public LyricsService Lyrics { get; }
 
         private bool _disposed;
 
@@ -68,6 +69,7 @@ namespace Spectralis.App.Services
             QueueService = new QueueService(Queue, QueuePersistence);
             LyricsAnnotations = new LyricsAnnotationStore();
             LyricsLoader = new LyricsLoader();
+            Lyrics = new LyricsService();
         }
 
         public void Dispose()
@@ -81,6 +83,7 @@ namespace Spectralis.App.Services
             Streaming.Dispose();
             Playlists.Dispose();
             QueueService.Dispose();
+            Lyrics.Dispose();
         }
     }
 }
