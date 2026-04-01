@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2026-02-28",
+    "current_date": "2026-03-31",
     "current_era": "avalonia",
-    "current_phase": "A6",
+    "current_phase": "A7",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A5 complete — BUG-012 FULLY FIXED (PlayQueue.Move() now updates _shuffleOrder indices in-place). QueueEventArgs, QueuePersistence atomic write + streaming guard, QueueService (dirty-flag save, EnqueueNext insert fix), QueueViewModel enhanced (DragMoveCommand, FilteredItems, SearchText, ToggleShuffle, CycleRepeat, TotalCount/Duration), QueueItemControl (drag handle + remove button), QueuePanel (drag pointer events + row estimator), DragDropBehavior (Avalonia.Xaml.Interactivity), QueueContextMenuHelper, NowPlayingHighlight, PlaylistQueueBridge, QueueHistoryService (back/forward stack), QueueSearchViewModel (live filter + JumpTo). ServiceContainer wired QueuePersistence + QueueService. Tests: PlayQueueTests (9 cases incl. BUG-012 regression), QueuePersistenceTests, QueueViewModelTests.",
+    "last_checkpoint": "checkpoint A6 complete — lyrics system. LrcToken, LrcParser (regex timestamp/metadata/enhanced), LrcFile (GetCurrentLine/Index, Offset metadata), LrcLine/EnhancedWord, LyricsSync (50ms Timer, LineChanged/WordHighlighted events), LyricsLoader (sidecar .lrc/.LRC lookup), LyricsAnnotation model + LyricsAnnotationFile, LyricsAnnotationStore (atomic .lrc.json sidecar, Upsert/Remove), LyricsViewModel (annotation CRUD + RefreshAnnotationList), LyricsDisplayControl.axaml (current line + word highlight + annotation panel), TimingStudioViewModel (stamp/nudge/export commands), TimingStudioView.axaml (Space key to stamp), LyricsSettingsDialog, LyricsMenuHelper, LrcExporter (round-trip LRC string), LrcSearchIndex, LyricsService (settings-aware, search-indexed). BUG-007 injected: GetCurrentLineIndex uses < instead of <= (off-by-one). Tests: LrcParserTests (8), LyricsSyncTests (5), LyricsLoaderTests (5), LyricsAnnotationTests (4), LrcExporterTests (3). ServiceContainer wired LyricsAnnotations + LyricsLoader + LyricsService.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 396
+    "commits_completed": 422
   },
   "phases": [
     {
@@ -125,11 +125,11 @@
     {
       "phase": "A6",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Mar 1–31, 2026",
       "commits_planned": 26,
-      "commits_completed": 0,
-      "description": "Lyrics system (LRC, sync, Timing Studio, annotations)"
+      "commits_completed": 26,
+      "description": "Lyrics system (LRC, sync, Timing Studio, annotations). BUG-007 injected."
     },
     {
       "phase": "A7",
@@ -268,7 +268,7 @@
     },
     {
       "name": "Core.Lyrics",
-      "status": "pending",
+      "status": "complete",
       "phase": "A6",
       "introduced_bugs": ["BUG-007"],
       "fixed_bugs": [],
@@ -387,12 +387,13 @@
     {
       "id": "BUG-007",
       "name": "Lyric timeline index off-by-one",
-      "status": "pending",
+      "status": "injected",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "040af68",
       "introduced_phase": "A6",
       "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_phase": "A10",
+      "note": "GetCurrentLineIndex uses < instead of <= so lines trigger one tick late. Injects subtle sync drift, visible on dense lyrics."
     },
     {
       "id": "BUG-008",
@@ -466,6 +467,7 @@
     "A3 complete: 56 commits, Oct 16-Dec 15 2025. BUG-003 FULL FIX at aa8b86e. BUG-005 INJECTED+PARTIAL FIX. BUG-006 INJECTED+PARTIAL FIX.",
     "A4 complete: 38 commits, Dec 16-Jan 31 2026. No new bugs. BUG-005/006 remain partial.",
     "A5 complete: 22 commits, Feb 1-28 2026. BUG-012 FULLY FIXED at 7d75f7b (Move() in-place shuffle index update).",
+    "A6 complete: 26 commits, Mar 1-31 2026. BUG-007 INJECTED at 040af68 (GetCurrentLineIndex off-by-one, < vs <=).",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
