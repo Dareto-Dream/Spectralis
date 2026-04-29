@@ -1,5 +1,6 @@
 using System;
 using Spectralis.App.Visualizers;
+using Spectralis.Core.AlbumWorld;
 using Spectralis.Core.Analysis;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Capsule;
@@ -11,6 +12,7 @@ using Spectralis.Core.Queue;
 using Spectralis.Core.Settings;
 using Spectralis.Core.Streaming;
 using Spectralis.Core.Tags;
+using Spectralis.Core.Timeline;
 using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Services
@@ -38,6 +40,10 @@ namespace Spectralis.App.Services
         public LyricsAnnotationStore LyricsAnnotations { get; }
         public LyricsLoader LyricsLoader { get; }
         public LyricsService Lyrics { get; }
+        public CapsuleTrustStore CapsuleTrust { get; }
+        public CapsuleCache CapsuleCache { get; }
+        public AlbumWorldService AlbumWorld { get; }
+        public TimelineService Timeline { get; }
 
         private bool _disposed;
 
@@ -70,6 +76,10 @@ namespace Spectralis.App.Services
             LyricsAnnotations = new LyricsAnnotationStore();
             LyricsLoader = new LyricsLoader();
             Lyrics = new LyricsService();
+            CapsuleTrust = new CapsuleTrustStore(AppPaths.CapsuleTrustStorePath);
+            CapsuleCache = new CapsuleCache(AppPaths.CapsuleCacheDirectory);
+            AlbumWorld = new AlbumWorldService(AppPaths.AlbumWorldCacheDirectory);
+            Timeline = new TimelineService();
         }
 
         public void Dispose()
@@ -84,6 +94,8 @@ namespace Spectralis.App.Services
             Playlists.Dispose();
             QueueService.Dispose();
             Lyrics.Dispose();
+            Timeline.Dispose();
+            AlbumWorld.Dispose();
         }
     }
 }
