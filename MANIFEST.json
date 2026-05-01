@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2026-03-31",
+    "current_date": "2026-04-30",
     "current_era": "avalonia",
-    "current_phase": "A7",
+    "current_phase": "A8",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A6 complete — lyrics system. LrcToken, LrcParser (regex timestamp/metadata/enhanced), LrcFile (GetCurrentLine/Index, Offset metadata), LrcLine/EnhancedWord, LyricsSync (50ms Timer, LineChanged/WordHighlighted events), LyricsLoader (sidecar .lrc/.LRC lookup), LyricsAnnotation model + LyricsAnnotationFile, LyricsAnnotationStore (atomic .lrc.json sidecar, Upsert/Remove), LyricsViewModel (annotation CRUD + RefreshAnnotationList), LyricsDisplayControl.axaml (current line + word highlight + annotation panel), TimingStudioViewModel (stamp/nudge/export commands), TimingStudioView.axaml (Space key to stamp), LyricsSettingsDialog, LyricsMenuHelper, LrcExporter (round-trip LRC string), LrcSearchIndex, LyricsService (settings-aware, search-indexed). BUG-007 injected: GetCurrentLineIndex uses < instead of <= (off-by-one). Tests: LrcParserTests (8), LyricsSyncTests (5), LyricsLoaderTests (5), LyricsAnnotationTests (4), LrcExporterTests (3). ServiceContainer wired LyricsAnnotations + LyricsLoader + LyricsService.",
+    "last_checkpoint": "checkpoint A7 complete — capsules + reactive timelines + Album World. CapsuleManifest v5 (trust block), CapsuleSigner (ECDSA P-256 sign/verify), CapsulePackager (ZIP atomic write + manifest read), CapsuleV5Reader, CapsuleV5Service, CapsuleTrustStore (trust/revoke/persist), CapsuleCache (30-day index), CapsuleV5Dialog. ReactiveTimeline/TimelineTrack/TimelineEvent models, TimelineRuntime (16ms tick, EventStarted/Ended), TimelineSerializer (atomic JSON), TimelineService, TimelineEventBuilder (LrcFile → timeline). AlbumWorldManifest (tracks + achievements), AlbumWorldSession (RecordPlay, Unlock, EarnAchievement, Load/Save), AchievementEngine (play_count/all_tracks/track_plays conditions), UnlockEvaluator, WorldPlayStatsTracker, AlbumWorldService (cache + session), AlbumWorldHost.axaml, AlbumWorldViewModel, SpectralBridge (JSON cmd dispatch). Tests: CapsuleSignerTests (5), CapsulePackagerTests (3), CapsuleTrustStoreTests (4), TimelineRuntimeTests (3), TimelineSerializerTests (3), AchievementEngineTests (4), UnlockEvaluatorTests (4). ServiceContainer wired all A7 services.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 422
+    "commits_completed": 454
   },
   "phases": [
     {
@@ -134,11 +134,11 @@
     {
       "phase": "A7",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Apr 1–30, 2026",
       "commits_planned": 32,
-      "commits_completed": 0,
-      "description": "Capsules (signed), reactive timelines, Album World"
+      "commits_completed": 32,
+      "description": "Capsules v5 (ECDSA signed, trust store, cache), reactive timelines, Album World (.spectral)"
     },
     {
       "phase": "A8",
@@ -276,11 +276,11 @@
     },
     {
       "name": "Core.Metadata",
-      "status": "pending",
+      "status": "complete",
       "phase": "A7",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "Capsules, Ed25519 signing, reactive timelines"
+      "description": "Capsules v5 (ECDSA signing, trust store, cache), reactive timelines, Album World"
     },
     {
       "name": "Backend.SharedPlay",
@@ -468,6 +468,7 @@
     "A4 complete: 38 commits, Dec 16-Jan 31 2026. No new bugs. BUG-005/006 remain partial.",
     "A5 complete: 22 commits, Feb 1-28 2026. BUG-012 FULLY FIXED at 7d75f7b (Move() in-place shuffle index update).",
     "A6 complete: 26 commits, Mar 1-31 2026. BUG-007 INJECTED at 040af68 (GetCurrentLineIndex off-by-one, < vs <=).",
+    "A7 complete: 32 commits, Apr 1-30 2026. Capsules v5 (ECDSA P-256), Album World (.spectral), reactive timelines. No new bugs.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
