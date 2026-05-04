@@ -26,6 +26,15 @@ namespace Spectralis.App.Services
             _serverUri = serverUri;
         }
 
+        public async Task ReconnectAsync(string roomCode, string userId)
+        {
+            _ws = new ClientWebSocket();
+            var localCts = new CancellationTokenSource();
+            _cts = localCts;
+            await _ws.ConnectAsync(new Uri($"{_serverUri}/ws/{roomCode}?user={userId}"), localCts.Token);
+            _ = ReceiveLoopAsync(localCts.Token);
+        }
+
         public async Task ConnectAsync(string roomCode, string userId)
         {
             _ws = new ClientWebSocket();
