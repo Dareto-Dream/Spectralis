@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.BroadcastSettingsPanel"
+             Background="#0D0D0D">
+
+  <StackPanel Margin="20" Spacing="20">
+
+    <TextBlock Text="Broadcast &amp; Sharing" FontSize="18" FontWeight="SemiBold" Foreground="White" />
+
+    <!-- Discord RPC -->
+    <Border Background="#111" CornerRadius="6" Padding="16">
+      <StackPanel Spacing="10">
+        <CheckBox Content="Discord Rich Presence"
+                  IsChecked="{Binding DiscordRpcEnabled}"
+                  Foreground="White" />
+        <Grid ColumnDefinitions="Auto, 12, *" IsVisible="{Binding DiscordRpcEnabled}">
+          <TextBlock Grid.Column="0" Text="Client ID" Foreground="#888" VerticalAlignment="Center" />
+          <TextBox Grid.Column="2"
+                   Text="{Binding DiscordClientId}"
+                   Background="#1A1A1A"
+                   Foreground="White"
+                   Padding="8,6" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- OBS Overlay -->
+    <Border Background="#111" CornerRadius="6" Padding="16">
+      <StackPanel Spacing="10">
+        <CheckBox Content="OBS Browser Overlay (port 5128)"
+                  IsChecked="{Binding OBSOverlayEnabled}"
+                  Foreground="White" />
+        <TextBlock Text="http://localhost:5128/overlay"
+                   Foreground="#FF6EC7"
+                   FontFamily="Consolas"
+                   FontSize="11"
+                   IsVisible="{Binding OBSOverlayEnabled}" />
+      </StackPanel>
+    </Border>
+
+    <!-- Shared Play -->
+    <Border Background="#111" CornerRadius="6" Padding="16">
+      <StackPanel Spacing="10">
+        <CheckBox Content="Shared Play (listen together)"
+                  IsChecked="{Binding SharedPlayEnabled}"
+                  Foreground="White" />
+        <Grid ColumnDefinitions="Auto, 12, *" IsVisible="{Binding SharedPlayEnabled}">
+          <TextBlock Grid.Column="0" Text="Server" Foreground="#888" VerticalAlignment="Center" />
+          <TextBox Grid.Column="2"
+                   Text="{Binding SharedPlayServerUri}"
+                   Background="#1A1A1A"
+                   Foreground="White"
+                   Padding="8,6" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+  </StackPanel>
+</UserControl>
