@@ -44,6 +44,9 @@ namespace Spectralis.App.Services
         public CapsuleCache CapsuleCache { get; }
         public AlbumWorldService AlbumWorld { get; }
         public TimelineService Timeline { get; }
+        public DiscordRpcService DiscordRpc { get; }
+        public OBSOverlayServer OBSOverlay { get; }
+        public BroadcastCoordinator Broadcast { get; }
 
         private bool _disposed;
 
@@ -80,6 +83,10 @@ namespace Spectralis.App.Services
             CapsuleCache = new CapsuleCache(AppPaths.CapsuleCacheDirectory);
             AlbumWorld = new AlbumWorldService(AppPaths.AlbumWorldCacheDirectory);
             Timeline = new TimelineService();
+            DiscordRpc = new DiscordRpcService("1234567890");
+            OBSOverlay = new OBSOverlayServer();
+            var stateBuilder = new OBSOverlayStateBuilder(CoverArt);
+            Broadcast = new BroadcastCoordinator(DiscordRpc, OBSOverlay, stateBuilder);
         }
 
         public void Dispose()
@@ -96,6 +103,9 @@ namespace Spectralis.App.Services
             Lyrics.Dispose();
             Timeline.Dispose();
             AlbumWorld.Dispose();
+            Broadcast.Dispose();
+            OBSOverlay.Dispose();
+            DiscordRpc.Dispose();
         }
     }
 }
