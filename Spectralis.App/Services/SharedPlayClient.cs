@@ -28,11 +28,14 @@ namespace Spectralis.App.Services
 
         public async Task ReconnectAsync(string roomCode, string userId)
         {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _ws?.Dispose();
+
             _ws = new ClientWebSocket();
-            var localCts = new CancellationTokenSource();
-            _cts = localCts;
-            await _ws.ConnectAsync(new Uri($"{_serverUri}/ws/{roomCode}?user={userId}"), localCts.Token);
-            _ = ReceiveLoopAsync(localCts.Token);
+            _cts = new CancellationTokenSource();
+            await _ws.ConnectAsync(new Uri($"{_serverUri}/ws/{roomCode}?user={userId}"), _cts.Token);
+            _ = ReceiveLoopAsync(_cts.Token);
         }
 
         public async Task ConnectAsync(string roomCode, string userId)
