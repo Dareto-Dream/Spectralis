@@ -87,7 +87,11 @@ namespace Spectralis.App.Visualizers
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { }
+            if (disposing)
+            {
+                _offscreen?.Dispose();
+                _offscreen = null;
+            }
         }
     }
 }
