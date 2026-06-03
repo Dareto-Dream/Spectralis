@@ -374,13 +374,13 @@
     {
       "id": "BUG-006",
       "name": "3D visualizer GPU texture leak",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "9246af4",
       "introduced_phase": "A3",
       "partial_fix_in": "7eeda81",
       "partial_fix_phase": "A3",
-      "full_fix_in": null,
+      "full_fix_in": "bdd6e34",
       "full_fix_phase": "A9",
       "note": "Bar3DVisualizer leaks SKSurface on resize. Partial fix disposes before reassign. Full fix in A9 also fills the empty Dispose() override."
     },
@@ -398,11 +398,11 @@
     {
       "id": "BUG-008",
       "name": "WebSocket subscription leak",
-      "status": "injected",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "697f335",
       "introduced_phase": "A8",
-      "full_fix_in": null,
+      "full_fix_in": "2a116ec",
       "full_fix_phase": "A9",
       "note": "ReconnectAsync() creates a new CTS and WebSocket without cancelling the previous ReceiveLoopAsync. Old loop holds event handler closures indefinitely. Manifests as duplicate SyncReceived events on reconnect."
     },
