@@ -16,6 +16,7 @@ namespace Spectralis.Core.Audio
         private IAudioReader? _reader;
         private float _volume;
         private bool _disposed;
+        private readonly object _readerLock = new object();
 
         public event EventHandler? PlaybackStarted;
         public event EventHandler? PlaybackPaused;
@@ -54,16 +55,22 @@ namespace Spectralis.Core.Audio
             return Task.Run(() =>
             {
                 Stop();
-                _reader?.Dispose();
-
-                _reader = _readers.Create(path)
+                var newReader = _readers.Create(path)
                     ?? throw new NotSupportedException($"No reader for {Path.GetExtension(path)}");
+
+                lock (_readerLock)
+                {
+                    _reader?.Dispose();
+                    _reader = newReader;
+                    _waveOut?.Dispose();
+                    _waveOut = null;
+                }
 
                 CurrentTrack = new TrackInfo
                 {
                     FilePath = path,
                     Title = Path.GetFileNameWithoutExtension(path),
-                    Duration = _reader.TotalTime
+                    Duration = newReader.TotalTime
                 };
 
                 TrackLoaded?.Invoke(this, CurrentTrack);
@@ -104,8 +111,11 @@ namespace Spectralis.Core.Audio
 
         public void Seek(TimeSpan position)
         {
-            if (_reader != null)
-                _reader.CurrentTime = position;
+            lock (_readerLock)
+            {
+                if (_reader != null)
+                    _reader.CurrentTime = position;
+            }
         }
 
         private void SetupOutput()
