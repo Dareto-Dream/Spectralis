@@ -13,6 +13,7 @@ namespace Spectralis.Core.Streaming
     {
         private readonly SpotifyTokenManager _tokens;
         private readonly HttpClient _http;
+        private readonly SemaphoreSlim _refreshGuard = new SemaphoreSlim(1, 1);
 
         public string Name => "Spotify";
         public bool IsAuthenticated => _tokens.HasToken;
@@ -23,9 +24,16 @@ namespace Spectralis.Core.Streaming
             _http = new HttpClient();
         }
 
+        private async Task<string> AcquireTokenAsync(CancellationToken ct)
+        {
+            await _refreshGuard.WaitAsync(ct);
+            try { return await _tokens.GetValidAccessTokenAsync(ct); }
+            finally { _refreshGuard.Release(); }
+        }
+
         public async Task<IReadOnlyList<StreamingTrack>> SearchAsync(string query, int limit = 20, CancellationToken ct = default)
         {
-            string token = await _tokens.GetValidAccessTokenAsync(ct);
+            string token = await AcquireTokenAsync(ct);
             string encoded = Uri.EscapeDataString(query);
             string url = $"https://api.spotify.com/v1/search?q={encoded}&type=track&limit={limit}";
 
@@ -76,6 +84,10 @@ namespace Spectralis.Core.Streaming
             throw new NotSupportedException("Authentication must be driven by the App layer (PKCE browser flow)");
         }
 
-        public void Dispose() => _http.Dispose();
+        public void Dispose()
+        {
+            _http.Dispose();
+            _refreshGuard.Dispose();
+        }
     }
 }
