@@ -44,7 +44,10 @@ namespace Spectralis.App.Visualizers
 
             for (int i = 0; i < bandsToSpawn; i++)
             {
-                int sampleIdx = Math.Min(i * Spectrum.Length / bandsToSpawn, Spectrum.Length - 1);
+                // (i * (length - 1)) / (bandsToSpawn - 1) distributes evenly without exceeding length-1
+                int sampleIdx = bandsToSpawn > 1
+                    ? (i * (Spectrum.Length - 1)) / (bandsToSpawn - 1)
+                    : 0;
                 float bandEnergy = Spectrum[sampleIdx];
 
                 if (bandEnergy > 0.1f && _particles.Count < 400)
