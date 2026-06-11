@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2026-05-31",
+    "current_date": "2026-06-10",
     "current_era": "avalonia",
-    "current_phase": "A9",
+    "current_phase": "A10",
     "current_branch": "dev",
-    "last_checkpoint": "checkpoint A8 complete — Shared Play, Discord RPC, OBS Overlay. SharedPlaySession + SyncPacket models, SharedPlayClient (WebSocket receive loop), SharedPlayService (host/join + 500ms sync timer). BUG-008 injected: ReconnectAsync creates new CTS/WS without cancelling old receive loop — subscription leak on reconnect. SharedPlayViewModel, SharedPlayDialog, SharedPlayChatPanel. DiscordRpcService stub + DiscordPresenceHelper. OBSOverlayServer (HttpListener, /state JSON + /overlay HTML, port 5128), OBSOverlayViewModel, OBSOverlayPanel, OBSOverlayStateBuilder (cover art base64). NowPlayingBroadcaster, BroadcastCoordinator (5s update timer). LatencyCompensator, SyncDriftDetector, RoomCodeGenerator, SharedPlayMessage/ChatMessage/ReactionMessage, ReactionTracker (emoji counts), SharedPlayStats, SessionHistoryStore (50-entry rolling JSON), SharedPlaySessionManager, SharedPlayProtocol. BroadcastSettings + PrivacySettings models. BroadcastSettingsPanel, BroadcastSettingsViewModel, DiscordRpcSettingsPanel, SessionHistoryPanel, SyncStatusIndicator, NowPlayingMiniplayer. Tests: LatencyCompensatorTests (3), RoomCodeGeneratorTests (5), SharedPlayStatsTests (3), SyncDriftDetectorTests (4), ReactionTrackerTests (4), SessionHistoryStoreTests (3). ServiceContainer wired DiscordRpc + OBSOverlay + Broadcast.",
+    "last_checkpoint": "checkpoint A9 complete — comprehensive xUnit test suite expansion + cross-platform packaging. BUG-006 FULL FIX at bdd6e34 (Bar3DVisualizer.Dispose() now calls _offscreen?.Dispose()). BUG-008 FULL FIX at 2a116ec (SharedPlayClient.ReconnectAsync now cancels and disposes old CTS/WS before creating new ones). New test files: AudioPipelineTests, SpectrumSmootherTests, WaveformBufferTests, FftProcessorTests (Audio); LibraryRepositoryTests, LibraryScannerTests (Library); PlaylistEvaluatorTests, PlaylistTests (Playlist); ScrobbleServiceTests, ListeningHistoryTests (Scrobbling); EqualizerEffectTests, EffectChainTests (Effects); MetadataExtractorTests, CrossPlatformPathTests, RoomCodeLengthTests (Core); AlbumWorldSessionTests, AlbumWorldManifestTests (AlbumWorld); TimelineEventBuilderTests (Timeline); LyricsSearchTests (Lyrics); Bar3DVisualizerTests, ScriptVisualizerTests (Visualizers); SharedPlayClientTests, OBSOverlayTests (SharedPlay); StreamingSourceTests (Streaming); AnalysisResultTests (Analysis); LibraryIntegrationTests, CapsuleIntegrationTests (Integration); CapsuleManifestTests, QueueShuffleTests. Packaging: Windows MSIX (build-msix.ps1 + AppxManifest.xml), macOS DMG (build-app.sh), Linux AppImage (build-appimage.sh). CI: .github/workflows/build.yml — 3-platform matrix (ubuntu/windows/macos), test + package jobs, codecov upload. Test helpers: TestFixtures, TempDirectory. MANIFEST updated: BUG-006 status=fixed, BUG-008 status=fixed.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 494
+    "commits_completed": 524
   },
   "phases": [
     {
@@ -152,11 +152,11 @@
     {
       "phase": "A9",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 1–10, 2026",
       "commits_planned": 30,
-      "commits_completed": 0,
-      "description": "xUnit tests (245 total), packaging (Windows/Mac/Linux)"
+      "commits_completed": 30,
+      "description": "xUnit tests (245 total), packaging (Windows/Mac/Linux). BUG-006 + BUG-008 full fixes."
     },
     {
       "phase": "A10",
@@ -292,11 +292,11 @@
     },
     {
       "name": "Tests.Suite",
-      "status": "pending",
+      "status": "complete",
       "phase": "A9",
       "introduced_bugs": [],
       "fixed_bugs": ["BUG-006", "BUG-008"],
-      "description": "xUnit tests (245 total), packaging"
+      "description": "xUnit tests (245 total), packaging (MSIX/DMG/AppImage), CI matrix"
     },
     {
       "name": "Release.Polish",
@@ -471,6 +471,7 @@
     "A6 complete: 26 commits, Mar 1-31 2026. BUG-007 INJECTED at 040af68 (GetCurrentLineIndex off-by-one, < vs <=).",
     "A7 complete: 32 commits, Apr 1-30 2026. Capsules v5 (ECDSA P-256), Album World (.spectral), reactive timelines. No new bugs.",
     "A8 complete: 40 commits, May 1-31 2026. Shared Play WebSocket, Discord RPC, OBS overlay. BUG-008 INJECTED at 697f335 (ReconnectAsync leaks old CTS/WS).",
+    "A9 complete: 30 commits, Jun 1-10 2026. xUnit test suite expansion, packaging (MSIX/DMG/AppImage), CI matrix. BUG-006 FULL FIX at bdd6e34. BUG-008 FULL FIX at 2a116ec.",
     "At A10 end: merge dev -> staging -> main, tag v5.0.0."
   ]
 }
