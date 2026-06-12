@@ -34,7 +34,7 @@ namespace Spectralis.Core.Lyrics
             int idx = -1;
             for (int i = 0; i < Lines.Count; i++)
             {
-                if (Lines[i].Timestamp < adjusted) idx = i;
+                if (Lines[i].Timestamp <= adjusted) idx = i;
                 else break;
             }
             return idx;
