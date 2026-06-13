@@ -43,7 +43,9 @@ namespace Spectralis.Core.Streaming
                 if (thumb != null) thumb = thumb.Replace("-large.", "-t300x300.");
 
                 string? username = null;
-                if (item.TryGetProperty("user", out var user) && user.TryGetProperty("username", out var un))
+                if (item.TryGetProperty("user", out var user) &&
+                    user.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                    user.TryGetProperty("username", out var un))
                     username = un.GetString();
 
                 long durMs = item.TryGetProperty("duration", out var d) ? d.GetInt64() : 0;
