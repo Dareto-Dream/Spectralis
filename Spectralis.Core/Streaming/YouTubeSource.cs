@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -61,9 +62,50 @@ namespace Spectralis.Core.Streaming
             return result;
         }
 
-        public Task<Stream> OpenStreamAsync(StreamingTrack track, CancellationToken ct = default)
+        public async Task<Stream> OpenStreamAsync(StreamingTrack track, CancellationToken ct = default)
         {
-            throw new NotSupportedException("YouTube stream extraction requires yt-dlp or similar tool");
+            string ytdlp = LocateYtDlp();
+            if (ytdlp == null)
+                throw new InvalidOperationException("yt-dlp not found. Install yt-dlp and ensure it is on PATH.");
+
+            var psi = new System.Diagnostics.ProcessStartInfo(ytdlp,
+                $"--get-url -f bestaudio/best -- {track.Id}")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var proc = System.Diagnostics.Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start yt-dlp process.");
+
+            string url = (await proc.StandardOutput.ReadToEndAsync()).Trim();
+            string err = await proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync(ct);
+
+            if (string.IsNullOrEmpty(url))
+                throw new InvalidOperationException(
+                    $"yt-dlp returned no URL for {track.Id}." +
+                    (string.IsNullOrEmpty(err) ? "" : $" stderr: {err}"));
+
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
+            var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsStreamAsync(ct);
+        }
+
+        private static string? LocateYtDlp()
+        {
+            foreach (var name in new[] { "yt-dlp", "yt-dlp.exe" })
+            {
+                string? found = System.Environment.GetEnvironmentVariable("PATH")?
+                    .Split(System.IO.Path.PathSeparator)
+                    .Select(dir => System.IO.Path.Combine(dir, name))
+                    .FirstOrDefault(System.IO.File.Exists);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         public Task<bool> AuthenticateAsync(CancellationToken ct = default)
