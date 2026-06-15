@@ -1,41 +1,99 @@
-## Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-## Build results
+# Build outputs
 [Dd]ebug/
+[Dd]ebugPublic/
 [Rr]elease/
+[Rr]eleases/
+!releases/RELEASES
 x64/
 x86/
+[Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
 [Oo]bj/
+publish/
+publish-velopack/
+publish-velopack-linux/
+publish-linux/
+releases-velopack/
+output/
+
+# Downloaded build tools (auto-fetched by build scripts, not committed)
+build/nuget.exe
+
+# Build logs
 [Ll]og/
 [Ll]ogs/
+*.log
+*.lscache
 
-## NuGet
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.code-workspace
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.userobject
+*.dbmdl
+*.dbproj.json
+*.rptproj.json
+*.rptproj.bak
+
+# NuGet packages/artifacts
 *.nupkg
-**/packages/
-!**/packages/build/
+*.snupkg
 *.nuget.props
 *.nuget.targets
-project.lock.json
-project.fragment.lock.json
-artifacts/
 
-## User-specific
-*.rsuser
-*.tmp
-*.cache
-*.[Cc]ache
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
 
-## OS
-Thumbs.db
-ehthumbs.db
-Desktop.ini
+# Node / npm — was missing entirely, letting node_modules leak into `git add`
+# across every JS subproject (discord-bot/, frontend/, tools/*) instead of just
+# the ones with their own nested .gitignore
+node_modules/
+npm-debug.log*
+.pnpm-debug.log*
+.npm/
+dist/
+.vite/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Debug screenshots at repo root
+/spectralis_*.png
+/ss_*.png
+*.tmp.png
+
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/data/
+.env
+
+# Else
+*.ignore
+commit/
+
+# Local creator signing material
+*.private.json
+*_payload.zip
+metadata/
+AGENTS.md
