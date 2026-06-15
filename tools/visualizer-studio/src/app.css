@@ -1,0 +1,10 @@
+:root {
+  --bg0: #0a0a0d; --bg1: #111116; --bg2: #17171e; --bg3: #1e1e27; --bg4: #26262f;
+  --line: #2c2c37; --line2: #3a3a47;
+  --text: #e7e7ee; --dim: #9494a6; --dim2: #6a6a7a;
+  --accent: #7fb7ff; --accent2: #ffd06e; --danger: #ff6e6e; --good: #7fe0a8;
+  --mono: "Cascadia Code", "Consolas", monospace;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg0); color: var(--text);
+  font: 12px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }

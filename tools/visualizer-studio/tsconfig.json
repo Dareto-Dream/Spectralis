@@ -1,0 +1,16 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "resolveJsonModule": true,
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "src/**/*.js"],
+  "exclude": ["node_modules/*", "dist/*"]
+}
