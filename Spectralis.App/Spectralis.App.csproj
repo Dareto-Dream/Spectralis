@@ -8,6 +8,10 @@
     <RootNamespace>Spectralis.App</RootNamespace>
     <AssemblyName>Spectralis</AssemblyName>
     <Platforms>AnyCPU;x64</Platforms>
+    <Version>5.0.0</Version>
+    <AssemblyVersion>5.0.0.0</AssemblyVersion>
+    <FileVersion>5.0.0.0</FileVersion>
+    <InformationalVersion>5.0.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
