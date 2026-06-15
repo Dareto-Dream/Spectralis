@@ -1,0 +1,85 @@
+{
+  "formatVersion": 2,
+  "meta": { "title": "Untitled", "artist": "", "slug": "untitled", "songEnd": 60, "aspect": "9x16" },
+  "sections": [
+    { "id": "build", "label": "Build", "start": 0, "end": 15, "hue": 300, "hue2": 30, "intensity": 0.5, "noLyrics": false },
+    { "id": "drop", "label": "Drop", "start": 15, "end": 45, "hue": 190, "hue2": 90, "intensity": 0.5, "noLyrics": true },
+    { "id": "outro", "label": "Outro", "start": 45, "end": 60, "hue": 30, "hue2": 15, "intensity": 0.5, "noLyrics": false }
+  ],
+  "layers": [
+    {
+      "id": "layer_wheel",
+      "name": "Wheel Burst",
+      "type": "wheel",
+      "visible": true,
+      "statics": { "x": 135, "y": 210, "scale": 0.2, "rotation": 0, "opacity": 0, "hueA": 320, "hueB": 30 },
+      "tracks": {
+        "x": [],
+        "y": [],
+        "scale": [
+          { "id": "kf1", "t": 14.6, "v": 0.2, "ease": "outcubic" },
+          { "id": "kf2", "t": 15.2, "v": 1, "ease": "linear" },
+          { "id": "kf3", "t": 44, "v": 1, "ease": "incubic" },
+          { "id": "kf4", "t": 45, "v": 0.3, "ease": "linear" }
+        ],
+        "rotation": [
+          { "id": "kf5", "t": 15, "v": 0, "ease": "linear" },
+          { "id": "kf6", "t": 45, "v": 6, "ease": "linear" }
+        ],
+        "opacity": [
+          { "id": "kf7", "t": 14.6, "v": 0, "ease": "outcubic" },
+          { "id": "kf8", "t": 15.1, "v": 1, "ease": "linear" },
+          { "id": "kf9", "t": 44.5, "v": 1, "ease": "incubic" },
+          { "id": "kf10", "t": 45, "v": 0, "ease": "linear" }
+        ],
+        "hueA": [],
+        "hueB": []
+      },
+      "params": { "radius": 90, "spokes": 14, "spin": 0.35, "accentIdx": 0 }
+    },
+    {
+      "id": "layer_orb_a",
+      "name": "Venn Orb A",
+      "type": "orb",
+      "visible": true,
+      "statics": { "x": 95, "y": 230, "scale": 0, "rotation": 0, "opacity": 0.9, "hueA": 190, "hueB": 90 },
+      "tracks": {
+        "x": [],
+        "y": [],
+        "scale": [
+          { "id": "kf11", "t": 15, "v": 0, "ease": "outcubic" },
+          { "id": "kf12", "t": 15.4, "v": 1, "ease": "linear" },
+          { "id": "kf13", "t": 45, "v": 1, "ease": "incubic" },
+          { "id": "kf14", "t": 45.6, "v": 0, "ease": "linear" }
+        ],
+        "rotation": [],
+        "opacity": [],
+        "hueA": [],
+        "hueB": []
+      },
+      "params": { "radius": 60 }
+    },
+    {
+      "id": "layer_orb_b",
+      "name": "Venn Orb B",
+      "type": "orb",
+      "visible": true,
+      "statics": { "x": 175, "y": 250, "scale": 0, "rotation": 0, "opacity": 0.9, "hueA": 90, "hueB": 190 },
+      "tracks": {
+        "x": [],
+        "y": [],
+        "scale": [
+          { "id": "kf15", "t": 15.1, "v": 0, "ease": "outcubic" },
+          { "id": "kf16", "t": 15.5, "v": 1, "ease": "linear" },
+          { "id": "kf17", "t": 45, "v": 1, "ease": "incubic" },
+          { "id": "kf18", "t": 45.6, "v": 0, "ease": "linear" }
+        ],
+        "rotation": [],
+        "opacity": [],
+        "hueA": [],
+        "hueB": []
+      },
+      "params": { "radius": 60 }
+    }
+  ]
+}
