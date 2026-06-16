@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2026-06-10",
+    "current_date": "2026-06-18",
     "current_era": "avalonia",
     "current_phase": "A10",
-    "current_branch": "dev",
-    "last_checkpoint": "checkpoint A9 complete — comprehensive xUnit test suite expansion + cross-platform packaging. BUG-006 FULL FIX at bdd6e34 (Bar3DVisualizer.Dispose() now calls _offscreen?.Dispose()). BUG-008 FULL FIX at 2a116ec (SharedPlayClient.ReconnectAsync now cancels and disposes old CTS/WS before creating new ones). New test files: AudioPipelineTests, SpectrumSmootherTests, WaveformBufferTests, FftProcessorTests (Audio); LibraryRepositoryTests, LibraryScannerTests (Library); PlaylistEvaluatorTests, PlaylistTests (Playlist); ScrobbleServiceTests, ListeningHistoryTests (Scrobbling); EqualizerEffectTests, EffectChainTests (Effects); MetadataExtractorTests, CrossPlatformPathTests, RoomCodeLengthTests (Core); AlbumWorldSessionTests, AlbumWorldManifestTests (AlbumWorld); TimelineEventBuilderTests (Timeline); LyricsSearchTests (Lyrics); Bar3DVisualizerTests, ScriptVisualizerTests (Visualizers); SharedPlayClientTests, OBSOverlayTests (SharedPlay); StreamingSourceTests (Streaming); AnalysisResultTests (Analysis); LibraryIntegrationTests, CapsuleIntegrationTests (Integration); CapsuleManifestTests, QueueShuffleTests. Packaging: Windows MSIX (build-msix.ps1 + AppxManifest.xml), macOS DMG (build-app.sh), Linux AppImage (build-appimage.sh). CI: .github/workflows/build.yml — 3-platform matrix (ubuntu/windows/macos), test + package jobs, codecov upload. Test helpers: TestFixtures, TempDirectory. MANIFEST updated: BUG-006 status=fixed, BUG-008 status=fixed.",
+    "current_branch": "main",
+    "last_checkpoint": "checkpoint A10 complete — final bug fixes + release v5.0.0. BUG-001 FULL FIX at c9f60f2 (NaudioAudioEngine.LoadAsync now creates new reader before acquiring _readerLock, preventing race on reader/waveOut swap). BUG-004 FULL FIX at 1eabcae (SpotifySource adds _refreshGuard SemaphoreSlim so concurrent callers serialize token refresh through SpotifyTokenManager). BUG-005 FULL FIX at c210f1a (ParticleSystemVisualizer band index formula changed from i*N/bands to (i*(N-1))/(bands-1) — eliminates off-by-one at max-energy band). BUG-007 FULL FIX at 6430f3d (LrcFile.GetCurrentLineIndex: < changed back to <=, lines now activate at exact timestamp). BUG-009 FULL FIX at ff798b6 (AudioEngineObservableExtensions adds WhenPlaybackStarted/Paused/Stopped/TrackEnded/TrackLoaded/WhenPlayStateChanged — ReactiveUI layer no longer needs lambda workarounds). BUG-010 FULL FIX at 3fcd096 (SoundCloudSource.SearchAsync: user JsonElement checked for ValueKind==Object before TryGetProperty). BUG-011 FULL FIX at 02309d9 (YouTubeSource.OpenStreamAsync: discovers yt-dlp on PATH, throws descriptive exception if output empty). Version bumped to 5.0.0 in all .csproj files. AboutView.axaml added. Merged dev→staging→main. Tagged v5.0.0.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 524
+    "commits_completed": 538
   },
   "phases": [
     {
@@ -161,10 +161,10 @@
     {
       "phase": "A10",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 11–18, 2026",
       "commits_planned": 14,
-      "commits_completed": 0,
+      "commits_completed": 14,
       "description": "Final polish, all remaining bug fixes, release v5.0.0",
       "release": "v5.0.0 to main after staging"
     }
@@ -300,26 +300,26 @@
     },
     {
       "name": "Release.Polish",
-      "status": "pending",
+      "status": "complete",
       "phase": "A10",
       "introduced_bugs": [],
       "fixed_bugs": ["BUG-001", "BUG-004", "BUG-005", "BUG-007", "BUG-009", "BUG-010", "BUG-011"],
-      "description": "Final bugs, cross-platform polish"
+      "description": "Final bugs, cross-platform polish, version 5.0.0, AboutView, merged dev→staging→main, tagged v5.0.0"
     }
   ],
   "bugs": [
     {
       "id": "BUG-001",
       "name": "Format switch race condition",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "5a617e7",
       "introduced_phase": "W1",
       "partial_fix_in": "39e80d9",
       "partial_fix_phase": "W1",
-      "full_fix_in": null,
+      "full_fix_in": "c9f60f2",
       "full_fix_phase": "A10",
-      "note": "Race in SwitchFormat: _reader/_waveProvider swapped without lock. Partial fix adds null guard only."
+      "note": "Race in SwitchFormat: _reader/_waveProvider swapped without lock. Full fix: LoadAsync creates new reader before acquiring _readerLock; Seek also holds the lock."
     },
     {
       "id": "BUG-002",
@@ -348,28 +348,28 @@
     {
       "id": "BUG-004",
       "name": "Spotify token refresh race",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d6a9b92",
       "introduced_phase": "W3.5",
       "partial_fix_in": "dbc39df",
       "partial_fix_phase": "W3.5",
-      "full_fix_in": null,
+      "full_fix_in": "1eabcae",
       "full_fix_phase": "A10",
-      "note": "SpotifySource per-instance token cache not thread-safe. Partial fix adds static semaphore but SpotifySource doesn't use it."
+      "note": "SpotifySource now has _refreshGuard SemaphoreSlim; AcquireTokenAsync serializes all concurrent token refreshes."
     },
     {
       "id": "BUG-005",
       "name": "FFT bounds check off-by-one",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "9b220fc",
       "introduced_phase": "A3",
       "partial_fix_in": "64cf6d6",
       "partial_fix_phase": "A3",
-      "full_fix_in": null,
+      "full_fix_in": "c210f1a",
       "full_fix_phase": "A10",
-      "note": "ParticleSystemVisualizer band index can equal Spectrum.Length. Partial fix adds Math.Min guard. Root cause (wrong indexing formula) fixed in A10."
+      "note": "ParticleSystemVisualizer: formula changed to (i*(N-1))/(bands-1) which distributes evenly and never reaches index N."
     },
     {
       "id": "BUG-006",
@@ -387,13 +387,13 @@
     {
       "id": "BUG-007",
       "name": "Lyric timeline index off-by-one",
-      "status": "injected",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "040af68",
       "introduced_phase": "A6",
-      "full_fix_in": null,
+      "full_fix_in": "6430f3d",
       "full_fix_phase": "A10",
-      "note": "GetCurrentLineIndex uses < instead of <= so lines trigger one tick late. Injects subtle sync drift, visible on dense lyrics."
+      "note": "GetCurrentLineIndex uses <= so lines activate at exact timestamp instead of one tick late."
     },
     {
       "id": "BUG-008",
@@ -409,35 +409,35 @@
     {
       "id": "BUG-009",
       "name": "WinForms event pattern in Core",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "f39e3b2",
       "introduced_phase": "A1",
-      "full_fix_in": null,
+      "full_fix_in": "ff798b6",
       "full_fix_phase": "A10",
-      "note": "NaudioAudioEngine uses C# EventHandler delegates rather than IObservable<T> — not a crash but forces lambda workarounds in ReactiveUI layer."
+      "note": "AudioEngineObservableExtensions.cs wraps all EventHandler events via Observable.FromEventPattern, giving ReactiveUI layer proper IObservable<T> without rewriting NaudioAudioEngine."
     },
     {
       "id": "BUG-010",
       "name": "SoundCloud metadata null check",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "e32b1dc",
       "introduced_phase": "W3.5",
-      "full_fix_in": null,
+      "full_fix_in": "3fcd096",
       "full_fix_phase": "A10",
-      "note": "SoundCloudSource accesses item['user']['username'] — item['user'] can be null for private/deleted tracks."
+      "note": "SoundCloudSource now checks user.ValueKind == JsonValueKind.Object before calling TryGetProperty, handles null user on private/deleted tracks."
     },
     {
       "id": "BUG-011",
       "name": "YouTube yt-dlp silent failure",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "e59c1ba",
       "introduced_phase": "W3.5",
-      "full_fix_in": null,
+      "full_fix_in": "02309d9",
       "full_fix_phase": "A10",
-      "note": "YouTubeSource.OpenStreamAsync() returns null when yt-dlp output is empty — caller can't distinguish 'no URL' from 'process failed silently'."
+      "note": "YouTubeSource.OpenStreamAsync now locates yt-dlp on PATH, runs process, and throws InvalidOperationException with stderr detail when output is empty."
     },
     {
       "id": "BUG-012",
@@ -472,6 +472,7 @@
     "A7 complete: 32 commits, Apr 1-30 2026. Capsules v5 (ECDSA P-256), Album World (.spectral), reactive timelines. No new bugs.",
     "A8 complete: 40 commits, May 1-31 2026. Shared Play WebSocket, Discord RPC, OBS overlay. BUG-008 INJECTED at 697f335 (ReconnectAsync leaks old CTS/WS).",
     "A9 complete: 30 commits, Jun 1-10 2026. xUnit test suite expansion, packaging (MSIX/DMG/AppImage), CI matrix. BUG-006 FULL FIX at bdd6e34. BUG-008 FULL FIX at 2a116ec.",
-    "At A10 end: merge dev -> staging -> main, tag v5.0.0."
+    "A10 complete: 14 commits, Jun 11-18 2026. BUG-001/004/005/007/009/010/011 all fully fixed. Version 5.0.0. AboutView. Merged dev->staging->main. Tagged v5.0.0.",
+    "ALL 12 BUGS RESOLVED. Total commits: 538. Spectralis v5.0.0 shipped."
   ]
 }
