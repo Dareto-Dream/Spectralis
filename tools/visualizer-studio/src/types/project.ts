@@ -52,7 +52,10 @@ export interface Layer<T extends LayerType = LayerType> {
   statics: Statics;
   params: LayerParamsByType[T];
 }
-export type AnyLayer = Layer<LayerType>;
+// A distributed union (one concrete Layer<T> per branch), NOT Layer<LayerType> —
+// the latter collapses `type`/`params` into a single non-discriminated shape, so
+// `if (layer.type === 'lyrics')` wouldn't narrow `layer.params` to the lyrics shape.
+export type AnyLayer = { [K in LayerType]: Layer<K> }[LayerType];
 
 export interface Section {
   id: string;

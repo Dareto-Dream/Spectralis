@@ -34,19 +34,6 @@ function computeTime(nowRaf, host) {
   return 0;
 }
 
-function drawSectionWash(W, H, t) {
-  var sec = sectionAt(PROJECT.sections, t);
-  if (!sec) return;
-  var g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, 'hsl(' + sec.hue + ',30%,' + (3 + sec.intensity * 4) + '%)');
-  g.addColorStop(1, 'hsl(' + sec.hue2 + ',25%,2%)');
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-}
-
 var coverAlpha = 0;
 function rafLoop(now) {
   requestAnimationFrame(rafLoop);
@@ -66,7 +53,7 @@ function rafLoop(now) {
   beatFlash *= 0.9;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
-  drawSectionWash(W, H, t);
+  drawSectionWash(ctx, W, H, sectionAt(PROJECT.sections, t));
   var coverTarget = 0.08;
   coverAlpha = lerp(coverAlpha, coverTarget, 0.02);
   if (coverAlpha > 0.01 && coverImg.complete && coverImg.naturalWidth > 0) {

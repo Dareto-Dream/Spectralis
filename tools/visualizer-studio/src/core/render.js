@@ -18,6 +18,21 @@ export function sectionAt(sections, t) {
   return sections[0] || null;
 }
 
+// Shared by the live preview and the export driver — was two near-identical
+// copies in the old tool (studio preview took `ctx` as a param, the export
+// driver closed over a module-level `ctx` instead; same math either way).
+export function drawSectionWash(ctx, W, H, sec) {
+  if (!sec) return;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `hsl(${sec.hue},30%,${3 + sec.intensity * 4}%)`);
+  g.addColorStop(1, `hsl(${sec.hue2},25%,2%)`);
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
 // `getLyricWords(layer)` replaces the old hardcoded `layer.params.words` read so the
 // same render path works for both the live editor (words live on the layer) and the
 // exported capsule driver (words come from a separately embedded LYRIC_WORDS blob).
