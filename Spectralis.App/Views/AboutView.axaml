@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.AboutView"
+        Title="About Spectralis"
+        Width="440" Height="320"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#0A0A12">
+
+  <StackPanel Margin="32" Spacing="12" VerticalAlignment="Center">
+    <TextBlock Text="Spectralis"
+               FontSize="36"
+               FontWeight="Bold"
+               Foreground="#A855F7"
+               HorizontalAlignment="Center"/>
+    <TextBlock Text="Version 5.0.0"
+               FontSize="16"
+               Foreground="#94A3B8"
+               HorizontalAlignment="Center"/>
+    <TextBlock Text="Audio Player · Visualizer · Album World"
+               FontSize="13"
+               Foreground="#64748B"
+               HorizontalAlignment="Center"/>
+    <Rectangle Height="1" Fill="#1E293B" Margin="0,8"/>
+    <TextBlock Text="© 2025–2026 DeltaV Devs"
+               FontSize="12"
+               Foreground="#475569"
+               HorizontalAlignment="Center"/>
+    <TextBlock Text="Built with Avalonia 11.1 · .NET 8 · SkiaSharp · NAudio"
+               FontSize="11"
+               Foreground="#334155"
+               HorizontalAlignment="Center"
+               TextWrapping="Wrap"
+               TextAlignment="Center"/>
+    <Button Content="Close"
+            HorizontalAlignment="Center"
+            Margin="0,12,0,0"
+            Padding="24,8"
+            Background="#6D28D9"
+            Foreground="White"
+            CornerRadius="4"
+            Command="{Binding CloseCommand}"/>
+  </StackPanel>
+</Window>

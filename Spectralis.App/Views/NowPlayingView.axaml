@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:conv="using:Spectralis.App.Converters"
+             xmlns:ctrl="using:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Views.NowPlayingView"
+             x:DataType="vm:PlayerViewModel"
+             Background="#1A1A24"
+             Height="80">
+
+  <Grid ColumnDefinitions="80,*,200" Margin="8,0">
+
+    <Border Grid.Column="0" Width="64" Height="64"
+            CornerRadius="4" ClipToBounds="True"
+            VerticalAlignment="Center" Margin="0,0,8,0">
+      <Image Name="CoverArt" Stretch="UniformToFill"/>
+    </Border>
+
+    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+      <TextBlock Text="{Binding CurrentTrack.Title, FallbackValue='No track loaded'}"
+                 FontSize="14" FontWeight="SemiBold" Foreground="White"
+                 TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding CurrentTrack.Artist, FallbackValue=''}"
+                 FontSize="12" Foreground="#AAAAAA"
+                 TextTrimming="CharacterEllipsis"/>
+      <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+        <Slider Grid.Column="0" Minimum="0" Maximum="{Binding Duration.TotalSeconds}"
+                Value="{Binding Position.TotalSeconds}" Height="16"
+                Name="SeekSlider"/>
+        <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0"
+                   FontSize="11" Foreground="#888888">
+          <TextBlock.Text>
+            <MultiBinding StringFormat="{}{0} / {1}" Converter="{x:Static conv:PlaybackProgressConverter.Instance}">
+              <Binding Path="Position"/>
+              <Binding Path="Duration"/>
+            </MultiBinding>
+          </TextBlock.Text>
+        </TextBlock>
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Grid.Column="2" VerticalAlignment="Center"
+                HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
+      <Button Command="{Binding PreviousCommand}" Content="&#x23EE;" FontSize="18"
+              Background="Transparent" Foreground="White" Padding="4"/>
+      <Button Command="{Binding PlayCommand}" Content="&#x25B6;" FontSize="22"
+              Background="#3D3D5C" Foreground="White" CornerRadius="20"
+              Width="40" Height="40" HorizontalContentAlignment="Center"/>
+      <Button Command="{Binding PauseCommand}" Content="&#x23F8;" FontSize="18"
+              Background="Transparent" Foreground="White" Padding="4"/>
+      <Button Command="{Binding NextCommand}" Content="&#x23ED;" FontSize="18"
+              Background="Transparent" Foreground="White" Padding="4"/>
+    </StackPanel>
+
+  </Grid>
+</UserControl>
