@@ -3,6 +3,23 @@ export interface AudioLevel {
   rms: number;
 }
 
+function computePeaks(buffer: AudioBuffer, resolution: number): Float32Array {
+  const channel = buffer.getChannelData(0);
+  const peaks = new Float32Array(resolution);
+  const bucketSize = Math.max(1, Math.floor(channel.length / resolution));
+  for (let i = 0; i < resolution; i++) {
+    let max = 0;
+    const start = i * bucketSize;
+    const end = Math.min(start + bucketSize, channel.length);
+    for (let j = start; j < end; j++) {
+      const v = Math.abs(channel[j]);
+      if (v > max) max = v;
+    }
+    peaks[i] = max;
+  }
+  return peaks;
+}
+
 // Web Audio's MediaElementSource can only be created ONCE per <audio> element —
 // the analyser graph is wired up lazily on the first load and reused for every
 // subsequent file, rather than rebuilt (which would throw on the second load).
@@ -15,6 +32,7 @@ export class AudioState {
   file: File | null = $state(null);
   loaded = $state(false);
   error: string | null = $state(null);
+  waveformPeaks: Float32Array | null = $state(null);
 
   private ensureGraph() {
     if (this.ctx) return;
@@ -28,6 +46,7 @@ export class AudioState {
 
   async loadFile(file: File) {
     this.error = null;
+    this.waveformPeaks = null;
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
     this.el.src = this.objectUrl;
@@ -42,6 +61,19 @@ export class AudioState {
       // empty states instead of half-loading.
       this.loaded = false;
       this.error = err instanceof Error ? err.message : 'Could not load this audio file.';
+      return;
+    }
+    try {
+      // Independent read from the File (not the object URL) — decodeAudioData
+      // detaches its input buffer, so this can't share the buffer used elsewhere.
+      const raw = await file.arrayBuffer();
+      const decoded = await this.ctx!.decodeAudioData(raw);
+      this.waveformPeaks = computePeaks(decoded, 2000);
+    } catch {
+      // Waveform is a nice-to-have on top of already-working playback — a decode
+      // failure here just means the timeline falls back to its "no waveform" state,
+      // not a hard error for the whole load.
+      this.waveformPeaks = null;
     }
   }
 
