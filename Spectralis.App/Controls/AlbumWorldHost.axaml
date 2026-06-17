@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.AlbumWorldHost"
+             Background="Black">
+
+  <Grid RowDefinitions="Auto, *">
+
+    <!-- Header bar -->
+    <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Background="#0A0A0A" Height="40">
+      <TextBlock Grid.Column="0"
+                 x:Name="TitleBlock"
+                 Text="Album World"
+                 Foreground="#888"
+                 FontSize="12"
+                 VerticalAlignment="Center"
+                 Margin="16,0" />
+      <Button Grid.Column="1"
+              x:Name="CloseButton"
+              Content="✕"
+              Background="Transparent"
+              Foreground="#555"
+              Padding="12,0"
+              Height="40" />
+    </Grid>
+
+    <!-- WebView placeholder — wired in code-behind -->
+    <Border Grid.Row="1"
+            x:Name="WebViewContainer"
+            Background="Black" />
+
+  </Grid>
+</UserControl>
