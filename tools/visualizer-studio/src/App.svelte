@@ -5,8 +5,9 @@
   import { AudioState } from './state/audio.svelte';
   import PreviewCanvas from './preview/PreviewCanvas.svelte';
   import TimelineCanvas from './timeline/TimelineCanvas.svelte';
+  import CurveEditor from './timeline/CurveEditor.svelte';
   import fixture from '../tests/fixtures/fixture-project.json';
-  import type { AnimKey, Project } from './types/project';
+  import type { AnimKey, Ease, Project } from './types/project';
   import { ANIM_KEYS } from './types/project';
 
   const store = new ProjectStore();
@@ -21,6 +22,15 @@
   function selectTrack(key: AnimKey) {
     store.selection.selectTrack(key);
   }
+
+  let singleSelectedKeyframeId = $derived(
+    store.selection.keyframeIds.size === 1 ? [...store.selection.keyframeIds][0] : null
+  );
+  let singleSelectedEase = $derived.by((): Ease | null => {
+    if (!singleSelectedKeyframeId) return null;
+    const ref = store.selection.keyframeIndex.get(singleSelectedKeyframeId);
+    return ref ? ref.layer.tracks[ref.trackKey][ref.index].ease : null;
+  });
 </script>
 
 <main>
@@ -63,6 +73,9 @@
     <PreviewCanvas {store} {audio} />
   </div>
   <TimelineCanvas {store} {audio} />
+  {#if singleSelectedKeyframeId && singleSelectedEase}
+    <CurveEditor value={singleSelectedEase} onSelect={(ease) => store.setKeyframeEase(singleSelectedKeyframeId, ease)} />
+  {/if}
 </main>
 
 <style>
