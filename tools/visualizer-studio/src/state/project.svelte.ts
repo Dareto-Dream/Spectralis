@@ -140,18 +140,36 @@ export class ProjectStore {
   }
 
   addKeyframeAtPlayhead(layerId: string, key: AnimKey): string | null {
+    return this.addKeyframeAt(layerId, key, this.playhead);
+  }
+
+  // Backs both the Inspector's "+Key at playhead" button and the timeline's
+  // double-click-to-add-keyframe fast path.
+  addKeyframeAt(layerId: string, key: AnimKey, t: number): string | null {
     const layer = this.project.layers.find((l) => l.id === layerId);
     if (!layer) return null;
     if (!layer.tracks[key].length) {
       this.toggleKeyframing(layerId, key);
       return layer.tracks[key][0]?.id ?? null;
     }
-    const value = evalTrack(layer.tracks[key], this.playhead, layer.statics[key], HUE_KEYS.has(key));
+    const value = evalTrack(layer.tracks[key], t, layer.statics[key], HUE_KEYS.has(key));
     const id = newKeyframeId();
-    layer.tracks[key].push({ id, t: this.playhead, v: value, ease: 'linear' });
+    layer.tracks[key].push({ id, t, v: value, ease: 'linear' });
     layer.tracks[key].sort((a, b) => a.t - b.t);
     this.commit();
     return id;
+  }
+
+  // Creates fresh keyframes (new ids) from clipboard entries — Ctrl+V / Ctrl+Shift+V.
+  pasteKeyframes(entries: { layerId: string; trackKey: AnimKey; t: number; v: number; ease: Ease }[]) {
+    if (!entries.length) return;
+    for (const e of entries) {
+      const layer = this.project.layers.find((l) => l.id === e.layerId);
+      if (!layer) continue;
+      layer.tracks[e.trackKey].push({ id: newKeyframeId(), t: Math.max(0, e.t), v: e.v, ease: e.ease });
+      layer.tracks[e.trackKey].sort((a, b) => a.t - b.t);
+    }
+    this.commit();
   }
 
   deleteKeyframe(id: string) {
@@ -212,10 +230,15 @@ export class ProjectStore {
   // QoL: self-correcting clamp instead of silently accepting an inverted block —
   // matches the popover's existing "auto-apply on input, no separate Save" UX.
   updateSection(id: string, patch: Partial<Section>) {
+    this.updateSectionLive(id, patch);
+    this.commit();
+  }
+
+  // Continuous edge-drag — caller commits once on pointerup via `commit()`.
+  updateSectionLive(id: string, patch: Partial<Section>) {
     const sec = this.project.sections.find((s) => s.id === id);
     if (!sec) return;
     Object.assign(sec, patch);
     if (sec.end < sec.start + 0.1) sec.end = sec.start + 0.1;
-    this.commit();
   }
 }
