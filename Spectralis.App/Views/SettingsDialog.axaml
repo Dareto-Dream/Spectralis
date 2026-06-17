@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Spectralis.App.ViewModels"
+        x:Class="Spectralis.App.Views.SettingsDialog"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings — Spectralis"
+        Width="560" Height="600"
+        Background="#12121C"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="*,Auto" Margin="16">
+
+    <ScrollViewer Grid.Row="0">
+      <StackPanel Spacing="12">
+
+        <!-- General -->
+        <TextBlock Text="General" FontSize="13" FontWeight="SemiBold" Foreground="#7B68EE" Margin="0,0,0,4"/>
+        <StackPanel Spacing="6">
+          <CheckBox Content="Minimize to system tray" IsChecked="{Binding MinimizeToTray}" Foreground="White"/>
+          <CheckBox Content="Scan library on startup" IsChecked="{Binding ScanOnStartup}" Foreground="White"/>
+          <CheckBox Content="Enable ReplayGain" IsChecked="{Binding ReplayGainEnabled}" Foreground="White"/>
+        </StackPanel>
+
+        <Separator Background="#22223A" Height="1" Margin="0,4"/>
+
+        <!-- Last.fm -->
+        <TextBlock Text="Scrobbling" FontSize="13" FontWeight="SemiBold" Foreground="#7B68EE" Margin="0,0,0,4"/>
+        <StackPanel Spacing="6">
+          <CheckBox Content="Enable Last.fm scrobbling" IsChecked="{Binding ScrobblingEnabled}" Foreground="White"/>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Username" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="13"/>
+            <TextBox Grid.Column="1" Text="{Binding LastFmUsername}" Background="#0E0E18" Foreground="White" BorderBrush="#333355"/>
+          </Grid>
+        </StackPanel>
+
+        <Separator Background="#22223A" Height="1" Margin="0,4"/>
+
+        <!-- Streaming -->
+        <TextBlock Text="Streaming" FontSize="13" FontWeight="SemiBold" Foreground="#7B68EE" Margin="0,0,0,4"/>
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Spotify Client ID" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+            <TextBox Grid.Column="1" Text="{Binding SpotifyClientId}" Background="#0E0E18" Foreground="White" BorderBrush="#333355" PasswordChar="*"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="YouTube API Key" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+            <TextBox Grid.Column="1" Text="{Binding YouTubeApiKey}" Background="#0E0E18" Foreground="White" BorderBrush="#333355" PasswordChar="*"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="SoundCloud ID" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+            <TextBox Grid.Column="1" Text="{Binding SoundCloudClientId}" Background="#0E0E18" Foreground="White" BorderBrush="#333355" PasswordChar="*"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="yt-dlp path" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+            <TextBox Grid.Column="1" Text="{Binding YtDlpPath}" Background="#0E0E18" Foreground="White" BorderBrush="#333355"/>
+          </Grid>
+        </StackPanel>
+
+        <Separator Background="#22223A" Height="1" Margin="0,4"/>
+
+        <!-- Cache -->
+        <TextBlock Text="Cache" FontSize="13" FontWeight="SemiBold" Foreground="#7B68EE" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="180,*">
+          <TextBlock Text="Cover art cache limit (MB)" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+          <NumericUpDown Grid.Column="1" Value="{Binding CoverArtCacheLimitMb}"
+                         Minimum="64" Maximum="4096" FormatString="0"
+                         Background="#0E0E18" Foreground="White"/>
+        </Grid>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+      <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                 Foreground="#888888" FontSize="11"/>
+      <Button Grid.Column="1" Content="Save" Command="{Binding SaveCommand}" Margin="0,0,8,0"
+              Background="#3D3D5C" Foreground="White" Padding="12,6"/>
+      <Button Grid.Column="2" Content="Close" Click="OnCloseClick"
+              Background="Transparent" Foreground="#AAAAAA" Padding="12,6"/>
+    </Grid>
+
+  </Grid>
+</Window>

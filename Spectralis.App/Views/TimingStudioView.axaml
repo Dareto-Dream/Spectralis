@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Spectralis.App.ViewModels"
+        x:Class="Spectralis.App.Views.TimingStudioView"
+        Title="Timing Studio"
+        Width="800" Height="600"
+        Background="#0D0D0D">
+
+  <Grid RowDefinitions="Auto, *, Auto">
+
+    <!-- Toolbar -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="12,8">
+      <Button Content="Parse" Command="{Binding ParseRawCommand}" />
+      <Button Content="Stamp [Space]" Command="{Binding StampCurrentLineCommand}"
+              Background="#2A4A2A" />
+      <Button Content="-100ms" Command="{Binding NudgeTimestampCommand}"
+              CommandParameter="-100" />
+      <Button Content="+100ms" Command="{Binding NudgeTimestampCommand}"
+              CommandParameter="100" />
+      <Button Content="Export…" Command="{Binding ExportCommand}" />
+      <TextBlock Text="{Binding StatusText}"
+                 VerticalAlignment="Center"
+                 Foreground="#888"
+                 FontSize="12"
+                 Margin="12,0,0,0" />
+    </StackPanel>
+
+    <!-- Split: raw text left, timed lines right -->
+    <Grid Grid.Row="1" ColumnDefinitions="*, 8, *">
+
+      <Grid Grid.Column="0" RowDefinitions="Auto, *">
+        <TextBlock Grid.Row="0" Text="Raw LRC" Foreground="#666"
+                   FontSize="11" Margin="12,4" TextTransform="Uppercase" />
+        <TextBox Grid.Row="1"
+                 Text="{Binding RawLrcText}"
+                 AcceptsReturn="True"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 Background="#111"
+                 Foreground="#CCC"
+                 BorderThickness="0"
+                 Margin="8" />
+      </Grid>
+
+      <GridSplitter Grid.Column="1" Background="#1A1A1A" />
+
+      <Grid Grid.Column="2" RowDefinitions="Auto, *">
+        <TextBlock Grid.Row="0" Text="Timed Lines" Foreground="#666"
+                   FontSize="11" Margin="12,4" TextTransform="Uppercase" />
+        <ListBox Grid.Row="1"
+                 ItemsSource="{Binding Lines}"
+                 SelectedIndex="{Binding SelectedLineIndex}"
+                 Background="#111"
+                 BorderThickness="0">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="120, *">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding DisplayTimestamp}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           Foreground="#FF6EC7" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Text}"
+                           FontSize="12"
+                           Foreground="#CCC" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Grid>
+
+    <!-- Status bar -->
+    <Border Grid.Row="2" Background="#111" Padding="12,6">
+      <TextBlock>
+        <Run Text="Lines: " Foreground="#555" />
+        <Run Text="{Binding Lines.Count}" Foreground="#888" />
+        <Run Text="   Dirty: " Foreground="#555" />
+        <Run Text="{Binding IsDirty}" Foreground="#888" />
+      </TextBlock>
+    </Border>
+
+  </Grid>
+</Window>

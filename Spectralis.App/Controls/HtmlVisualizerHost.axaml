@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.HtmlVisualizerHost"
+             Background="Black">
+
+  <Grid>
+    <TextBlock Name="PlaceholderText"
+               Text="HTML Visualizer (WebView2 not available)"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               Foreground="#444466"
+               FontSize="13"/>
+  </Grid>
+</UserControl>
