@@ -1,119 +1,37 @@
 <script lang="ts">
-  // Phase 5 verification harness — real dockview/panel layout arrives in Phase 6,
-  // this just proves the preview canvas + timeline both work against the fixture.
   import { ProjectStore } from './state/project.svelte';
   import { AudioState } from './state/audio.svelte';
-  import PreviewCanvas from './preview/PreviewCanvas.svelte';
-  import TimelineCanvas from './timeline/TimelineCanvas.svelte';
-  import CurveEditor from './timeline/CurveEditor.svelte';
-  import fixture from '../tests/fixtures/fixture-project.json';
-  import type { AnimKey, Ease, Project } from './types/project';
-  import { ANIM_KEYS } from './types/project';
+  import TopBar from './panels/TopBar.svelte';
+  import DockviewLayout from './panels/DockviewLayout.svelte';
+  import Toast from './panels/Toast.svelte';
+  import ConfirmModal from './panels/ConfirmModal.svelte';
+  import ContextMenu from './panels/ContextMenu.svelte';
+  import { TEMPLATES } from './lib/templates';
 
   const store = new ProjectStore();
-  store.loadProject(fixture as Project);
+  store.loadProject(TEMPLATES[0].build());
   const audio = new AudioState();
-
-  function onAudioPicked(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (file) audio.loadFile(file);
-  }
-
-  function selectTrack(key: AnimKey) {
-    store.selection.selectTrack(key);
-  }
-
-  let singleSelectedKeyframeId = $derived(
-    store.selection.keyframeIds.size === 1 ? [...store.selection.keyframeIds][0] : null
-  );
-  let singleSelectedEase = $derived.by((): Ease | null => {
-    if (!singleSelectedKeyframeId) return null;
-    const ref = store.selection.keyframeIndex.get(singleSelectedKeyframeId);
-    return ref ? ref.layer.tracks[ref.trackKey][ref.index].ease : null;
-  });
 </script>
 
-<main>
-  <h1>Visualizer Studio — Phase 5 check</h1>
-  <div class="controls">
-    <button onclick={() => store.togglePlay()}>{store.playing ? 'Pause' : 'Play'}</button>
-    <button onclick={() => store.stop()}>Stop</button>
-    <button onclick={() => store.undo()} disabled={!store.history.canUndo}>Undo</button>
-    <button onclick={() => store.redo()} disabled={!store.history.canRedo}>Redo</button>
-    <input type="file" accept="audio/*" onchange={onAudioPicked} />
-    {#if audio.error}<span class="err">{audio.error}</span>{/if}
+<div class="app">
+  <TopBar {store} {audio} />
+  <div class="dockWrap">
+    <DockviewLayout {store} {audio} />
   </div>
-  <div class="layout">
-    <div class="layers">
-      {#each store.project.layers as layer (layer.id)}
-        <button
-          class="layerBtn"
-          class:active={store.selection.layerId === layer.id}
-          onclick={() => store.selection.selectLayer(layer.id)}
-        >
-          {layer.name}
-        </button>
-        {#if store.selection.layerId === layer.id}
-          <div class="trackRow">
-            {#each ANIM_KEYS as key (key)}
-              {#if layer.tracks[key].length}
-                <button
-                  class="trackBtn"
-                  class:active={store.selection.trackKey === key}
-                  onclick={() => selectTrack(key)}
-                >
-                  {key} ({layer.tracks[key].length})
-                </button>
-              {/if}
-            {/each}
-          </div>
-        {/if}
-      {/each}
-    </div>
-    <PreviewCanvas {store} {audio} />
-  </div>
-  <TimelineCanvas {store} {audio} />
-  {#if singleSelectedKeyframeId && singleSelectedEase}
-    <CurveEditor value={singleSelectedEase} onSelect={(ease) => store.setKeyframeEase(singleSelectedKeyframeId, ease)} />
-  {/if}
-</main>
+</div>
+<Toast />
+<ConfirmModal />
+<ContextMenu />
 
 <style>
-  main {
-    padding: 24px;
-  }
-  .controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 12px;
-  }
-  .layout {
-    display: flex;
-    gap: 16px;
-  }
-  .layers {
+  .app {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-width: 160px;
+    width: 100%;
+    height: 100%;
   }
-  .layerBtn,
-  .trackBtn {
-    text-align: left;
-  }
-  .layerBtn.active,
-  .trackBtn.active {
-    background: var(--accent2);
-    color: #000;
-  }
-  .trackRow {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin: 2px 0 6px 12px;
-  }
-  .err {
-    color: var(--danger);
+  .dockWrap {
+    flex: 1;
+    min-height: 0;
   }
 </style>
