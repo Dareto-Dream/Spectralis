@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.MetronomeView"
+             Background="#0A0A16"
+             Width="200" Height="160">
+
+  <Grid RowDefinitions="*,Auto,Auto">
+
+    <Ellipse Grid.Row="0" Name="PulseDot"
+             Width="60" Height="60"
+             HorizontalAlignment="Center" VerticalAlignment="Center"
+             Fill="#3A3A6A"/>
+
+    <TextBlock Grid.Row="1" Name="BpmLabel"
+               Text="-- BPM"
+               FontSize="22" FontWeight="Bold"
+               Foreground="White"
+               HorizontalAlignment="Center"
+               Margin="0,8"/>
+
+    <TextBlock Grid.Row="2" Name="KeyLabel"
+               Text="Key: --"
+               FontSize="12" Foreground="#8888AA"
+               HorizontalAlignment="Center"
+               Margin="0,2,0,10"/>
+
+  </Grid>
+</UserControl>
