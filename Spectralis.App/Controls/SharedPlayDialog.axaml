@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Controls.SharedPlayDialog"
+        Title="Shared Play"
+        Width="420" Height="380"
+        Background="#0D0D0D">
+
+  <Grid RowDefinitions="*, Auto">
+
+    <StackPanel Grid.Row="0" Spacing="16" Margin="24">
+
+      <TextBlock Text="Shared Play" FontSize="20" FontWeight="SemiBold" Foreground="White" />
+
+      <Grid ColumnDefinitions="*, 12, *" RowDefinitions="Auto, 8, Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Room Code" Foreground="#888" FontSize="11" />
+        <TextBox Grid.Row="2" Grid.Column="0"
+                 Text="{Binding RoomCode}"
+                 Watermark="ABC123"
+                 Background="#1A1A1A"
+                 Foreground="White"
+                 Padding="10,8" />
+        <TextBlock Grid.Row="0" Grid.Column="2" Text="Your Name" Foreground="#888" FontSize="11" />
+        <TextBox Grid.Row="2" Grid.Column="2"
+                 Text="{Binding UserId}"
+                 Watermark="listener42"
+                 Background="#1A1A1A"
+                 Foreground="White"
+                 Padding="10,8" />
+      </Grid>
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Host Room"
+                Command="{Binding HostCommand}"
+                Background="#2A2A6E"
+                Foreground="White"
+                Padding="16,8"
+                IsEnabled="{Binding !IsConnected}" />
+        <Button Content="Join Room"
+                Command="{Binding JoinCommand}"
+                Background="#1A4A1A"
+                Foreground="White"
+                Padding="16,8"
+                IsEnabled="{Binding !IsConnected}" />
+        <Button Content="Leave"
+                Command="{Binding LeaveCommand}"
+                Background="#4A1A1A"
+                Foreground="White"
+                Padding="16,8"
+                IsEnabled="{Binding IsConnected}" />
+      </StackPanel>
+
+      <Border Background="#111" CornerRadius="4" Padding="12,8">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding StatusText}" Foreground="#CCC" FontSize="13" />
+          <TextBlock Text="{Binding ListenerCount, StringFormat='Listeners: {0}'}"
+                     Foreground="#666" FontSize="11"
+                     IsVisible="{Binding IsConnected}" />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+
+    <Button Grid.Row="1"
+            Content="Close"
+            Click="OnClose"
+            HorizontalAlignment="Right"
+            Margin="24,0,24,16"
+            Background="#222"
+            Foreground="White"
+            Padding="16,8" />
+
+  </Grid>
+</Window>

@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.OBSOverlayPanel"
+             Background="#0D0D0D">
+
+  <StackPanel Margin="20" Spacing="16">
+
+    <TextBlock Text="OBS Overlay" FontSize="18" FontWeight="SemiBold" Foreground="White" />
+
+    <Border Background="#111" CornerRadius="6" Padding="16">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding StatusText}" Foreground="#CCC" FontSize="13" />
+        <TextBlock Text="{Binding OverlayUrl}"
+                   Foreground="#FF6EC7"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   IsVisible="{Binding IsRunning}" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="{Binding IsRunning, Converter={x:Static BoolConverters.True}, ConverterParameter='Stop Server|Start Server'}"
+              Command="{Binding ToggleServerCommand}"
+              Background="#2A2A6E"
+              Foreground="White"
+              Padding="16,8" />
+      <Button Content="Copy URL"
+              Command="{Binding CopyUrlCommand}"
+              Background="#222"
+              Foreground="White"
+              Padding="16,8"
+              IsEnabled="{Binding IsRunning}" />
+    </StackPanel>
+
+    <TextBlock Text="Paste the Overlay URL into OBS as a Browser Source."
+               Foreground="#555"
+               FontSize="11"
+               TextWrapping="Wrap" />
+
+  </StackPanel>
+</UserControl>

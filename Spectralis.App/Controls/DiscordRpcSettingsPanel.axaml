@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.DiscordRpcSettingsPanel"
+             Background="#0D0D0D">
+
+  <StackPanel Margin="20" Spacing="16">
+    <TextBlock Text="Discord Rich Presence" FontSize="16" FontWeight="SemiBold" Foreground="White" />
+
+    <CheckBox Content="Enable Discord RPC"
+              IsChecked="{Binding DiscordRpcEnabled}"
+              Foreground="White" />
+
+    <Grid ColumnDefinitions="120, 12, *" IsVisible="{Binding DiscordRpcEnabled}">
+      <TextBlock Grid.Column="0" Text="Application ID" Foreground="#888" VerticalAlignment="Center" />
+      <TextBox Grid.Column="2"
+               Text="{Binding DiscordClientId}"
+               Watermark="Discord application client ID"
+               Background="#1A1A1A"
+               Foreground="White"
+               Padding="8,6" />
+    </Grid>
+
+    <TextBlock Text="Create a Discord app at discord.com/developers to get your Client ID."
+               Foreground="#555"
+               FontSize="11"
+               TextWrapping="Wrap" />
+  </StackPanel>
+</UserControl>
