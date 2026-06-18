@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Controls.SharedPlayChatPanel"
+             Background="#0D0D0D">
+
+  <Grid RowDefinitions="*, Auto">
+
+    <!-- Messages -->
+    <ScrollViewer Grid.Row="0" x:Name="MessageScroller">
+      <ItemsControl x:Name="MessageList" Margin="8">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Spacing="2" Margin="0,4">
+              <TextBlock Text="{Binding DisplayName}"
+                         FontSize="10"
+                         Foreground="#FF6EC7"
+                         FontWeight="SemiBold" />
+              <TextBlock Text="{Binding Content}"
+                         FontSize="12"
+                         Foreground="#CCC"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <!-- Input bar -->
+    <Grid Grid.Row="1" ColumnDefinitions="*, Auto" Margin="8,4,8,8">
+      <TextBox Grid.Column="0"
+               x:Name="ChatInput"
+               Watermark="Say something…"
+               Background="#1A1A1A"
+               Foreground="White"
+               BorderBrush="#333"
+               Padding="8,6" />
+      <Button Grid.Column="1"
+              Content="Send"
+              x:Name="SendButton"
+              Margin="6,0,0,0"
+              Background="#2A2A6E"
+              Foreground="White"
+              Padding="12,6" />
+    </Grid>
+
+  </Grid>
+</UserControl>

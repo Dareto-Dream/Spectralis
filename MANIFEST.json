@@ -4,13 +4,13 @@
     "timeline_start": "2025-02-02",
     "timeline_end": "2026-06-18",
     "total_commits_planned": 440,
-    "current_date": "2025-06-10",
-    "current_era": "winforms",
-    "current_phase": "W4",
-    "current_branch": "dev",
-    "last_checkpoint": "checkpoint W4 complete — v1.0.0 tagged on main",
+    "current_date": "2026-06-18",
+    "current_era": "avalonia",
+    "current_phase": "A10",
+    "current_branch": "main",
+    "last_checkpoint": "checkpoint A10 complete — final bug fixes + release v5.0.0. BUG-001 FULL FIX at c9f60f2 (NaudioAudioEngine.LoadAsync now creates new reader before acquiring _readerLock, preventing race on reader/waveOut swap). BUG-004 FULL FIX at 1eabcae (SpotifySource adds _refreshGuard SemaphoreSlim so concurrent callers serialize token refresh through SpotifyTokenManager). BUG-005 FULL FIX at c210f1a (ParticleSystemVisualizer band index formula changed from i*N/bands to (i*(N-1))/(bands-1) — eliminates off-by-one at max-energy band). BUG-007 FULL FIX at 6430f3d (LrcFile.GetCurrentLineIndex: < changed back to <=, lines now activate at exact timestamp). BUG-009 FULL FIX at ff798b6 (AudioEngineObservableExtensions adds WhenPlaybackStarted/Paused/Stopped/TrackEnded/TrackLoaded/WhenPlayStateChanged — ReactiveUI layer no longer needs lambda workarounds). BUG-010 FULL FIX at 3fcd096 (SoundCloudSource.SearchAsync: user JsonElement checked for ValueKind==Object before TryGetProperty). BUG-011 FULL FIX at 02309d9 (YouTubeSource.OpenStreamAsync: discovers yt-dlp on PATH, throws descriptive exception if output empty). Version bumped to 5.0.0 in all .csproj files. AboutView.axaml added. Merged dev→staging→main. Tagged v5.0.0.",
     "last_model": "claude-sonnet-4-6",
-    "commits_completed": 188
+    "commits_completed": 538
   },
   "phases": [
     {
@@ -71,108 +71,108 @@
     {
       "phase": "A0",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 11–30, 2025",
       "commits_planned": 20,
-      "commits_completed": 0,
+      "commits_completed": 20,
       "description": "Avalonia setup, Core extraction, architecture refactor"
     },
     {
       "phase": "A1",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jul 1–Aug 31, 2025",
       "commits_planned": 44,
-      "commits_completed": 0,
-      "description": "Core audio engine (cross-platform), platform seams"
+      "commits_completed": 44,
+      "description": "Core audio pipeline (FftProcessor, WaveformBuffer, SpectrumSmoother, AudioPipeline), NaudioAudioEngine, library/queue/streaming ports, App ViewModels, AXAML views, PositionService, CoverArtService, HotkeyService, TrayService, design tokens, MainWindow wired"
     },
     {
       "phase": "A2",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Sep 1–Oct 15, 2025",
       "commits_planned": 28,
-      "commits_completed": 0,
-      "description": "Library refactor, ObservableCollection"
+      "commits_completed": 28,
+      "description": "Playlist system (static+smart, evaluator), TagEditorService, Settings, EqualizerEffect, LastFmScrobbler, ReplayGainReader, DuplicateDetector, AlbumArtResolver, BrowseViewModel, FileDialogService, ScanProgressViewModel"
     },
     {
       "phase": "A3",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Oct 16–Dec 15, 2025",
       "commits_planned": 56,
-      "commits_completed": 0,
-      "description": "Visualizer abstraction, Skia GPU rendering (11 visualizers)"
+      "commits_completed": 56,
+      "description": "IVisualizer/VisualizerRegistry, BeatDetector, ColorPalette, SkiaVisualizerBase, 19 Skia visualizers (bars, waveform, oscilloscope, VU, circular, mirror, heatmap, particles, starfield, lissajous, 3D bars, neon rings, beat pulse, reactive bg, waterfall, spiral, chromatic, mosaic, reactive gradient), VisualizerCanvas, VisualizerPickerControl, VisualizerScriptHost (Jint), HtmlVisualizerHost stub, VisualizerScriptManager, VisualizerContextHelper, VisualizerPresetStore, VisualizerSettingsViewModel, test suite. BUG-003 fixed. BUG-005/006 partial."
     },
     {
       "phase": "A4",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Dec 16–Jan 31, 2026",
       "commits_planned": 38,
-      "commits_completed": 0,
-      "description": "Avalonia UI (MainWindow, playback controls, library)"
+      "commits_completed": 38,
+      "description": "BPM analysis (BpmAnalyzer onset detection, KeyAnalyzer Krumhansl-Schmuckler, AnalysisWorker 30s PCM, AnalysisCache atomic JSON, BeatGrid), streaming Avalonia (StreamingViewModel, StreamingSearchView, StreamingTrackExtensions), capsule v4 (CapsuleReader/Writer ZIP, CapsuleViewModel, CapsuleService), scrobbling overhaul (ScrobbleService multi-scrobbler + offline queue, ListenBrainzScrobbler music_service_name, ListeningHistoryViewModel, ScrobblingStatusViewModel, ScrobblingSettingsPanel), BpmViewModel cache-first, BeatGridOverlayControl, MetronomeView, MainViewModel auto-BPM on track load. No new bugs."
     },
     {
       "phase": "A5",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Feb 1–28, 2026",
       "commits_planned": 22,
-      "commits_completed": 0,
-      "description": "Queue system (Avalonia rewrite)"
+      "commits_completed": 22,
+      "description": "Queue system Avalonia rewrite with full drag-reorder, BUG-012 full fix — PlayQueue.Move() in-place shuffle index update, QueueItemControl, QueuePanel, DragDropBehavior, QueueService, QueueHistoryService, QueueSearchViewModel"
     },
     {
       "phase": "A6",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Mar 1–31, 2026",
       "commits_planned": 26,
-      "commits_completed": 0,
-      "description": "Lyrics system (LRC, sync, studio)"
+      "commits_completed": 26,
+      "description": "Lyrics system (LRC, sync, Timing Studio, annotations). BUG-007 injected."
     },
     {
       "phase": "A7",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Apr 1–30, 2026",
       "commits_planned": 32,
-      "commits_completed": 0,
-      "description": "Capsules (signed), reactive timelines"
+      "commits_completed": 32,
+      "description": "Capsules v5 (ECDSA signed, trust store, cache), reactive timelines, Album World (.spectral)"
     },
     {
       "phase": "A8",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "May 1–31, 2026",
       "commits_planned": 40,
-      "commits_completed": 0,
-      "description": "Shared Play backend, Discord RPC, OBS overlay"
+      "commits_completed": 40,
+      "description": "Shared Play (WebSocket), Discord RPC, OBS overlay (port 5128). BUG-008 injected."
     },
     {
       "phase": "A9",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 1–10, 2026",
       "commits_planned": 30,
-      "commits_completed": 0,
-      "description": "xUnit tests (245 total), packaging (Windows/Mac/Linux)"
+      "commits_completed": 30,
+      "description": "xUnit tests (245 total), packaging (Windows/Mac/Linux). BUG-006 + BUG-008 full fixes."
     },
     {
       "phase": "A10",
       "era": "avalonia",
-      "status": "pending",
+      "status": "complete",
       "dates": "Jun 11–18, 2026",
       "commits_planned": 14,
-      "commits_completed": 0,
-      "description": "Final polish, release v1.0.0-avalonia → v5.0.0 on main",
+      "commits_completed": 14,
+      "description": "Final polish, all remaining bug fixes, release v5.0.0",
       "release": "v5.0.0 to main after staging"
     }
   ],
   "modules": [
     {
       "name": "WinForms.AudioEngine",
-      "status": "pending",
+      "status": "complete",
       "phase": "W1",
       "introduced_bugs": ["BUG-001", "BUG-002"],
       "fixed_bugs": [],
@@ -180,7 +180,7 @@
     },
     {
       "name": "WinForms.Library",
-      "status": "pending",
+      "status": "complete",
       "phase": "W2",
       "introduced_bugs": [],
       "fixed_bugs": [],
@@ -188,7 +188,7 @@
     },
     {
       "name": "WinForms.Visualizers",
-      "status": "pending",
+      "status": "complete",
       "phase": "W3",
       "introduced_bugs": ["BUG-003"],
       "fixed_bugs": [],
@@ -196,7 +196,7 @@
     },
     {
       "name": "WinForms.Streaming",
-      "status": "pending",
+      "status": "complete",
       "phase": "W3.5",
       "introduced_bugs": ["BUG-004", "BUG-010", "BUG-011"],
       "fixed_bugs": [],
@@ -204,7 +204,7 @@
     },
     {
       "name": "WinForms.Queue",
-      "status": "pending",
+      "status": "complete",
       "phase": "W4",
       "introduced_bugs": ["BUG-012"],
       "fixed_bugs": [],
@@ -212,47 +212,63 @@
     },
     {
       "name": "Core.AudioEngine",
-      "status": "pending",
+      "status": "complete",
       "phase": "A0–A1",
       "introduced_bugs": ["BUG-009"],
       "fixed_bugs": ["BUG-002"],
-      "description": "Cross-platform refactor from WinForms, platform seams"
+      "description": "Cross-platform refactor from WinForms, platform seams, pipeline"
+    },
+    {
+      "name": "App.Shell",
+      "status": "complete",
+      "phase": "A1",
+      "introduced_bugs": [],
+      "fixed_bugs": [],
+      "description": "Avalonia ViewModels, views, services (Position/CoverArt/Hotkey/Tray), design tokens"
     },
     {
       "name": "Core.Library",
-      "status": "pending",
+      "status": "complete",
+      "phase": "A1",
+      "introduced_bugs": [],
+      "fixed_bugs": [],
+      "description": "LibraryDb, LibraryRepository, LibraryScanner, FolderWatcher, CoverArtStore"
+    },
+    {
+      "name": "App.Library",
+      "status": "complete",
       "phase": "A2",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "ObservableCollection, SQLite migration to Core"
+      "description": "Tag editor Avalonia, playlist browser, advanced search"
     },
     {
       "name": "Core.Visualizers",
-      "status": "pending",
+      "status": "complete",
       "phase": "A3",
       "introduced_bugs": ["BUG-005", "BUG-006"],
       "fixed_bugs": ["BUG-003"],
-      "description": "Port 11 visualizers from GDI+ to Skia"
+      "description": "19 Skia visualizers, VisualizerRegistry, BeatDetector, ColorPalette, VisualizerContextHelper, scripted+HTML visualizer hosts"
     },
     {
       "name": "App.MainUI",
-      "status": "pending",
+      "status": "complete",
       "phase": "A4",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "Avalonia MainWindow, ReactiveUI"
+      "description": "BPM/Key analysis pipeline, streaming Avalonia port, capsule v4, scrobbling overhaul with offline queue"
     },
     {
       "name": "App.Queue",
-      "status": "pending",
+      "status": "complete",
       "phase": "A5",
       "introduced_bugs": [],
-      "fixed_bugs": [],
-      "description": "Queue panel, drag-reorder"
+      "fixed_bugs": ["BUG-012"],
+      "description": "Queue panel drag-reorder, BUG-012 full fix — Move() updates _shuffleOrder in-place"
     },
     {
       "name": "Core.Lyrics",
-      "status": "pending",
+      "status": "complete",
       "phase": "A6",
       "introduced_bugs": ["BUG-007"],
       "fixed_bugs": [],
@@ -260,211 +276,203 @@
     },
     {
       "name": "Core.Metadata",
-      "status": "pending",
+      "status": "complete",
       "phase": "A7",
       "introduced_bugs": [],
       "fixed_bugs": [],
-      "description": "Capsules, Ed25519 signing, reactive timelines"
+      "description": "Capsules v5 (ECDSA signing, trust store, cache), reactive timelines, Album World"
     },
     {
       "name": "Backend.SharedPlay",
-      "status": "pending",
+      "status": "complete",
       "phase": "A8",
       "introduced_bugs": ["BUG-008"],
       "fixed_bugs": [],
-      "description": "Rust/Axum backend, WebSocket sync"
+      "description": "WebSocket sync client, Discord RPC, OBS overlay server, latency compensation, drift detection"
     },
     {
       "name": "Tests.Suite",
-      "status": "pending",
+      "status": "complete",
       "phase": "A9",
       "introduced_bugs": [],
-      "fixed_bugs": [],
-      "description": "xUnit tests (245 total), packaging"
+      "fixed_bugs": ["BUG-006", "BUG-008"],
+      "description": "xUnit tests (245 total), packaging (MSIX/DMG/AppImage), CI matrix"
     },
     {
       "name": "Release.Polish",
-      "status": "pending",
+      "status": "complete",
       "phase": "A10",
       "introduced_bugs": [],
-      "fixed_bugs": ["BUG-001", "BUG-004", "BUG-005", "BUG-006", "BUG-007", "BUG-008", "BUG-009"],
-      "description": "Final bugs, cross-platform polish"
+      "fixed_bugs": ["BUG-001", "BUG-004", "BUG-005", "BUG-007", "BUG-009", "BUG-010", "BUG-011"],
+      "description": "Final bugs, cross-platform polish, version 5.0.0, AboutView, merged dev→staging→main, tagged v5.0.0"
     }
   ],
   "bugs": [
     {
       "id": "BUG-001",
       "name": "Format switch race condition",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "5a617e7",
       "introduced_phase": "W1",
-      "introduced_msg": "core: audio engine (play, pause, seek, stop) + TrackInfo model",
       "partial_fix_in": "39e80d9",
       "partial_fix_phase": "W1",
-      "partial_fix_msg": "fix: add guard to SwitchFormat (incomplete)",
-      "full_fix_in": null,
+      "full_fix_in": "c9f60f2",
       "full_fix_phase": "A10",
-      "note": "Race in SwitchFormat: _reader/_waveProvider swapped without lock. Partial fix adds null guard only — race remains when Play() runs concurrently."
+      "note": "Race in SwitchFormat: _reader/_waveProvider swapped without lock. Full fix: LoadAsync creates new reader before acquiring _readerLock; Seek also holds the lock."
     },
     {
       "id": "BUG-002",
       "name": "Null reference on cover art",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "9dec10b",
       "introduced_phase": "W1",
-      "introduced_msg": "metadata extraction but cover art still scares me",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
+      "full_fix_in": "08eecf6",
       "full_fix_phase": "A0",
-      "note": "MetadataExtractor.cs line 25: file.Tag.Pictures[0] throws IndexOutOfRangeException when tag has no cover art."
+      "note": "WinForms MetadataExtractor accessed file.Tag.Pictures[0] unconditionally. Core MetadataExtractor guards with Pictures != null && Length > 0."
     },
     {
       "id": "BUG-003",
       "name": "WASAPI loopback resource leak",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d58988e",
       "introduced_phase": "W3",
-      "introduced_msg": "audio: WASAPI loopback capture feeds FFT + waveform buffers",
       "partial_fix_in": "d8f7236",
       "partial_fix_phase": "W3",
-      "partial_fix_msg": "audio: LoopbackCaptureSafe disposes enumerator in finally (noticed original didn't)",
-      "full_fix_in": null,
+      "full_fix_in": "aa8b86e",
       "full_fix_phase": "A3",
-      "note": "LoopbackCapture.Start() creates MMDeviceEnumerator and MMDevice but neither is disposed — device held as COM ref until GC. LoopbackCaptureSafe fixes enumerator with finally{} but still doesn't dispose device after passing to WasapiLoopbackCapture."
+      "note": "MMDeviceEnumerator+MMDevice COM refs not disposed. Full fix in A3: WasapiLoopbackCaptureAdapter tracks and disposes all three handles."
     },
     {
       "id": "BUG-004",
       "name": "Spotify token refresh race",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d6a9b92",
       "introduced_phase": "W3.5",
-      "introduced_msg": "streaming: spotify source — PKCE OAuth search + stream, BUG-004 injected (per-instance token cache not thread-safe)",
       "partial_fix_in": "dbc39df",
       "partial_fix_phase": "W3.5",
-      "partial_fix_msg": "streaming: token fixer — static semaphore + 50s cache (SpotifySource._cachedToken still racy)",
-      "full_fix_in": null,
+      "full_fix_in": "1eabcae",
       "full_fix_phase": "A10",
-      "note": "SpotifySource._cachedToken and _tokenExpiry are per-instance fields updated without a lock. Two concurrent callers both see expired token and both refresh. SpotifyTokenFixer adds a static semaphore with 50s cache but SpotifySource doesn't use it — race still exists on the instance."
+      "note": "SpotifySource now has _refreshGuard SemaphoreSlim; AcquireTokenAsync serializes all concurrent token refreshes."
     },
     {
       "id": "BUG-005",
       "name": "FFT bounds check off-by-one",
-      "status": "pending",
+      "status": "fixed",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "9b220fc",
       "introduced_phase": "A3",
-      "partial_fix_in": null,
-      "partial_fix_phase": "A7",
-      "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "partial_fix_in": "64cf6d6",
+      "partial_fix_phase": "A3",
+      "full_fix_in": "c210f1a",
+      "full_fix_phase": "A10",
+      "note": "ParticleSystemVisualizer: formula changed to (i*(N-1))/(bands-1) which distributes evenly and never reaches index N."
     },
     {
       "id": "BUG-006",
       "name": "3D visualizer GPU texture leak",
-      "status": "pending",
+      "status": "fixed",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "9246af4",
       "introduced_phase": "A3",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
-      "full_fix_phase": "A9"
+      "partial_fix_in": "7eeda81",
+      "partial_fix_phase": "A3",
+      "full_fix_in": "bdd6e34",
+      "full_fix_phase": "A9",
+      "note": "Bar3DVisualizer leaks SKSurface on resize. Partial fix disposes before reassign. Full fix in A9 also fills the empty Dispose() override."
     },
     {
       "id": "BUG-007",
       "name": "Lyric timeline index off-by-one",
-      "status": "pending",
+      "status": "fixed",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "040af68",
       "introduced_phase": "A6",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_in": "6430f3d",
+      "full_fix_phase": "A10",
+      "note": "GetCurrentLineIndex uses <= so lines activate at exact timestamp instead of one tick late."
     },
     {
       "id": "BUG-008",
       "name": "WebSocket subscription leak",
-      "status": "pending",
+      "status": "fixed",
       "severity": "medium",
-      "introduced_in": null,
+      "introduced_in": "697f335",
       "introduced_phase": "A8",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
-      "full_fix_phase": "A9"
+      "full_fix_in": "2a116ec",
+      "full_fix_phase": "A9",
+      "note": "ReconnectAsync() creates a new CTS and WebSocket without cancelling the previous ReceiveLoopAsync. Old loop holds event handler closures indefinitely. Manifests as duplicate SyncReceived events on reconnect."
     },
     {
       "id": "BUG-009",
       "name": "WinForms event pattern in Core",
-      "status": "pending",
+      "status": "fixed",
       "severity": "low",
-      "introduced_in": null,
+      "introduced_in": "f39e3b2",
       "introduced_phase": "A1",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
-      "full_fix_phase": "A10"
+      "full_fix_in": "ff798b6",
+      "full_fix_phase": "A10",
+      "note": "AudioEngineObservableExtensions.cs wraps all EventHandler events via Observable.FromEventPattern, giving ReactiveUI layer proper IObservable<T> without rewriting NaudioAudioEngine."
     },
     {
       "id": "BUG-010",
       "name": "SoundCloud metadata null check",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "e32b1dc",
       "introduced_phase": "W3.5",
-      "introduced_msg": "streaming: soundcloud source — search + stream via client_id API, BUG-010 injected (null user field NullRef)",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
+      "full_fix_in": "3fcd096",
       "full_fix_phase": "A10",
-      "note": "SoundCloudSource.SearchAsync() accesses item['user']['username'] — item['user'] can be null for private/deleted tracks. JToken null is not C# null, so ?. doesn't help."
+      "note": "SoundCloudSource now checks user.ValueKind == JsonValueKind.Object before calling TryGetProperty, handles null user on private/deleted tracks."
     },
     {
       "id": "BUG-011",
       "name": "YouTube yt-dlp silent failure",
-      "status": "injected",
+      "status": "fixed",
       "severity": "low",
       "introduced_in": "e59c1ba",
       "introduced_phase": "W3.5",
-      "introduced_msg": "streaming: youtube source — yt-dlp subprocess for search+stream, BUG-011 injected (null return on failure)",
-      "partial_fix_in": null,
-      "partial_fix_phase": null,
-      "full_fix_in": null,
+      "full_fix_in": "02309d9",
       "full_fix_phase": "A10",
-      "note": "YouTubeSource.OpenStreamAsync() returns null when yt-dlp output is empty/whitespace — caller has no way to distinguish 'no URL' from 'process failed silently'."
+      "note": "YouTubeSource.OpenStreamAsync now locates yt-dlp on PATH, runs process, and throws InvalidOperationException with stderr detail when output is empty."
     },
     {
       "id": "BUG-012",
       "name": "Queue index out of sync after shuffle",
-      "status": "partial_fix",
+      "status": "fixed",
       "severity": "medium",
       "introduced_in": "d222b3d",
       "introduced_phase": "W4",
-      "introduced_msg": "queue: PlayQueue — add/remove/move, shuffle order, repeat modes, prev/next navigation",
       "partial_fix_in": "050187d",
       "partial_fix_phase": "W4",
-      "partial_fix_msg": "fix: queue shuffle Next() used _currentIndex as shuffle position — add _shufflePos tracker",
-      "full_fix_in": null,
+      "full_fix_in": "7d75f7b",
       "full_fix_phase": "A5",
-      "note": "Next() in shuffle mode used _currentIndex (item index in _items[]) directly as position in _shuffleOrder[], causing skips when shuffle was toggled mid-queue or after PlayAt(). Partial fix adds _shufflePos to track shuffle position separately, but Move() still doesn't update _shuffleOrder indices after drag-reorder — so shuffled navigation after a move can still land on the wrong track."
+      "note": "Next() in shuffle mode used _currentIndex as shuffle position. Partial fix adds _shufflePos. Full fix in A5: Move() now updates _shuffleOrder indices in-place (instead of RebuildShuffleOrder) so drag-reorder preserves shuffle traversal history."
     }
   ],
   "notes": [
     "W0 complete: 14 commits, Feb 2-14 2025.",
     "W1 complete: 48 commits, Feb 15 - Mar 31 2025. Audio engine, 8 format readers, device enum, UI components, metadata extraction.",
-    "BUG-001 INJECTED at 5a617e7 (AudioEngine.SwitchFormat — no lock around _reader/_waveProvider swap). PARTIAL FIX at 39e80d9 (null guard only, race remains).",
-    "BUG-002 INJECTED at 9dec10b (MetadataExtractor.Extract — file.Tag.Pictures[0] no bounds check). Still live.",
-    "W2 complete: 32 commits, Apr 1-20 2025. SQLite library with FTS5 search, folder watcher with debounce, album grid view, genre filter panel, Ctrl+L toggle, drag-drop to playlist, batch upsert, FTS5 maintenance, M3U export. No new bugs.",
-    "W3 complete: 38 commits, Apr 21-May 10 2025. 14 GDI+ visualizers (spectrum/waveform/oscilloscope/VU/circular/mirror/heatmap/particles/starfield/lissajous/3D bar/neon rings/beat pulse/reactive BG), WASAPI loopback, FFT+waveform buffers, smoother, pipeline coordinator. BUG-003 INJECTED at d58988e (MMDevice not disposed in Start()); PARTIAL FIX at d8f7236 (enumerator fixed, device still leaks).",
-    "W3.5 complete: 32 commits, May 11-25 2025. IStreamingSource/StreamingRegistry abstraction, Spotify PKCE OAuth+playlists+recommendations, SoundCloud client_id API, Suno session, YouTube yt-dlp, streaming UI (search panel, history panel, status bar, auth dialog, menu), thumbnail cache, rate limiter, playback monitor. BUG-004 INJECTED at d6a9b92 (Spotify per-instance token race); PARTIAL FIX at dbc39df (static semaphore, source still uses per-instance cache). BUG-010 INJECTED at e32b1dc (SoundCloud null user field). BUG-011 INJECTED at e59c1ba (yt-dlp silent null return).",
-    "W4 complete: 24 commits, May 26-Jun 10 2025. PlayQueueItem+PlayQueue model (shuffle, repeat, auto-advance), QueuePersistence (JSON snapshot), QueuePanel (ListView+drag-reorder), transport controls, now-playing bar, system tray, media keys, global hotkeys, queue status bar, M3U import/export, drop target, queue stats+search. BUG-012 INJECTED at d222b3d (shuffle Next() used _currentIndex as shuffle pos). PARTIAL FIX at 050187d (adds _shufflePos, but Move() still invalidates shuffleOrder).",
-    "W4 end: merge dev -> staging -> main, tag v1.0.0.",
-    "At A10 end: merge dev -> staging -> main, tag v5.0.0."
+    "BUG-001 INJECTED at 5a617e7. PARTIAL FIX at 39e80d9.",
+    "BUG-002 INJECTED at 9dec10b.",
+    "W2 complete: 32 commits, Apr 1-20 2025.",
+    "W3 complete: 38 commits, Apr 21-May 10 2025. BUG-003 INJECTED at d58988e; PARTIAL FIX at d8f7236.",
+    "W3.5 complete: 32 commits, May 11-25 2025. BUG-004 INJECTED+PARTIAL FIX. BUG-010 INJECTED. BUG-011 INJECTED.",
+    "W4 complete: 24 commits, May 26-Jun 10 2025. BUG-012 INJECTED+PARTIAL FIX. Merged -> main, tagged v1.0.0.",
+    "A0 complete: 20 commits, Jun 11-30 2025. BUG-002 FIXED at 08eecf6.",
+    "A1 complete: 44 commits, Jul 1-Aug 31 2025. BUG-009 INJECTED at f39e3b2.",
+    "A2 complete: 28 commits, Sep 1-Oct 15 2025.",
+    "A3 complete: 56 commits, Oct 16-Dec 15 2025. BUG-003 FULL FIX at aa8b86e. BUG-005 INJECTED+PARTIAL FIX. BUG-006 INJECTED+PARTIAL FIX.",
+    "A4 complete: 38 commits, Dec 16-Jan 31 2026. No new bugs. BUG-005/006 remain partial.",
+    "A5 complete: 22 commits, Feb 1-28 2026. BUG-012 FULLY FIXED at 7d75f7b (Move() in-place shuffle index update).",
+    "A6 complete: 26 commits, Mar 1-31 2026. BUG-007 INJECTED at 040af68 (GetCurrentLineIndex off-by-one, < vs <=).",
+    "A7 complete: 32 commits, Apr 1-30 2026. Capsules v5 (ECDSA P-256), Album World (.spectral), reactive timelines. No new bugs.",
+    "A8 complete: 40 commits, May 1-31 2026. Shared Play WebSocket, Discord RPC, OBS overlay. BUG-008 INJECTED at 697f335 (ReconnectAsync leaks old CTS/WS).",
+    "A9 complete: 30 commits, Jun 1-10 2026. xUnit test suite expansion, packaging (MSIX/DMG/AppImage), CI matrix. BUG-006 FULL FIX at bdd6e34. BUG-008 FULL FIX at 2a116ec.",
+    "A10 complete: 14 commits, Jun 11-18 2026. BUG-001/004/005/007/009/010/011 all fully fixed. Version 5.0.0. AboutView. Merged dev->staging->main. Tagged v5.0.0.",
+    "ALL 12 BUGS RESOLVED. Total commits: 538. Spectralis v5.0.0 shipped."
   ]
 }
