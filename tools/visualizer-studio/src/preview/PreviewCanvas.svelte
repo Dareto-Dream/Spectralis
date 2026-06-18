@@ -53,7 +53,7 @@
     }
 
     const level = audio.loaded ? audio.currentLevel() : { peak: 0, rms: 0 };
-    drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState);
+    drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState, store.soloedLayerIds);
   }
 
   onMount(() => {

@@ -25,7 +25,8 @@ export function drawPreviewFrame(
   playhead: number,
   nowMs: number,
   level: { peak: number; rms: number },
-  frameState: PreviewFrameState
+  frameState: PreviewFrameState,
+  soloedLayerIds?: ReadonlySet<string>
 ): void {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
@@ -37,6 +38,7 @@ export function drawPreviewFrame(
   frameState.beatFlash *= 0.9;
 
   for (const layer of project.layers) {
+    if (soloedLayerIds && soloedLayerIds.size > 0 && !soloedLayerIds.has(layer.id)) continue;
     renderLayerAt(ctx, layer, playhead, W, H, nowMs, frameState.beatFlash, getLyricWords, project.sections);
   }
 

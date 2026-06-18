@@ -87,7 +87,10 @@
       return;
     }
 
-    const kfHit = hitTestActiveLaneKeyframe(layout, store.project, store.selection.layerId, store.selection.trackKey, pxPerSec, x, y);
+    const activeLayer = store.project.layers.find((l) => l.id === store.selection.layerId);
+    const kfHit = activeLayer?.locked
+      ? null
+      : hitTestActiveLaneKeyframe(layout, store.project, store.selection.layerId, store.selection.trackKey, pxPerSec, x, y);
     if (kfHit) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       if (!additive && !store.selection.keyframeIds.has(kfHit.keyframeId)) {
@@ -117,7 +120,7 @@
     }
 
     const rowHit = hitTestOverviewRow(layout, store.project, y);
-    if (rowHit) {
+    if (rowHit && !rowHit.locked) {
       store.selection.selectLayer(rowHit.id);
       return;
     }

@@ -48,6 +48,10 @@ export interface Layer<T extends LayerType = LayerType> {
   name: string;
   type: T;
   visible: boolean;
+  // Optional (not present in pre-QoL saves) — blocks canvas/timeline selection and
+  // dragging while leaving the layer visible and Inspector-editable. Read as
+  // `layer.locked ?? false` everywhere so old saves default to unlocked.
+  locked?: boolean;
   tracks: Tracks;
   statics: Statics;
   params: LayerParamsByType[T];

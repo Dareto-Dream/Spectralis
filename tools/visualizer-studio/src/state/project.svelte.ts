@@ -1,4 +1,4 @@
-import type { AnimKey, AnyLayer, Ease, LayerType, Project, ProjectMeta, Section } from '../types/project';
+import type { AnimKey, AnyLayer, Ease, Layer, LayerType, Project, ProjectMeta, Section } from '../types/project';
 import { evalTrack } from '../core/ease.js';
 import { newLayer, newKeyframeId, newProject as createNewProject } from './factories';
 import { HistoryStack } from './history.svelte';
@@ -13,6 +13,10 @@ export class ProjectStore {
 
   history = new HistoryStack();
   selection = new SelectionState(() => this.project);
+
+  // Ephemeral, session-only (not persisted, not undoable) — matches how solo
+  // works in most DAWs/AE: a temporary isolation toggle, not an authored property.
+  soloedLayerIds: Set<string> = $state(new Set());
 
   // Explicit commit point for continuous UI-driven edits (keyframe drag, numeric
   // field entry) that mutate `project` directly and only want ONE history entry
@@ -64,13 +68,13 @@ export class ProjectStore {
   }
 
   // ---- layers ----
-  addLayer(type: LayerType): AnyLayer {
+  addLayer<T extends LayerType>(type: T): Layer<T> {
     const layer = newLayer(type);
-    this.project.layers.push(layer);
+    this.project.layers.push(layer as AnyLayer);
     // Re-fetch from the reactive array: `layer` is the pre-$state object, a
     // separate identity from the proxy Svelte wraps it in once it's inside
     // `this.project` — callers need the live reference, not the stale one.
-    const reactive = this.project.layers[this.project.layers.length - 1];
+    const reactive = this.project.layers[this.project.layers.length - 1] as Layer<T>;
     this.selection.selectLayer(reactive.id);
     this.commit();
     return reactive;
@@ -100,6 +104,18 @@ export class ProjectStore {
     return reactive;
   }
 
+  // Drag-to-reorder counterpart to the ↑/↓ buttons — both end up calling the
+  // same underlying array mutation so behavior is identical either way.
+  reorderLayer(draggedId: string, ontoId: string) {
+    const layers = this.project.layers;
+    const from = layers.findIndex((l) => l.id === draggedId);
+    const to = layers.findIndex((l) => l.id === ontoId);
+    if (from < 0 || to < 0 || from === to) return;
+    const [moved] = layers.splice(from, 1);
+    layers.splice(to, 0, moved);
+    this.commit();
+  }
+
   moveLayer(id: string, dir: -1 | 1) {
     const layers = this.project.layers;
     const idx = layers.findIndex((l) => l.id === id);
@@ -121,6 +137,20 @@ export class ProjectStore {
     if (!layer) return;
     layer.name = name;
     this.commit();
+  }
+
+  toggleLayerLock(id: string) {
+    const layer = this.project.layers.find((l) => l.id === id);
+    if (!layer) return;
+    layer.locked = !layer.locked;
+    this.commit();
+  }
+
+  toggleLayerSolo(id: string) {
+    const next = new Set(this.soloedLayerIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.soloedLayerIds = next;
   }
 
   // ---- keyframing ----

@@ -1,4 +1,4 @@
-import type { AnyLayer, LayerType, Project, Section, Statics, Tracks } from '../types/project';
+import type { Layer, LayerType, Project, Section, Statics, Tracks } from '../types/project';
 import { ANIM_KEYS } from '../types/project';
 import { LAYER_TYPE_DEFS } from '../types/layerDefs';
 
@@ -20,7 +20,7 @@ export function defaultStatics(): Statics {
   return { x: 135, y: 220, scale: 1, rotation: 0, opacity: 1, hueA: 220, hueB: 260 };
 }
 
-export function newLayer(type: LayerType): AnyLayer {
+export function newLayer<T extends LayerType>(type: T): Layer<T> {
   const def = LAYER_TYPE_DEFS[type];
   return {
     id: uid('layer'),
@@ -30,7 +30,7 @@ export function newLayer(type: LayerType): AnyLayer {
     tracks: emptyTracks(),
     statics: defaultStatics(),
     params: def.defaultParams(),
-  } as AnyLayer;
+  } as Layer<T>;
 }
 
 export function defaultSection(id: string, label: string, start: number, end: number, hue: number, hue2: number): Section {
