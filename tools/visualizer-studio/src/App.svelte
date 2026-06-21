@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ProjectStore } from './state/project.svelte';
   import { AudioState } from './state/audio.svelte';
+  import { AssetsState } from './state/assets.svelte';
   import TopBar from './panels/TopBar.svelte';
   import DockviewLayout from './panels/DockviewLayout.svelte';
   import Toast from './panels/Toast.svelte';
@@ -13,6 +14,7 @@
   const store = new ProjectStore();
   store.loadProject(TEMPLATES[0].build());
   const audio = new AudioState();
+  const assets = new AssetsState();
 
   type Tab = 'studio' | 'world' | 'story';
   let tab: Tab = $state('studio');
@@ -25,7 +27,7 @@
     <button class:active={tab === 'story'} onclick={() => (tab = 'story')}>Story</button>
   </div>
   {#if tab === 'studio'}
-    <TopBar {store} {audio} />
+    <TopBar {store} {audio} {assets} />
   {/if}
   <div class="dockWrap" class:hidden={tab !== 'studio'}>
     <DockviewLayout {store} {audio} />

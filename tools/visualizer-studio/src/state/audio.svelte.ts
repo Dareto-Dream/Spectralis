@@ -1,3 +1,5 @@
+import { sha256Hex } from '../export/sha256';
+
 export interface AudioLevel {
   peak: number;
   rms: number;
@@ -33,6 +35,7 @@ export class AudioState {
   loaded = $state(false);
   error: string | null = $state(null);
   waveformPeaks: Float32Array | null = $state(null);
+  sha256: string | null = $state(null);
 
   private ensureGraph() {
     if (this.ctx) return;
@@ -47,6 +50,7 @@ export class AudioState {
   async loadFile(file: File) {
     this.error = null;
     this.waveformPeaks = null;
+    this.sha256 = null;
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
     this.el.src = this.objectUrl;
@@ -63,17 +67,23 @@ export class AudioState {
       this.error = err instanceof Error ? err.message : 'Could not load this audio file.';
       return;
     }
+    // One read, two independent consumers: decodeAudioData detaches whatever
+    // buffer it's given, so the waveform decode gets a .slice(0) copy while the
+    // original `raw` stays intact for hashing (Gap 1 — real audio sha256).
+    const raw = await file.arrayBuffer();
     try {
-      // Independent read from the File (not the object URL) — decodeAudioData
-      // detaches its input buffer, so this can't share the buffer used elsewhere.
-      const raw = await file.arrayBuffer();
-      const decoded = await this.ctx!.decodeAudioData(raw);
+      const decoded = await this.ctx!.decodeAudioData(raw.slice(0));
       this.waveformPeaks = computePeaks(decoded, 2000);
     } catch {
       // Waveform is a nice-to-have on top of already-working playback — a decode
       // failure here just means the timeline falls back to its "no waveform" state,
       // not a hard error for the whole load.
       this.waveformPeaks = null;
+    }
+    try {
+      this.sha256 = await sha256Hex(raw);
+    } catch {
+      this.sha256 = null;
     }
   }
 
