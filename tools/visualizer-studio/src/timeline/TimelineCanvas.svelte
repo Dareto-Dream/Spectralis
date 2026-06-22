@@ -14,8 +14,7 @@
     type SectionEdge,
   } from './interactions';
   import { snap, snapTargets } from './snapping';
-  import { copyKeyframes, pasteAtPlayhead, pasteAtOriginalTimes, hasClipboard } from './clipboard';
-  import type { AnimKey } from '../types/project';
+  import { fmtTime } from '../lib/fmtTime';
   import { onMount } from 'svelte';
 
   let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
@@ -170,35 +169,15 @@
     }
   }
 
-  function selectedKeyframeEntries() {
-    const entries: { layerId: string; trackKey: AnimKey; t: number; v: number; ease: any }[] = [];
-    for (const id of store.selection.keyframeIds) {
-      const ref = store.selection.keyframeIndex.get(id);
-      if (!ref) continue;
-      const kf = ref.layer.tracks[ref.trackKey][ref.index];
-      entries.push({ layerId: ref.layer.id, trackKey: ref.trackKey, t: kf.t, v: kf.v, ease: kf.ease });
-    }
-    return entries;
-  }
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault();
-      for (const id of [...store.selection.keyframeIds]) store.deleteKeyframe(id);
-    } else if (e.key === 'Escape') {
-      store.selection.clearKeyframes();
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-      const entries = selectedKeyframeEntries();
-      if (entries.length) copyKeyframes(entries, store.playhead);
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && hasClipboard()) {
-      e.preventDefault();
-      const pasted = e.shiftKey ? pasteAtOriginalTimes() : pasteAtPlayhead(store.playhead);
-      store.pasteKeyframes(pasted);
-    }
-  }
+  // Delete/Escape/Copy/Paste are handled by the app-wide keymap (lib/keymap.ts)
+  // now — a local handler here would double-fire (double-paste is a real bug,
+  // not just a harmless redundant delete) whenever the canvas itself has focus.
 </script>
 
 <div class="timelineToolbar">
+  <button class="small" onclick={() => store.togglePlay()} title="Space">{store.playing ? '⏸ Pause' : '▶ Play'}</button>
+  <button class="small" onclick={() => store.stop()}>■ Stop</button>
+  <span class="readout">{fmtTime(store.playhead)}</span>
   <label><span>Zoom</span><input type="range" min="10" max="400" bind:value={pxPerSec} /></label>
   <label class="magnet"><input type="checkbox" bind:checked={snapEnabled} /> Snap</label>
   <span class="hint">Click ruler to scrub · drag keyframes · double-click a lane to add one · Delete removes selection</span>
@@ -212,7 +191,6 @@
     onmouseup={onPointerUp}
     onmouseleave={onPointerUp}
     ondblclick={onDblClick}
-    onkeydown={onKeyDown}
   ></canvas>
 </div>
 
@@ -232,6 +210,9 @@
   }
   .magnet {
     cursor: pointer;
+  }
+  .readout {
+    font-variant-numeric: tabular-nums;
   }
   .hint {
     margin-left: auto;

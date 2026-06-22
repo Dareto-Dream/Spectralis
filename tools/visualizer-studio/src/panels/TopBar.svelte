@@ -4,6 +4,7 @@
   import type { AssetsState } from '../state/assets.svelte';
   import { confirmDialog } from '../state/confirmModal.svelte';
   import { toast } from '../state/toast.svelte';
+  import { autosave } from '../state/autosave.svelte';
   import { downloadText } from '../lib/downloadText';
   import { migrateProject } from '../lib/migrate';
   import { TEMPLATES } from '../lib/templates';
@@ -45,6 +46,7 @@
 
   function saveProject() {
     downloadText(`${store.project.meta.slug || 'project'}.studio.json`, JSON.stringify(store.project, null, 2));
+    autosave.clear();
     toast.push('success', 'Project saved');
   }
 
@@ -187,7 +189,7 @@
       {/each}
     </select>
     <button onclick={onTemplateClick}>Load Template</button>
-    <button onclick={saveProject}>Save Project</button>
+    <button data-action="save-project" onclick={saveProject}>Save Project</button>
     <button onclick={onLoadProjectClick}>Load Project</button>
     <input bind:this={projectFileInput} type="file" accept="application/json" hidden onchange={onProjectFileChosen} />
   </div>

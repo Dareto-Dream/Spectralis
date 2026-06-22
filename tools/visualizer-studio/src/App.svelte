@@ -9,7 +9,11 @@
   import ContextMenu from './panels/ContextMenu.svelte';
   import WorldPanel from './world-tab/WorldPanel.svelte';
   import StoryPanel from './story-tab/StoryPanel.svelte';
+  import HelpModal from './panels/HelpModal.svelte';
+  import AutosaveBanner from './panels/AutosaveBanner.svelte';
   import { TEMPLATES } from './lib/templates';
+  import { createGlobalKeymap } from './lib/keymap';
+  import { autosave } from './state/autosave.svelte';
 
   const store = new ProjectStore();
   store.loadProject(TEMPLATES[0].build());
@@ -18,9 +22,29 @@
 
   type Tab = 'studio' | 'world' | 'story';
   let tab: Tab = $state('studio');
+
+  let helpOpen = $state(false);
+  const onKeyDown = createGlobalKeymap(store, () => (helpOpen = true));
+
+  // Debounce-write to localStorage on every committed edit — see AutosaveManager
+  // for why this is a safety net, not a replacement for Save Project.
+  $effect(() => {
+    void store.history.undoStack.length; // reactive dependency: fires on every commit
+    autosave.scheduleSave($state.snapshot(store.project));
+  });
+
+  function onBeforeUnload(e: BeforeUnloadEvent) {
+    if (store.history.hasUncommittedSinceLoad && autosave.isStale()) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }
 </script>
 
+<svelte:window onkeydown={onKeyDown} onbeforeunload={onBeforeUnload} />
+
 <div class="app">
+  <AutosaveBanner {store} />
   <div class="tabs">
     <button class:active={tab === 'studio'} onclick={() => (tab = 'studio')}>Studio</button>
     <button class:active={tab === 'world'} onclick={() => (tab = 'world')}>World</button>
@@ -41,6 +65,7 @@
 <Toast />
 <ConfirmModal />
 <ContextMenu />
+<HelpModal open={helpOpen} onClose={() => (helpOpen = false)} />
 
 <style>
   .app {
