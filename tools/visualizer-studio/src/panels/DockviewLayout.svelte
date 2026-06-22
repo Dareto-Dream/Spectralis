@@ -13,6 +13,34 @@
 
   let container: HTMLDivElement | undefined = $state();
   let dv: DockviewComponent | undefined;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const LAYOUT_KEY = 'visualizer-studio:layout';
+
+  function addDefaultPanels() {
+    if (!dv) return;
+    dv.addPanel({ id: 'layers', component: 'layers', title: 'Layers' });
+    dv.addPanel({
+      id: 'preview',
+      component: 'preview',
+      title: 'Preview',
+      position: { direction: 'right', referencePanel: 'layers' },
+    });
+    dv.addPanel({
+      id: 'inspector',
+      component: 'inspector',
+      title: 'Inspector',
+      position: { direction: 'right', referencePanel: 'preview' },
+    });
+    dv.addPanel({
+      id: 'timeline',
+      component: 'timeline',
+      title: 'Timeline',
+      position: { direction: 'below', referencePanel: 'layers' },
+    });
+    // Give the timeline the lion's share of vertical space, matching the old tool.
+    dv.api.panels.find((p) => p.id === 'timeline')?.api.setSize({ height: 240 });
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PANEL_COMPONENTS: Record<string, Component<any>> = {
@@ -45,27 +73,31 @@
       },
     });
 
-    dv.addPanel({ id: 'layers', component: 'layers', title: 'Layers' });
-    dv.addPanel({
-      id: 'preview',
-      component: 'preview',
-      title: 'Preview',
-      position: { direction: 'right', referencePanel: 'layers' },
+    // Panel layout is UI chrome, not project data — persisted separately from
+    // project autosave and explicitly not part of undo/redo. Falls back to the
+    // default arrangement if nothing's saved yet or the saved JSON is stale/bad.
+    let restored = false;
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      if (raw) {
+        dv.fromJSON(JSON.parse(raw));
+        restored = true;
+      }
+    } catch {
+      restored = false;
+    }
+    if (!restored) addDefaultPanels();
+
+    dv.onDidLayoutChange(() => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        try {
+          localStorage.setItem(LAYOUT_KEY, JSON.stringify(dv!.toJSON()));
+        } catch {
+          // best-effort — layout persistence is a convenience, never fatal
+        }
+      }, 400);
     });
-    dv.addPanel({
-      id: 'inspector',
-      component: 'inspector',
-      title: 'Inspector',
-      position: { direction: 'right', referencePanel: 'preview' },
-    });
-    dv.addPanel({
-      id: 'timeline',
-      component: 'timeline',
-      title: 'Timeline',
-      position: { direction: 'below', referencePanel: 'layers' },
-    });
-    // Give the timeline the lion's share of vertical space, matching the old tool.
-    dv.api.panels.find((p) => p.id === 'timeline')?.api.setSize({ height: 240 });
   });
 
   onDestroy(() => dv?.dispose());
