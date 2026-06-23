@@ -1,0 +1,114 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  width: 320px;
+  background: #10131a;
+  color: #f4f7fb;
+}
+
+main {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+p {
+  margin: 0;
+}
+
+#candidateText,
+small,
+#status {
+  color: #9aa7ba;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #2a3445;
+  border-radius: 8px;
+  padding: 12px;
+  background: #171c26;
+}
+
+.switchRow span {
+  display: grid;
+  gap: 2px;
+}
+
+input[role="switch"] {
+  appearance: none;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid #536070;
+  border-radius: 999px;
+  background: #273142;
+  cursor: pointer;
+  position: relative;
+}
+
+input[role="switch"]::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #dce6f4;
+  transition: transform 140ms ease;
+}
+
+input[role="switch"]:checked {
+  background: #28a36a;
+  border-color: #36c781;
+}
+
+input[role="switch"]:checked::after {
+  transform: translateX(18px);
+}
+
+.buttonGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+button {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: #4f8cff;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  background: #3a4352;
+  color: #9aa7ba;
+}
