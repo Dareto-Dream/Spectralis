@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Spectralis.App.Views"
+        x:Class="Spectralis.App.Views.CdnWarningWindow"
+        x:DataType="views:CdnWarningViewModel"
+        Title="{Binding Title}"
+        Width="520" Height="240"
+        MinWidth="400" MinHeight="180"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}"
+        KeyDown="OnKeyDown">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="28,22,28,20" RowSpacing="14">
+
+    <!-- Heading row: severity stripe + title -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
+      <Border Width="4" CornerRadius="2"
+              Background="{Binding SeverityBrush}"
+              VerticalAlignment="Stretch" />
+      <TextBlock Classes="heading" Text="{Binding Title}" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <!-- Message -->
+    <TextBlock Grid.Row="1"
+               Classes="secondary"
+               Text="{Binding Message}"
+               TextWrapping="Wrap"
+               VerticalAlignment="Top" />
+
+    <!-- Buttons -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+
+      <!-- Action link button — always leftmost so eyes land on it first -->
+      <Button Classes="primary"
+              Content="{Binding LinkLabel}"
+              IsVisible="{Binding HasLink}"
+              Click="OnOpenLink" />
+
+      <!-- Dismiss: only shown when the warning allows it -->
+      <Button Classes="ghost"
+              Content="Dismiss"
+              IsVisible="{Binding Dismissible}"
+              Click="OnDismiss" />
+
+      <!-- Close app: only shown when dismissal is blocked -->
+      <Button Classes="ghost"
+              Content="Close Spectralis"
+              IsVisible="{Binding !Dismissible}"
+              Click="OnCloseApp" />
+
+    </StackPanel>
+
+  </Grid>
+</Window>

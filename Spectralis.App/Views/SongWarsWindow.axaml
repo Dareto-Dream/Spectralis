@@ -1,0 +1,206 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.SongWarsWindow"
+        Title="Song Wars"
+        Width="860" Height="680"
+        MinWidth="720" MinHeight="540"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}"
+        KeyDown="OnKeyDown">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="0">
+
+    <!-- Tab strip -->
+    <Border Grid.Row="0"
+            Background="{StaticResource Brush.Bg.Overlay}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="0,0,0,1">
+      <StackPanel Orientation="Horizontal" Spacing="0" Margin="12,0">
+        <Button x:Name="TabBrowser" Classes="ghost" Padding="16,10" Click="OnTabBrowser" Content="Tournaments" />
+        <Button x:Name="TabSetup"   Classes="ghost" Padding="16,10" Click="OnTabSetup"   Content="Setup" />
+        <Button x:Name="TabHost"    Classes="ghost" Padding="16,10" Click="OnTabHost"    Content="Host" IsEnabled="False" />
+      </StackPanel>
+    </Border>
+
+    <!-- Panel area -->
+    <Grid Grid.Row="1">
+
+      <!-- ═══ Browser panel ═══ -->
+      <Grid x:Name="BrowserPanel" RowDefinitions="Auto,*,Auto" Margin="20,16,20,12">
+
+        <TextBlock Grid.Row="0" Classes="heading" Text="Saved Tournaments" Margin="0,0,0,12" />
+
+        <ListBox Grid.Row="1" x:Name="TournamentList" SelectionChanged="OnTournamentSelected">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+          <Button Content="Load Tournament" Click="OnLoadTournament" x:Name="LoadTournamentButton" IsEnabled="False" Classes="primary" />
+          <Button Content="Delete" Classes="destructive" Click="OnDeleteTournament" x:Name="DeleteTournamentButton" IsEnabled="False" />
+          <Button Content="New Tournament..." Classes="ghost" Click="OnTabSetup" />
+        </StackPanel>
+      </Grid>
+
+      <!-- ═══ Setup panel ═══ -->
+      <Grid x:Name="SetupPanel" IsVisible="False" RowDefinitions="Auto,*,Auto" Margin="20,16,20,12">
+
+        <StackPanel Grid.Row="0" Spacing="6" Margin="0,0,0,12">
+          <TextBlock Classes="heading" Text="New Tournament" />
+          <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Classes="secondary" Text="Tournament name" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" x:Name="TournamentNameBox" Watermark="e.g. Battle of the Beats" />
+          </Grid>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="16">
+
+          <!-- Submissions -->
+          <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" RowSpacing="6">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Classes="heading" Text="Tracks" />
+              <TextBlock x:Name="SubCountLabel" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+            </StackPanel>
+            <ListBox Grid.Row="1" x:Name="SubmissionList" SelectionChanged="OnSubmissionSelected">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+              <Button Content="Add File..." Click="OnAddSubmission" />
+              <Button Content="Remove" Classes="destructive" Click="OnRemoveSubmission" x:Name="RemoveSubButton" IsEnabled="False" />
+            </StackPanel>
+          </Grid>
+
+          <!-- Judges -->
+          <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="6">
+            <TextBlock Grid.Row="0" Classes="heading" Text="Judges (1–5)" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="JudgeNamesPanel" Spacing="6" Margin="0,0,0,4">
+                <!-- Dynamically populated -->
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+          <Button Content="Create Tournament" Click="OnCreateTournament" x:Name="CreateButton" Classes="primary" />
+          <TextBlock x:Name="SetupStatusLabel" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+
+      <!-- ═══ Host panel ═══ -->
+      <Grid x:Name="HostPanel" IsVisible="False" RowDefinitions="Auto,*,Auto" Margin="20,12,20,12">
+
+        <!-- Match header -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+          <TextBlock x:Name="TournamentHeaderLabel" Classes="heading" />
+          <TextBlock x:Name="RoundStatusLabel" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" />
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,240" ColumnSpacing="16">
+
+          <!-- Left: Match controls + voting -->
+          <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
+
+            <!-- Track pair -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,*" ColumnSpacing="12">
+              <Border Grid.Column="0"
+                      Background="{StaticResource Brush.Bg.Raised}"
+                      BorderBrush="{StaticResource Brush.Border}"
+                      BorderThickness="1"
+                      Padding="10,8">
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="data" Text="Track A" FontSize="{StaticResource FontSize.UI.Small}" />
+                  <TextBlock x:Name="TrackATitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock x:Name="TrackAArtist" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" TextTrimming="CharacterEllipsis" />
+                  <Button Content="▶ Play A" Click="OnPlayA" Margin="0,4,0,0" x:Name="PlayAButton" />
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="1"
+                      Background="{StaticResource Brush.Bg.Raised}"
+                      BorderBrush="{StaticResource Brush.Border}"
+                      BorderThickness="1"
+                      Padding="10,8">
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="data" Text="Track B (Focus)" FontSize="{StaticResource FontSize.UI.Small}" />
+                  <TextBlock x:Name="TrackBTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock x:Name="TrackBArtist" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" TextTrimming="CharacterEllipsis" />
+                  <Button Content="▶ Play B" Click="OnPlayB" Margin="0,4,0,0" x:Name="PlayBButton" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <!-- Phase controls -->
+            <WrapPanel Grid.Row="1" Orientation="Horizontal">
+              <Button x:Name="BeginAButton"        Content="Begin A"         Click="OnBeginA"         Margin="0,0,6,6" />
+              <Button x:Name="BeginBButton"        Content="Begin B"         Click="OnBeginB"         Margin="0,0,6,6" />
+              <Button x:Name="OpenVotingButton"    Content="Open Voting"     Click="OnOpenVoting"     Margin="0,0,6,6" />
+              <Button x:Name="RevealButton"        Content="Reveal"          Click="OnReveal"         Margin="0,0,6,6" />
+              <Button x:Name="NextMatchButton"     Content="Next Match"      Click="OnNextMatch"      Margin="0,0,6,6" />
+              <Button x:Name="SkipButton"          Content="Skip"            Click="OnSkip"           Margin="0,0,6,6" Classes="ghost" />
+              <Button x:Name="PauseResumeButton"   Content="Pause"           Click="OnPauseResume"    Margin="0,0,6,6" Classes="ghost" />
+            </WrapPanel>
+
+            <!-- Judge vote rows -->
+            <StackPanel x:Name="VoteSection" Grid.Row="2" Spacing="4">
+              <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Judge Votes" />
+              <StackPanel x:Name="JudgeVoteRows" Spacing="4" />
+              <TextBlock x:Name="TallyLabel" Classes="data" FontSize="{StaticResource FontSize.UI.Small}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- Outcome -->
+            <Border x:Name="ResultSection" Grid.Row="3"
+                    Background="{StaticResource Brush.Bg.Raised}"
+                    BorderBrush="{StaticResource Brush.Border}"
+                    BorderThickness="1"
+                    Padding="12,8"
+                    IsVisible="False">
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="OutcomeTitleLabel" Classes="heading" />
+                <TextBlock x:Name="OutcomeDetailLabel" Classes="secondary" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <!-- Right: Match log -->
+          <Grid Grid.Column="1" RowDefinitions="Auto,*">
+            <TextBlock Grid.Row="0" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Match Log" Margin="0,0,0,4" />
+            <ListBox Grid.Row="1" x:Name="MatchLog" ScrollViewer.VerticalScrollBarVisibility="Auto">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}" FontSize="{StaticResource FontSize.UI.Small}" TextWrapping="Wrap" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+
+        </Grid>
+
+        <!-- Bottom status -->
+        <TextBlock Grid.Row="2" x:Name="MatchStatusLabel" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" Margin="0,6,0,0" />
+
+      </Grid>
+    </Grid>
+
+    <!-- Footer -->
+    <Border Grid.Row="2"
+            Background="{StaticResource Brush.Bg.Overlay}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="0,1,0,0"
+            Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" x:Name="FooterStatus" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="ghost" Content="Close" Click="OnClose" />
+      </Grid>
+    </Border>
+
+  </Grid>
+</Window>
