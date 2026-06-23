@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.TagEditorWindow"
+        Title="Edit Tags"
+        Icon="/Assets/icon.png"
+        Width="620" Height="620"
+        MinWidth="520" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16" RowSpacing="10">
+
+    <TextBlock Grid.Row="0" x:Name="FileText" Classes="data" TextTrimming="CharacterEllipsis" />
+
+    <ScrollViewer Grid.Row="1">
+      <Grid ColumnDefinitions="110,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+            RowSpacing="8" ColumnSpacing="10">
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Title" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Artist" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Album Artist" VerticalAlignment="Center" />
+        <TextBox Grid.Row="2" Grid.Column="1" x:Name="AlbumArtistBox" />
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Album" VerticalAlignment="Center" />
+        <TextBox Grid.Row="3" Grid.Column="1" x:Name="AlbumBox" />
+
+        <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Track / Disc" VerticalAlignment="Center" />
+        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <NumericUpDown x:Name="TrackBox" Minimum="0" Maximum="999" Width="110" />
+          <TextBlock Classes="muted" Text="disc" VerticalAlignment="Center" />
+          <NumericUpDown x:Name="DiscBox" Minimum="0" Maximum="99" Width="110" />
+        </StackPanel>
+
+        <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="Year / BPM" VerticalAlignment="Center" />
+        <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <NumericUpDown x:Name="YearBox" Minimum="0" Maximum="3000" Width="110" />
+          <TextBlock Classes="muted" Text="bpm" VerticalAlignment="Center" />
+          <NumericUpDown x:Name="BpmBox" Minimum="0" Maximum="999" Width="110" />
+        </StackPanel>
+
+        <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Genre" VerticalAlignment="Center" />
+        <TextBox Grid.Row="6" Grid.Column="1" x:Name="GenreBox" />
+
+        <TextBlock Grid.Row="7" Grid.Column="0" Classes="secondary" Text="Composer" VerticalAlignment="Center" />
+        <TextBox Grid.Row="7" Grid.Column="1" x:Name="ComposerBox" />
+
+        <TextBlock Grid.Row="8" Grid.Column="0" Classes="secondary" Text="Comment" VerticalAlignment="Top" Margin="0,6,0,0" />
+        <TextBox Grid.Row="8" Grid.Column="1" x:Name="CommentBox" AcceptsReturn="True" MinHeight="58" />
+
+        <TextBlock Grid.Row="9" Grid.Column="0" Classes="secondary" Text="Embedded Lyrics" VerticalAlignment="Top" Margin="0,6,0,0"
+                   ToolTip.Tip="Plain or LRC-timestamped lyrics stored in the file's tags" />
+        <TextBox Grid.Row="9" Grid.Column="1" x:Name="LyricsBox" AcceptsReturn="True" MinHeight="72"
+                 Watermark="Plain or timestamped LRC lyrics embedded in the audio file" />
+
+        <TextBlock Grid.Row="10" Grid.Column="0" Classes="secondary" Text="Cover Art" VerticalAlignment="Top" Margin="0,6,0,0" />
+        <StackPanel Grid.Row="10" Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" Width="96" Height="96">
+            <Image x:Name="CoverImage" Stretch="UniformToFill" />
+          </Border>
+          <StackPanel Spacing="6" VerticalAlignment="Center">
+            <Button Content="Choose Image..." Click="OnChooseCover" />
+            <Button Content="Remove" Click="OnRemoveCover" Classes="destructive" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </ScrollViewer>
+
+    <!-- MusicBrainz lookup -->
+    <StackPanel Grid.Row="2" Spacing="6">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="MusicBrainz Lookup" Click="OnLookup" />
+        <TextBlock x:Name="LookupStatus" Classes="muted" VerticalAlignment="Center" />
+      </StackPanel>
+      <ListBox x:Name="LookupResults"
+               MaxHeight="110"
+               IsVisible="False"
+               DoubleTapped="OnApplyLookupResult" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <TextBlock x:Name="StatusText" Classes="muted" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <Button Content="Save" Click="OnSave" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

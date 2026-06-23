@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.OpenUrlWindow"
+        Title="Open URL"
+        Width="520" Height="184"
+        MinWidth="420" MinHeight="184"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/icon.png"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock Classes="heading" Text="Open URL" />
+    <TextBox x:Name="UrlTextBox"
+             Watermark="https://"
+             KeyDown="OnUrlTextBoxKeyDown" />
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="Cancel" Click="OnCancelClick" MinWidth="88" />
+      <Button Classes="primary" Content="Open" Click="OnOpenClick" MinWidth="88" />
+    </StackPanel>
+  </StackPanel>
+</Window>

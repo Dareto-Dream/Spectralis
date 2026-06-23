@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:design="using:Spectralis.App.Design"
+             x:Class="Spectralis.App.Views.CapsulesView"
+             x:DataType="vm:CapsulesViewModel">
+
+  <Grid>
+    <StackPanel VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                MaxWidth="440"
+                IsVisible="{Binding IsEmpty}">
+      <PathIcon Data="{x:Static design:IconData.Capsules}"
+                Width="48" Height="48"
+                Foreground="{StaticResource Brush.Ink.Muted}"
+                HorizontalAlignment="Center"
+                Opacity="0.6"
+                Margin="0,0,0,16" />
+      <TextBlock Classes="display" Text="{Binding Title}"
+                 TextAlignment="Center" Margin="0,0,0,8" />
+      <TextBlock Classes="muted"
+                 Text="{Binding Subtitle}"
+                 TextAlignment="Center"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,4" />
+      <TextBlock Classes="data"
+                 Text="{Binding Status}"
+                 TextAlignment="Center" />
+    </StackPanel>
+
+    <ScrollViewer IsVisible="{Binding HasPackage}">
+      <StackPanel Margin="32" Spacing="20" MaxWidth="860" HorizontalAlignment="Left">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="display" Text="{Binding Title}" />
+          <TextBlock Classes="secondary" Text="{Binding Subtitle}" />
+          <TextBlock Classes="data" Text="{Binding Status}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <TextBlock Classes="secondary"
+                   Text="{Binding Summary}"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding HasSummary}" />
+
+        <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Format" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding FormatLabel}" TextWrapping="Wrap" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Creator" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Classes="data" Text="{Binding CreatorText}" TextWrapping="Wrap" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Fingerprint" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Classes="data" Text="{Binding FingerprintText}" TextWrapping="Wrap" />
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Capabilities" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Classes="data" Text="{Binding CapabilitiesText}" TextWrapping="Wrap" />
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Package" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Classes="data" Text="{Binding EntryCountText}" TextWrapping="Wrap" />
+        </Grid>
+
+        <StackPanel Spacing="8">
+          <TextBlock Classes="heading" Text="Tracks" />
+          <ListBox ItemsSource="{Binding Tracks}" MaxHeight="280">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:CapsuleTrackViewModel">
+                <Grid ColumnDefinitions="*,180,70" ColumnSpacing="12">
+                  <TextBlock Grid.Column="0"
+                             Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1"
+                             Classes="secondary"
+                             Text="{Binding Artist}"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2"
+                             Classes="data"
+                             Text="{Binding DurationText}"
+                             HorizontalAlignment="Right" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+
+</UserControl>
