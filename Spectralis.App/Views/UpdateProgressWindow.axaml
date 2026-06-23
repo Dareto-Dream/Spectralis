@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.UpdateProgressWindow"
+        Title="Installing Update"
+        Width="420" Height="160"
+        MinWidth="320" MinHeight="130"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="*,Auto" Margin="28,22,28,20">
+
+    <StackPanel Grid.Row="0" Spacing="12">
+      <TextBlock Classes="heading" Text="Downloading update…" />
+      <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="1" Value="0" IsIndeterminate="True" />
+      <TextBlock x:Name="StatusLabel" Classes="secondary" Text="Preparing…" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Classes="ghost" Content="Cancel" Click="OnCancel" />
+    </StackPanel>
+
+  </Grid>
+</Window>

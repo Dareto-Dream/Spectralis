@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.NameInputWindow"
+        Title="Name"
+        Icon="/Assets/icon.png"
+        Width="400" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="20" Spacing="12">
+    <TextBlock x:Name="PromptText" Classes="secondary" Text="Enter a name:" />
+    <TextBox x:Name="NameBox" KeyDown="OnNameBoxKeyDown" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="OK" Click="OnOk" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

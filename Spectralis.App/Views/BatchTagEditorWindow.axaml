@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.BatchTagEditorWindow"
+        Title="Batch Edit Tags"
+        Icon="/Assets/icon.png"
+        Width="560" Height="520"
+        MinWidth="480" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16" RowSpacing="10">
+
+    <TextBlock Grid.Row="0" x:Name="HeaderText" Classes="secondary" />
+    <TextBlock Grid.Row="1" Classes="muted"
+               Text="Check the fields to apply to every selected file. Unchecked fields are left as-is."
+               FontSize="{StaticResource FontSize.UI.Small}"
+               TextWrapping="Wrap" />
+
+    <ScrollViewer Grid.Row="2">
+      <Grid ColumnDefinitions="Auto,110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+            RowSpacing="8" ColumnSpacing="10">
+
+        <CheckBox Grid.Row="0" Grid.Column="0" x:Name="ArtistCheck" />
+        <TextBlock Grid.Row="0" Grid.Column="1" Classes="secondary" Text="Artist" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="2" x:Name="ArtistBox" />
+
+        <CheckBox Grid.Row="1" Grid.Column="0" x:Name="AlbumArtistCheck" />
+        <TextBlock Grid.Row="1" Grid.Column="1" Classes="secondary" Text="Album Artist" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="2" x:Name="AlbumArtistBox" />
+
+        <CheckBox Grid.Row="2" Grid.Column="0" x:Name="AlbumCheck" />
+        <TextBlock Grid.Row="2" Grid.Column="1" Classes="secondary" Text="Album" VerticalAlignment="Center" />
+        <TextBox Grid.Row="2" Grid.Column="2" x:Name="AlbumBox" />
+
+        <CheckBox Grid.Row="3" Grid.Column="0" x:Name="GenreCheck" />
+        <TextBlock Grid.Row="3" Grid.Column="1" Classes="secondary" Text="Genre" VerticalAlignment="Center" />
+        <TextBox Grid.Row="3" Grid.Column="2" x:Name="GenreBox" />
+
+        <CheckBox Grid.Row="4" Grid.Column="0" x:Name="ComposerCheck" />
+        <TextBlock Grid.Row="4" Grid.Column="1" Classes="secondary" Text="Composer" VerticalAlignment="Center" />
+        <TextBox Grid.Row="4" Grid.Column="2" x:Name="ComposerBox" />
+
+        <CheckBox Grid.Row="5" Grid.Column="0" x:Name="CommentCheck" />
+        <TextBlock Grid.Row="5" Grid.Column="1" Classes="secondary" Text="Comment" VerticalAlignment="Center" />
+        <TextBox Grid.Row="5" Grid.Column="2" x:Name="CommentBox" />
+
+        <CheckBox Grid.Row="6" Grid.Column="0" x:Name="YearCheck" />
+        <TextBlock Grid.Row="6" Grid.Column="1" Classes="secondary" Text="Year" VerticalAlignment="Center" />
+        <NumericUpDown Grid.Row="6" Grid.Column="2" x:Name="YearBox" Minimum="0" Maximum="3000" Width="120" HorizontalAlignment="Left" />
+
+        <CheckBox Grid.Row="7" Grid.Column="0" x:Name="BpmCheck" />
+        <TextBlock Grid.Row="7" Grid.Column="1" Classes="secondary" Text="BPM" VerticalAlignment="Center" />
+        <NumericUpDown Grid.Row="7" Grid.Column="2" x:Name="BpmBox" Minimum="0" Maximum="999" Width="120" HorizontalAlignment="Left" />
+      </Grid>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <TextBlock x:Name="StatusText" Classes="muted" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <Button Content="Save All" Click="OnSaveAll" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.CapsuleTrustWindow"
+        Title="Open Capsule"
+        Icon="/Assets/icon.png"
+        Width="460" SizeToContent="Height"
+        MaxHeight="600"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}"
+        KeyDown="OnKeyDown">
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="28,24,28,20">
+
+    <!-- Creator header -->
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,18">
+      <TextBlock Text="Open Capsule" Classes="heading" />
+      <TextBlock x:Name="CreatorLabel"
+                 Classes="secondary"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+
+    <!-- Capabilities section (hidden if capsule requests none) -->
+    <StackPanel x:Name="CapabilitiesSection" Grid.Row="1" Spacing="4"
+                Margin="0,0,0,14" IsVisible="False">
+      <TextBlock Text="Capabilities requested"
+                 Classes="secondary"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 Margin="0,0,0,2" />
+      <StackPanel x:Name="CapabilityRows" Spacing="5" />
+    </StackPanel>
+
+    <!-- Content tags section (hidden if manifest has none) -->
+    <StackPanel x:Name="ContentTagsSection" Grid.Row="2" Spacing="4"
+                Margin="0,0,0,16" IsVisible="False">
+      <TextBlock Text="Content tags"
+                 Classes="secondary"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 Margin="0,0,0,2" />
+      <ItemsControl x:Name="ContentTagsPanel">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Background="{StaticResource Brush.Bg.Raised}"
+                    BorderBrush="{StaticResource Brush.Border}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="10,4"
+                    Margin="0,0,6,6">
+              <TextBlock Text="{Binding}"
+                         Classes="secondary"
+                         FontSize="{StaticResource FontSize.UI.Small}" />
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <!-- Action buttons -->
+    <StackPanel Grid.Row="3"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Spacing="8">
+      <Button Content="Trust &amp; Open" Click="OnTrust" Classes="primary" />
+      <Button Classes="ghost" Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+
+  </Grid>
+</Window>
