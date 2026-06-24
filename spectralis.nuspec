@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>Spectralis</id>
+    <version>1.2.1</version>
+    <authors>DeltaVDevs</authors>
+    <description>Spectralis Audio Player with Visualizers</description>
+    <dependencies>
+      <group targetFramework="net8.0" />
+    </dependencies>
+  </metadata>
+
+  <files>
+    <file src="publish\**\*" target="lib\net8.0" />
+  </files>
+</package>
