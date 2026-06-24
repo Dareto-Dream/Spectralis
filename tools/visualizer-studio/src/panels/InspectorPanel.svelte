@@ -5,6 +5,7 @@
   import ParamFields from './ParamFields.svelte';
   import CurveEditor from '../timeline/CurveEditor.svelte';
   import type { Ease } from '../types/project';
+  import { importLrcFile } from '../lib/lrcImport';
 
   let { store }: { store: ProjectStore } = $props();
 
@@ -47,6 +48,7 @@
       <button
         class="iconBtn"
         title={layer.visible ? 'Hide' : 'Show'}
+        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
         onclick={() => store.toggleLayerVisibility(layer.id)}
       >
         {layer.visible ? '👁' : '—'}
@@ -54,6 +56,7 @@
       <button
         class="iconBtn"
         title={layer.locked ? 'Unlock' : 'Lock (protect from canvas/timeline drag)'}
+        aria-label={layer.locked ? 'Unlock layer' : 'Lock layer'}
         onclick={() => store.toggleLayerLock(layer.id)}
       >
         {layer.locked ? '🔒' : '🔓'}
@@ -62,6 +65,7 @@
         class="iconBtn"
         class:on={store.soloedLayerIds.has(layer.id)}
         title="Solo (isolate this layer in the preview)"
+        aria-label={store.soloedLayerIds.has(layer.id) ? 'Unsolo layer' : 'Solo layer'}
         onclick={() => store.toggleLayerSolo(layer.id)}
       >
         S
@@ -74,7 +78,7 @@
       {/each}
     </div>
 
-    <ParamFields {layer} onChange={() => store.commit()} />
+    <ParamFields {layer} onChange={() => store.commit()} onDropLrc={(f) => importLrcFile(store, f)} />
 
     {#if singleSelectedKeyframeId && singleSelectedEase}
       <div class="curveSection">

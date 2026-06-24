@@ -6,11 +6,12 @@
   import { toast } from '../state/toast.svelte';
   import { autosave } from '../state/autosave.svelte';
   import { downloadText } from '../lib/downloadText';
-  import { migrateProject } from '../lib/migrate';
   import { TEMPLATES } from '../lib/templates';
   import { buildExportFiles } from '../export/exportAll';
-  import { parseLRC, flattenWords } from '../core/lrc.js';
   import { fmtTime } from '../lib/fmtTime';
+  import { dropZone } from '../lib/dropZone';
+  import { importLrcFile } from '../lib/lrcImport';
+  import { confirmUnsavedIfNeeded, importProjectFile } from '../lib/projectImport';
   import type { Aspect } from '../types/project';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
@@ -21,16 +22,6 @@
   let selectedTemplateId = $state(TEMPLATES[0].id);
   let exporting = $state(false);
   let sharedPlay = $state(false);
-
-  async function confirmUnsavedIfNeeded(): Promise<boolean> {
-    if (!store.history.hasUncommittedSinceLoad) return true;
-    return confirmDialog({
-      title: 'Discard unsaved changes?',
-      body: 'Loading will replace the current project. This can still be undone with Ctrl+Z right up until you load something else.',
-      confirmLabel: 'Discard & Load',
-      danger: true,
-    });
-  }
 
   function onSlugInput(e: Event) {
     const el = e.target as HTMLInputElement;
@@ -51,29 +42,18 @@
   }
 
   async function onLoadProjectClick() {
-    if (await confirmUnsavedIfNeeded()) projectFileInput?.click();
+    if (await confirmUnsavedIfNeeded(store)) projectFileInput?.click();
   }
 
-  async function onProjectFileChosen(e: Event) {
+  function onProjectFileChosen(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
-    try {
-      const parsed = migrateProject(JSON.parse(await file.text()));
-      store.loadProject(parsed);
-      toast.push('success', `Loaded ${file.name}`);
-    } catch (err) {
-      await confirmDialog({
-        title: "Couldn't load that project",
-        body: `This file isn't a valid Studio project — ${err instanceof Error ? err.message : String(err)}`,
-        confirmLabel: 'OK',
-      });
-    }
+    if (file) importProjectFile(store, file);
   }
 
   async function onTemplateClick() {
-    if (!(await confirmUnsavedIfNeeded())) return;
+    if (!(await confirmUnsavedIfNeeded(store))) return;
     const tpl = TEMPLATES.find((t) => t.id === selectedTemplateId);
     if (!tpl) return;
     store.loadProject(tpl.build());
@@ -85,41 +65,32 @@
     if (file) audio.loadFile(file);
   }
 
-  async function onLrcFileChosen(e: Event) {
+  function onLrcFileChosen(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
-    const raw = await file.text();
-    const nonBlankLines = raw.trim().split('\n').filter((l) => l.trim()).length;
-
-    let lyricsLayer = store.project.layers.find((l) => l.type === 'lyrics');
-    const keySet: Record<string, boolean> = {};
-    if (lyricsLayer?.type === 'lyrics' && lyricsLayer.params.keyWords) {
-      for (const w of lyricsLayer.params.keyWords.split(/[\s,]+/)) {
-        if (w) keySet[w.toLowerCase()] = true;
-      }
-    }
-    const lines = parseLRC(raw);
-    const skipped = Math.max(0, nonBlankLines - lines.length);
-    const words = flattenWords(lines, keySet);
-    if (!words.length) {
-      toast.push('error', 'No lyric lines recognized in that file');
-      return;
-    }
-    if (!lyricsLayer) lyricsLayer = store.addLayer('lyrics');
-    if (lyricsLayer.type === 'lyrics') lyricsLayer.params.words = words;
-    store.project.importedLrcRaw = raw;
-    store.commit();
-    toast.push(
-      'success',
-      skipped > 0 ? `Imported ${words.length} words, skipped ${skipped} unrecognized lines` : `Imported ${words.length} words from ${file.name}`
-    );
+    if (file) importLrcFile(store, file);
   }
 
   function onCoverFileChosen(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (file) assets.loadCover(file);
+  }
+
+  // Drag-and-drop file intake (plan QoL §C) — the old tool has zero drop
+  // handlers anywhere. The existing hidden-<input> + button path stays
+  // primary (already keyboard/click accessible); drop is additive.
+  function isAudioFile(f: File) {
+    return f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name);
+  }
+  function isLrcFile(f: File) {
+    return f.name.toLowerCase().endsWith('.lrc') || f.type === 'text/plain';
+  }
+  function isImageFile(f: File) {
+    return f.type.startsWith('image/');
+  }
+  function isProjectFile(f: File) {
+    return f.name.toLowerCase().endsWith('.json');
   }
 
   // QoL export pre-flight: slug is a hard requirement (nothing to name the files
@@ -182,7 +153,15 @@
     <button onclick={() => store.redo()} disabled={!store.history.canRedo} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
   </div>
 
-  <div class="group">
+  <div
+    class="group"
+    title="Drop a .studio.json project file here to load it"
+    use:dropZone={{
+      accept: isProjectFile,
+      onDrop: (f) => importProjectFile(store, f),
+      onReject: () => toast.push('error', "That doesn't look like a Studio project (.json)"),
+    }}
+  >
     <select bind:value={selectedTemplateId} title="Starter template">
       {#each TEMPLATES as t (t.id)}
         <option value={t.id}>{t.label}</option>
@@ -195,20 +174,48 @@
   </div>
 
   <div class="group">
-    <label class="fileBtn">
+    <label
+      class="fileBtn"
+      title="Click, or drop an audio file here"
+      use:dropZone={{
+        accept: isAudioFile,
+        onDrop: (f) => audio.loadFile(f),
+        onReject: () => toast.push('error', "That doesn't look like an audio file"),
+      }}
+    >
       Load Audio
       <input type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
     </label>
     {#if audio.loaded}<span class="ok" title="Audio loaded">♪</span>{/if}
     {#if audio.error}<span class="err">{audio.error}</span>{/if}
-    <button onclick={() => lrcFileInput?.click()}>Import LRC…</button>
+    <span
+      class="dropWrap"
+      title="Drop a .lrc lyrics file here"
+      use:dropZone={{
+        accept: isLrcFile,
+        onDrop: (f) => importLrcFile(store, f),
+        onReject: () => toast.push('error', "That doesn't look like an .lrc lyrics file"),
+      }}
+    >
+      <button onclick={() => lrcFileInput?.click()}>Import LRC…</button>
+    </span>
     <input bind:this={lrcFileInput} type="file" accept=".lrc,text/plain" hidden onchange={onLrcFileChosen} />
-    <button onclick={() => coverFileInput?.click()}>Load Cover…</button>
+    <span
+      class="dropWrap"
+      title="Drop a cover image here"
+      use:dropZone={{
+        accept: isImageFile,
+        onDrop: (f) => assets.loadCover(f),
+        onReject: () => toast.push('error', "That doesn't look like an image file"),
+      }}
+    >
+      <button onclick={() => coverFileInput?.click()}>Load Cover…</button>
+      {#if assets.coverImage}
+        <img class="coverThumb" src={assets.coverImage.dataUrl} alt="Cover" />
+        <button class="small ghost" onclick={() => assets.clearCover()} title="Remove cover" aria-label="Remove cover">✕</button>
+      {/if}
+    </span>
     <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />
-    {#if assets.coverImage}
-      <img class="coverThumb" src={assets.coverImage.dataUrl} alt="Cover" />
-      <button class="small ghost" onclick={() => assets.clearCover()} title="Remove cover">✕</button>
-    {/if}
   </div>
 
   <label class="sharedPlay" title="Manifest capabilities include sharedPlay.* only when this is checked">
@@ -262,6 +269,12 @@
     border: 1px solid var(--line);
     border-radius: 3px;
     cursor: pointer;
+  }
+  .dropWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 3px;
   }
   .ok {
     color: var(--good);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AnimKey, AnyLayer } from '../types/project';
   import type { ProjectStore } from '../state/project.svelte';
+  import { scrubbable } from '../lib/scrubbableNumber';
 
   let { store, layer, propKey, label }: { store: ProjectStore; layer: AnyLayer; propKey: AnimKey; label: string } = $props();
 
@@ -24,11 +25,28 @@
     class="kbtn"
     class:on={keyframed}
     title={keyframed ? 'Keyframed — click to disable' : 'Enable keyframing'}
+    aria-label={keyframed ? `${label}: keyframed, click to disable` : `Enable keyframing for ${label}`}
     onclick={() => store.toggleKeyframing(layer.id, propKey)}
   >
     ◎
   </button>
-  <button class="label" onclick={selectTrack}>{label}</button>
+  {#if keyframed}
+    <button class="label" onclick={selectTrack}>{label}</button>
+  {:else}
+    <button
+      class="label scrub"
+      title="Click to select track · drag to scrub value"
+      use:scrubbable={{
+        value: layer.statics[propKey],
+        step: 0.5,
+        onChange: (v: number) => (layer.statics[propKey] = v),
+        onCommit: () => store.commit(),
+        onClick: selectTrack,
+      }}
+    >
+      {label}
+    </button>
+  {/if}
   {#if keyframed}
     <button class="kfCount" onclick={selectTrack}>{layer.tracks[propKey].length} keys</button>
     <button class="small" title="Add key at playhead" onclick={() => store.addKeyframeAtPlayhead(layer.id, propKey)}>+Key</button>
@@ -75,6 +93,13 @@
     border: none;
     color: var(--accent);
     font: 10px var(--mono);
+  }
+  .label.scrub {
+    cursor: ew-resize;
+  }
+  .label.scrub.scrubbing,
+  .label.scrub:hover {
+    color: var(--accent);
   }
   input[type='number'] {
     width: 70px;

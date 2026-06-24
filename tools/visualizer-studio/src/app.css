@@ -8,3 +8,9 @@
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg0); color: var(--text);
   font: 12px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+
+/* Pragmatic accessibility baseline (plan §L) — not a WCAG audit, just: every
+   interactive element gets a visible keyboard-focus ring, and drop targets
+   (plan §C) get a consistent "live" outline while a file is dragged over them. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dragOver { outline: 2px dashed var(--accent) !important; outline-offset: -2px; }
