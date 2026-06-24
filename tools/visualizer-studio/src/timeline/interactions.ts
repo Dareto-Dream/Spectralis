@@ -81,6 +81,35 @@ export function hitTestScrub(layout: TimelineLayout, y: number): boolean {
   return band === 'ruler' || band === 'wave';
 }
 
+// Region-aware cursor feedback (plan QoL §H): grab over a draggable keyframe,
+// ew-resize over a section edge or the scrub band, grabbing while something is
+// actively being dragged, default/pointer elsewhere. Kept a pure function of
+// hit-test state so TimelineCanvas.svelte can call it from both pointermove
+// (hover) and while `drag` is active.
+export type TimelineCursor = 'default' | 'grab' | 'grabbing' | 'ew-resize' | 'pointer';
+
+export function cursorAt(
+  layout: TimelineLayout,
+  project: Project,
+  activeLayerId: string | null,
+  activeTrackKey: AnimKey | null,
+  pxPerSec: number,
+  x: number,
+  y: number,
+  draggingKind: 'keyframe' | 'sectionEdge' | 'scrub' | 'marquee' | null
+): TimelineCursor {
+  if (draggingKind === 'keyframe') return 'grabbing';
+  if (draggingKind === 'sectionEdge') return 'ew-resize';
+  if (draggingKind === 'scrub') return 'ew-resize';
+  if (draggingKind === 'marquee') return 'default';
+
+  if (hitTestSectionEdge(layout, project, pxPerSec, x, y)) return 'ew-resize';
+  if (hitTestActiveLaneKeyframe(layout, project, activeLayerId, activeTrackKey, pxPerSec, x, y)) return 'grab';
+  if (hitTestScrub(layout, y)) return 'ew-resize';
+  if (bandAtY(layout, y) === 'overview' || bandAtY(layout, y) === 'sections') return 'pointer';
+  return 'default';
+}
+
 export interface MarqueeRect {
   x0: number;
   y0: number;

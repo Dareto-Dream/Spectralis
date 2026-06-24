@@ -7,6 +7,7 @@ import {
   hitTestSectionEdge,
   hitTestScrub,
   keyframesInMarquee,
+  cursorAt,
 } from '../src/timeline/interactions';
 import { snap, snapTargets } from '../src/timeline/snapping';
 import { copyKeyframes, pasteAtPlayhead, pasteAtOriginalTimes, hasClipboard, clearClipboard } from '../src/timeline/clipboard';
@@ -132,6 +133,41 @@ describe('keyframesInMarquee', () => {
   it('returns nothing with no active layer/track', () => {
     const p = project();
     expect(keyframesInMarquee(p, null, null, pxPerSec, { x0: 0, y0: 0, x1: 999, y1: 999 })).toEqual([]);
+  });
+});
+
+describe('cursorAt', () => {
+  it('grabbing/ew-resize while a drag is already in progress, regardless of hover', () => {
+    const p = project();
+    const layout = computeLayout(1);
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 0, 0, 'keyframe')).toBe('grabbing');
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 0, 0, 'sectionEdge')).toBe('ew-resize');
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 0, 0, 'scrub')).toBe('ew-resize');
+  });
+
+  it('ew-resize when hovering a section edge', () => {
+    const p = project();
+    const layout = computeLayout(1);
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 20 * pxPerSec, layout.secY, null)).toBe('ew-resize');
+  });
+
+  it('grab when hovering a keyframe in the active lane', () => {
+    const p = project();
+    const layout = computeLayout(1);
+    const midY = layout.laneY + layout.laneH / 2;
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 5 * pxPerSec, midY, null)).toBe('grab');
+  });
+
+  it('ew-resize over the scrub bands (ruler/waveform)', () => {
+    const p = project();
+    const layout = computeLayout(1);
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 0, layout.rulerY, null)).toBe('ew-resize');
+  });
+
+  it('default elsewhere', () => {
+    const p = project();
+    const layout = computeLayout(1);
+    expect(cursorAt(layout, p, 'l1', 'scale', pxPerSec, 0, layout.laneY + layout.laneH / 2, null)).toBe('default');
   });
 });
 

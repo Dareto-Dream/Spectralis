@@ -16,6 +16,14 @@ export class SelectionState {
   keyframeIds: Set<string> = $state(new Set());
   sectionId: string | null = $state(null);
 
+  // Bumped by the global F2 shortcut; LayerRow watches this + its own layer id
+  // to start its existing inline-rename mode without the keymap needing to
+  // reach into a specific row component directly.
+  renameRequestId = $state(0);
+  requestRename() {
+    this.renameRequestId++;
+  }
+
   constructor(getProject: () => Project) {
     this.getProject = getProject;
   }

@@ -1,5 +1,6 @@
 import type { AnimKey, AnyLayer, Ease, Layer, LayerType, Project, ProjectMeta, Section } from '../types/project';
 import { evalTrack } from '../core/ease.js';
+import { sectionAt } from '../core/render.js';
 import { newLayer, newKeyframeId, newProject as createNewProject } from './factories';
 import { HistoryStack } from './history.svelte';
 import { SelectionState } from './selection.svelte';
@@ -17,6 +18,19 @@ export class ProjectStore {
   // Ephemeral, session-only (not persisted, not undoable) — matches how solo
   // works in most DAWs/AE: a temporary isolation toggle, not an authored property.
   soloedLayerIds: Set<string> = $state(new Set());
+
+  // Loop region (plan QoL §J) — also ephemeral: a playback convenience, not
+  // authored project data. `null` region = loop the whole song when enabled.
+  loopEnabled = $state(false);
+  loopRegion: { start: number; end: number } | null = $state(null);
+
+  // Timeline zoom — lifted out of TimelineCanvas.svelte's local state (was a
+  // plain `let`) so the global `+`/`-` shortcuts in lib/keymap.ts can reach it
+  // without the keymap needing a reference to a specific panel instance.
+  timelinePxPerSec = $state(80);
+  zoomTimeline(dir: -1 | 1) {
+    this.timelinePxPerSec = Math.max(10, Math.min(400, this.timelinePxPerSec + dir * 20));
+  }
 
   // Explicit commit point for continuous UI-driven edits (keyframe drag, numeric
   // field entry) that mutate `project` directly and only want ONE history entry
@@ -59,6 +73,29 @@ export class ProjectStore {
   stop() {
     this.playing = false;
     this.playhead = 0;
+  }
+
+  // Toggling loop on with nothing selected loops the section under the
+  // playhead right now — reuses `sectionAt`, already the source of truth for
+  // "what section is this" everywhere else in the app.
+  toggleLoop() {
+    this.loopEnabled = !this.loopEnabled;
+    if (this.loopEnabled && !this.loopRegion) {
+      const sec = sectionAt(this.project.sections, this.playhead);
+      this.loopRegion = sec ? { start: sec.start, end: sec.end } : { start: 0, end: this.project.meta.songEnd };
+    }
+  }
+
+  setLoopRegionToSelectedSection() {
+    const sec = this.project.sections.find((s) => s.id === this.selection.sectionId);
+    if (!sec) return;
+    this.loopRegion = { start: sec.start, end: sec.end };
+    this.loopEnabled = true;
+  }
+
+  clearLoopRegion() {
+    this.loopEnabled = false;
+    this.loopRegion = null;
   }
 
   // ---- meta ----
@@ -144,6 +181,18 @@ export class ProjectStore {
     if (!layer) return;
     layer.locked = !layer.locked;
     this.commit();
+  }
+
+  // ↑/↓ layer-list navigation (plan QoL §B) steps through the layer list in
+  // DISPLAY order (topmost-first — the reverse of the underlying array, same
+  // flip LayersPanel.svelte already applies for its own rendering) rather
+  // than the raw array order, so "down" always means "down the visible list".
+  selectAdjacentLayer(dir: -1 | 1) {
+    const display = [...this.project.layers].reverse();
+    if (!display.length) return;
+    const curIdx = display.findIndex((l) => l.id === this.selection.layerId);
+    const nextIdx = curIdx < 0 ? 0 : Math.max(0, Math.min(display.length - 1, curIdx + dir));
+    this.selection.selectLayer(display[nextIdx].id);
   }
 
   toggleLayerSolo(id: string) {

@@ -25,6 +25,13 @@
   let renaming = $state(false);
   let nameInput: HTMLInputElement | undefined = $state();
 
+  // F2 (lib/keymap.ts) bumps store.selection.renameRequestId — react only
+  // when this row's layer is the one currently selected.
+  $effect(() => {
+    void store.selection.renameRequestId;
+    if (store.selection.renameRequestId > 0 && store.selection.layerId === layer.id) startRename();
+  });
+
   function startRename() {
     renaming = true;
     queueMicrotask(() => nameInput?.focus());
@@ -80,10 +87,20 @@
   ondrop={onDrop}
   oncontextmenu={onContextMenu}
 >
-  <button class="icon" title={layer.visible ? 'Hide' : 'Show'} onclick={() => store.toggleLayerVisibility(layer.id)}>
+  <button
+    class="icon"
+    title={layer.visible ? 'Hide' : 'Show'}
+    aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
+    onclick={() => store.toggleLayerVisibility(layer.id)}
+  >
     {layer.visible ? '👁' : '—'}
   </button>
-  <button class="icon" title={layer.locked ? 'Unlock' : 'Lock'} onclick={() => store.toggleLayerLock(layer.id)}>
+  <button
+    class="icon"
+    title={layer.locked ? 'Unlock' : 'Lock'}
+    aria-label={layer.locked ? `Unlock ${layer.name}` : `Lock ${layer.name}`}
+    onclick={() => store.toggleLayerLock(layer.id)}
+  >
     {layer.locked ? '🔒' : '🔓'}
   </button>
   {#if renaming}
@@ -107,10 +124,10 @@
       {layer.name}
     </button>
   {/if}
-  <button class="icon ghost" title="Move up" disabled={isFirst} onclick={onMoveUp}>↑</button>
-  <button class="icon ghost" title="Move down" disabled={isLast} onclick={onMoveDown}>↓</button>
-  <button class="icon ghost" title="Duplicate" onclick={() => store.duplicateLayer(layer.id)}>⧉</button>
-  <button class="icon ghost danger" title="Delete" onclick={onDelete}>✕</button>
+  <button class="icon ghost" title="Move up" aria-label={`Move ${layer.name} up`} disabled={isFirst} onclick={onMoveUp}>↑</button>
+  <button class="icon ghost" title="Move down" aria-label={`Move ${layer.name} down`} disabled={isLast} onclick={onMoveDown}>↓</button>
+  <button class="icon ghost" title="Duplicate" aria-label={`Duplicate ${layer.name}`} onclick={() => store.duplicateLayer(layer.id)}>⧉</button>
+  <button class="icon ghost danger" title="Delete" aria-label={`Delete ${layer.name}`} onclick={onDelete}>✕</button>
 </div>
 
 <style>

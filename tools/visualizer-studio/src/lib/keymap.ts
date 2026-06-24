@@ -77,6 +77,32 @@ export function createGlobalKeymap(store: ProjectStore, openHelp: () => void) {
       } else {
         store.seekTo(store.playhead + delta);
       }
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      store.selectAdjacentLayer(e.key === 'ArrowUp' ? -1 : 1);
+    } else if (mod && e.key.toLowerCase() === 'a') {
+      // Select-all is scoped to the active track (not a global "select
+      // everything") so it stays useful once multiple layers are keyframed.
+      if (store.selection.layerId && store.selection.trackKey) {
+        e.preventDefault();
+        const layer = store.project.layers.find((l) => l.id === store.selection.layerId);
+        if (layer) store.selection.setKeyframeSelection(layer.tracks[store.selection.trackKey].map((k) => k.id));
+      }
+    } else if (e.key === '[' || e.key === ']') {
+      // Set the selected section's start/end to the playhead — remapped from
+      // AE's B/N since those aren't intuitive without an existing convention here.
+      if (store.selection.sectionId) {
+        e.preventDefault();
+        store.updateSection(store.selection.sectionId, e.key === '[' ? { start: store.playhead } : { end: store.playhead });
+      }
+    } else if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      store.zoomTimeline(e.key === '+' || e.key === '=' ? 1 : -1);
+    } else if (e.key === 'F2') {
+      if (store.selection.layerId) {
+        e.preventDefault();
+        store.selection.requestRename();
+      }
     } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
       e.preventDefault();
       openHelp();

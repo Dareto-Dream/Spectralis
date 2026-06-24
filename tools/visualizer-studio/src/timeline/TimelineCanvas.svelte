@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
-  import { computeLayout } from './layout';
+  import { computeLayout, bandAtY } from './layout';
   import { drawTimeline } from './draw';
   import {
     hitTestActiveLaneKeyframe,
@@ -10,16 +10,24 @@
     hitTestSectionEdge,
     hitTestScrub,
     keyframesInMarquee,
+    cursorAt,
     type MarqueeRect,
     type SectionEdge,
   } from './interactions';
   import { snap, snapTargets } from './snapping';
+  import { copyKeyframes, pasteAtPlayhead, pasteAtOriginalTimes, hasClipboard } from './clipboard';
+  import { openContextMenu, type ContextMenuItem } from './contextMenu.svelte';
+  import { EASE_NAMES } from './curveEditor';
+  import { confirmDialog } from '../state/confirmModal.svelte';
+  import { toast } from '../state/toast.svelte';
+  import { dropZone } from '../lib/dropZone';
   import { fmtTime } from '../lib/fmtTime';
   import { onMount } from 'svelte';
 
   let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
 
   let canvas: HTMLCanvasElement;
+  let wrapper: HTMLDivElement;
   let ctx: CanvasRenderingContext2D;
   let ready = $state(false);
 
@@ -27,7 +35,9 @@
     ctx = canvas.getContext('2d')!;
     ready = true;
   });
-  let pxPerSec = $state(80);
+  // Lifted onto the store (not local state) so the global `+`/`-` shortcuts in
+  // lib/keymap.ts can reach the current zoom without a component reference.
+  const pxPerSec = $derived(store.timelinePxPerSec);
   let snapEnabled = $state(true);
 
   type Drag =
@@ -71,6 +81,16 @@
       },
       waveformPeaks: audio.waveformPeaks,
     });
+
+    // Playback QoL §J: keep the playhead in view once zoom overflows the
+    // panel width, instead of letting it silently scroll off-screen.
+    if (store.playing && wrapper) {
+      const playheadX = store.playhead * pxPerSec;
+      const margin = 40;
+      if (playheadX < wrapper.scrollLeft + margin || playheadX > wrapper.scrollLeft + wrapper.clientWidth - margin) {
+        wrapper.scrollLeft = Math.max(0, playheadX - wrapper.clientWidth / 2);
+      }
+    }
   });
 
   function onPointerDown(e: MouseEvent) {
@@ -120,7 +140,10 @@
 
     const rowHit = hitTestOverviewRow(layout, store.project, y);
     if (rowHit && !rowHit.locked) {
+      // Overview/minimap rows are click-to-seek-and-select-lane, not just
+      // visual (plan QoL §H).
       store.selection.selectLayer(rowHit.id);
+      store.seekTo(t);
       return;
     }
 
@@ -131,8 +154,22 @@
   }
 
   function onPointerMove(e: MouseEvent) {
-    if (!drag) return;
     const { x, y } = localPoint(e);
+
+    // Region-aware cursor feedback (plan QoL §H) — updates on every move,
+    // dragging or not, so hovering alone previews what a click/drag would do.
+    canvas.style.cursor = cursorAt(
+      currentLayout(),
+      store.project,
+      store.selection.layerId,
+      store.selection.trackKey,
+      pxPerSec,
+      x,
+      y,
+      drag?.kind ?? null
+    );
+
+    if (!drag) return;
     const t = Math.max(0, x / pxPerSec);
 
     if (drag.kind === 'keyframe') {
@@ -169,20 +206,147 @@
     }
   }
 
+  // Scroll-wheel zoom (plan QoL §H), anchored at the cursor like AE/most DAWs
+  // — supplements the slider rather than replacing it. Deferred to the next
+  // frame so the canvas has already resized for the new pxPerSec before we
+  // set scrollLeft (setting it against the old, narrower width would clamp).
+  function onWheel(e: WheelEvent) {
+    e.preventDefault();
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const localXInWrapper = e.clientX - wrapperRect.left;
+    const t = (wrapper.scrollLeft + localXInWrapper) / pxPerSec;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const next = Math.max(10, Math.min(400, pxPerSec * factor));
+    store.timelinePxPerSec = next;
+    requestAnimationFrame(() => {
+      wrapper.scrollLeft = Math.max(0, t * next - localXInWrapper);
+    });
+  }
+
+  // Right-click context menus (plan QoL §H) — keyframe (Delete / Copy / Set
+  // Ease), section (Edit / Loop / Delete), or empty lane space with a
+  // non-empty clipboard (Paste). Whichever the cursor is over wins, checked
+  // in the same priority order onPointerDown already uses.
+  function onContextMenu(e: MouseEvent) {
+    const { x, y } = localPoint(e);
+    const layout = currentLayout();
+
+    const kfHit = hitTestActiveLaneKeyframe(layout, store.project, store.selection.layerId, store.selection.trackKey, pxPerSec, x, y);
+    if (kfHit) {
+      e.preventDefault();
+      if (!store.selection.keyframeIds.has(kfHit.keyframeId)) {
+        store.selection.setKeyframeSelection([kfHit.keyframeId]);
+      }
+      const items: ContextMenuItem[] = [
+        {
+          label: 'Copy',
+          action: () => {
+            const entries = [...store.selection.keyframeIds]
+              .map((id) => store.selection.keyframeIndex.get(id))
+              .filter((ref): ref is NonNullable<typeof ref> => !!ref)
+              .map((ref) => ({ layerId: ref.layer.id, trackKey: ref.trackKey, ...ref.layer.tracks[ref.trackKey][ref.index] }));
+            if (entries.length) copyKeyframes(entries, store.playhead);
+          },
+        },
+        {
+          label: 'Delete',
+          danger: true,
+          action: () => {
+            for (const id of [...store.selection.keyframeIds]) store.deleteKeyframe(id);
+          },
+        },
+        ...EASE_NAMES.map((name) => ({ label: `Ease: ${name}`, action: () => store.setKeyframeEase(kfHit.keyframeId, name) })),
+      ];
+      openContextMenu(e.clientX, e.clientY, items);
+      return;
+    }
+
+    const secHit = hitTestSection(layout, store.project, pxPerSec, x, y);
+    if (secHit) {
+      e.preventDefault();
+      const sec = store.project.sections.find((s) => s.id === secHit);
+      openContextMenu(e.clientX, e.clientY, [
+        { label: 'Edit', action: () => store.selection.selectSection(secHit) },
+        {
+          label: 'Loop this section',
+          action: () => {
+            store.selection.selectSection(secHit);
+            store.setLoopRegionToSelectedSection();
+          },
+        },
+        {
+          label: 'Delete',
+          danger: true,
+          disabled: store.project.sections.length <= 1,
+          action: async () => {
+            const ok = await confirmDialog({
+              title: 'Delete section?',
+              body: `Delete "${sec?.label}"? You can undo this with Ctrl+Z.`,
+              confirmLabel: 'Delete',
+              danger: true,
+            });
+            if (ok) {
+              store.deleteSection(secHit);
+              store.selection.selectSection(null);
+            }
+          },
+        },
+      ]);
+      return;
+    }
+
+    if (bandAtY(layout, y) === 'lane' && hasClipboard() && store.selection.layerId && store.selection.trackKey) {
+      e.preventDefault();
+      const t = Math.max(0, x / pxPerSec);
+      openContextMenu(e.clientX, e.clientY, [
+        { label: 'Paste at cursor', action: () => store.pasteKeyframes(pasteAtPlayhead(t)) },
+        { label: 'Paste at original time', action: () => store.pasteKeyframes(pasteAtOriginalTimes()) },
+      ]);
+    }
+  }
+
   // Delete/Escape/Copy/Paste are handled by the app-wide keymap (lib/keymap.ts)
   // now — a local handler here would double-fire (double-paste is a real bug,
   // not just a harmless redundant delete) whenever the canvas itself has focus.
 </script>
 
 <div class="timelineToolbar">
-  <button class="small" onclick={() => store.togglePlay()} title="Space">{store.playing ? '⏸ Pause' : '▶ Play'}</button>
-  <button class="small" onclick={() => store.stop()}>■ Stop</button>
+  <button class="small" onclick={() => store.togglePlay()} title="Space" aria-label={store.playing ? 'Pause' : 'Play'}>{store.playing ? '⏸ Pause' : '▶ Play'}</button>
+  <button class="small" onclick={() => store.stop()} aria-label="Stop">■ Stop</button>
+  <button
+    class="small"
+    class:on={store.loopEnabled}
+    onclick={() => store.toggleLoop()}
+    title={store.loopRegion ? `Loop ${fmtTime(store.loopRegion.start)}–${fmtTime(store.loopRegion.end)} (select a section + right-click → "Loop this section" to change)` : 'Loop the current section'}
+    aria-label={store.loopEnabled ? 'Disable loop' : 'Enable loop'}
+  >
+    🔁 Loop
+  </button>
   <span class="readout">{fmtTime(store.playhead)}</span>
-  <label><span>Zoom</span><input type="range" min="10" max="400" bind:value={pxPerSec} /></label>
+  <label>
+    <span>Zoom</span>
+    <input
+      type="range"
+      min="10"
+      max="400"
+      value={pxPerSec}
+      oninput={(e) => (store.timelinePxPerSec = +(e.target as HTMLInputElement).value)}
+      aria-label="Timeline zoom"
+    />
+  </label>
   <label class="magnet"><input type="checkbox" bind:checked={snapEnabled} /> Snap</label>
-  <span class="hint">Click ruler to scrub · drag keyframes · double-click a lane to add one · Delete removes selection</span>
+  <span class="hint">Click ruler to scrub · drag keyframes · double-click a lane to add one · right-click for more · Delete removes selection</span>
 </div>
-<div class="timelineWrap">
+<div
+  class="timelineWrap"
+  bind:this={wrapper}
+  title="Drop an audio file anywhere here to load it"
+  use:dropZone={{
+    accept: (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name),
+    onDrop: (f) => audio.loadFile(f),
+    onReject: () => toast.push('error', "That doesn't look like an audio file"),
+  }}
+>
   <canvas
     bind:this={canvas}
     tabindex="0"
@@ -191,6 +355,8 @@
     onmouseup={onPointerUp}
     onmouseleave={onPointerUp}
     ondblclick={onDblClick}
+    onwheel={onWheel}
+    oncontextmenu={onContextMenu}
   ></canvas>
 </div>
 
@@ -211,6 +377,11 @@
   .magnet {
     cursor: pointer;
   }
+  .timelineToolbar .small.on {
+    background: var(--accent2);
+    color: #1a1400;
+    border-color: var(--accent2);
+  }
   .readout {
     font-variant-numeric: tabular-nums;
   }
@@ -225,9 +396,9 @@
   }
   canvas {
     display: block;
-    cursor: pointer;
+    cursor: default; /* live cursor feedback set in JS via cursorAt() (plan QoL §H) */
   }
-  canvas:focus {
+  canvas:focus:not(:focus-visible) {
     outline: none;
   }
 </style>

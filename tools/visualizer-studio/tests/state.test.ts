@@ -189,6 +189,80 @@ describe('ProjectStore — sections', () => {
   });
 });
 
+describe('ProjectStore — loop region', () => {
+  it('toggleLoop with a section under the playhead loops that section', () => {
+    const store = new ProjectStore();
+    const p = blankProject();
+    p.sections = [
+      { id: 'a', label: 'A', start: 0, end: 20, hue: 0, hue2: 0, intensity: 0.5, noLyrics: false },
+      { id: 'b', label: 'B', start: 20, end: 60, hue: 0, hue2: 0, intensity: 0.5, noLyrics: false },
+    ];
+    store.loadProject(p);
+    store.playhead = 30;
+    store.toggleLoop();
+    expect(store.loopEnabled).toBe(true);
+    expect(store.loopRegion).toEqual({ start: 20, end: 60 });
+    store.toggleLoop();
+    expect(store.loopEnabled).toBe(false);
+  });
+
+  it('setLoopRegionToSelectedSection sets the region and enables loop', () => {
+    const store = new ProjectStore();
+    const p = blankProject();
+    p.sections = [{ id: 's1', label: 'S1', start: 5, end: 15, hue: 0, hue2: 0, intensity: 0.5, noLyrics: false }];
+    store.loadProject(p);
+    store.selection.selectSection('s1');
+    store.setLoopRegionToSelectedSection();
+    expect(store.loopRegion).toEqual({ start: 5, end: 15 });
+    expect(store.loopEnabled).toBe(true);
+  });
+
+  it('clearLoopRegion turns loop off and drops the region', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    store.toggleLoop();
+    store.clearLoopRegion();
+    expect(store.loopEnabled).toBe(false);
+    expect(store.loopRegion).toBeNull();
+  });
+});
+
+describe('ProjectStore — timeline zoom', () => {
+  it('zoomTimeline steps and clamps to [10, 400]', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    store.timelinePxPerSec = 390;
+    store.zoomTimeline(1);
+    expect(store.timelinePxPerSec).toBe(400);
+    store.timelinePxPerSec = 20;
+    store.zoomTimeline(-1);
+    expect(store.timelinePxPerSec).toBe(10);
+  });
+});
+
+describe('ProjectStore — selectAdjacentLayer', () => {
+  it('steps through layers in display order (topmost-first, reverse of the array)', () => {
+    const store = new ProjectStore();
+    const p = blankProject();
+    store.loadProject(p);
+    const l1 = store.addLayer('orb');
+    const l2 = store.addLayer('orb');
+    // Array order is [l1, l2]; display order is reversed: [l2, l1].
+    store.selection.selectLayer(l2.id);
+    store.selectAdjacentLayer(1);
+    expect(store.selection.layerId).toBe(l1.id);
+    store.selectAdjacentLayer(-1);
+    expect(store.selection.layerId).toBe(l2.id);
+  });
+
+  it('does nothing with no layers', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    store.selectAdjacentLayer(1);
+    expect(store.selection.layerId).toBeNull();
+  });
+});
+
 describe('ToastStore', () => {
   it('push adds a toast and dismiss removes it', () => {
     const t = new ToastStore();

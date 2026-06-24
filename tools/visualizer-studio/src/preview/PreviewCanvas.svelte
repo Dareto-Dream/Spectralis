@@ -45,7 +45,12 @@
       } else {
         store.seekTo(store.playhead + dt);
       }
-      if (store.playhead >= store.project.meta.songEnd) {
+
+      const loop = store.loopEnabled ? store.loopRegion : null;
+      if (loop && store.playhead >= loop.end) {
+        store.playhead = loop.start;
+        if (audio.loaded) audio.el.currentTime = loop.start;
+      } else if (store.playhead >= store.project.meta.songEnd) {
         store.stop();
         audio.el.pause();
         audio.el.currentTime = 0;
