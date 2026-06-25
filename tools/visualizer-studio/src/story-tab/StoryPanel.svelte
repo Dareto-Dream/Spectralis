@@ -52,7 +52,7 @@
         <div class="pageRow">
           <input class="speaker" placeholder="Speaker (defaults to narrator)" bind:value={page.speaker} />
           <textarea placeholder="Page text" bind:value={page.text}></textarea>
-          <button class="small ghost" onclick={() => removePage(i)}>✕</button>
+          <button class="small ghost" title="Remove page" aria-label={`Remove page ${i + 1}`} onclick={() => removePage(i)}>✕</button>
         </div>
       {/each}
       <button class="small" onclick={addPage}>+ Add Page</button>

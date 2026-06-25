@@ -64,7 +64,7 @@
           <input placeholder="audio path" bind:value={track.audio} />
           <input placeholder="cover path" bind:value={track.cover} />
           <input placeholder="lrc path" bind:value={track.lrc} />
-          <button class="small ghost" onclick={() => removeTrack(i)}>✕</button>
+          <button class="small ghost" title="Remove track" aria-label={`Remove track ${i + 1}`} onclick={() => removeTrack(i)}>✕</button>
         </div>
       {/each}
       <button class="small" onclick={addTrack}>+ Add Track</button>
