@@ -1,4 +1,4 @@
-## Visual Studio
+﻿## Visual Studio
 .vs/
 *.user
 *.suo
@@ -33,6 +33,8 @@ artifacts/
 *.tmp
 *.cache
 *.[Cc]ache
+metadata/
+AGENTS.md
 
 ## OS
 Thumbs.db
