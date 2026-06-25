@@ -1,19 +1,9 @@
 # Spectralis
 
-A music player with spectrum visualizers, library management, and streaming support.
+A Windows music player built around spectrum visualizers and a clean library experience. Supports local files and a handful of streaming sources.
 
-## Features (planned)
-- MP3, FLAC, WAV, OGG, OPUS, M4A, AAC, MIDI playback
-- GDI+ spectrum analyzer, waveform, oscilloscope, VU meter
-- SQLite music library with metadata extraction
-- Spotify, SoundCloud, YouTube, Suno streaming
-- Queue with shuffle and repeat
+Plays MP3, FLAC, WAV, OGG, OPUS, M4A, AAC, and MIDI. Has a GDI+ visualizer with spectrum analyzer, waveform, oscilloscope, and VU meter modes. Library is SQLite-backed with automatic metadata extraction. Streaming support for Spotify, SoundCloud, YouTube, and Suno. Queue with shuffle, repeat, and crossfade.
 
-## Stack
-- .NET Framework 4.8 / WinForms
-- NAudio (audio engine)
-- TagLibSharp (metadata)
-- System.Data.SQLite
+Built on .NET Framework 4.8 / WinForms with NAudio, TagLibSharp, and SQLite.
 
-## Status
-Early development.
+Still early. Things will break. PRs and issues welcome.
