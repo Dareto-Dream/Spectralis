@@ -1,86 +1,150 @@
-using System;
-using System.Collections.Generic;
+using NAudio.Wave;
 
-namespace Spectralis.Core.Analysis
+namespace Spectralis.Core.Analysis;
+
+/// <summary>Energy-envelope autocorrelation BPM detector over the first minute.</summary>
+public static class BpmAnalyzer
 {
-    public struct BpmResult
+    private const int HopSamples = 512;
+    private const int AnalyzeSeconds = 60;
+    private const int MinBpm = 60;
+    private const int MaxBpm = 200;
+
+    public static async Task<(float Bpm, TimeSpan FirstBeatOffset)> AnalyzeAsync(
+        string filePath, CancellationToken ct = default)
     {
-        public float Bpm { get; init; }
-        public float Confidence { get; init; }
-        public bool IsValid => Bpm >= 40f && Bpm <= 220f && Confidence >= 0.4f;
+        return await Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+
+            using var reader = new AudioFileReader(filePath);
+            var sampleRate = reader.WaveFormat.SampleRate;
+            var channels = reader.WaveFormat.Channels;
+            var maxSamples = AnalyzeSeconds * sampleRate * channels;
+
+            var rawBuffer = new float[maxSamples + HopSamples];
+            var totalRead = 0;
+            var tmp = new float[4096];
+            while (totalRead < maxSamples)
+            {
+                ct.ThrowIfCancellationRequested();
+                var read = reader.Read(tmp, 0, Math.Min(tmp.Length, maxSamples - totalRead));
+                if (read == 0)
+                {
+                    break;
+                }
+
+                Array.Copy(tmp, 0, rawBuffer, totalRead, read);
+                totalRead += read;
+            }
+
+            var monoLength = totalRead / channels;
+            var mono = new float[monoLength];
+            for (var i = 0; i < monoLength; i++)
+            {
+                var sum = 0f;
+                for (var c = 0; c < channels; c++)
+                {
+                    sum += rawBuffer[(i * channels) + c];
+                }
+
+                mono[i] = sum / channels;
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // Energy envelope per hop frame.
+            var frameCount = monoLength / HopSamples;
+            if (frameCount < 8)
+            {
+                return (120f, TimeSpan.Zero);
+            }
+
+            var energy = new float[frameCount];
+            for (var f = 0; f < frameCount; f++)
+            {
+                var offset = f * HopSamples;
+                var sum = 0.0;
+                var count = Math.Min(HopSamples, monoLength - offset);
+                for (var i = 0; i < count; i++)
+                {
+                    sum += mono[offset + i] * mono[offset + i];
+                }
+
+                energy[f] = (float)Math.Sqrt(sum / count);
+            }
+
+            // Onset function: positive first-difference of energy.
+            var onset = new float[frameCount];
+            for (var f = 1; f < frameCount; f++)
+            {
+                onset[f] = Math.Max(0f, energy[f] - energy[f - 1]);
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            var fps = (double)sampleRate / HopSamples;
+            var lagMin = Math.Max(1, (int)Math.Round(fps * 60.0 / MaxBpm));
+            var lagMax = Math.Min(frameCount - 1, (int)Math.Round(fps * 60.0 / MinBpm));
+
+            // Autocorrelation of the onset function over the BPM lag range.
+            var bestLag = lagMin;
+            var bestCorr = double.MinValue;
+            for (var lag = lagMin; lag <= lagMax; lag++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var corr = 0.0;
+                var count = frameCount - lag;
+                for (var i = 0; i < count; i++)
+                {
+                    corr += onset[i] * onset[i + lag];
+                }
+
+                corr /= count;
+                if (corr > bestCorr)
+                {
+                    bestCorr = corr;
+                    bestLag = lag;
+                }
+            }
+
+            var bpm = (float)(fps * 60.0 / bestLag);
+            while (bpm < MinBpm)
+            {
+                bpm *= 2;
+            }
+
+            while (bpm > MaxBpm)
+            {
+                bpm /= 2;
+            }
+
+            bpm = (float)Math.Round(bpm, 1);
+
+            return (bpm, FindFirstBeat(onset, bestLag, fps));
+        }, ct);
     }
 
-    public class BpmAnalyzer
+    private static TimeSpan FindFirstBeat(float[] onset, int period, double fps)
     {
-        private const int SampleRate = 44100;
-        private const int WindowSize = 512;
-        private const float MinBpm = 40f;
-        private const float MaxBpm = 220f;
-
-        public BpmResult Analyze(float[] samples, int sampleRate = SampleRate)
+        if (onset.Length == 0)
         {
-            if (samples.Length < sampleRate) return default;
-
-            var onsets = ComputeOnsets(samples);
-            if (onsets.Count < 8) return default;
-
-            return EstimateBpmFromOnsets(onsets, sampleRate);
+            return TimeSpan.Zero;
         }
 
-        private List<float> ComputeOnsets(float[] samples)
+        // Strongest onset peak within the first two beat periods.
+        var searchEnd = Math.Min(onset.Length, period * 2);
+        var bestFrame = 0;
+        var bestVal = 0f;
+        for (var i = 0; i < searchEnd; i++)
         {
-            var onsets = new List<float>();
-            float prevEnergy = 0f;
-            int hopSize = WindowSize / 2;
-
-            for (int i = 0; i + WindowSize < samples.Length; i += hopSize)
+            if (onset[i] > bestVal)
             {
-                float energy = 0f;
-                for (int j = i; j < i + WindowSize; j++)
-                    energy += samples[j] * samples[j];
-                energy /= WindowSize;
-
-                if (energy > prevEnergy * 1.4f && energy > 0.001f)
-                    onsets.Add(i / (float)SampleRate);
-
-                prevEnergy = prevEnergy * 0.85f + energy * 0.15f;
+                bestVal = onset[i];
+                bestFrame = i;
             }
-            return onsets;
         }
 
-        private BpmResult EstimateBpmFromOnsets(List<float> onsets, int sampleRate)
-        {
-            var intervals = new List<float>();
-            for (int i = 1; i < onsets.Count; i++)
-                intervals.Add(onsets[i] - onsets[i - 1]);
-
-            if (intervals.Count == 0) return default;
-
-            intervals.Sort();
-            float median = intervals[intervals.Count / 2];
-            if (median < 0.001f) return default;
-
-            float bpm = 60f / median;
-
-            while (bpm < MinBpm) bpm *= 2;
-            while (bpm > MaxBpm) bpm /= 2;
-
-            float confidence = ComputeConfidence(intervals, 60f / bpm);
-
-            return new BpmResult { Bpm = MathF.Round(bpm * 10f) / 10f, Confidence = confidence };
-        }
-
-        private float ComputeConfidence(List<float> intervals, float expectedInterval)
-        {
-            int matches = 0;
-            float tolerance = expectedInterval * 0.08f;
-            foreach (float iv in intervals)
-            {
-                float normalized = iv;
-                while (normalized > expectedInterval * 1.5f) normalized /= 2f;
-                if (MathF.Abs(normalized - expectedInterval) < tolerance) matches++;
-            }
-            return (float)matches / intervals.Count;
-        }
+        return TimeSpan.FromSeconds(bestFrame / fps);
     }
 }
