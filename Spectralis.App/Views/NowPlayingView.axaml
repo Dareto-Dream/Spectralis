@@ -75,7 +75,7 @@
   </Panel>
 
   <!-- ============ Playing state ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasTrack}">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto" IsVisible="{Binding HasTrack}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -302,6 +302,11 @@
                           IsChecked="{Binding ShowQueue}"
                           FontSize="{StaticResource FontSize.UI.Small}"
                           ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+            <ToggleButton Classes="ghost" Content="WARS"
+                          IsChecked="{Binding ShowSongWarsPanel}"
+                          FontSize="{StaticResource FontSize.UI.Small}"
+                          ToolTip.Tip="Toggle Song Wars panel"
+                          IsVisible="{Binding SongWarsHasSession}" />
             <Rectangle Width="1" Height="16" Fill="{StaticResource Brush.Border}"
                        VerticalAlignment="Center" Margin="2,0" />
             <Button Classes="ghost" Width="26" Height="26" Padding="0"
@@ -561,6 +566,79 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
+
+      </Grid>
+    </Border>
+
+    <!-- ─── Song Wars docked sidebar ───────────────────────────── -->
+    <Border Grid.Column="3" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowSongWarsPanel}">
+      <Grid RowDefinitions="Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,10,8">
+          <StackPanel Grid.Column="0" Spacing="2">
+            <TextBlock Classes="heading" Text="{Binding SongWarsTournamentName}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="{Binding SongWarsMatchStatusText}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Content="⊡"
+                  ToolTip.Tip="Pop out to window"
+                  Click="OnSongWarsPopOut"
+                  VerticalAlignment="Top" Padding="6,4" />
+        </Grid>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="12" Margin="14,0,14,14"
+                      IsVisible="{Binding SongWarsHasSession}">
+
+            <!-- Phase badge -->
+            <TextBlock Classes="data" FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="{Binding SongWarsPhaseText}" />
+
+            <!-- Track cards -->
+            <Border Background="{StaticResource Brush.Bg.Base}"
+                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                    Padding="10,8" CornerRadius="4">
+              <StackPanel Spacing="6">
+                <StackPanel Spacing="1">
+                  <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Track A" />
+                  <TextBlock FontWeight="SemiBold" Text="{Binding SongWarsTrackAName}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" FontSize="{StaticResource FontSize.UI.Small}"
+                             Text="{Binding SongWarsTrackAArtist}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}"
+                           Text="vs" HorizontalAlignment="Center" />
+                <StackPanel Spacing="1">
+                  <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Track B (Challenger)" />
+                  <TextBlock FontWeight="SemiBold" Text="{Binding SongWarsTrackBName}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" FontSize="{StaticResource FontSize.UI.Small}"
+                             Text="{Binding SongWarsTrackBArtist}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Live tally -->
+            <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="{Binding SongWarsTallyText}" TextWrapping="Wrap" />
+
+            <!-- Outcome (revealed) -->
+            <Border Background="{StaticResource Brush.Bg.Base}"
+                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                    Padding="10,8" CornerRadius="4"
+                    IsVisible="{Binding SongWarsHasOutcome}">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="heading" Text="{Binding SongWarsOutcomeText}" />
+                <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}"
+                           Text="{Binding SongWarsOutcomeDetail}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+          </StackPanel>
+        </ScrollViewer>
 
       </Grid>
     </Border>
