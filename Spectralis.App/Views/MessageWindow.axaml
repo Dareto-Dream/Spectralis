@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.MessageWindow"
+        Title="Spectralis"
+        Icon="/Assets/icon.png"
+        Width="420" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock x:Name="MessageText" Classes="secondary" TextWrapping="Wrap" />
+    <Button Content="OK" Click="OnOk" HorizontalAlignment="Right" IsDefault="True" IsCancel="True" Classes="primary" />
+  </StackPanel>
+</Window>
