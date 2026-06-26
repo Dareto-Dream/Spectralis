@@ -9,9 +9,7 @@ public sealed class AvaloniaTrayService : ITrayService
     private readonly TrayIcon _trayIcon;
     private readonly NativeMenuItem _nowPlayingItem;
 
-    public event EventHandler? PlayPauseRequested;
-    public event EventHandler? NextRequested;
-    public event EventHandler? PreviousRequested;
+    public event EventHandler? PlayMostRecentRequested;
     public event EventHandler? OpenRequested;
     public event EventHandler? ExitRequested;
 
@@ -63,21 +61,14 @@ public sealed class AvaloniaTrayService : ITrayService
 
     private NativeMenu BuildMenu()
     {
-        var open = CreateItem("Open Spectralis", () => OpenRequested?.Invoke(this, EventArgs.Empty));
-        var playPause = CreateItem("Play/Pause", () => PlayPauseRequested?.Invoke(this, EventArgs.Empty));
-        var previous = CreateItem("Previous", () => PreviousRequested?.Invoke(this, EventArgs.Empty));
-        var next = CreateItem("Next", () => NextRequested?.Invoke(this, EventArgs.Empty));
-        var exit = CreateItem("Exit Spectralis", () => ExitRequested?.Invoke(this, EventArgs.Empty));
+        var playMostRecent = CreateItem("Play most recent song", () => PlayMostRecentRequested?.Invoke(this, EventArgs.Empty));
+        var exit = CreateItem("Close app", () => ExitRequested?.Invoke(this, EventArgs.Empty));
 
         return new NativeMenu
         {
             _nowPlayingItem,
             new NativeMenuItemSeparator(),
-            open,
-            new NativeMenuItemSeparator(),
-            playPause,
-            previous,
-            next,
+            playMostRecent,
             new NativeMenuItemSeparator(),
             exit,
         };
