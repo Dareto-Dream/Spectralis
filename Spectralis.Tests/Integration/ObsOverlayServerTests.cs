@@ -84,7 +84,11 @@ public sealed class ObsOverlayServerTests : IDisposable
         var missing = await _client.GetAsync($"{_baseUrl}/assets/artwork");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
 
-        _server.UpdateState(ObsOverlayState.Empty, artwork: [1, 2, 3, 4], artworkContentType: "image/png");
+        _server.UpdateState(
+            ObsOverlayState.Empty,
+            artwork: [1, 2, 3, 4],
+            artworkContentType: "image/png",
+            artworkChanged: true);
 
         var response = await _client.GetAsync($"{_baseUrl}/assets/artwork");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
