@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.SharedPlayView"
+             x:DataType="vm:SharedPlayViewModel">
+
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="12" MaxWidth="560">
+
+      <TextBlock Classes="display" Text="Shared Play" />
+      <TextBlock Classes="secondary"
+                 Text="Host a room so others can follow along in their browser in sync." />
+
+      <TextBlock Classes="data" Text="{Binding StatusText}" />
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Host Room" Command="{Binding HostCommand}" Classes="primary" IsVisible="{Binding !IsHosting}" />
+        <Button Content="Stop Hosting" Command="{Binding StopCommand}" Classes="destructive" IsVisible="{Binding IsHosting}" />
+        <Button Content="Copy Link" Command="{Binding CopyLinkCommand}" IsVisible="{Binding IsHosting}" />
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding IsHosting}" Spacing="4">
+        <TextBlock Classes="secondary" Text="Join URL" />
+        <TextBox Text="{Binding JoinUrl}" IsReadOnly="True" />
+      </StackPanel>
+
+      <TextBlock Classes="error" Text="{Binding LastError}"
+                 IsVisible="{Binding LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    </StackPanel>
+  </ScrollViewer>
+
+</UserControl>

@@ -1,71 +1,460 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Spectralis.App.ViewModels"
-        xmlns:views="using:Spectralis.App.Views"
-        xmlns:ctrl="using:Spectralis.App.Controls"
+        xmlns:design="using:Spectralis.App.Design"
+        xmlns:conv="using:Spectralis.App.Converters"
+        xmlns:controls="using:Spectralis.App.Controls"
         x:Class="Spectralis.App.Views.MainWindow"
-        x:DataType="vm:MainViewModel"
-        Title="Spectralis"
-        Width="1200" Height="780"
-        MinWidth="800" MinHeight="520"
-        Background="#0E0E14">
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Icon="/Assets/icon.png"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        SystemDecorations="None"
+        DragDrop.AllowDrop="True"
+        Background="{StaticResource Brush.Bg.Base}">
 
-  <Grid RowDefinitions="32,*,4,80">
+  <Grid RowDefinitions="36,*,Auto">
 
-    <!-- Header bar -->
-    <Border Grid.Row="0" Background="#0A0A12">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-        <TextBlock Grid.Column="0" Text="SPECTRALIS" Foreground="#7B68EE"
-                   FontSize="11" FontWeight="Bold" Margin="12,0,0,0"
-                   VerticalAlignment="Center" LetterSpacing="2"/>
-        <ctrl:WaveformView Grid.Column="1" Height="28" Margin="16,2"
-                           Name="HeaderWaveform"/>
-        <Button Grid.Column="2" Content="Library" FontSize="11" Padding="8,4"
-                Background="Transparent" Foreground="#AAAAAA"
-                Command="{Binding ToggleLibraryCommand}"/>
-        <Button Grid.Column="3" Content="Queue" FontSize="11" Padding="8,4"
-                Background="Transparent" Foreground="#AAAAAA"
-                Command="{Binding ToggleQueueCommand}"/>
-        <Button Grid.Column="4" Content="&#x2699;" FontSize="14" Padding="8,4"
-                Background="Transparent" Foreground="#AAAAAA"
-                ToolTip.Tip="Settings"/>
+    <!-- ============ Combined title + menu bar ============ -->
+    <Border Grid.Row="0"
+            Background="{StaticResource Brush.Bg.Overlay}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="0,0,0,1"
+            PointerPressed="OnTitleBarPointerPressed">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+
+        <!-- App icon: non-interactive, part of drag area -->
+        <Image Grid.Column="0"
+               Source="/Assets/icon.png"
+               Width="20" Height="20"
+               Stretch="Uniform"
+               Margin="10,0,6,0"
+               VerticalAlignment="Center"
+               IsHitTestVisible="False" />
+
+        <!-- Menu items — clicks handled internally, don't bubble as drags -->
+        <Menu Grid.Column="1" Padding="0" VerticalAlignment="Center">
+          <MenuItem Header="_File">
+            <MenuItem Header="Open Audio..." InputGesture="Ctrl+O" Click="OnMenuOpenAudio" />
+            <MenuItem Header="Add to Queue..." InputGesture="Ctrl+Shift+O" Click="OnMenuAddToQueue" />
+            <MenuItem Header="Open URL..." InputGesture="Ctrl+L" Click="OnMenuOpenUrl" />
+            <Separator />
+            <MenuItem Header="Export Video..." Click="OnMenuExportVideo" />
+            <Separator />
+            <MenuItem Header="Settings..." InputGesture="Ctrl+OemComma" Click="OnMenuSettings" />
+            <Separator />
+            <MenuItem Header="Set as Default App..." Click="OnMenuSetAsDefault" />
+            <Separator />
+            <MenuItem Header="P2W Mode"
+                    ToggleType="CheckBox"
+                    IsChecked="{Binding IsP2wModeActive, Mode=TwoWay}" />
+            <Separator />
+            <MenuItem Header="Exit" Click="OnMenuExit" />
+          </MenuItem>
+          <MenuItem Header="_Library">
+            <MenuItem Header="Now Playing"
+                      InputGesture="Ctrl+Q"
+                      ToggleType="Radio"
+                      IsChecked="{Binding IsNowPlayingSelected, Mode=OneWay}"
+                      Click="OnMenuNowPlaying" />
+            <MenuItem Header="Library Browser"
+                      InputGesture="Ctrl+B"
+                      ToggleType="Radio"
+                      IsChecked="{Binding IsLibrarySelected, Mode=OneWay}"
+                      Click="OnMenuLibrary" />
+            <MenuItem Header="Playlists"
+                      InputGesture="Ctrl+P"
+                      ToggleType="Radio"
+                      IsChecked="{Binding IsPlaylistsSelected, Mode=OneWay}"
+                      Click="OnMenuPlaylists" />
+            <Separator />
+            <MenuItem Header="Open Playlist (M3U)..." Click="OnMenuOpenPlaylist" />
+            <MenuItem Header="Save Queue as Playlist..."
+                      Click="OnMenuSaveQueueAsPlaylist"
+                      IsEnabled="{Binding NowPlaying.HasQueueItems}" />
+            <Separator />
+            <MenuItem Header="Analyze Library BPM + Key" Click="OnMenuAnalyzeLibrary" />
+            <Separator />
+            <MenuItem Header="Listening Stats..." Click="OnMenuListeningStats" />
+            <MenuItem Header="Scrobbling Settings..." Click="OnMenuScrobblingSettings" />
+          </MenuItem>
+          <MenuItem Header="_Playback">
+            <MenuItem Header="{Binding NowPlaying.PlayPauseMenuLabel}"
+                      InputGesture="Space"
+                      Click="OnMenuPlayPause" />
+            <MenuItem Header="Stop"
+                      Command="{Binding NowPlaying.StopCommand}"
+                      IsEnabled="{Binding NowPlaying.HasTrack}" />
+            <MenuItem Header="{Binding NowPlaying.MuteMenuLabel}"
+                      InputGesture="M"
+                      Click="OnMenuToggleMute" />
+            <Separator />
+            <MenuItem Header="Previous Track"
+                      InputGesture="Ctrl+Left"
+                      Command="{Binding NowPlaying.PreviousCommand}"
+                      IsEnabled="{Binding NowPlaying.HasPrevious}" />
+            <MenuItem Header="Next Track"
+                      InputGesture="Ctrl+Right"
+                      Command="{Binding NowPlaying.NextCommand}"
+                      IsEnabled="{Binding NowPlaying.HasNext}" />
+          </MenuItem>
+          <MenuItem Header="_Tools">
+            <MenuItem Header="Audio">
+              <MenuItem Header="Effects Chain..." Click="OnMenuEffectsChain" />
+              <MenuItem Header="Metronome..." Click="OnMenuMetronome" />
+              <MenuItem Header="Karaoke Mode..." Click="OnMenuKaraokeMode" />
+            </MenuItem>
+            <MenuItem Header="Creator">
+              <MenuItem Header="Lyrics Timing Studio" InputGesture="Ctrl+Shift+L" Click="OnMenuTimingStudio" />
+              <MenuItem Header="Scripted Visualizers..." Click="OnMenuScriptedVisualizers" />
+            </MenuItem>
+            <MenuItem Header="Live">
+              <MenuItem Header="OBS Overlay Settings" Click="OnMenuSettings" />
+              <MenuItem Header="Song Wars..." Click="OnMenuSongWars" />
+            </MenuItem>
+          </MenuItem>
+          <MenuItem Header="_Help">
+            <MenuItem Header="UI Reveal..." Click="OnMenuUiReveal" />
+            <Separator />
+            <MenuItem Header="Check for Updates" Click="OnMenuCheckUpdates" />
+            <Separator />
+            <MenuItem Header="Redeem Visualizer..." Click="OnMenuRedeemVisualizer" />
+            <MenuItem Header="Clear Redeemed Visualizers..." Click="OnMenuClearRedeemedVisualizers" />
+            <Separator />
+            <MenuItem Header="Terms of Service" Click="OnMenuTermsOfService" />
+            <MenuItem Header="Privacy Policy" Click="OnMenuPrivacyPolicy" />
+            <Separator />
+            <MenuItem Header="Clear Cached Album State..." Click="OnMenuClearCachedAlbumState" />
+            <Separator />
+            <MenuItem Header="About Spectralis" Click="OnMenuAbout" />
+            <MenuItem Header="Visit deltavdevs.com" Click="OnMenuVisitWebsite" />
+          </MenuItem>
+        </Menu>
+
+        <!-- Transparent drag spacer -->
+        <Border Grid.Column="2" IsHitTestVisible="False" />
+
+        <!-- Version label + window controls -->
+        <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Stretch">
+          <TextBlock Classes="muted"
+                     Text="{Binding VersionText}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     VerticalAlignment="Center"
+                     Margin="0,0,10,0" />
+          <Button Classes="ghost"
+                  Width="38" Height="36"
+                  Padding="0"
+                  Click="OnMinimizeWindow"
+                  ToolTip.Tip="Minimize">
+            <PathIcon Data="{x:Static design:IconData.Minimize}" Width="12" Height="12" />
+          </Button>
+          <Button Classes="ghost"
+                  Width="38" Height="36"
+                  Padding="0"
+                  Click="OnMaximizeRestoreWindow"
+                  ToolTip.Tip="Maximize or restore">
+            <PathIcon Data="{x:Static design:IconData.Maximize}" Width="12" Height="12" />
+          </Button>
+          <Button Classes="ghost"
+                  Width="38" Height="36"
+                  Padding="0"
+                  Click="OnCloseWindow"
+                  ToolTip.Tip="Close">
+            <PathIcon Data="{x:Static design:IconData.Close}" Width="12" Height="12" />
+          </Button>
+        </StackPanel>
+
       </Grid>
     </Border>
 
-    <!-- Content area: Library | Main | Queue -->
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
 
-      <!-- Library panel -->
-      <Border Grid.Column="0" Width="280"
-              IsVisible="{Binding IsLibraryVisible}"
-              BorderBrush="#22223A" BorderThickness="0,0,1,0">
-        <views:LibraryView DataContext="{Binding Library}"/>
+      <Border Grid.Column="0"
+              Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="0,0,1,0">
+        <DockPanel Width="{Binding SidebarWidth}" LastChildFill="True">
+          <DockPanel.Transitions>
+            <Transitions>
+              <DoubleTransition Property="Width"
+                                Duration="{StaticResource Duration.Base}"
+                                Easing="{StaticResource Easing.Default}" />
+            </Transitions>
+          </DockPanel.Transitions>
+
+          <!-- Sidebar header -->
+          <Grid DockPanel.Dock="Top" Margin="8,10,8,10">
+
+            <!-- Expanded: icon + name + collapse button -->
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  IsVisible="{Binding !IsSidebarCollapsed}">
+              <Image Grid.Column="0"
+                     Source="/Assets/icon.png"
+                     Width="22" Height="22"
+                     Stretch="Uniform"
+                     VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1"
+                         Text="SPECTRALIS"
+                         FontWeight="SemiBold"
+                         LetterSpacing="1.5"
+                         FontSize="{StaticResource FontSize.UI.Small}"
+                         VerticalAlignment="Center"
+                         Margin="8,0,0,0" />
+              <Button Grid.Column="2"
+                      Classes="ghost"
+                      Width="30" Height="28"
+                      Padding="0"
+                      Click="OnToggleSidebar"
+                      ToolTip.Tip="{Binding SidebarToggleTip}">
+                <PathIcon Data="{Binding SidebarToggleIconData}" Width="14" Height="14" />
+              </Button>
+            </Grid>
+
+            <!-- Collapsed: just the toggle -->
+            <Button Classes="ghost"
+                    Width="34" Height="30"
+                    Padding="0"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding IsSidebarCollapsed}"
+                    Click="OnToggleSidebar"
+                    ToolTip.Tip="{Binding SidebarToggleTip}">
+              <PathIcon Data="{Binding SidebarToggleIconData}" Width="14" Height="14" />
+            </Button>
+
+          </Grid>
+
+          <ListBox ItemsSource="{Binding Sections}"
+                   SelectedItem="{Binding SelectedSection}"
+                   DockPanel.Dock="Top"
+                   IsVisible="{Binding !IsSidebarCollapsed}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:NavSection">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <PathIcon Data="{Binding IconData}" Width="16" Height="16" />
+                  <TextBlock Text="{Binding Label}" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="13,8,16,8" />
+                <Setter Property="BorderThickness" Value="3,0,0,0" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+              </Style>
+              <Style Selector="ListBoxItem PathIcon">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+              </Style>
+              <Style Selector="ListBoxItem TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+              </Style>
+              <Style Selector="ListBoxItem:selected">
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+              </Style>
+              <Style Selector="ListBoxItem:selected PathIcon">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+              </Style>
+              <Style Selector="ListBoxItem:selected TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+              </Style>
+            </ListBox.Styles>
+          </ListBox>
+
+          <ListBox ItemsSource="{Binding Sections}"
+                   SelectedItem="{Binding SelectedSection}"
+                   DockPanel.Dock="Top"
+                   IsVisible="{Binding IsSidebarCollapsed}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:NavSection">
+                <PathIcon Data="{Binding IconData}"
+                          Width="18" Height="18"
+                          HorizontalAlignment="Center"
+                          ToolTip.Tip="{Binding Label}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="0,2" />
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="BorderThickness" Value="3,0,0,0" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+              </Style>
+              <Style Selector="ListBoxItem PathIcon">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+              </Style>
+              <Style Selector="ListBoxItem:selected">
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+              </Style>
+              <Style Selector="ListBoxItem:selected PathIcon">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+              </Style>
+            </ListBox.Styles>
+          </ListBox>
+
+          <Border />
+        </DockPanel>
       </Border>
 
-      <!-- Center: Visualizer + status -->
-      <Grid Grid.Column="1" RowDefinitions="*,Auto">
-        <ctrl:SpectrumBarsControl Grid.Row="0" Name="SpectrumViz"
-                                  Background="#0E0E14"/>
-        <Border Grid.Row="1" Background="#111120" Padding="12,4">
-          <TextBlock Text="{Binding StatusMessage}" FontSize="11"
-                     Foreground="#666688"/>
-        </Border>
-      </Grid>
-
-      <!-- Queue panel -->
-      <Border Grid.Column="2" Width="280"
-              IsVisible="{Binding IsQueueVisible}"
-              BorderBrush="#22223A" BorderThickness="1,0,0,0">
-        <views:QueueView DataContext="{Binding Queue}"/>
-      </Border>
+      <ContentControl Grid.Column="1" Content="{Binding CurrentContent}"
+                      HorizontalContentAlignment="Stretch"
+                      VerticalContentAlignment="Stretch" />
 
     </Grid>
 
-    <!-- Divider -->
-    <Border Grid.Row="2" Background="#22223A"/>
+    <!-- ============ Status strip ============ -->
+    <Border Grid.Row="2"
+            Background="{StaticResource Brush.Bg.Overlay}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="0,1,0,0">
+      <Border.Styles>
+        <Style Selector="TextBlock.status-accent">
+          <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+        </Style>
+      </Border.Styles>
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,3,12,3">
+        <TextBlock Grid.Column="0"
+                   Text="{Binding StatusText}"
+                   Classes="secondary"
+                   Classes.status-accent="{Binding IsStatusAccent}"
+                   FontSize="{StaticResource FontSize.UI.Small}"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="520" />
+        <TextBlock Grid.Column="1"
+                   Classes="muted"
+                   Text="{Binding OutputStatusText}"
+                   FontSize="{StaticResource FontSize.UI.Small}"
+                   VerticalAlignment="Center"
+                   Margin="16,0,0,0" />
+        <TextBlock Grid.Column="2"
+                   Classes="muted"
+                   Text="{Binding StatusHintText}"
+                   FontSize="{StaticResource FontSize.UI.Small}"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   Margin="16,0,0,0" />
+        <TextBlock Grid.Column="3"
+                   Text="Made by DeltaVDevs"
+                   FontSize="{StaticResource FontSize.UI.Small}"
+                   Foreground="{StaticResource Brush.Signal}"
+                   VerticalAlignment="Center"
+                   Cursor="Hand"
+                   TextDecorations="Underline"
+                   PointerPressed="OnBrandLinkPressed"
+                   ToolTip.Tip="Visit deltavdevs.com"
+                   Margin="16,0,0,0" />
+      </Grid>
+    </Border>
 
-    <!-- Now playing bar -->
-    <views:NowPlayingView Grid.Row="3" DataContext="{Binding Player}"/>
+    <!-- P2W Mode overlay: yellow banner top-right -->
+    <Border Grid.Row="1"
+            IsVisible="{Binding IsP2wModeActive}"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,18,18,0"
+            MaxWidth="820"
+            MinWidth="260"
+            MinHeight="120"
+            CornerRadius="8"
+            BoxShadow="0 8 40 4 #80000000"
+            Padding="28,20"
+            IsHitTestVisible="False">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#FFD600" Offset="0" />
+          <GradientStop Color="#FFC000" Offset="1" />
+        </LinearGradientBrush>
+      </Border.Background>
+      <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+        <TextBlock Text="PAID SKIP — PAY 2 WIN"
+                   Foreground="#1E1400"
+                   FontWeight="Bold"
+                   FontSize="44"
+                   LetterSpacing="3" />
+      </Viewbox>
+    </Border>
 
+    <Border Grid.Row="1"
+            Grid.RowSpan="2"
+            IsVisible="{Binding ClipboardToastVisible}"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,0,20,30"
+            MaxWidth="380"
+            Padding="14"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Signal}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="14" RowSpacing="10">
+        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                Width="44" Height="44"
+                IsVisible="{Binding ClipboardToastArtwork, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <Image Source="{Binding ClipboardToastArtwork, Converter={x:Static conv:BytesToBitmapConverter.Instance}}"
+                 Stretch="UniformToFill" />
+        </Border>
+        <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3">
+          <TextBlock Text="{Binding ClipboardToastTitle}"
+                     FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="secondary"
+                     Text="{Binding ClipboardToastSubtitle}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Row="0"
+                    Grid.RowSpan="2"
+                    Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center">
+          <Button Content="Play" Click="OnPlayClipboardToast" Classes="primary" />
+          <Button Classes="ghost" Content="Dismiss" Click="OnDismissClipboardToast" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- UI Reveal overlay — full-window fake legacy WinForms skin, blasts away at the drop -->
+    <controls:UiRevealOverlay x:Name="RevealOverlay"
+                               Grid.Row="0"
+                               Grid.RowSpan="3"
+                               IsVisible="False"
+                               ZIndex="200" />
+
+    <!-- Resize handle overlay — transparent 5 px strips at each edge/corner.
+         The outer Grid has no Background so clicks on the center pass through.
+         Each edge/corner Border has Background="Transparent" making it hit-testable. -->
+    <Grid Grid.Row="0" Grid.RowSpan="3" ZIndex="500">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="5" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="5" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="5" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="5" />
+      </Grid.ColumnDefinitions>
+      <Border Grid.Row="0" Grid.Column="0" Background="Transparent" Cursor="TopLeftCorner"     PointerPressed="OnResizeNorthWest" />
+      <Border Grid.Row="0" Grid.Column="1" Background="Transparent" Cursor="TopSide"          PointerPressed="OnResizeNorth" />
+      <Border Grid.Row="0" Grid.Column="2" Background="Transparent" Cursor="TopRightCorner"   PointerPressed="OnResizeNorthEast" />
+      <Border Grid.Row="1" Grid.Column="0" Background="Transparent" Cursor="LeftSide"         PointerPressed="OnResizeWest" />
+      <Border Grid.Row="1" Grid.Column="2" Background="Transparent" Cursor="RightSide"        PointerPressed="OnResizeEast" />
+      <Border Grid.Row="2" Grid.Column="0" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="OnResizeSouthWest" />
+      <Border Grid.Row="2" Grid.Column="1" Background="Transparent" Cursor="BottomSide"       PointerPressed="OnResizeSouth" />
+      <Border Grid.Row="2" Grid.Column="2" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="OnResizeSouthEast" />
+    </Grid>
+
+    <!-- Hidden host for the Spotify Web Playback SDK — must live in the visual tree -->
+    <ContentControl x:Name="SpotifyHostSlot"
+                     Grid.Row="0"
+                     Width="2" Height="2"
+                     Opacity="0"
+                     IsHitTestVisible="False"
+                     HorizontalAlignment="Left"
+                     VerticalAlignment="Top" />
   </Grid>
 </Window>

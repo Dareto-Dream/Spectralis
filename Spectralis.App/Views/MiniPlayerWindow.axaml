@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Spectralis.App.ViewModels"
+        xmlns:conv="using:Spectralis.App.Converters"
+        xmlns:design="using:Spectralis.App.Design"
+        x:Class="Spectralis.App.Views.MiniPlayerWindow"
+        x:DataType="vm:NowPlayingViewModel"
+        Title="Spectralis Mini"
+        Icon="/Assets/icon.png"
+        Width="384" Height="104"
+        CanResize="False"
+        SystemDecorations="None"
+        ShowInTaskbar="False"
+        Background="{StaticResource Brush.Bg.Raised}"
+        PointerPressed="OnDragWindow">
+
+  <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+    <Grid RowDefinitions="*,Auto">
+
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="8">
+
+        <!-- Artwork -->
+        <Border Grid.Column="0" Width="80" Height="80"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+          <Panel>
+            <Image Source="{Binding CoverArtBytes, Converter={x:Static conv:BytesToBitmapConverter.Instance}}"
+                   Stretch="UniformToFill" />
+            <Image Source="/Assets/icon.png"
+                   Width="64" Height="64"
+                   Opacity="0.18"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNull}}" />
+          </Panel>
+        </Border>
+
+        <!-- Identity + transport -->
+        <StackPanel Grid.Column="1" Margin="10,2,8,0" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="secondary" Text="{Binding Artist}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="-6,2,0,0">
+            <Button Classes="ghost" Command="{Binding PreviousCommand}">
+              <PathIcon Data="{x:Static design:IconData.Previous}" Width="16" Height="16" />
+            </Button>
+            <Button Classes="primary" Width="28" Height="28" Padding="0"
+                    Command="{Binding PlayPauseCommand}">
+              <PathIcon Data="{Binding PlayPauseIconData}" Width="14" Height="14" />
+            </Button>
+            <Button Classes="ghost" Command="{Binding NextCommand}" IsEnabled="{Binding HasNext}">
+              <PathIcon Data="{x:Static design:IconData.Next}" Width="16" Height="16" />
+            </Button>
+            <TextBlock Classes="data" Text="{Binding PositionText}" VerticalAlignment="Center" Margin="8,0,0,0" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Window controls -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Top">
+          <ToggleButton x:Name="PinToggle" Classes="ghost" Padding="6,2"
+                        IsCheckedChanged="OnPinChanged"
+                        ToolTip.Tip="Always on top">
+            <PathIcon Data="{x:Static design:IconData.Pin}" Width="15" Height="15" />
+          </ToggleButton>
+          <Button Classes="ghost" Padding="6,2"
+                  Click="OnExpand" ToolTip.Tip="Back to full player">
+            <PathIcon Data="{x:Static design:IconData.Expand}" Width="15" Height="15" />
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <!-- Slim progress strip -->
+      <Slider Grid.Row="1" Margin="8,0,8,4" Height="16"
+              Minimum="0" Maximum="{Binding LengthSeconds}"
+              Value="{Binding PositionSeconds, Mode=TwoWay}" />
+    </Grid>
+  </Border>
+
+</Window>

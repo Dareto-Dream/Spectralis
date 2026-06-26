@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.ConfirmWindow"
+        Title="Confirm"
+        Icon="/Assets/icon.png"
+        Width="420" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock x:Name="MessageText" Classes="secondary" TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="YesButton" Content="Yes" Click="OnYes" Classes="primary" />
+      <Button x:Name="NoButton" Content="No" Click="OnNo" IsCancel="True" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

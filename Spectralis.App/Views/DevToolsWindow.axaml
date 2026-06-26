@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Spectralis.App.ViewModels"
+        x:Class="Spectralis.App.Views.DevToolsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Developer Tools"
+        Icon="/Assets/icon.png"
+        Width="640" Height="560"
+        MinWidth="480" MinHeight="420"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="24">
+
+      <TextBlock Classes="display" Text="Developer Tools" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Unlocked by clicking the version number 5 times in Settings. These are not normal user-facing controls." />
+
+      <!-- Diagnostics -->
+      <StackPanel Spacing="8">
+        <TextBlock Classes="heading" Text="Diagnostics" />
+        <TextBlock Classes="data" Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" />
+        <WrapPanel Orientation="Horizontal">
+          <Button Content="Open Logs" Command="{Binding OpenLogsFolderCommand}" Margin="0,0,8,8" />
+          <Button Content="Copy Diagnostics" Click="OnCopyDiagnostics" Margin="0,0,8,8" />
+        </WrapPanel>
+        <TextBlock Classes="secondary" Text="Remote audio cache" />
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Classes="data" Text="{Binding CacheStatus}" VerticalAlignment="Center" />
+          <Button Content="Clear Cache" Click="OnClearRemoteCache" Classes="destructive" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- OBS manual layout JSON -->
+      <StackPanel Spacing="8">
+        <TextBlock Classes="heading" Text="OBS layout JSON" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Raw ObsLayout JSON editing. Most users should use the Visual Designer on the OBS Overlay page instead." />
+        <TextBox Text="{Binding ObsEditor.CustomObsJson}"
+                 AcceptsReturn="True" TextWrapping="Wrap"
+                 MinLines="6" MaxLines="16"
+                 FontFamily="{StaticResource Font.Data}" FontSize="{StaticResource FontSize.Data}"
+                 Watermark="Paste ObsLayout JSON here, then click Validate and Apply" />
+        <Button Content="Validate and Apply" Click="OnApplyCustomObsJson" Classes="primary" HorizontalAlignment="Left" />
+        <TextBlock Classes="data" Text="{Binding ObsEditor.ObsStatus}" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Button Content="Close" Click="OnClose" HorizontalAlignment="Right" />
+    </StackPanel>
+  </ScrollViewer>
+
+</Window>

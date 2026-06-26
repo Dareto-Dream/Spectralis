@@ -1,89 +1,345 @@
-using System;
-using System.Collections.Generic;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Spectralis.Core.Lyrics
+namespace Spectralis.Core.Lyrics;
+
+public static partial class LrcParser
 {
-    public class LrcParser
+    private static readonly Regex InlineTimestampRegex = InlineTimestamp();
+
+    public static LyricsDocument? Parse(string? rawText, string sourceLabel)
     {
-        private static readonly Regex TimestampRx = new(@"\[(\d{1,3}):(\d{2})\.(\d{2,3})\]", RegexOptions.Compiled);
-        private static readonly Regex MetadataRx = new(@"\[(\w+):(.*)\]", RegexOptions.Compiled);
-        private static readonly Regex EnhancedWordRx = new(@"<(\d{2}):(\d{2})\.(\d{2,3})>([^<]*)", RegexOptions.Compiled);
-
-        public LrcFile Parse(string content)
+        if (string.IsNullOrWhiteSpace(rawText))
         {
-            var file = new LrcFile();
-            if (string.IsNullOrEmpty(content)) return file;
+            return null;
+        }
 
-            foreach (var rawLine in content.Split('\n'))
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lines = new List<LyricsLine>();
+        var normalizedText = rawText
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        var offsetMilliseconds = 0;
+        var isFirstLine = true;
+
+        foreach (var rawLine in normalizedText.Split('\n'))
+        {
+            var line = isFirstLine
+                ? rawLine.TrimStart('\uFEFF')
+                : rawLine;
+
+            isFirstLine = false;
+            ParseLine(line.TrimEnd(), metadata, lines, ref offsetMilliseconds);
+        }
+
+        if (lines.Count == 0)
+        {
+            return null;
+        }
+
+        if (offsetMilliseconds != 0)
+        {
+            var deltaSeconds = offsetMilliseconds / 1000d;
+            for (var i = 0; i < lines.Count; i++)
             {
-                var line = rawLine.TrimEnd('\r').Trim();
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.StartsWith("//") || line.StartsWith("#")) continue;
+                lines[i] = lines[i].ShiftedBy(deltaSeconds);
+            }
+        }
 
-                var metaMatch = MetadataRx.Match(line);
-                if (metaMatch.Success && !TimestampRx.IsMatch(line))
-                {
-                    file.Metadata[metaMatch.Groups[1].Value.ToLowerInvariant()] =
-                        metaMatch.Groups[2].Value.Trim();
-                    continue;
-                }
+        return new LyricsDocument(lines, metadata, offsetMilliseconds, sourceLabel);
+    }
 
-                var timestamps = new List<TimeSpan>();
-                var remaining = TimestampRx.Replace(line, m =>
-                {
-                    int min = int.Parse(m.Groups[1].Value);
-                    int sec = int.Parse(m.Groups[2].Value);
-                    string msStr = m.Groups[3].Value;
-                    int ms = msStr.Length == 2 ? int.Parse(msStr) * 10 : int.Parse(msStr);
-                    timestamps.Add(new TimeSpan(0, 0, min, sec, ms));
-                    return string.Empty;
-                });
+    private static void ParseLine(
+        string line,
+        IDictionary<string, string> metadata,
+        ICollection<LyricsLine> lines,
+        ref int offsetMilliseconds)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
 
-                if (timestamps.Count == 0) continue;
-                remaining = remaining.Trim();
+        var timestamps = new List<double>();
+        var cursor = 0;
 
-                var enhancedWords = new List<EnhancedWord>();
-                if (remaining.Contains('<'))
-                {
-                    foreach (Match wm in EnhancedWordRx.Matches(remaining))
-                    {
-                        int min = int.Parse(wm.Groups[1].Value);
-                        int sec = int.Parse(wm.Groups[2].Value);
-                        string msStr = wm.Groups[3].Value;
-                        int ms = msStr.Length == 2 ? int.Parse(msStr) * 10 : int.Parse(msStr);
-                        enhancedWords.Add(new EnhancedWord
-                        {
-                            Timestamp = new TimeSpan(0, 0, min, sec, ms),
-                            Text = wm.Groups[4].Value
-                        });
-                    }
-                }
-
-                foreach (var ts in timestamps)
-                {
-                    file.Lines.Add(new LrcLine
-                    {
-                        Timestamp = ts,
-                        Text = remaining,
-                        Words = enhancedWords.Count > 0 ? enhancedWords : null
-                    });
-                }
+        while (cursor < line.Length && line[cursor] == '[')
+        {
+            var closingBracket = line.IndexOf(']', cursor + 1);
+            if (closingBracket < 0)
+            {
+                break;
             }
 
-            file.Lines.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
-            return file;
+            var tagContent = line[(cursor + 1)..closingBracket].Trim();
+
+            if (TryParseTimestamp(tagContent, out var timestampSeconds))
+            {
+                timestamps.Add(timestampSeconds);
+                cursor = closingBracket + 1;
+                continue;
+            }
+
+            if (timestamps.Count == 0 && TryParseMetadataTag(tagContent, out var key, out var value))
+            {
+                metadata[key] = value;
+
+                if (key.Equals("offset", StringComparison.OrdinalIgnoreCase) &&
+                    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedOffset))
+                {
+                    offsetMilliseconds = parsedOffset;
+                }
+
+                return;
+            }
+
+            break;
         }
 
-        public static TimeSpan ParseTimestamp(string raw)
+        if (timestamps.Count == 0)
         {
-            var m = TimestampRx.Match(raw);
-            if (!m.Success) return TimeSpan.Zero;
-            int min = int.Parse(m.Groups[1].Value);
-            int sec = int.Parse(m.Groups[2].Value);
-            string msStr = m.Groups[3].Value;
-            int ms = msStr.Length == 2 ? int.Parse(msStr) * 10 : int.Parse(msStr);
-            return new TimeSpan(0, 0, min, sec, ms);
+            return;
+        }
+
+        var lyricBody = cursor >= line.Length ? string.Empty : line[cursor..];
+        var baseSegments = ParseSegments(lyricBody, timestamps[0]);
+        var displayText = BuildDisplayText(baseSegments, lyricBody);
+
+        foreach (var timestamp in timestamps)
+        {
+            var deltaSeconds = timestamp - timestamps[0];
+            var shiftedSegments = deltaSeconds == 0
+                ? baseSegments
+                : baseSegments.Select(segment => segment.ShiftedBy(deltaSeconds)).ToArray();
+
+            lines.Add(new LyricsLine(timestamp, displayText, shiftedSegments));
         }
     }
+
+    private static LyricsSegment[] ParseSegments(string lyricBody, double fallbackStartTime)
+    {
+        if (string.IsNullOrEmpty(lyricBody))
+        {
+            return [];
+        }
+
+        var segments = new List<LyricsSegment>();
+        var cursor = 0;
+        double? pendingLeadingTime = null;
+        var pendingLeadingPrefix = string.Empty;
+
+        foreach (Match match in InlineTimestampRegex.Matches(lyricBody))
+        {
+            var betweenText = lyricBody[cursor..match.Index];
+            if (!TryParseTimestamp(match.Groups["time"].Value, out var timestampSeconds))
+            {
+                cursor = match.Index + match.Length;
+                continue;
+            }
+
+            if (betweenText.Length == 0)
+            {
+                pendingLeadingTime = timestampSeconds;
+                pendingLeadingPrefix = string.Empty;
+            }
+            else if (pendingLeadingTime.HasValue)
+            {
+                var segmentText = pendingLeadingPrefix + betweenText;
+                if (!string.IsNullOrEmpty(segmentText))
+                {
+                    segments.Add(new LyricsSegment(pendingLeadingTime.Value, segmentText));
+                }
+
+                pendingLeadingTime = timestampSeconds;
+                pendingLeadingPrefix = string.Empty;
+            }
+            else if (ContainsRenderableText(betweenText))
+            {
+                segments.Add(new LyricsSegment(timestampSeconds, betweenText));
+            }
+            else
+            {
+                pendingLeadingTime = timestampSeconds;
+                pendingLeadingPrefix = betweenText;
+            }
+
+            cursor = match.Index + match.Length;
+        }
+
+        var trailingText = lyricBody[cursor..];
+        if (pendingLeadingTime.HasValue)
+        {
+            var segmentText = pendingLeadingPrefix + trailingText;
+            if (!string.IsNullOrEmpty(segmentText))
+            {
+                segments.Add(new LyricsSegment(pendingLeadingTime.Value, segmentText));
+            }
+        }
+        else if (segments.Count == 0)
+        {
+            segments.Add(new LyricsSegment(fallbackStartTime, lyricBody));
+        }
+        else if (!string.IsNullOrEmpty(trailingText))
+        {
+            var lastSegment = segments[^1];
+            segments[^1] = lastSegment with { Text = lastSegment.Text + trailingText };
+        }
+
+        return NormalizeSegments(segments, lyricBody, fallbackStartTime);
+    }
+
+    private static LyricsSegment[] NormalizeSegments(
+        IReadOnlyList<LyricsSegment> rawSegments,
+        string fallbackText,
+        double fallbackStartTime)
+    {
+        if (rawSegments.Count == 0)
+        {
+            var trimmedFallback = fallbackText.Trim();
+            return trimmedFallback.Length == 0
+                ? []
+                : [new LyricsSegment(fallbackStartTime, trimmedFallback)];
+        }
+
+        var normalized = new List<LyricsSegment>(rawSegments.Count);
+
+        for (var i = 0; i < rawSegments.Count; i++)
+        {
+            var text = rawSegments[i].Text;
+            if (i == 0)
+            {
+                text = text.TrimStart();
+            }
+
+            if (i == rawSegments.Count - 1)
+            {
+                text = text.TrimEnd();
+            }
+
+            if (text.Length == 0)
+            {
+                continue;
+            }
+
+            normalized.Add(new LyricsSegment(rawSegments[i].StartTime, text));
+        }
+
+        if (normalized.Count == 0)
+        {
+            var trimmedFallback = fallbackText.Trim();
+            return trimmedFallback.Length == 0
+                ? []
+                : [new LyricsSegment(fallbackStartTime, trimmedFallback)];
+        }
+
+        return normalized.ToArray();
+    }
+
+    private static string BuildDisplayText(IReadOnlyList<LyricsSegment> segments, string fallbackText)
+    {
+        if (segments.Count == 0)
+        {
+            return fallbackText.Trim();
+        }
+
+        return string.Concat(segments.Select(static segment => segment.Text)).Trim();
+    }
+
+    private static bool TryParseMetadataTag(string tagContent, out string key, out string value)
+    {
+        var separatorIndex = tagContent.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex == tagContent.Length - 1)
+        {
+            key = string.Empty;
+            value = string.Empty;
+            return false;
+        }
+
+        key = tagContent[..separatorIndex].Trim();
+        value = tagContent[(separatorIndex + 1)..].Trim();
+        return key.Length > 0;
+    }
+
+    /// <summary>
+    /// Wraps a plain-text lyric description (no timestamps) in a LyricsDocument
+    /// so it can be displayed in the lyrics panel without active-line tracking.
+    /// </summary>
+    public static LyricsDocument? ParsePlainText(string? text, string serviceLabel)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var lines = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .Select(l => new LyricsLine(0, l))
+            .ToList();
+
+        return lines.Count > 0
+            ? new LyricsDocument(lines, sourceLabel: $"{serviceLabel} lyrics", isDescription: true)
+            : null;
+    }
+
+    private static bool ContainsRenderableText(string text) =>
+        text.AsSpan().IndexOfAnyExcept(" \t".AsSpan()) >= 0;
+
+    private static bool TryParseTimestamp(string rawValue, out double seconds)
+    {
+        seconds = 0;
+        var value = rawValue.Trim();
+        if (value.Length < 3)
+        {
+            return false;
+        }
+
+        var parts = value.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length is < 2 or > 3)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(parts[^2], NumberStyles.None, CultureInfo.InvariantCulture, out var minutes))
+        {
+            return false;
+        }
+
+        if (!double.TryParse(
+                parts[^1].Replace(',', '.'),
+                NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture,
+                out var secondsPart))
+        {
+            return false;
+        }
+
+        var hours = 0;
+        if (parts.Length == 3 &&
+            !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out hours))
+        {
+            return false;
+        }
+
+        if (parts.Length == 2 &&
+            !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out minutes))
+        {
+            return false;
+        }
+
+        if (secondsPart >= 60)
+        {
+            return false;
+        }
+
+        seconds = (hours * 3600d) + (minutes * 60d) + secondsPart;
+        return true;
+    }
+
+    [GeneratedRegex(@"<(?<time>\d{1,3}:\d{1,2}(?::\d{1,2})?(?:[.,]\d{1,3})?)>", RegexOptions.CultureInvariant)]
+    private static partial Regex InlineTimestamp();
 }
