@@ -41,6 +41,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private byte[]? _clipboardToastArtwork;
     private DateTimeOffset _clipboardToastShownAt;
     private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
+    private string _mostRecentSongSource = string.Empty;
+    private string _mostRecentSongLabel = string.Empty;
 
     public MainWindowViewModel()
     {
@@ -94,6 +96,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             ApplyBeatGridForTrack(path);
             if (Engine.CurrentTrack is { } track)
             {
+                RememberMostRecentSong(path, track.DisplayTitle, track.Artist);
                 Scrobbling.NotifyTrackLoaded(
                     path,
                     track.DisplayTitle,
@@ -104,7 +107,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         };
 
         NowPlaying.RemoteTrackLoaded += (sourceUrl, title, artist, album, durationSeconds) =>
+        {
+            RememberMostRecentSong(sourceUrl, title, artist);
             Scrobbling.NotifyTrackLoaded(sourceUrl, title, artist, album, durationSeconds);
+        };
 
         Library.TrackAnalyzed += (_, result) =>
         {
@@ -292,6 +298,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ListeningActivitySnapshot IdleActivity => _idleActivity;
 
+    public bool CanPlayMostRecentSong => !string.IsNullOrWhiteSpace(_mostRecentSongSource);
+
+    public string MostRecentSongLabel => _mostRecentSongLabel;
+
     public EffectChain EffectChain { get; }
 
     public AppSettings AppSettings { get; }
@@ -450,6 +460,28 @@ public sealed class MainWindowViewModel : ViewModelBase
         await NowPlaying.LoadUrlAsync(url);
     }
 
+    public async Task PlayMostRecentSongAsync()
+    {
+        var source = _mostRecentSongSource;
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        SelectSection(NowPlaying);
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            await NowPlaying.LoadUrlAsync(source);
+            return;
+        }
+
+        if (File.Exists(source))
+        {
+            await NowPlaying.PlayQueueAsync([source], 0);
+        }
+    }
+
     /// <summary>
     /// Entry point for drops and OS file-open: files play, folders scan into the library.
     /// </summary>
@@ -568,6 +600,23 @@ public sealed class MainWindowViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IdleActivity));
         this.RaisePropertyChanged(nameof(IdleActivityText));
         this.RaisePropertyChanged(nameof(StatusHintText));
+    }
+
+    private void RememberMostRecentSong(string source, string title, string artist)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        _mostRecentSongSource = source;
+        _mostRecentSongLabel = string.IsNullOrWhiteSpace(title)
+            ? source
+            : string.IsNullOrWhiteSpace(artist)
+                ? title
+                : $"{artist} - {title}";
+        this.RaisePropertyChanged(nameof(CanPlayMostRecentSong));
+        this.RaisePropertyChanged(nameof(MostRecentSongLabel));
     }
 
     private static string BuildIdleActivityText(ListeningActivitySnapshot snapshot)
