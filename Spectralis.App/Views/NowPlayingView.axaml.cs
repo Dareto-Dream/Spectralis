@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -513,6 +514,7 @@ public NowPlayingView()
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
+                UserDataFolder = Path.Combine(Path.GetTempPath(), "spectralis-embedded-webview2"),
             };
             _embeddedControl = _persistentWv2;
             _embeddedHost = _persistentWv2;
@@ -546,10 +548,16 @@ public NowPlayingView()
 
         try
         {
-            _embeddedHost.NavigateToString(BuildEmbeddedHtmlDocument(context, _viewModel));
+            var document = BuildEmbeddedHtmlDocument(context, _viewModel);
+            AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                $"[EMBEDDED] navigate id={context.Id} chars={document.Length:n0} " +
+                $"utf8={Encoding.UTF8.GetByteCount(document):n0} hash={HashShort(document)}");
+            _embeddedHost.NavigateToString(document);
         }
-        catch
+        catch (Exception ex)
         {
+            AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                $"[EMBEDDED] navigate failed id={context.Id}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
             StopEmbeddedHtmlMode();
             _viewModel.ShowEmbeddedHtml = false;
         }
@@ -791,13 +799,38 @@ public NowPlayingView()
 
     private string BuildEmbeddedHtmlDocument(EmbeddedHtmlContext context, NowPlayingViewModel? vm)
     {
+        AppLogPaths.AppendTimestamped(_webviewPerfLog,
+            $"[EMBEDDED] build start id={context.Id} version={context.Version ?? "<none>"} " +
+            $"htmlBytes={context.HtmlBytes.Length:n0} binaryAssets={context.BinaryAssets.Count} " +
+            $"binaryBytes={context.BinaryAssets.Values.Sum(static bytes => bytes.Length):n0} " +
+            $"textAssets={context.TextAssets.Count} textChars={context.TextAssets.Values.Sum(static text => text.Length):n0}");
+
         var html = Encoding.UTF8.GetString(context.HtmlBytes);
+        LogDocumentStage(context.Id, "decoded", html);
         html = StripInlineEventHandlers(html);
-        html = ResolveEmbeddedAssetReferences(html, context.BinaryAssets, context.TextAssets);
+        LogDocumentStage(context.Id, "stripped-inline-handlers", html);
+        html = ResolveEmbeddedAssetReferences(context.Id, html, context.BinaryAssets, context.TextAssets);
+        LogDocumentStage(context.Id, "assets-resolved", html);
         html = InjectEmbeddedPerformancePrelude(html);
+        LogDocumentStage(context.Id, "performance-prelude", html);
         html = InjectTrackMeta(html, vm);
+        LogDocumentStage(context.Id, "track-meta", html);
         html = InjectBridgeBootstrap(html);
-        return WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
+        LogDocumentStage(context.Id, "bridge-bootstrap", html);
+        html = WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
+        LogDocumentStage(context.Id, "csp-final", html);
+        return html;
+    }
+
+    private static void LogDocumentStage(string contextId, string stage, string html) =>
+        AppLogPaths.AppendTimestamped(_webviewPerfLog,
+            $"[EMBEDDED] build id={contextId} stage={stage} chars={html.Length:n0} " +
+            $"utf8={Encoding.UTF8.GetByteCount(html):n0} hash={HashShort(html)}");
+
+    private static string HashShort(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
     }
 
     private string InjectTrackMeta(string html, NowPlayingViewModel? vm)
@@ -805,15 +838,25 @@ public NowPlayingView()
         var track = vm?.Engine?.CurrentTrack;
 
         string? artworkDataUrl = null;
+        var artworkSource = "none";
+        var artworkBytes = 0;
         if (track?.CoverArt is { Length: > 0 } art)
         {
             var mime = string.IsNullOrWhiteSpace(track.CoverArtMimeType) ? "image/jpeg" : track.CoverArtMimeType;
             artworkDataUrl = $"data:{mime};base64,{Convert.ToBase64String(art)}";
+            artworkSource = "track";
+            artworkBytes = art.Length;
         }
         else if (vm?.CoverArtBytes is { Length: > 0 } vmArt)
         {
             artworkDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(vmArt)}";
+            artworkSource = "viewmodel";
+            artworkBytes = vmArt.Length;
         }
+
+        AppLogPaths.AppendTimestamped(_webviewPerfLog,
+            $"[EMBEDDED] meta artwork source={artworkSource} bytes={artworkBytes:n0} " +
+            $"dataUrlChars={(artworkDataUrl?.Length ?? 0):n0}");
 
         var metaJson = JsonSerializer.Serialize(new
         {
@@ -1023,41 +1066,65 @@ public NowPlayingView()
             RegexOptions.IgnoreCase);
 
     private static string ResolveEmbeddedAssetReferences(
+        string contextId,
         string html,
         IReadOnlyDictionary<string, byte[]> binaryAssets,
         IReadOnlyDictionary<string, string> textAssets)
     {
         if (binaryAssets.Count == 0 && textAssets.Count == 0)
         {
+            AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                $"[EMBEDDED] assets id={contextId} skipped no-assets");
             return html;
         }
 
+        var binaryRefs = 0;
+        var binaryResolved = 0;
+        var binaryMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var withBinaryAssets = Regex.Replace(
             html,
             "delta-(?:asset|bin):([A-Za-z0-9_.-]+)",
             match =>
             {
+                binaryRefs++;
                 var assetId = match.Groups[1].Value;
                 if (!binaryAssets.TryGetValue(assetId, out var bytes))
                 {
+                    binaryMissing.Add(assetId);
                     return match.Value;
                 }
 
+                binaryResolved++;
                 return $"data:{GetMimeType(bytes, assetId)};base64,{Convert.ToBase64String(bytes)}";
             },
             RegexOptions.IgnoreCase);
 
-        return Regex.Replace(
+        var textRefs = 0;
+        var textResolved = 0;
+        var textMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = Regex.Replace(
             withBinaryAssets,
             "\"?delta-data-json:([A-Za-z0-9_.-]+)\"?",
             match =>
             {
+                textRefs++;
                 var assetId = match.Groups[1].Value;
-                return textAssets.TryGetValue(assetId, out var text)
-                    ? JsonSerializer.Serialize(text)
-                    : "null";
+                if (textAssets.TryGetValue(assetId, out var text))
+                {
+                    textResolved++;
+                    return JsonSerializer.Serialize(text);
+                }
+
+                textMissing.Add(assetId);
+                return "null";
             },
             RegexOptions.IgnoreCase);
+
+        AppLogPaths.AppendTimestamped(_webviewPerfLog,
+            $"[EMBEDDED] assets id={contextId} binaryRefs={binaryRefs} binaryResolved={binaryResolved} " +
+            $"binaryMissing=[{string.Join(",", binaryMissing)}] textRefs={textRefs} textResolved={textResolved} " +
+            $"textMissing=[{string.Join(",", textMissing)}]");
+        return result;
     }
 
     private static string GetMimeType(byte[] bytes, string assetId)
