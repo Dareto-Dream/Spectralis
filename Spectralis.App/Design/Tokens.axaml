@@ -1,0 +1,96 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    Spectralis design tokens. Every color, font, spacing, and motion value in the
+    app resolves through this dictionary. Nothing is hardcoded in views.
+  -->
+
+  <!-- ======================= Color primitives ======================= -->
+
+  <Color x:Key="Color.Bg.Base">#0C0D0F</Color>
+  <Color x:Key="Color.Bg.Raised">#15171B</Color>
+  <Color x:Key="Color.Bg.Overlay">#1D2026</Color>
+
+  <Color x:Key="Color.Ink.Primary">#E9EBEE</Color>
+  <Color x:Key="Color.Ink.Secondary">#9AA1AC</Color>
+  <Color x:Key="Color.Ink.Muted">#5A616C</Color>
+
+  <!-- The one accent. Signal orange: reads as instrumentation, not candy. -->
+  <Color x:Key="Color.Signal">#FF4E1A</Color>
+  <Color x:Key="Color.Signal.Dim">#A33A1B</Color>
+
+  <Color x:Key="Color.Error">#E5484D</Color>
+  <Color x:Key="Color.Warning">#D9A40A</Color>
+  <Color x:Key="Color.Success">#2EC27E</Color>
+
+  <Color x:Key="Color.Border">#23262C</Color>
+
+  <!-- ======================= Brushes ======================= -->
+
+  <SolidColorBrush x:Key="Brush.Bg.Base" Color="{StaticResource Color.Bg.Base}" />
+  <SolidColorBrush x:Key="Brush.Bg.Raised" Color="{StaticResource Color.Bg.Raised}" />
+  <SolidColorBrush x:Key="Brush.Bg.Overlay" Color="{StaticResource Color.Bg.Overlay}" />
+
+  <SolidColorBrush x:Key="Brush.Ink.Primary" Color="{StaticResource Color.Ink.Primary}" />
+  <SolidColorBrush x:Key="Brush.Ink.Secondary" Color="{StaticResource Color.Ink.Secondary}" />
+  <SolidColorBrush x:Key="Brush.Ink.Muted" Color="{StaticResource Color.Ink.Muted}" />
+
+  <SolidColorBrush x:Key="Brush.Signal" Color="{StaticResource Color.Signal}" />
+  <SolidColorBrush x:Key="Brush.Signal.Dim" Color="{StaticResource Color.Signal.Dim}" />
+
+  <SolidColorBrush x:Key="Brush.Error" Color="{StaticResource Color.Error}" />
+  <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
+  <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}" />
+
+  <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+
+  <!-- Subtle interactive states derived from the base palette (tints, not shadows). -->
+  <SolidColorBrush x:Key="Brush.Hover" Color="#1A1D22" />
+  <SolidColorBrush x:Key="Brush.Pressed" Color="#22262D" />
+  <SolidColorBrush x:Key="Brush.Selection" Color="#26FF4E1A" />
+
+  <!-- ======================= Typography ======================= -->
+
+  <!-- Display: track titles, now playing, headings. Heavy, tight. -->
+  <FontFamily x:Key="Font.Display">Segoe UI Variable Display, Segoe UI, Inter, sans-serif</FontFamily>
+  <!-- UI: labels, buttons, navigation. -->
+  <FontFamily x:Key="Font.UI">Segoe UI Variable Text, Segoe UI, Inter, sans-serif</FontFamily>
+  <!-- Data: all numerics - time codes, BPM, bitrate, file size, sample rate. -->
+  <FontFamily x:Key="Font.Data">Cascadia Mono, Consolas, JetBrains Mono, monospace</FontFamily>
+
+  <x:Double x:Key="FontSize.Display.Large">34</x:Double>
+  <x:Double x:Key="FontSize.Display">24</x:Double>
+  <x:Double x:Key="FontSize.Heading">17</x:Double>
+  <x:Double x:Key="FontSize.UI.Large">15</x:Double>
+  <x:Double x:Key="FontSize.UI">13</x:Double>
+  <x:Double x:Key="FontSize.UI.Small">12</x:Double>
+  <x:Double x:Key="FontSize.Data">12</x:Double>
+
+  <!-- ======================= Spacing scale ======================= -->
+
+  <x:Double x:Key="Space.1">4</x:Double>
+  <x:Double x:Key="Space.2">8</x:Double>
+  <x:Double x:Key="Space.3">12</x:Double>
+  <x:Double x:Key="Space.4">16</x:Double>
+  <x:Double x:Key="Space.6">24</x:Double>
+  <x:Double x:Key="Space.8">32</x:Double>
+  <x:Double x:Key="Space.12">48</x:Double>
+  <x:Double x:Key="Space.16">64</x:Double>
+
+  <Thickness x:Key="Pad.Dense">8,4</Thickness>
+  <Thickness x:Key="Pad.Control">12,8</Thickness>
+  <Thickness x:Key="Pad.Panel">16</Thickness>
+  <Thickness x:Key="Pad.Breathe">32</Thickness>
+
+  <!-- ======================= Motion ======================= -->
+
+  <x:TimeSpan x:Key="Duration.Fast">0:0:0.08</x:TimeSpan>
+  <x:TimeSpan x:Key="Duration.Base">0:0:0.16</x:TimeSpan>
+  <x:TimeSpan x:Key="Duration.Slow">0:0:0.3</x:TimeSpan>
+
+  <SplineEasing x:Key="Easing.Default" X1="0.4" Y1="0" X2="0.2" Y2="1" />
+  <SplineEasing x:Key="Easing.Enter" X1="0" Y1="0" X2="0.2" Y2="1" />
+  <SplineEasing x:Key="Easing.Exit" X1="0.4" Y1="0" X2="1" Y2="1" />
+
+</ResourceDictionary>

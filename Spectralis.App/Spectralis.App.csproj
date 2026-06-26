@@ -2,27 +2,59 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
+    <!-- Windows TFM carries the WinRT projections for SMTC; plain net8.0 serves Linux/macOS. -->
+    <TargetFrameworks>net8.0-windows10.0.19041.0;net8.0</TargetFrameworks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
+    <!-- The WebView package injects linux/osx RIDs; the windows TFM only ships for win. -->
+    <RuntimeIdentifiers Condition="$(TargetFramework.Contains('-windows'))">win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Spectralis.App</RootNamespace>
-    <AssemblyName>Spectralis</AssemblyName>
-    <Platforms>AnyCPU;x64</Platforms>
-    <Version>5.0.0</Version>
-    <AssemblyVersion>5.0.0.0</AssemblyVersion>
-    <FileVersion>5.0.0.0</FileVersion>
-    <InformationalVersion>5.0.0</InformationalVersion>
+    <AssemblyName>Spectralis.App</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <GeneratedApplicationIcon>$(BaseIntermediateOutputPath)generated\icon.ico</GeneratedApplicationIcon>
+    <ApplicationIcon>$(GeneratedApplicationIcon)</ApplicationIcon>
+    <!-- Squirrel.Windows pulls in DeltaCompressionDotNet, which only ships a
+         net20 build (NU1701). Accepted tradeoff for delta-update support
+         during the migration window; same suppression as legacy\Startup\Startup.csproj.
+         TODO 5.1.0: drop this once Squirrel.Windows is removed below. -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
+  <!-- Bake client IDs/secrets from the build environment into the assembly so
+       the provider classes find them without shipping them in plaintext.
+       Release scripts must set these before publishing (see README). -->
+  <ItemGroup Condition="'$(SPECTRALIS_SPOTIFY_CLIENT_ID)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SpotifyClientId</_Parameter1>
+      <_Parameter2>$(SPECTRALIS_SPOTIFY_CLIENT_ID)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SPECTRALIS_DISCORD_CLIENT_ID)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DiscordApplicationId</_Parameter1>
+      <_Parameter2>$(SPECTRALIS_DISCORD_CLIENT_ID)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.1.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.1.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.0" />
-    <PackageReference Include="Avalonia.ReactiveUI" Version="11.1.0" />
-    <PackageReference Include="ReactiveUI" Version="20.1.1" />
-    <PackageReference Include="NAudio" Version="2.2.1" />
-    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
-    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <PackageReference Include="Avalonia" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Themes.Simple" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.2" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.2" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+    <PackageReference Include="WebViewControl-Avalonia" Version="3.120.11" />
+    <!-- Exact pin (not a floating minimum) so restores are reproducible; keep
+         in lockstep with the vpk CLI version in .config/dotnet-tools.json. -->
+    <PackageReference Include="Velopack" Version="[0.0.915]" />
+    <!-- TODO 5.1.0: Remove Squirrel.Windows once all users have migrated to Velopack-packaged builds -->
+    <PackageReference Include="Squirrel.Windows" Version="2.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,7 +62,53 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\**" />
+    <!-- Shared runtime assets from the repo root: SoundFont for MIDI/KAR
+         playback, helper executables for stream resolution. -->
+    <AvaloniaResource Include="..\Assets\icon.png" Link="Assets\icon.png" />
+    <!-- TODO 5.1.0: Remove reveal assets -->
+    <Content Include="..\Assets\audio\reveal.mp3" Link="assets\audio\reveal.mp3">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\Assets\audio\reveal.lrc" Link="assets\audio\reveal.lrc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\Assets\audio\delta.png" Link="assets\audio\delta.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\Assets\audio\old_logo.png" Link="assets\audio\old_logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\Assets\audio\logo.png" Link="assets\audio\logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\yt-dlp.exe" Link="yt-dlp.exe" Condition="Exists('..\yt-dlp.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\ffmpeg.exe" Link="ffmpeg.exe" Condition="Exists('..\ffmpeg.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\docs\legal\**\*.md" Link="docs\legal\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\legal.html" Link="legal.html" Condition="Exists('..\legal.html')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
+  </ItemGroup>
+
+  <Target Name="GenerateApplicationIcon" BeforeTargets="GenerateAvaloniaResources;PrepareResources" Inputs="..\Assets\icon.png" Outputs="$(GeneratedApplicationIcon)" Condition="$([MSBuild]::IsOsPlatform('Windows'))">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build\Generate-Icon.ps1&quot; -Source &quot;$(MSBuildProjectDirectory)\..\Assets\icon.png&quot; -Destination &quot;$(MSBuildProjectDirectory)\$(GeneratedApplicationIcon)&quot;" />
+  </Target>
+
+  <!-- Auto-unblock debug binaries after build to prevent Application Control policy blocks -->
+  <Target Name="UnblockBuildOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And $([MSBuild]::IsOsPlatform('Windows'))">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-ChildItem -Path '$(OutputPath)' -Recurse -Include '*.dll','*.exe' | Unblock-File -ErrorAction SilentlyContinue&quot;" ContinueOnError="true" />
+  </Target>
 
 </Project>

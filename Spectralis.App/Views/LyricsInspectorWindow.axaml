@@ -1,0 +1,99 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.LyricsInspectorWindow"
+        Title="Lyrics Inspector"
+        Width="860" Height="560"
+        MinWidth="600" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        KeyDown="OnKeyDown"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- Header -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="24,18,24,14">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock x:Name="TrackTitleLabel"
+                   Classes="heading"
+                   FontSize="{StaticResource FontSize.UI.Large}"
+                   TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="SubtitleLabel"
+                   Classes="secondary"
+                   FontSize="{StaticResource FontSize.UI.Small}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+        <Button x:Name="EditAnnotationsButton"
+                Content="Edit Annotations..."
+                Click="OnEditAnnotations"
+                IsVisible="False" />
+        <Button Content="Close"
+                Click="OnClose" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Content -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,380"
+          Margin="12,0,12,12">
+
+      <!-- Left: lyrics lines -->
+      <Border Grid.Column="0"
+              Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="1"
+              Margin="0,0,6,0">
+        <ScrollViewer x:Name="LyricsScroll" Padding="8">
+          <ScrollViewer.Styles>
+            <Style Selector="Border.inspector-row">
+              <Setter Property="Padding" Value="10,7,10,7" />
+              <Setter Property="Margin" Value="0,0,0,2" />
+              <Setter Property="Cursor" Value="Hand" />
+            </Style>
+            <Style Selector="Border.inspector-row.current">
+              <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+              <Setter Property="BorderThickness" Value="2,0,0,0" />
+            </Style>
+            <Style Selector="Border.inspector-row.selected">
+              <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
+            </Style>
+            <Style Selector="TextBlock.signal">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+            </Style>
+            <Style Selector="TextBlock.active">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+            </Style>
+          </ScrollViewer.Styles>
+          <!-- Rows injected from code-behind -->
+        </ScrollViewer>
+      </Border>
+
+      <!-- Right: annotation viewer -->
+      <Border Grid.Column="1"
+              Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="1"
+              Padding="20,18,20,20">
+        <StackPanel Spacing="10">
+          <TextBlock Text="ANNOTATION"
+                     FontSize="10"
+                     FontWeight="Bold"
+                     LetterSpacing="1.5"
+                     Foreground="{StaticResource Brush.Signal}" />
+          <TextBlock x:Name="AnnotationTitle"
+                     TextWrapping="Wrap"
+                     FontWeight="SemiBold"
+                     FontSize="{StaticResource FontSize.UI.Large}" />
+          <TextBlock x:Name="AnnotationTime"
+                     Classes="muted"
+                     FontSize="{StaticResource FontSize.UI.Small}" />
+          <ScrollViewer MaxHeight="320">
+            <TextBlock x:Name="AnnotationBody"
+                       TextWrapping="Wrap"
+                       Classes="secondary" />
+          </ScrollViewer>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </Grid>
+</Window>
