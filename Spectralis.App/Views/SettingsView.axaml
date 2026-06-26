@@ -1,0 +1,312 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <Grid ColumnDefinitions="200,*">
+
+    <!-- Category navigation -->
+    <Border Grid.Column="0" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,1,0">
+      <StackPanel Margin="20,32,0,0" Spacing="20">
+        <TextBlock Classes="display" Text="Settings" Margin="0,0,16,0" />
+        <ListBox ItemsSource="{Binding CategoryOptions}"
+                 SelectedItem="{Binding SelectedCategoryOption}"
+                 Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="12,7,16,7" />
+              <Setter Property="BorderThickness" Value="3,0,0,0" />
+              <Setter Property="BorderBrush" Value="Transparent" />
+            </Style>
+            <Style Selector="ListBoxItem TextBlock">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+            </Style>
+            <Style Selector="ListBoxItem:selected">
+              <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+            </Style>
+            <Style Selector="ListBoxItem:selected TextBlock">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+          </ListBox.Styles>
+        </ListBox>
+      </StackPanel>
+    </Border>
+
+    <!-- Category content -->
+    <ScrollViewer Grid.Column="1">
+      <StackPanel Margin="32" Spacing="24" MaxWidth="720" HorizontalAlignment="Left">
+
+      <!-- Appearance and brand surface -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsAppearanceVisible}">
+        <TextBlock Classes="heading" Text="Appearance" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Theme mode" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="0" Grid.Column="1"
+                    ItemsSource="{Binding ThemeModeOptions}"
+                    SelectedItem="{Binding SelectedThemeMode}"
+                    MaxWidth="180" HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Accent" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1"
+                    ItemsSource="{Binding ThemeAccentOptions}"
+                    SelectedItem="{Binding SelectedThemeAccent}"
+                    MaxWidth="180" HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Embedded track themes" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="2" Grid.Column="1"
+                    IsChecked="{Binding UseEmbeddedTrackThemes}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Embedded content (HTML)" VerticalAlignment="Center"
+                     ToolTip.Tip="Automatically switch to the embedded HTML view when a track has one" />
+          <CheckBox Grid.Row="3" Grid.Column="1"
+                    IsChecked="{Binding EnableEmbeddedContent}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Show format badge" VerticalAlignment="Center"
+                     ToolTip.Tip="Shows codec, sample rate, and bitrate below the track title (artist/album always shown)" />
+          <CheckBox Grid.Row="4" Grid.Column="1"
+                    IsChecked="{Binding ShowMoreInfo}"
+                    HorizontalAlignment="Left" />
+        </Grid>
+      </StackPanel>
+
+      <!-- Visualizer defaults and toolbar behavior -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsVisualizerVisible}">
+        <TextBlock Classes="heading" Text="Visualizer" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Default visualizer" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="0" Grid.Column="1"
+                    ItemsSource="{Binding VisualizerOptions}"
+                    SelectedItem="{Binding SelectedDefaultVisualizer}"
+                    MaxWidth="280" HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Peak hold" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="1" Grid.Column="1"
+                    IsChecked="{Binding PeakHold}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Auto-cycle" VerticalAlignment="Center" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <CheckBox Content="Enabled"
+                      IsChecked="{Binding AutoCycleVisualizers}"
+                      VerticalAlignment="Center" />
+            <TextBlock Classes="secondary" Text="Cycle time" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding CycleDurationOptions}"
+                      SelectedItem="{Binding SelectedCycleDuration}"
+                      MinWidth="140" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Visualizer response" VerticalAlignment="Center" />
+          <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Slider Width="180"
+                    Minimum="50"
+                    Maximum="200"
+                    Value="{Binding VisualizerSensitivityPercent, Mode=TwoWay}" />
+            <TextBlock Classes="data" Text="{Binding VisualizerSensitivityText}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+
+      <!-- Playback defaults -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
+        <TextBlock Classes="heading" Text="Playback" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="0" Grid.Column="1"
+                    ItemsSource="{Binding SampleRateOptions}"
+                    SelectedItem="{Binding SelectedSampleRate}"
+                    MaxWidth="180" HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="MIDI instrument" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1"
+                    ItemsSource="{Binding MidiInstrumentOptions}"
+                    SelectedItem="{Binding SelectedMidiInstrument}"
+                    MaxWidth="240" HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Default volume" VerticalAlignment="Center" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Slider Width="180"
+                    Minimum="0"
+                    Maximum="100"
+                    Value="{Binding DefaultVolume, Mode=TwoWay}" />
+            <TextBlock Classes="data" Text="{Binding DefaultVolumeText}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Autoplay on open" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="3" Grid.Column="1"
+                    IsChecked="{Binding AutoPlayOnOpen}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Queue by default" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="4" Grid.Column="1"
+                    IsChecked="{Binding QueueByDefault}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="Remember window placement" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="5" Grid.Column="1"
+                    IsChecked="{Binding RememberWindowPlacement}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"
+                     ToolTip.Tip="Opening files or links from outside reuses this window instead of starting a new one" />
+          <CheckBox Grid.Row="6" Grid.Column="1"
+                    IsChecked="{Binding PreserveSession}"
+                    HorizontalAlignment="Left" />
+        </Grid>
+      </StackPanel>
+
+      <!-- Library -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsLibraryVisible}">
+        <TextBlock Classes="heading" Text="Library" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Watched folders" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <ListBox Grid.Row="0" Grid.Column="1"
+                   x:Name="WatchedFoldersList"
+                   ItemsSource="{Binding Library.WatchedFolders}"
+                   MaxHeight="140"
+                   MinHeight="60"
+                   MaxWidth="460"
+                   HorizontalAlignment="Left" />
+
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button Content="Add Folder..." Click="OnLibraryAddFolder" />
+            <Button Content="Remove" Click="OnLibraryRemoveFolder" Classes="destructive" />
+            <Button Content="Rescan Now" Click="OnLibraryRescan" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Auto-scan on startup" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="2" Grid.Column="1"
+                    IsChecked="{Binding LibraryAutoScanOnOpen}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Auto-analyze BPM + key" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="3" Grid.Column="1"
+                    IsChecked="{Binding AutoAnalyzeBpm}"
+                    HorizontalAlignment="Left" />
+        </Grid>
+      </StackPanel>
+
+      <!-- Integrations -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
+        <TextBlock Classes="heading" Text="Integrations" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Discord presence" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="0" Grid.Column="1"
+                    IsChecked="{Binding EnableDiscordRichPresence}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Clipboard URL monitor" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="1" Grid.Column="1"
+                    IsChecked="{Binding EnableClipboardUrlMonitoring}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="OBS overlay" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="2" Grid.Column="1"
+                    IsChecked="{Binding ObsEditor.EnableObsOverlay}"
+                    HorizontalAlignment="Left" />
+        </Grid>
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Connection details, layout presets, and the visual designer live on the OBS Overlay page in the sidebar." />
+
+        <Separator Margin="0,8" />
+
+        <TextBlock Classes="heading" Text="Spotify" />
+        <TextBlock Classes="secondary" Text="{Binding SpotifyStatus}" />
+        <TextBlock Classes="secondary" Text="Custom client ID (optional)" IsVisible="{Binding ShowSpotifyCustomClientIdField}" />
+        <TextBox Text="{Binding SpotifyCustomClientId}" Watermark="Leave blank to use the built-in client ID"
+                 IsVisible="{Binding ShowSpotifyCustomClientIdField}" />
+        <TextBlock Classes="secondary" Text="Using the built-in client ID." IsVisible="{Binding !ShowSpotifyCustomClientIdField}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Link Account" Command="{Binding LinkSpotifyCommand}" Classes="primary" />
+          <Button Content="Unlink" Command="{Binding UnlinkSpotifyCommand}"
+                  Classes="destructive"
+                  IsEnabled="{Binding SpotifyIsLinked}" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Advanced: default app + protocol registration -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
+        <TextBlock Classes="heading" Text="Default app" />
+        <TextBlock Classes="secondary"
+                   Text="Register Spectralis for supported audio extensions and the spectralis:// protocol (current user)." />
+        <Button Content="Register associations"
+                Command="{Binding RegisterDefaultAppCommand}"
+                Classes="primary"
+                HorizontalAlignment="Left" />
+        <TextBlock Classes="data" Text="{Binding RegistrationStatus}" />
+      </StackPanel>
+
+      <!-- Updates -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+        <TextBlock Classes="heading" Text="Updates" />
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Installed version" VerticalAlignment="Center" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding VersionText}" VerticalAlignment="Center"
+                     PointerPressed="OnVersionTextPressed"
+                     ToolTip.Tip="Click 5 times to unlock Developer Tools" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Automatic updates" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="1" Grid.Column="1"
+                    IsChecked="{Binding EnableAutoUpdates}"
+                    HorizontalAlignment="Left" />
+        </Grid>
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Status" VerticalAlignment="Center" />
+        <StackPanel Spacing="8">
+          <Button Content="Check for updates"
+                  Click="OnCheckForUpdates"
+                  Classes="primary"
+                  HorizontalAlignment="Left" />
+          <TextBlock Classes="data"
+                     Text="{Binding UpdateStatus}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- About -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsAboutVisible}">
+        <TextBlock Classes="heading" Text="About" />
+        <WrapPanel Orientation="Horizontal">
+          <Button Content="About" Click="OnOpenAbout" Margin="0,0,8,8" />
+          <Button Content="Terms" Click="OnOpenTerms" Margin="0,0,8,8" />
+          <Button Content="Privacy" Click="OnOpenPrivacy" Margin="0,0,8,8" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- Shared Play -->
+      <StackPanel Spacing="4" IsVisible="{Binding IsSharedPlayVisible}">
+        <TextBlock Classes="heading" Text="Shared Play" />
+        <CheckBox Content="Enable Shared Play" IsChecked="{Binding SharedPlayEnabled}" />
+        <TextBlock Classes="secondary" Text="CDN base URL (optional)" />
+        <TextBox Text="{Binding SharedPlayCdnBaseUrl}" Watermark="Leave blank for default CDN" />
+        <Separator />
+        <CheckBox Content="Enable Live Channel" IsChecked="{Binding SharedPlayLiveChannelEnabled}" />
+        <TextBlock Classes="secondary" Text="Channel ID" />
+        <TextBox Text="{Binding SharedPlayLiveChannelId}" />
+        <TextBlock Classes="secondary" Text="Owner token" />
+        <TextBox Text="{Binding SharedPlayLiveChannelOwnerToken}" PasswordChar="•" />
+        <TextBlock Classes="secondary" Text="Display name" />
+        <TextBox Text="{Binding SharedPlayLiveChannelDisplayName}" Watermark="Spectralis Listener" />
+      </StackPanel>
+
+      <!-- Developer -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsDeveloperVisible}">
+        <TextBlock Classes="heading" Text="Developer" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Diagnostics utilities and raw OBS layout JSON editing. Not needed for normal use." />
+        <Button Content="Open Developer Tools" Click="OnOpenDevTools" HorizontalAlignment="Left" />
+      </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+
+</UserControl>
