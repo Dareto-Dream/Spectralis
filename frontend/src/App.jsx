@@ -886,12 +886,12 @@ function DownloadsPage({ navigate }) {
           </div>
 
           <div className="dl-card__file">
-            <span className="dl-card__filename">Setup.exe</span>
+            <span className="dl-card__filename">Spectralis-win-x64-Setup.exe</span>
             <span className="dl-card__filetype">Velopack installer</span>
           </div>
 
           <a
-            href="https://cdn.deltavdevs.com/spectralis/Setup.exe"
+            href="https://cdn.deltavdevs.com/spectralis/Spectralis-win-x64-Setup.exe"
             className="btn btn--primary btn--lg dl-card__btn"
           >
             <Download size={16} />
