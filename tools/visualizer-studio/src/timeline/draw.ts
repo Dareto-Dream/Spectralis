@@ -102,6 +102,37 @@ function drawWaveform(p: DrawTimelineParams) {
   ctx.restore();
 }
 
+// Small hand-drawn "muted" glyph (speaker body + slash) — a monochrome vector
+// icon instead of the 🔇 emoji, which renders full-color and clashes with the
+// rest of the timeline's flat single-hue drawing style.
+function drawMuteIcon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(1, size * 0.14);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const bodyW = size * 0.32;
+  const bodyH = size * 0.34;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.5, -bodyH / 2);
+  ctx.lineTo(-size * 0.5 + bodyW * 0.5, -bodyH / 2);
+  ctx.lineTo(-size * 0.06, -size * 0.5);
+  ctx.lineTo(-size * 0.06, size * 0.5);
+  ctx.lineTo(-size * 0.5 + bodyW * 0.5, bodyH / 2);
+  ctx.lineTo(-size * 0.5, bodyH / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(size * 0.12, -size * 0.3);
+  ctx.lineTo(size * 0.48, size * 0.3);
+  ctx.moveTo(size * 0.48, -size * 0.3);
+  ctx.lineTo(size * 0.12, size * 0.3);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawSections(p: DrawTimelineParams) {
   const { ctx, layout, project, selection } = p;
   ctx.save();
@@ -119,7 +150,12 @@ function drawSections(p: DrawTimelineParams) {
     ctx.fillStyle = COLORS.text;
     ctx.font = '10px sans-serif';
     ctx.textBaseline = 'middle';
-    ctx.fillText(sec.label + (sec.noLyrics ? ' 🔇' : ''), x0 + 4, layout.secY + layout.secH / 2);
+    const midY = layout.secY + layout.secH / 2;
+    ctx.fillText(sec.label, x0 + 4, midY);
+    if (sec.noLyrics) {
+      const labelW = ctx.measureText(sec.label).width;
+      drawMuteIcon(ctx, x0 + 4 + labelW + 9, midY, 10, COLORS.dim);
+    }
   }
   ctx.restore();
 }

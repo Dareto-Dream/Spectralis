@@ -2,6 +2,7 @@
   import type { AnimKey, AnyLayer } from '../types/project';
   import type { ProjectStore } from '../state/project.svelte';
   import { scrubbable } from '../lib/scrubbableNumber';
+  import Timer from '@lucide/svelte/icons/timer';
 
   let { store, layer, propKey, label }: { store: ProjectStore; layer: AnyLayer; propKey: AnimKey; label: string } = $props();
 
@@ -28,7 +29,7 @@
     aria-label={keyframed ? `${label}: keyframed, click to disable` : `Enable keyframing for ${label}`}
     onclick={() => store.toggleKeyframing(layer.id, propKey)}
   >
-    ◎
+    <Timer size={12} />
   </button>
   {#if keyframed}
     <button class="label" onclick={selectTrack}>{label}</button>
@@ -74,6 +75,7 @@
     width: 20px;
     height: 20px;
     padding: 0;
+    justify-content: center;
   }
   .kbtn.on {
     background: var(--accent2);

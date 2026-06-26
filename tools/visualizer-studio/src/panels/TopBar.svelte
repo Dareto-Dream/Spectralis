@@ -13,6 +13,10 @@
   import { importLrcFile } from '../lib/lrcImport';
   import { confirmUnsavedIfNeeded, importProjectFile } from '../lib/projectImport';
   import type { Aspect } from '../types/project';
+  import Undo2 from '@lucide/svelte/icons/undo-2';
+  import Redo2 from '@lucide/svelte/icons/redo-2';
+  import Music from '@lucide/svelte/icons/music';
+  import X from '@lucide/svelte/icons/x';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
 
@@ -149,8 +153,8 @@
   </div>
 
   <div class="group">
-    <button onclick={() => store.undo()} disabled={!store.history.canUndo} title="Undo (Ctrl+Z)">↶ Undo</button>
-    <button onclick={() => store.redo()} disabled={!store.history.canRedo} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+    <button class="small ghost" onclick={() => store.undo()} disabled={!store.history.canUndo} title="Undo (Ctrl+Z)"><Undo2 size={12} /> Undo</button>
+    <button class="small ghost" onclick={() => store.redo()} disabled={!store.history.canRedo} title="Redo (Ctrl+Shift+Z)"><Redo2 size={12} /> Redo</button>
   </div>
 
   <div
@@ -186,7 +190,7 @@
       Load Audio
       <input type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
     </label>
-    {#if audio.loaded}<span class="ok" title="Audio loaded">♪</span>{/if}
+    {#if audio.loaded}<span class="ok" title="Audio loaded"><Music size={13} /></span>{/if}
     {#if audio.error}<span class="err">{audio.error}</span>{/if}
     <span
       class="dropWrap"
@@ -212,7 +216,7 @@
       <button onclick={() => coverFileInput?.click()}>Load Cover…</button>
       {#if assets.coverImage}
         <img class="coverThumb" src={assets.coverImage.dataUrl} alt="Cover" />
-        <button class="small ghost" onclick={() => assets.clearCover()} title="Remove cover" aria-label="Remove cover">✕</button>
+        <button class="icon ghost" onclick={() => assets.clearCover()} title="Remove cover" aria-label="Remove cover"><X size={12} /></button>
       {/if}
     </span>
     <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />

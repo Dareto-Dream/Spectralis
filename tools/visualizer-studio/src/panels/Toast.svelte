@@ -1,12 +1,13 @@
 <script lang="ts">
   import { toast } from '../state/toast.svelte';
+  import X from '@lucide/svelte/icons/x';
 </script>
 
 <div class="toastStack">
   {#each toast.toasts as t (t.id)}
     <div class="toast {t.kind}">
       <span>{t.text}</span>
-      <button onclick={() => toast.dismiss(t.id)} aria-label="Dismiss">✕</button>
+      <button class="icon ghost" onclick={() => toast.dismiss(t.id)} aria-label="Dismiss"><X size={12} /></button>
     </div>
   {/each}
 </div>

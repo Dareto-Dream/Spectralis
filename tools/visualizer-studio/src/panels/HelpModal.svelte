@@ -36,16 +36,12 @@
   <div class="scrim" onclick={onClose}>
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={onKeydown} use:focusTrap>
       <h3>Keyboard Shortcuts</h3>
-      <table>
-        <tbody>
-          {#each SHORTCUTS as [key, desc] (key)}
-            <tr>
-              <td class="key">{key}</td>
-              <td>{desc}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <div class="shortcuts">
+        {#each SHORTCUTS as [key, desc] (key)}
+          <span class="key">{key}</span>
+          <span class="desc">{desc}</span>
+        {/each}
+      </div>
       <button class="primary" onclick={onClose}>Close</button>
     </div>
   </div>
@@ -65,34 +61,37 @@
     background: var(--bg2);
     border: 1px solid var(--line2);
     border-radius: 6px;
-    padding: 16px 18px;
-    width: 380px;
+    padding: 18px 20px;
+    width: 560px;
     max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
   .modal h3 {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
     font-size: 14px;
     color: var(--text);
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 14px;
+  .shortcuts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 18px;
+    row-gap: 6px;
+    margin-bottom: 16px;
+    align-items: baseline;
   }
-  td {
-    padding: 3px 0;
+  .key {
     font: 11px var(--mono);
-    color: var(--dim);
-  }
-  td.key {
     color: var(--accent2);
     white-space: nowrap;
-    padding-right: 12px;
+  }
+  .desc {
+    font: 11px var(--mono);
+    color: var(--dim);
+    line-height: 1.4;
   }
   .primary {
     width: 100%;
-    background: var(--accent);
-    color: #0a1420;
   }
 </style>

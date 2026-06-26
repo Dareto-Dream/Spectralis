@@ -4,6 +4,7 @@
   import { buildStoryHtml } from './buildStoryHtml';
   import { buildStoryManifestFragment } from './buildStoryManifestFragment';
   import type { StoryMeta, StoryPage } from '../types/story';
+  import X from '@lucide/svelte/icons/x';
 
   let meta: StoryMeta = $state({ name: 'Narrator', portraitKey: 'portrait', charMs: 22, hue: 225 });
   let pages: StoryPage[] = $state([{ speaker: '', text: 'Something happened before this song started...' }]);
@@ -52,7 +53,7 @@
         <div class="pageRow">
           <input class="speaker" placeholder="Speaker (defaults to narrator)" bind:value={page.speaker} />
           <textarea placeholder="Page text" bind:value={page.text}></textarea>
-          <button class="small ghost" title="Remove page" aria-label={`Remove page ${i + 1}`} onclick={() => removePage(i)}>✕</button>
+          <button class="icon ghost" title="Remove page" aria-label={`Remove page ${i + 1}`} onclick={() => removePage(i)}><X size={13} /></button>
         </div>
       {/each}
       <button class="small" onclick={addPage}>+ Add Page</button>

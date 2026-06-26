@@ -23,6 +23,11 @@
   import { dropZone } from '../lib/dropZone';
   import { fmtTime } from '../lib/fmtTime';
   import { onMount } from 'svelte';
+  import Play from '@lucide/svelte/icons/play';
+  import Pause from '@lucide/svelte/icons/pause';
+  import Square from '@lucide/svelte/icons/square';
+  import Repeat from '@lucide/svelte/icons/repeat';
+  import Info from '@lucide/svelte/icons/info';
 
   let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
 
@@ -311,8 +316,10 @@
 </script>
 
 <div class="timelineToolbar">
-  <button class="small" onclick={() => store.togglePlay()} title="Space" aria-label={store.playing ? 'Pause' : 'Play'}>{store.playing ? '⏸ Pause' : '▶ Play'}</button>
-  <button class="small" onclick={() => store.stop()} aria-label="Stop">■ Stop</button>
+  <button class="small" onclick={() => store.togglePlay()} title="Space" aria-label={store.playing ? 'Pause' : 'Play'}>
+    {#if store.playing}<Pause size={12} /> Pause{:else}<Play size={12} /> Play{/if}
+  </button>
+  <button class="small" onclick={() => store.stop()} aria-label="Stop"><Square size={12} /> Stop</button>
   <button
     class="small"
     class:on={store.loopEnabled}
@@ -320,7 +327,7 @@
     title={store.loopRegion ? `Loop ${fmtTime(store.loopRegion.start)}–${fmtTime(store.loopRegion.end)} (select a section + right-click → "Loop this section" to change)` : 'Loop the current section'}
     aria-label={store.loopEnabled ? 'Disable loop' : 'Enable loop'}
   >
-    🔁 Loop
+    <Repeat size={12} /> Loop
   </button>
   <span class="readout">{fmtTime(store.playhead)}</span>
   <label>
@@ -335,7 +342,11 @@
     />
   </label>
   <label class="magnet"><input type="checkbox" bind:checked={snapEnabled} /> Snap</label>
-  <span class="hint">Click ruler to scrub · drag keyframes · double-click a lane to add one · right-click for more · Delete removes selection</span>
+  <span
+    class="hint"
+    title="Click ruler to scrub · drag keyframes · double-click a lane to add one · right-click for more · Delete removes selection"
+    aria-label="Timeline tips"
+  ><Info size={13} /></span>
 </div>
 <div
   class="timelineWrap"
@@ -387,7 +398,13 @@
   }
   .hint {
     margin-left: auto;
-    opacity: 0.7;
+    flex-shrink: 0;
+    display: inline-flex;
+    color: var(--dim2);
+    cursor: help;
+  }
+  .hint:hover {
+    color: var(--dim);
   }
   .timelineWrap {
     overflow-x: auto;

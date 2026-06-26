@@ -3,6 +3,14 @@
   import type { ProjectStore } from '../state/project.svelte';
   import { confirmDialog } from '../state/confirmModal.svelte';
   import { openContextMenu } from '../timeline/contextMenu.svelte';
+  import Eye from '@lucide/svelte/icons/eye';
+  import EyeOff from '@lucide/svelte/icons/eye-off';
+  import Lock from '@lucide/svelte/icons/lock';
+  import Unlock from '@lucide/svelte/icons/unlock';
+  import ChevronUp from '@lucide/svelte/icons/chevron-up';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import Copy from '@lucide/svelte/icons/copy';
+  import X from '@lucide/svelte/icons/x';
 
   let {
     store,
@@ -93,7 +101,7 @@
     aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
     onclick={() => store.toggleLayerVisibility(layer.id)}
   >
-    {layer.visible ? '👁' : '—'}
+    {#if layer.visible}<Eye size={13} />{:else}<EyeOff size={13} />{/if}
   </button>
   <button
     class="icon"
@@ -101,7 +109,7 @@
     aria-label={layer.locked ? `Unlock ${layer.name}` : `Lock ${layer.name}`}
     onclick={() => store.toggleLayerLock(layer.id)}
   >
-    {layer.locked ? '🔒' : '🔓'}
+    {#if layer.locked}<Lock size={13} />{:else}<Unlock size={13} />{/if}
   </button>
   {#if renaming}
     <input
@@ -124,10 +132,10 @@
       {layer.name}
     </button>
   {/if}
-  <button class="icon ghost" title="Move up" aria-label={`Move ${layer.name} up`} disabled={isFirst} onclick={onMoveUp}>↑</button>
-  <button class="icon ghost" title="Move down" aria-label={`Move ${layer.name} down`} disabled={isLast} onclick={onMoveDown}>↓</button>
-  <button class="icon ghost" title="Duplicate" aria-label={`Duplicate ${layer.name}`} onclick={() => store.duplicateLayer(layer.id)}>⧉</button>
-  <button class="icon ghost danger" title="Delete" aria-label={`Delete ${layer.name}`} onclick={onDelete}>✕</button>
+  <button class="icon ghost" title="Move up" aria-label={`Move ${layer.name} up`} disabled={isFirst} onclick={onMoveUp}><ChevronUp size={13} /></button>
+  <button class="icon ghost" title="Move down" aria-label={`Move ${layer.name} down`} disabled={isLast} onclick={onMoveDown}><ChevronDown size={13} /></button>
+  <button class="icon ghost" title="Duplicate" aria-label={`Duplicate ${layer.name}`} onclick={() => store.duplicateLayer(layer.id)}><Copy size={13} /></button>
+  <button class="icon ghost danger" title="Delete" aria-label={`Delete ${layer.name}`} onclick={onDelete}><X size={13} /></button>
 </div>
 
 <style>

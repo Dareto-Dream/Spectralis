@@ -6,6 +6,10 @@
   import CurveEditor from '../timeline/CurveEditor.svelte';
   import type { Ease } from '../types/project';
   import { importLrcFile } from '../lib/lrcImport';
+  import Eye from '@lucide/svelte/icons/eye';
+  import EyeOff from '@lucide/svelte/icons/eye-off';
+  import Lock from '@lucide/svelte/icons/lock';
+  import Unlock from '@lucide/svelte/icons/unlock';
 
   let { store }: { store: ProjectStore } = $props();
 
@@ -39,8 +43,8 @@
 <div class="inspector">
   {#if !layer}
     <p class="hint">
-      Select a layer to edit its properties. Click the ◎ next to a property to enable keyframing — its lane then
-      appears in the timeline below, where you can add and drag keyframes.
+      Select a layer to edit its properties. Click the stopwatch next to a property to enable keyframing — its lane
+      then appears in the timeline below, where you can add and drag keyframes.
     </p>
   {:else}
     <div class="head">
@@ -51,7 +55,7 @@
         aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
         onclick={() => store.toggleLayerVisibility(layer.id)}
       >
-        {layer.visible ? '👁' : '—'}
+        {#if layer.visible}<Eye size={13} />{:else}<EyeOff size={13} />{/if}
       </button>
       <button
         class="iconBtn"
@@ -59,7 +63,7 @@
         aria-label={layer.locked ? 'Unlock layer' : 'Lock layer'}
         onclick={() => store.toggleLayerLock(layer.id)}
       >
-        {layer.locked ? '🔒' : '🔓'}
+        {#if layer.locked}<Lock size={13} />{:else}<Unlock size={13} />{/if}
       </button>
       <button
         class="iconBtn"
@@ -114,6 +118,7 @@
     width: 24px;
     height: 24px;
     padding: 0;
+    justify-content: center;
     background: var(--bg3);
     border: 1px solid var(--line);
     border-radius: 3px;

@@ -3,6 +3,7 @@
   import { toast } from '../state/toast.svelte';
   import { buildWorldHtml, buildAlbumManifest, worldPreviewSrcdoc } from './buildWorldHtml';
   import type { AlbumMeta, WorldTrack } from '../types/world';
+  import X from '@lucide/svelte/icons/x';
 
   let meta: AlbumMeta = $state({ albumId: 'my-album-2026', title: 'Album Title', artist: 'Artist Name', year: 2026, templateKind: 'tracklist' });
   let tracks: WorldTrack[] = $state([{ id: 'track-01', title: 'Track One', audio: 'tracks/01/audio.mp3', cover: 'tracks/01/cover.png', lrc: 'tracks/01/lyrics.lrc' }]);
@@ -64,7 +65,7 @@
           <input placeholder="audio path" bind:value={track.audio} />
           <input placeholder="cover path" bind:value={track.cover} />
           <input placeholder="lrc path" bind:value={track.lrc} />
-          <button class="small ghost" title="Remove track" aria-label={`Remove track ${i + 1}`} onclick={() => removeTrack(i)}>✕</button>
+          <button class="icon ghost" title="Remove track" aria-label={`Remove track ${i + 1}`} onclick={() => removeTrack(i)}><X size={13} /></button>
         </div>
       {/each}
       <button class="small" onclick={addTrack}>+ Add Track</button>

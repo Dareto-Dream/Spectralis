@@ -14,3 +14,135 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; background:
    (plan §C) get a consistent "live" outline while a file is dragged over them. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dragOver { outline: 2px dashed var(--accent) !important; outline-offset: -2px; }
+
+/* ---- Form control base theme ------------------------------------------
+   Every panel routes plain <button>/<input>/<select>/<textarea> through
+   here — component-scoped styles only add sizing/layout on top. Without
+   this, unclassed elements fall back to raw browser chrome (white fields,
+   native button gradients), which is exactly the "horrible CSS" clash
+   between styled and unstyled controls sitting side by side. */
+button, input, select, textarea {
+  font: 11px var(--mono);
+  color: var(--text);
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 4px 8px;
+  outline-offset: 1px;
+}
+button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+}
+button:hover:not(:disabled) {
+  background: var(--bg4);
+  color: var(--text);
+  border-color: var(--line2);
+}
+button:active:not(:disabled) {
+  background: var(--bg2);
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+input, select, textarea {
+  color: var(--text);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--dim2);
+}
+input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+  border-color: var(--line2);
+}
+input:disabled, select:disabled, textarea:disabled {
+  opacity: 0.5;
+}
+select {
+  cursor: pointer;
+}
+input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  vertical-align: middle;
+}
+input[type='range'] {
+  padding: 0;
+  background: none;
+  border: none;
+  accent-color: var(--accent);
+}
+
+/* Button modifiers — a small, consistent vocabulary reused by every panel. */
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a1420;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: #93c3ff;
+  border-color: #93c3ff;
+}
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #1a0a0a;
+  font-weight: 600;
+}
+button.danger:hover:not(:disabled) {
+  background: #ff8a8a;
+  border-color: #ff8a8a;
+}
+button.ghost {
+  background: none;
+  border-color: transparent;
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--bg3);
+  border-color: var(--line);
+}
+button.small {
+  padding: 3px 7px;
+  font-size: 10px;
+}
+/* Icon-only buttons: square hit target, glyph/SVG centered, no label padding. */
+button.icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  background: none;
+  border-color: transparent;
+}
+button.icon:hover:not(:disabled) {
+  background: var(--bg3);
+  border-color: var(--line);
+}
+button.icon.danger {
+  background: none;
+  border-color: transparent;
+  color: var(--dim);
+}
+button.icon.danger:hover:not(:disabled) {
+  background: rgba(255, 110, 110, 0.12);
+  border-color: transparent;
+  color: var(--danger);
+}
+
+/* Scrollbars — thin and dark, matching the rest of the chrome instead of
+   an OS-default light scrollbar clashing against true-black panels. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line2) var(--bg1);
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 5px; border: 2px solid var(--bg1); }
+::-webkit-scrollbar-thumb:hover { background: var(--dim2); }
