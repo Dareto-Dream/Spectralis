@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.AboutWindow"
+        Title="About Spectralis"
+        Icon="/Assets/icon.png"
+        Width="560" Height="460"
+        MinWidth="460" MinHeight="360"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24" RowSpacing="16">
+    <StackPanel Grid.Row="0" Spacing="6">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Image Source="/Assets/icon.png"
+               Width="96" Height="96"
+               Stretch="Uniform" />
+        <TextBlock Classes="display" Text="Spectralis" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Classes="secondary" Text="Audio playback, visualizers, shared listening, and creator capsules." />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1">
+      <TextBlock x:Name="DetailsText"
+                 Classes="data"
+                 TextWrapping="Wrap" />
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Copy Version" Click="OnCopyVersion" />
+      <Button Content="Visit DeltaVDevs" Click="OnVisitWebsite" />
+      <Button Content="Close" Click="OnClose" />
+    </StackPanel>
+  </Grid>
+</Window>

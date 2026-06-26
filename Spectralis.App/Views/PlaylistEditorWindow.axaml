@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.PlaylistEditorWindow"
+        Title="Edit Playlist"
+        Icon="/Assets/icon.png"
+        Width="560" Height="520"
+        MinWidth="460" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16" RowSpacing="10">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="10">
+      <TextBlock Grid.Column="0" Classes="secondary" Text="Name" VerticalAlignment="Center" />
+      <TextBox Grid.Column="1" x:Name="NameBox" />
+    </Grid>
+
+    <ListBox Grid.Row="1" x:Name="ItemsList" SelectionMode="Multiple" />
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+      <Button Content="Add Files..." Click="OnAddFiles" />
+      <Button Content="Remove" Click="OnRemoveSelected" Classes="destructive" />
+      <Button Content="Up" Click="OnMoveUp" />
+      <Button Content="Down" Click="OnMoveDown" />
+      <TextBlock x:Name="CountText" Classes="muted" VerticalAlignment="Center" Margin="8,0,0,0" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Save" Click="OnSave" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

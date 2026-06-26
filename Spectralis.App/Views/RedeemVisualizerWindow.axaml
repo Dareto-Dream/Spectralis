@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.RedeemVisualizerWindow"
+        Title="Redeem Visualizer"
+        Width="520" Height="310"
+        MinWidth="420" MinHeight="260"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        CanResize="False"
+        KeyDown="OnKeyDown"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="28,24,28,24" Spacing="16">
+
+    <TextBlock Classes="heading" Text="Redeem Visualizer" />
+    <TextBlock Classes="secondary"
+               TextWrapping="Wrap"
+               Text="Enter your redeem key to download and install a Spectralis visualizer from the DeltaVDevs CDN." />
+
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+      <TextBox Grid.Column="0"
+               x:Name="RedeemKeyBox"
+               Watermark="Redeem key"
+               MaxLength="64"
+               KeyDown="OnRedeemKeyBoxKeyDown" />
+      <Button Grid.Column="1"
+              x:Name="RedeemButton"
+              Content="Redeem"
+              Click="OnRedeem"
+              Classes="primary"
+              MinWidth="90" />
+    </Grid>
+
+    <TextBlock x:Name="StatusLabel"
+               TextWrapping="Wrap"
+               Classes="data"
+               IsVisible="False" />
+
+    <Border x:Name="InstalledPanel"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="1"
+            Padding="12,8"
+            IsVisible="False">
+      <StackPanel Spacing="4">
+        <TextBlock x:Name="InstalledCountLabel"
+                   Classes="secondary"
+                   FontSize="{StaticResource FontSize.UI.Small}" />
+        <ScrollViewer MaxHeight="80">
+          <ItemsControl x:Name="InstalledList" />
+        </ScrollViewer>
+      </StackPanel>
+    </Border>
+
+    <Button Content="Close"
+            Click="OnClose"
+            HorizontalAlignment="Right"
+            Margin="0,4,0,0" />
+
+  </StackPanel>
+</Window>

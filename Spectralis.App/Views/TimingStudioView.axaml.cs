@@ -1,29 +1,59 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Threading;
 using Spectralis.App.ViewModels;
 
-namespace Spectralis.App.Views
+namespace Spectralis.App.Views;
+
+public partial class TimingStudioView : UserControl
 {
-    public partial class TimingStudioView : Window
+    private DispatcherTimer? _positionTimer;
+
+    public TimingStudioView()
     {
-        public TimingStudioView()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
+        AttachedToVisualTree += (_, _) => StartTimer();
+        DetachedFromVisualTree += (_, _) => StopTimer();
+    }
 
-        public TimingStudioView(TimingStudioViewModel vm) : this()
-        {
-            DataContext = vm;
-        }
+    private void StartTimer()
+    {
+        _positionTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background,
+            (_, _) => (DataContext as TimingStudioViewModel)?.TickPosition());
+        _positionTimer.Start();
 
-        protected override void OnKeyDown(KeyEventArgs e)
+        if (DataContext is TimingStudioViewModel vm)
         {
-            base.OnKeyDown(e);
-            if (e.Key == Key.Space && DataContext is TimingStudioViewModel vm)
+            vm.ClipboardWriter = async text =>
             {
-                vm.StampCurrentLineCommand.Execute(null);
-                e.Handled = true;
-            }
+                if (TopLevel.GetTopLevel(this)?.Clipboard is { } clip)
+                    await clip.SetTextAsync(text);
+            };
+        }
+    }
+
+    private void StopTimer()
+    {
+        _positionTimer?.Stop();
+        _positionTimer = null;
+    }
+
+    private void OnRowPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Border { Tag: TimedLineRow row } &&
+            DataContext is TimingStudioViewModel vm)
+        {
+            var index = vm.Rows.IndexOf(row);
+            if (index >= 0) vm.SelectRow(index);
+        }
+    }
+
+    private void OnChipPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Border { Tag: TimingChip chip } &&
+            DataContext is TimingStudioViewModel vm)
+        {
+            vm.SelectChip(chip.GlobalIndex);
         }
     }
 }

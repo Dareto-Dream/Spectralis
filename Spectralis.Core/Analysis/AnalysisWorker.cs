@@ -1,113 +1,110 @@
-using System;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using NAudio.Wave;
+using Spectralis.Core.Metadata;
 
-namespace Spectralis.Core.Analysis
+namespace Spectralis.Core.Analysis;
+
+public sealed record BeatGrid(
+    float Bpm,
+    TimeSpan FirstBeatOffset,
+    int BeatsPerBar,
+    string Key);
+
+public sealed record AnalysisResult(
+    string Path,
+    float Bpm,
+    string Key,
+    TimeSpan FirstBeatOffset);
+
+/// <summary>Background BPM + key analysis over unanalyzed library tracks.</summary>
+public sealed class AnalysisWorker
 {
-    public sealed class AnalysisWorker
+    private readonly LibraryDatabase _database;
+    private CancellationTokenSource? _cts;
+
+    public event EventHandler<AnalysisResult>? TrackAnalyzed;
+    public event EventHandler? Completed;
+    public event EventHandler<int>? ProgressChanged;  // pending count remaining
+
+    public bool IsRunning { get; private set; }
+
+    public AnalysisWorker(LibraryDatabase database)
     {
-        private readonly BpmAnalyzer _bpm = new();
-        private readonly KeyAnalyzer _key = new();
+        _database = database;
+    }
 
-        public event EventHandler<AnalysisResult>? AnalysisCompleted;
-
-        public async Task<AnalysisResult?> AnalyzeAsync(string filePath, CancellationToken ct = default)
+    public void Start()
+    {
+        if (IsRunning)
         {
-            if (!File.Exists(filePath)) return null;
-
-            return await Task.Run(() =>
-            {
-                ct.ThrowIfCancellationRequested();
-                float[] samples = ReadSamples(filePath, out int sampleRate);
-                ct.ThrowIfCancellationRequested();
-
-                var bpmResult = _bpm.Analyze(samples, sampleRate);
-                var chromagram = ComputeChromagram(samples, sampleRate);
-                var keyResult = _key.Analyze(chromagram);
-                var beatGrid = BeatGrid.Build(bpmResult, samples.Length / (double)sampleRate);
-                float lufs = MeasureLoudness(samples);
-
-                var result = new AnalysisResult
-                {
-                    FilePath = filePath,
-                    Bpm = bpmResult,
-                    Key = keyResult,
-                    BeatGrid = beatGrid,
-                    LoudnessLufs = lufs
-                };
-
-                AnalysisCompleted?.Invoke(this, result);
-                return result;
-            }, ct);
+            return;
         }
 
-        private float[] ReadSamples(string path, out int sampleRate)
+        IsRunning = true;
+        _cts = new CancellationTokenSource();
+        _ = RunAsync(_cts.Token);
+    }
+
+    public void Cancel() => _cts?.Cancel();
+
+    private async Task RunAsync(CancellationToken ct)
+    {
+        try
         {
-            using var reader = new AudioFileReader(path);
-            sampleRate = reader.WaveFormat.SampleRate;
-            int channels = reader.WaveFormat.Channels;
-            var buffer = new float[reader.WaveFormat.SampleRate * 30 * channels];
-            int read = reader.Read(buffer, 0, buffer.Length);
+            var pending = _database.GetAllTracks()
+                .Where(track => track.Bpm is null && File.Exists(track.SourcePath))
+                .Select(track => track.SourcePath)
+                .ToList();
 
-            if (channels == 1) return buffer[..read];
+            var remaining = pending.Count;
+            ProgressChanged?.Invoke(this, remaining);
 
-            var mono = new float[read / channels];
-            for (int i = 0; i < mono.Length; i++)
+            foreach (var path in pending)
             {
-                float sum = 0f;
-                for (int c = 0; c < channels; c++) sum += buffer[i * channels + c];
-                mono[i] = sum / channels;
-            }
-            return mono;
-        }
-
-        private float[] ComputeChromagram(float[] samples, int sampleRate, System.Threading.CancellationToken ct = default)
-        {
-            var chroma = new float[12];
-            int windowSize = sampleRate / 8;
-            int hopSize = windowSize * 2;
-            int frames = 0;
-
-            for (int i = 0; i + windowSize < samples.Length; i += hopSize)
-            {
-                ct.ThrowIfCancellationRequested();
-                for (int note = 0; note < 12; note++)
+                if (ct.IsCancellationRequested)
                 {
-                    float freq = 261.63f * MathF.Pow(2f, note / 12f);
-                    float energy = ComputeEnergyAtFreq(samples, i, windowSize, freq, sampleRate);
-                    chroma[note] += energy;
+                    break;
                 }
-                frames++;
+
+                await AnalyzeTrackAsync(path, ct);
+                remaining--;
+                ProgressChanged?.Invoke(this, remaining);
             }
-
-            if (frames > 0)
-                for (int n = 0; n < 12; n++) chroma[n] /= frames;
-
-            return chroma;
         }
-
-        private float ComputeEnergyAtFreq(float[] samples, int offset, int windowSize, float freq, int sampleRate)
+        catch (OperationCanceledException)
         {
-            float re = 0f, im = 0f;
-            float w = 2f * MathF.PI * freq / sampleRate;
-            int end = Math.Min(offset + windowSize, samples.Length);
-            for (int i = offset; i < end; i++)
+        }
+        finally
+        {
+            IsRunning = false;
+            if (!ct.IsCancellationRequested)
             {
-                float phase = w * (i - offset);
-                re += samples[i] * MathF.Cos(phase);
-                im += samples[i] * MathF.Sin(phase);
+                Completed?.Invoke(this, EventArgs.Empty);
             }
-            return (re * re + im * im) / (end - offset);
         }
+    }
 
-        private float MeasureLoudness(float[] samples)
+    /// <summary>Analyzes one file and persists bpm/key; also used for on-demand analysis.</summary>
+    public async Task<AnalysisResult?> AnalyzeTrackAsync(string path, CancellationToken ct = default)
+    {
+        try
         {
-            float sumSq = 0f;
-            foreach (float s in samples) sumSq += s * s;
-            float rms = MathF.Sqrt(sumSq / samples.Length);
-            return rms < 1e-9f ? -96f : 20f * MathF.Log10(rms);
+            var (bpm, firstBeat) = await BpmAnalyzer.AnalyzeAsync(path, ct);
+            var key = await Task.Run(() => KeyAnalyzer.AnalyzeFile(path), ct);
+
+            ct.ThrowIfCancellationRequested();
+
+            _database.UpdateAnalysis(path, bpm, string.IsNullOrWhiteSpace(key) ? null : key);
+
+            var result = new AnalysisResult(path, bpm, key, firstBeat);
+            TrackAnalyzed?.Invoke(this, result);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;  // unreadable file; skip
         }
     }
 }

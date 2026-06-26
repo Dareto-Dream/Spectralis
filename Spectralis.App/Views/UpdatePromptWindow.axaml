@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.UpdatePromptWindow"
+        Title="Spectralis Update"
+        Width="480" Height="200"
+        MinWidth="380" MinHeight="160"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}"
+        KeyDown="OnKeyDown">
+
+  <Grid RowDefinitions="*,Auto" Margin="28,22,28,20">
+
+    <StackPanel Grid.Row="0" Spacing="10">
+      <TextBlock Classes="heading" Text="A Spectralis update is available" />
+      <TextBlock x:Name="MessageLabel" Classes="secondary" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Classes="ghost" Content="Don't remind again" Click="OnDontRemind" />
+      <Button Classes="ghost" Content="Remind later"       Click="OnRemindLater" />
+      <Button             Content="Update now"             Click="OnUpdateNow"   Classes="primary" />
+    </StackPanel>
+
+  </Grid>
+</Window>

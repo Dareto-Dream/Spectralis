@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.LegalDocumentWindow"
+        Icon="/Assets/icon.png"
+        Width="760" Height="640"
+        MinWidth="520" MinHeight="420"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24" RowSpacing="16">
+    <TextBlock Grid.Row="0"
+               x:Name="TitleText"
+               Classes="display" />
+
+    <TextBox Grid.Row="1"
+             x:Name="DocumentText"
+             AcceptsReturn="True"
+             IsReadOnly="True"
+             TextWrapping="Wrap"
+             FontFamily="{StaticResource Font.UI}" />
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Open Page" Click="OnOpenPage" />
+      <Button Content="Copy" Click="OnCopy" />
+      <Button Content="Close" Click="OnClose" />
+    </StackPanel>
+  </Grid>
+</Window>

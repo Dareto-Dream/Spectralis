@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.StatsWindow"
+        Title="Listening Stats"
+        Icon="/Assets/icon.png"
+        Width="560" Height="540"
+        MinWidth="480" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="20" RowSpacing="14">
+
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+      <ComboBox x:Name="PeriodBox" MinWidth="150" SelectionChanged="OnPeriodChanged" />
+    </StackPanel>
+
+    <!-- Headline numbers -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+      <Border Grid.Column="0" Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" Padding="12">
+        <StackPanel Spacing="2">
+          <TextBlock x:Name="ScrobblesText" Classes="display" Text="0" />
+          <TextBlock Classes="muted" Text="scrobbles" FontSize="{StaticResource FontSize.UI.Small}" />
+        </StackPanel>
+      </Border>
+      <Border Grid.Column="1" Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" Padding="12">
+        <StackPanel Spacing="2">
+          <TextBlock x:Name="HoursText" Classes="display" Text="0" />
+          <TextBlock Classes="muted" Text="hours listened" FontSize="{StaticResource FontSize.UI.Small}" />
+        </StackPanel>
+      </Border>
+      <Border Grid.Column="2" Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" Padding="12">
+        <StackPanel Spacing="2">
+          <TextBlock x:Name="StreakText" Classes="display" Text="0" />
+          <TextBlock x:Name="StreakLabel" Classes="muted" Text="day streak" FontSize="{StaticResource FontSize.UI.Small}" />
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- Top lists -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10">
+      <StackPanel Grid.Column="0" Spacing="6">
+        <TextBlock Classes="heading" Text="Top Artists" />
+        <ListBox x:Name="ArtistsList" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Spacing="6">
+        <TextBlock Classes="heading" Text="Top Tracks" />
+        <ListBox x:Name="TracksList" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

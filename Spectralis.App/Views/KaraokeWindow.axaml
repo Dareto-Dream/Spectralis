@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Spectralis.App.Controls"
+        x:Class="Spectralis.App.Views.KaraokeWindow"
+        Title="Karaoke Mode — Spectralis"
+        Icon="/Assets/icon.png"
+        WindowState="Maximized"
+        SystemDecorations="None"
+        Topmost="True"
+        Background="Black">
+
+  <Grid RowDefinitions="*,52">
+
+    <controls:KaraokeDisplayControl Grid.Row="0" x:Name="Display" />
+
+    <!-- Bottom status bar -->
+    <Border Grid.Row="1"
+            Background="#111111"
+            BorderBrush="#2a2a2a"
+            BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="10,0">
+
+        <TextBlock Grid.Column="0"
+                   x:Name="TimeLabel"
+                   Text="0:00"
+                   Foreground="#8cffffff"
+                   FontFamily="Segoe UI, Arial"
+                   FontSize="11"
+                   Width="60"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center" />
+
+        <TextBlock Grid.Column="1"
+                   Text="Vocal Remove"
+                   Foreground="#5cffffff"
+                   FontFamily="Segoe UI, Arial"
+                   FontSize="11"
+                   VerticalAlignment="Center"
+                   Margin="14,0,6,0" />
+
+        <Slider Grid.Column="2"
+                x:Name="BlendSlider"
+                Minimum="0" Maximum="100" Value="0"
+                Width="160"
+                VerticalAlignment="Center"
+                ValueChanged="OnBlendChanged" />
+
+        <TextBlock Grid.Column="3"
+                   x:Name="BlendLabel"
+                   Text="0%"
+                   Foreground="#8cffffff"
+                   FontFamily="Segoe UI, Arial"
+                   FontSize="11"
+                   Width="38"
+                   VerticalAlignment="Center"
+                   Margin="4,0,0,0" />
+
+        <TextBlock Grid.Column="4"
+                   Text="Space = play/pause   Esc = exit"
+                   Foreground="#38ffffff"
+                   FontFamily="Segoe UI, Arial"
+                   FontSize="11"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center" />
+
+        <Button Grid.Column="5"
+                Content="✕  Exit"
+                Classes="ghost"
+                VerticalAlignment="Center"
+                Click="OnClose" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
