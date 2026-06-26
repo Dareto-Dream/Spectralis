@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Spectralis.App.Views"
+        x:Class="Spectralis.App.Views.SmartPlaylistEditorWindow"
+        x:DataType="views:SmartPlaylistEditorWindow"
+        Title="Edit Smart Playlist"
+        Icon="/Assets/icon.png"
+        Width="600" Height="500"
+        MinWidth="520" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16" RowSpacing="10">
+
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="10">
+      <TextBlock Grid.Column="0" Classes="secondary" Text="Name" VerticalAlignment="Center" />
+      <TextBox Grid.Column="1" x:Name="NameBox" />
+    </Grid>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+      <TextBlock Classes="secondary" Text="Match" VerticalAlignment="Center" />
+      <ComboBox x:Name="MatchBox" MinWidth="140" />
+      <Button Content="Add Rule" Click="OnAddRule" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="2">
+      <ItemsControl x:Name="RulesList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="views:SmartRuleRow">
+            <Grid ColumnDefinitions="140,140,*,Auto" ColumnSpacing="6" Margin="0,3">
+              <ComboBox Grid.Column="0"
+                        ItemsSource="{Binding FieldOptions}"
+                        SelectedItem="{Binding Field}" />
+              <ComboBox Grid.Column="1"
+                        ItemsSource="{Binding OpOptions}"
+                        SelectedItem="{Binding Op}" />
+              <TextBox Grid.Column="2" Text="{Binding Value}" />
+              <Button Grid.Column="3" Content="✕" Click="OnRemoveRule" Classes="ghost" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+      <TextBlock Classes="secondary" Text="Limit" VerticalAlignment="Center" />
+      <NumericUpDown x:Name="LimitBox" Minimum="0" Maximum="10000" Increment="10" Width="120" />
+      <TextBlock Classes="secondary" Text="Sort by" VerticalAlignment="Center" Margin="10,0,0,0" />
+      <ComboBox x:Name="SortBox" MinWidth="130" />
+      <CheckBox x:Name="DescendingBox" Content="Descending" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Save" Click="OnSave" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

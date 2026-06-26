@@ -1,0 +1,429 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:obs="using:Spectralis.Core.Integrations.Obs"
+             xmlns:views="using:Spectralis.App.Views"
+             x:Class="Spectralis.App.Views.ObsEditorView"
+             x:DataType="vm:ObsEditorViewModel">
+
+  <Grid ColumnDefinitions="264,*">
+
+    <!-- ════════════════════════ SIDEBAR ════════════════════════════════════ -->
+    <DockPanel Grid.Column="0"
+               Background="{StaticResource Brush.Bg.Raised}"
+               LastChildFill="True">
+
+      <!-- ── Pinned bottom actions ──────────────────────────────────────── -->
+      <Border DockPanel.Dock="Bottom"
+              BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="0,1,0,0"
+              Padding="16,12">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto">
+            <CheckBox x:Name="AutoApplyToggle"
+                      Content="Auto-apply on drag"
+                      FontSize="12"
+                      VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    Content="Apply"
+                    Classes="primary"
+                    Click="OnApply" />
+          </Grid>
+          <Button x:Name="RemoveWidgetBtn"
+                  Content="Remove selected widget"
+                  Classes="ghost"
+                  IsEnabled="False"
+                  Click="OnRemoveSelected"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Left"
+                  FontSize="12" />
+        </StackPanel>
+      </Border>
+
+      <!-- ── Scrollable sidebar body ────────────────────────────────────── -->
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+          <!-- Header + server toggle -->
+          <Border Padding="16,18,16,14"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="0,0,0,1">
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="OBS Overlay"
+                           FontSize="15" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <CheckBox Grid.Column="1"
+                          IsChecked="{Binding EnableObsOverlay}"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="Enable / disable overlay server" />
+              </Grid>
+              <TextBlock Text="{Binding ObsStatus}"
+                         Classes="secondary"
+                         FontSize="11"
+                         TextWrapping="Wrap"
+                         MaxLines="2"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Border>
+
+          <!-- Overlay picker -->
+          <Border Padding="16,14,16,14"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="0,0,0,1">
+            <StackPanel Spacing="10">
+              <TextBlock Text="OVERLAY"
+                         FontSize="10" FontWeight="SemiBold" Opacity="0.45"
+                         LetterSpacing="1.5" />
+
+              <Grid ColumnDefinitions="*,32,32" ColumnSpacing="6">
+                <ComboBox Grid.Column="0"
+                          ItemsSource="{Binding OverlayOptions}"
+                          SelectedItem="{Binding SelectedOverlay}"
+                          HorizontalAlignment="Stretch"
+                          FontSize="12">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ObsOverlayOption">
+                      <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="1" Content="+"
+                        Click="OnAddOverlay"
+                        ToolTip.Tip="Add overlay"
+                        HorizontalContentAlignment="Center"
+                        Padding="0" />
+                <Button Grid.Column="2" Content="✕"
+                        Click="OnRemoveOverlay"
+                        Classes="ghost"
+                        IsEnabled="{Binding CanRemoveSelectedOverlay}"
+                        ToolTip.Tip="Remove selected overlay"
+                        HorizontalContentAlignment="Center"
+                        Padding="0" />
+              </Grid>
+
+              <!-- Add overlay form -->
+              <Border IsVisible="{Binding IsAddingOverlay}"
+                      Background="{StaticResource Brush.Bg.Base}"
+                      Padding="10,8" CornerRadius="6">
+                <Grid ColumnDefinitions="*,32,32" ColumnSpacing="6">
+                  <TextBox Grid.Column="0"
+                           Watermark="Overlay name…"
+                           Text="{Binding NewOverlayName}"
+                           FontSize="12" />
+                  <Button Grid.Column="1" Content="✓"
+                          Classes="primary"
+                          Click="OnConfirmAddOverlay"
+                          IsEnabled="{Binding CanConfirmAddOverlay}"
+                          HorizontalContentAlignment="Center"
+                          Padding="0" />
+                  <Button Grid.Column="2" Content="✕"
+                          Classes="ghost"
+                          Click="OnCancelAddOverlay"
+                          HorizontalContentAlignment="Center"
+                          Padding="0" />
+                </Grid>
+              </Border>
+
+              <!-- Browser source URL -->
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox Grid.Column="0"
+                         Text="{Binding SelectedOverlayUrl}"
+                         IsReadOnly="True"
+                         FontFamily="{StaticResource Font.Data}"
+                         FontSize="10" />
+                <Button Grid.Column="1"
+                        Content="Copy"
+                        FontSize="11"
+                        Click="OnCopySelectedOverlayUrl" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Widget palette -->
+          <Border Padding="16,14,16,14"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="0,0,0,1">
+            <StackPanel Spacing="10">
+              <TextBlock Text="ADD WIDGET"
+                         FontSize="10" FontWeight="SemiBold" Opacity="0.45"
+                         LetterSpacing="1.5" />
+
+              <UniformGrid Columns="2">
+                <Button Margin="0,0,3,3" Classes="ghost" Click="OnAddNowPlaying"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#3B82F6"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Now Playing" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Margin="3,0,0,3" Classes="ghost" Click="OnAddLyrics"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#10B981"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Lyrics" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Margin="0,3,3,3" Classes="ghost" Click="OnAddQueue"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#F59E0B"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Queue" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Margin="3,3,0,3" Classes="ghost" Click="OnAddProgress"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#EF4444"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Progress" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Margin="0,3,3,0" Classes="ghost" Click="OnAddVisualizer"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#A855F7"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Visualizer" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Margin="3,3,0,0" Classes="ghost" Click="OnAddSongWars"
+                        HorizontalAlignment="Stretch" Padding="8,6">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="#EC4899"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="Song Wars" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </UniformGrid>
+            </StackPanel>
+          </Border>
+
+          <!-- Widget list + context-sensitive properties -->
+          <Border Padding="16,14,16,14"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="0,0,0,1">
+            <StackPanel Spacing="10">
+              <TextBlock Text="WIDGETS"
+                         FontSize="10" FontWeight="SemiBold" Opacity="0.45"
+                         LetterSpacing="1.5" />
+
+              <ListBox x:Name="WidgetListBox"
+                       ItemsSource="{Binding #Designer.Items}"
+                       SelectionChanged="OnWidgetListSelectionChanged"
+                       Background="Transparent"
+                       MaxHeight="140"
+                       Padding="0">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ObsDesignerItem">
+                    <TextBlock Text="{Binding Label}" FontSize="12" Padding="2,2" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <!-- Shared: Background opacity (shown for any selected widget) -->
+              <Border x:Name="PropsShared" IsVisible="False">
+                <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Background opacity"
+                               FontSize="11" Classes="secondary"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="BgOpacityLabel"
+                               Grid.Column="1"
+                               FontSize="11" Classes="secondary"
+                               VerticalAlignment="Center" />
+                  </Grid>
+                  <Slider x:Name="BgOpacitySlider"
+                          Minimum="0" Maximum="100"
+                          SmallChange="1" LargeChange="5"
+                          ValueChanged="OnBgOpacityChanged" />
+                </StackPanel>
+              </Border>
+
+              <!-- Now Playing specific -->
+              <Border x:Name="PropsNowPlaying" IsVisible="False">
+                <StackPanel Spacing="6">
+                  <CheckBox x:Name="ShowArtCheck"
+                            Content="Show artwork"
+                            FontSize="12"
+                            IsCheckedChanged="OnShowArtChanged" />
+                  <CheckBox x:Name="ShowArtistCheck"
+                            Content="Show artist"
+                            FontSize="12"
+                            IsCheckedChanged="OnShowArtistChanged" />
+                  <CheckBox x:Name="ShowProgressCheck"
+                            Content="Show progress bar"
+                            FontSize="12"
+                            IsCheckedChanged="OnShowProgressChanged" />
+                  <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                    <TextBlock Text="Art shape" FontSize="11"
+                               Classes="secondary" VerticalAlignment="Center" />
+                    <RadioButton x:Name="ArtCircleRadio"
+                                 Content="Circle" FontSize="11"
+                                 GroupName="ArtShape"
+                                 IsCheckedChanged="OnArtShapeChanged" />
+                    <RadioButton x:Name="ArtSquareRadio"
+                                 Content="Square" FontSize="11"
+                                 GroupName="ArtShape"
+                                 IsCheckedChanged="OnArtShapeChanged" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <!-- Visualizer specific -->
+              <Border x:Name="PropsVisualizer" IsVisible="False">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Visualizer style"
+                             FontSize="11" Classes="secondary" />
+                  <TextBox x:Name="VizKeyBox"
+                           Watermark="e.g. mirrorspectrum, waveform"
+                           FontSize="12"
+                           TextChanged="OnVizKeyChanged" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <!-- Presets -->
+          <Border Padding="16,14,16,14"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="0,0,0,1">
+            <StackPanel Spacing="10">
+              <TextBlock Text="PRESETS"
+                         FontSize="10" FontWeight="SemiBold" Opacity="0.45"
+                         LetterSpacing="1.5" />
+
+              <ItemsControl ItemsSource="{Binding BuiltInPresets}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="obs:ObsPreset">
+                    <Button Content="{Binding Name}"
+                            Tag="{Binding}"
+                            Click="OnApplyBuiltInPresetChip"
+                            Margin="0,0,6,6"
+                            Classes="ghost"
+                            FontSize="11"
+                            Padding="8,4" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <TextBlock Text="MY PRESETS"
+                         FontSize="10" FontWeight="SemiBold" Opacity="0.45"
+                         LetterSpacing="1.5" />
+
+              <ItemsControl ItemsSource="{Binding UserPresets}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="obs:ObsPreset">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,6,6">
+                      <Button Content="{Binding Name}"
+                              Tag="{Binding}"
+                              Click="OnApplyUserPresetChip"
+                              Classes="ghost"
+                              FontSize="11"
+                              Padding="8,4" />
+                      <Button Content="×"
+                              Tag="{Binding}"
+                              Click="OnDeleteUserPresetChip"
+                              Classes="ghost"
+                              FontSize="10"
+                              Padding="5,4"
+                              ToolTip.Tip="Delete preset" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox Grid.Column="0"
+                         Watermark="Save current as…"
+                         Text="{Binding NewPresetName}"
+                         FontSize="12" />
+                <Button Grid.Column="1"
+                        Content="Save"
+                        Click="OnSavePreset"
+                        IsEnabled="{Binding CanSavePreset}"
+                        FontSize="11" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Advanced -->
+          <Expander Header="Advanced" Padding="0">
+            <StackPanel Spacing="10" Margin="16,0,16,14">
+              <Grid ColumnDefinitions="72,*" RowDefinitions="Auto,Auto,Auto"
+                    RowSpacing="8" ColumnSpacing="10">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Port"
+                           FontSize="11" Classes="secondary" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding ObsPort}"
+                         FontFamily="{StaticResource Font.Data}"
+                         FontSize="12" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Resolution"
+                           FontSize="11" Classes="secondary" VerticalAlignment="Center" />
+                <StackPanel Grid.Row="1" Grid.Column="1"
+                            Orientation="Horizontal" Spacing="6">
+                  <TextBox Text="{Binding ObsCanvasWidth}" Width="70"
+                           FontFamily="{StaticResource Font.Data}" FontSize="12" />
+                  <TextBlock Text="×" VerticalAlignment="Center" FontSize="12" />
+                  <TextBox Text="{Binding ObsCanvasHeight}" Width="70"
+                           FontFamily="{StaticResource Font.Data}" FontSize="12" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Token"
+                           FontSize="11" Classes="secondary" VerticalAlignment="Center" />
+                <Grid Grid.Row="2" Grid.Column="1"
+                      ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                  <TextBox Grid.Column="0"
+                           Text="{Binding ObsToken}"
+                           IsReadOnly="True"
+                           FontFamily="{StaticResource Font.Data}"
+                           FontSize="10" />
+                  <Button Grid.Column="1" Content="Copy" FontSize="11"
+                          Click="OnCopyObsToken" />
+                  <Button Grid.Column="2" Content="↺" FontSize="12"
+                          Classes="ghost"
+                          Click="OnRegenerateObsToken"
+                          ToolTip.Tip="Regenerate token. Update all browser source URLs after regenerating." />
+                </Grid>
+              </Grid>
+            </StackPanel>
+          </Expander>
+
+        </StackPanel>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- ════════════════════════ CANVAS ════════════════════════════════════ -->
+    <Grid Grid.Column="1">
+      <views:ObsDesignerView x:Name="Designer" />
+
+      <Border x:Name="CanvasStatusBar"
+              IsVisible="False"
+              VerticalAlignment="Bottom"
+              HorizontalAlignment="Stretch"
+              Background="#CC000000"
+              Padding="12,5">
+        <TextBlock x:Name="CanvasStatusText"
+                   Foreground="White"
+                   FontFamily="{StaticResource Font.Data}"
+                   FontSize="11" />
+      </Border>
+    </Grid>
+
+  </Grid>
+
+</UserControl>

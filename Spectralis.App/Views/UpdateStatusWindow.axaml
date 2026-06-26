@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:viewModels="using:Spectralis.App.ViewModels"
+        x:Class="Spectralis.App.Views.UpdateStatusWindow"
+        x:DataType="viewModels:SettingsViewModel"
+        Title="Spectralis Updates"
+        Icon="/Assets/icon.png"
+        Width="520" Height="260"
+        MinWidth="420" MinHeight="220"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24" RowSpacing="16">
+    <TextBlock Grid.Row="0" Classes="display" Text="Updates" />
+
+    <StackPanel Grid.Row="1" Spacing="8">
+      <TextBlock Classes="secondary" Text="{Binding VersionText}" />
+      <TextBlock Classes="secondary" Text="{Binding UpdateStatus}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Close" Click="OnClose" />
+    </StackPanel>
+  </Grid>
+</Window>

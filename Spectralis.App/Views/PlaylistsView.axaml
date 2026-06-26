@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:design="using:Spectralis.App.Design"
+             x:Class="Spectralis.App.Views.PlaylistsView"
+             x:DataType="vm:PlaylistsViewModel">
+
+  <Panel>
+
+    <!-- ============ Empty state ============ -->
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440"
+                IsVisible="{Binding !HasPlaylists}">
+      <PathIcon Data="{x:Static design:IconData.Playlists}"
+                Width="48" Height="48"
+                Foreground="{StaticResource Brush.Ink.Muted}"
+                HorizontalAlignment="Center"
+                Opacity="0.6"
+                Margin="0,0,0,16" />
+      <TextBlock Classes="display" Text="No playlists yet"
+                 TextAlignment="Center" Margin="0,0,0,8" />
+      <TextBlock Classes="muted"
+                 Text="Create a static playlist, build a smart playlist from rules, or import an M3U."
+                 TextAlignment="Center"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,20" />
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+        <Button Content="New Playlist…" Click="OnNewPlaylist" Classes="primary" />
+        <Button Content="New Smart…" Click="OnNewSmart" />
+        <Button Content="Import M3U…" Click="OnImportM3u" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ============ Playlist browser ============ -->
+    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasPlaylists}">
+
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,12">
+        <Button Content="New Playlist..." Click="OnNewPlaylist" />
+        <Button Content="New Smart..." Click="OnNewSmart" />
+        <Button Content="Import M3U..." Click="OnImportM3u" />
+      </StackPanel>
+
+      <DataGrid Grid.Row="1"
+                x:Name="PlaylistGrid"
+                ItemsSource="{Binding Rows}"
+                SelectedItem="{Binding SelectedRow}"
+                IsReadOnly="True"
+                CanUserSortColumns="True"
+                CanUserResizeColumns="True"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                Background="Transparent"
+                BorderThickness="0"
+                DoubleTapped="OnRowDoubleTapped"
+                Margin="16,0">
+        <DataGrid.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Play" Click="OnPlay" />
+            <MenuItem Header="Edit..." Click="OnEdit" />
+            <Separator />
+            <MenuItem Header="Export M3U..." Click="OnExportM3u" />
+            <Separator />
+            <MenuItem Header="Delete" Click="OnDelete" />
+          </ContextMenu>
+        </DataGrid.ContextMenu>
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*" />
+          <DataGridTextColumn Header="Tracks" Binding="{Binding TrackCountText}" Width="110" />
+          <DataGridTextColumn Header="Type" Binding="{Binding TypeLabel}" Width="100" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <TextBlock Grid.Row="2" Classes="muted"
+                 Text="{Binding StatusText}"
+                 Margin="16,8"
+                 FontSize="{StaticResource FontSize.UI.Small}" />
+    </Grid>
+  </Panel>
+</UserControl>

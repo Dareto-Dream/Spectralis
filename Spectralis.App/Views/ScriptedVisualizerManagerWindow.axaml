@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.ScriptedVisualizerManagerWindow"
+        Title="Scripted Visualizers"
+        Width="820" Height="520"
+        MinWidth="640" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid ColumnDefinitions="200,*">
+
+    <!-- Left panel: script list + toolbar -->
+    <DockPanel Grid.Column="0"
+               Background="{StaticResource Brush.Bg.Raised}"
+               LastChildFill="True">
+
+      <StackPanel DockPanel.Dock="Bottom"
+                  Orientation="Horizontal"
+                  Spacing="4"
+                  Margin="6,4,6,6">
+        <Button x:Name="BtnNew"    Content="New"     Click="OnNew"    MinWidth="44" />
+        <Button x:Name="BtnDelete" Content="Delete"  Click="OnDelete" MinWidth="52" Classes="destructive" />
+        <Button x:Name="BtnImport" Content="Import…" Click="OnImport" MinWidth="60" />
+        <Button x:Name="BtnExport" Content="Export…" Click="OnExport" MinWidth="60" />
+      </StackPanel>
+
+      <ListBox x:Name="ScriptList"
+               SelectionChanged="OnSelectionChanged"
+               Margin="6,6,6,0"
+               Padding="0" />
+    </DockPanel>
+
+    <!-- Right panel: name + editor + buttons -->
+    <DockPanel Grid.Column="1" Margin="8">
+
+      <!-- Top: name row -->
+      <Grid DockPanel.Dock="Top"
+            ColumnDefinitions="Auto,*"
+            Margin="0,0,0,6">
+        <TextBlock Grid.Column="0"
+                   Classes="secondary"
+                   Text="Name:"
+                   VerticalAlignment="Center"
+                   Margin="0,0,8,0" />
+        <TextBox Grid.Column="1"
+                 x:Name="NameBox"
+                 TextChanged="OnNameChanged"
+                 IsEnabled="False" />
+      </Grid>
+
+      <!-- Bottom: action buttons -->
+      <StackPanel DockPanel.Dock="Bottom"
+                  Orientation="Horizontal"
+                  Spacing="6"
+                  Margin="0,6,0,0">
+        <Button x:Name="BtnApply"
+                Content="Apply to Visualizer"
+                Click="OnApply"
+                Classes="primary"
+                IsEnabled="False" />
+        <Button x:Name="BtnSave"
+                Content="Save"
+                Click="OnSave"
+                IsEnabled="False" />
+        <Button Content="Clear Active"
+                Click="OnClearActive"
+                ToolTip.Tip="Restore catalog visualizer" />
+        <Button Content="Close"
+                Click="OnClose"
+                HorizontalAlignment="Right" />
+      </StackPanel>
+
+      <!-- Error label -->
+      <TextBlock x:Name="ErrorLabel"
+                 DockPanel.Dock="Bottom"
+                 Classes="muted"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextTrimming="CharacterEllipsis"
+                 Margin="0,3,0,0"
+                 IsVisible="False" />
+
+      <!-- Script editor -->
+      <TextBox x:Name="ScriptEditor"
+               TextChanged="OnScriptChanged"
+               IsEnabled="False"
+               AcceptsReturn="True"
+               AcceptsTab="True"
+               FontFamily="{StaticResource Font.Data}"
+               FontSize="{StaticResource FontSize.Data}"
+               TextWrapping="NoWrap" />
+    </DockPanel>
+
+  </Grid>
+</Window>

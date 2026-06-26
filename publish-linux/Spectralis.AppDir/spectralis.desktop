@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Spectralis
+Exec=Spectralis.App %U
+Icon=spectralis
+Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-wav;audio/mp4;x-scheme-handler/spectralis;

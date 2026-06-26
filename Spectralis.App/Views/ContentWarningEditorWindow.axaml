@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.ContentWarningEditorWindow"
+        Title="Content Warnings"
+        Width="480" Height="260"
+        MinWidth="380" MinHeight="220"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="BorderOnly"
+        Background="{StaticResource Brush.Bg.Base}"
+        KeyDown="OnKeyDown">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="28,24,28,20">
+
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+      <TextBlock Text="Content Warnings" Classes="heading" />
+      <TextBlock x:Name="TrackNameLabel"
+                 Classes="secondary"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextTrimming="CharacterEllipsis" />
+      <TextBlock Classes="muted"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 Text="Enter comma-separated tags (e.g. Strobe, Loud)"
+                 Margin="0,4,0,0" />
+    </StackPanel>
+
+    <!-- Tags input -->
+    <TextBox Grid.Row="1"
+             x:Name="TagsBox"
+             Watermark="e.g. Strobe, Loud Bass, Explicit Lyrics"
+             VerticalAlignment="Top" />
+
+    <!-- Buttons -->
+    <Grid Grid.Row="2"
+          ColumnDefinitions="Auto,*,Auto,Auto"
+          ColumnSpacing="8"
+          Margin="0,16,0,0">
+      <Button Grid.Column="0"
+              Content="Clear"
+              Classes="ghost"
+              Click="OnClear" />
+      <Button Grid.Column="2"
+              Content="Save"
+              Classes="primary"
+              Click="OnSave" />
+      <Button Grid.Column="3"
+              Classes="ghost"
+              Content="Cancel"
+              Click="OnCancel" />
+    </Grid>
+
+  </Grid>
+</Window>
