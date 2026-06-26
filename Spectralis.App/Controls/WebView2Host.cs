@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
@@ -61,6 +62,12 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
     private CoreWebView2Controller? _controller;
     private CoreWebView2? _core;
     private bool _disposed;
+    private readonly string _largeHtmlHostName = $"spectralis-inline-{Guid.NewGuid():N}.local";
+    private readonly string _largeHtmlFolder = Path.Combine(
+        Path.GetTempPath(),
+        "spectralis",
+        "webview2-inline",
+        Guid.NewGuid().ToString("N"));
 
     // Queued until WebView2 finishes async init
     private string? _pendingHtml;
@@ -111,11 +118,15 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
     {
         var kind = CoreWebView2HostResourceAccessKind.Allow;
         _virtualHosts[hostname] = (folderPath, kind);
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] map virtual host host={hostname} folder={folderPath} coreReady={_core is not null}");
         _core?.SetVirtualHostNameToFolderMapping(hostname, folderPath, kind);
     }
 
     public void Navigate(Uri url)
     {
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] navigate url={url} coreReady={_core is not null}");
         if (_core is not null)
             _core.Navigate(url.ToString());
         else
@@ -124,8 +135,19 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
 
     public void NavigateToString(string html)
     {
+        LogHtmlNavigation("NavigateToString", html, _core is not null);
         if (_core is not null)
-            _core.NavigateToString(html);
+        {
+            try
+            {
+                NavigateHtmlDocument(html, "NavigateToString");
+            }
+            catch (Exception ex)
+            {
+                LogNavigationException("NavigateToString", html, ex);
+                throw;
+            }
+        }
         else
         {
             _pendingHtml = html;
@@ -138,6 +160,8 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         if (_core is not null)
             return _core.ExecuteScriptAsync(script);
 
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] queue script chars={script.Length:n0} utf8={Encoding.UTF8.GetByteCount(script):n0}");
         _pendingScripts.Add(script);
         return Task.CompletedTask;
     }
@@ -149,12 +173,55 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         if (_disposed) return;
         _disposed = true;
         CleanupCore();
+        CleanupLargeHtmlFolder();
     }
 
     // --- internals ---
 
+    private static void LogHtmlNavigation(string operation, string html, bool coreReady)
+    {
+        var utf8Bytes = Encoding.UTF8.GetByteCount(html);
+        var sizeWarning = utf8Bytes >= 1_900_000 ? " near-or-over-WebView2-NavigateToString-limit" : string.Empty;
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] {operation} coreReady={coreReady} chars={html.Length:n0} utf8={utf8Bytes:n0}{sizeWarning}");
+    }
+
+    private static void LogNavigationException(string operation, string html, Exception ex)
+    {
+        var utf8Bytes = Encoding.UTF8.GetByteCount(html);
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] {operation} failed chars={html.Length:n0} utf8={utf8Bytes:n0} " +
+            $"{ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+    }
+
+    private void NavigateHtmlDocument(string html, string operation)
+    {
+        var utf8Bytes = Encoding.UTF8.GetByteCount(html);
+        if (utf8Bytes < 1_900_000)
+        {
+            _core!.NavigateToString(html);
+            return;
+        }
+
+        Directory.CreateDirectory(_largeHtmlFolder);
+        var indexPath = Path.Combine(_largeHtmlFolder, "index.html");
+        File.WriteAllText(indexPath, html, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        _core!.SetVirtualHostNameToFolderMapping(
+            _largeHtmlHostName,
+            _largeHtmlFolder,
+            CoreWebView2HostResourceAccessKind.Allow);
+
+        var url = $"https://{_largeHtmlHostName}/index.html?v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        AppLogPaths.AppendTimestamped(_log,
+            $"[WV2] {operation} using virtual-host file host={_largeHtmlHostName} " +
+            $"path={indexPath} utf8={utf8Bytes:n0} url={url}");
+        _core.Navigate(url);
+    }
+
     private async Task InitializeAsync()
     {
+        var stage = "environment";
         try
         {
             var env = await GetOrCreateEnvironmentAsync(UserDataFolder, AdditionalBrowserArguments).ConfigureAwait(true);
@@ -162,30 +229,19 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             // Guard: DestroyNativeControlCore may have fired while we awaited the environment.
             if (_disposed || _hwnd == nint.Zero) return;
 
+            stage = "controller";
             AppLogPaths.AppendTimestamped(_log, $"[WV2] creating controller for HWND 0x{_hwnd:X}...");
-            CoreWebView2Controller? controller = null;
-            try
-            {
-                controller = await env.CreateCoreWebView2ControllerAsync(_hwnd).ConfigureAwait(true);
-            }
-            catch (ArgumentException) when (!_disposed && _hwnd != nint.Zero)
-            {
-                // The cached environment's browser process may have exited after all
-                // controllers were closed (e.g. the host was briefly removed from the
-                // visual tree). Evict the stale entry and retry once with a fresh env.
-                AppLogPaths.AppendTimestamped(_log, "[WV2] controller create failed — evicting env cache and retrying...");
-                env = await EvictAndRecreateEnvironmentAsync(UserDataFolder, AdditionalBrowserArguments).ConfigureAwait(true);
-                if (_disposed || _hwnd == nint.Zero) return;
-                controller = await env.CreateCoreWebView2ControllerAsync(_hwnd).ConfigureAwait(true);
-            }
+            var controller = await CreateControllerWithRetryAsync(env).ConfigureAwait(true);
             _controller = controller;
             _core = _controller.CoreWebView2;
 
             // Stretch WebView2 to fill the HWND.
+            stage = "bounds";
             SyncControllerBounds();
 
             // Expose spectralisBridge so the injected bridge script can postMessage back.
             // window.chrome.webview.postMessage is native in WebView2; we just alias it.
+            stage = "bootstrap script";
             await _core.AddScriptToExecuteOnDocumentCreatedAsync("""
                 (function() {
                   if (window.spectralisBridge) return;
@@ -204,6 +260,7 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             // Receive postMessage payloads from the page.
             // TryGetWebMessageAsString() returns the string when postMessage(string)
             // was used; falls back to the raw JSON representation otherwise.
+            stage = "message handler";
             _core.WebMessageReceived += (_, e) =>
             {
                 string msg;
@@ -232,8 +289,11 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
                 MessageReceived?.Invoke(this, msg);
             };
 
+            stage = "navigation handler";
             _core.NavigationCompleted += (_, e) =>
             {
+                AppLogPaths.AppendTimestamped(_log,
+                    $"[WV2] navigation completed success={e.IsSuccess} status={e.WebErrorStatus} source={_core.Source}");
                 if (e.IsSuccess)
                     NavigationCompleted?.Invoke(this, EventArgs.Empty);
                 else
@@ -241,22 +301,36 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             };
 
             // Register any virtual host mappings that arrived before init.
+            stage = "virtual host mappings";
             foreach (var (host, (folder, kind)) in _virtualHosts)
                 _core.SetVirtualHostNameToFolderMapping(host, folder, kind);
 
             // Drain pending script queue before navigation so they run on the right document.
+            stage = "pending scripts";
             foreach (var script in _pendingScripts)
                 _ = _core.ExecuteScriptAsync(script);
             _pendingScripts.Clear();
 
             // Navigate to queued content.
+            stage = "pending navigation";
             if (_pendingHtml is not null)
             {
-                _core.NavigateToString(_pendingHtml);
+                LogHtmlNavigation("pending NavigateToString", _pendingHtml, coreReady: true);
+                try
+                {
+                    NavigateHtmlDocument(_pendingHtml, "pending NavigateToString");
+                }
+                catch (Exception ex)
+                {
+                    LogNavigationException("pending NavigateToString", _pendingHtml, ex);
+                    throw;
+                }
+
                 _pendingHtml = null;
             }
             else if (_pendingUrl is not null)
             {
+                AppLogPaths.AppendTimestamped(_log, $"[WV2] pending navigate url={_pendingUrl}");
                 _core.Navigate(_pendingUrl.ToString());
                 _pendingUrl = null;
             }
@@ -265,10 +339,46 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         }
         catch (Exception ex)
         {
-            AppLogPaths.AppendTimestamped(_log, $"[WV2] init failed: {ex.GetType().Name}: {ex.Message}");
+            AppLogPaths.AppendTimestamped(_log,
+                $"[WV2] init failed at {stage}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+            AppLogPaths.AppendTimestamped(_log, ex.ToString());
             Dispatcher.UIThread.Post(() => NavigationFailed?.Invoke(this, EventArgs.Empty));
         }
     }
+
+    private async Task<CoreWebView2Controller> CreateControllerWithRetryAsync(CoreWebView2Environment env)
+    {
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt < maxAttempts; attempt++)
+        {
+            try
+            {
+                return await env.CreateCoreWebView2ControllerAsync(_hwnd).ConfigureAwait(true);
+            }
+            catch (Exception ex) when (CanRetryControllerCreate(ex) &&
+                                       !_disposed &&
+                                       _hwnd != nint.Zero)
+            {
+                AppLogPaths.AppendTimestamped(_log,
+                    $"[WV2] controller create failed attempt {attempt}/{maxAttempts}: " +
+                    $"{ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+
+                CleanupCore();
+                env = await EvictAndRecreateEnvironmentAsync(UserDataFolder, AdditionalBrowserArguments)
+                    .ConfigureAwait(true);
+
+                // Give Avalonia/Win32 one tick to finish parenting and sizing the child HWND.
+                await Task.Delay(75).ConfigureAwait(true);
+            }
+        }
+
+        return await env.CreateCoreWebView2ControllerAsync(_hwnd).ConfigureAwait(true);
+    }
+
+    private static bool CanRetryControllerCreate(Exception ex) =>
+        ex is ArgumentException ||
+        ex is COMException { HResult: unchecked((int)0x80070057) };
 
     private void SyncControllerBounds()
     {
@@ -298,6 +408,19 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         _controller?.Close();
         _controller = null;
         _core = null;
+    }
+
+    private void CleanupLargeHtmlFolder()
+    {
+        try
+        {
+            if (Directory.Exists(_largeHtmlFolder))
+                Directory.Delete(_largeHtmlFolder, recursive: true);
+        }
+        catch
+        {
+            // Temp debug/navigation files are best-effort cleanup.
+        }
     }
 
     private static class NativeMethods

@@ -1,43 +1,88 @@
-﻿## Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-## Build results
+﻿# Build outputs
 [Dd]ebug/
+[Dd]ebugPublic/
 [Rr]elease/
+[Rr]eleases/
+!releases/RELEASES
 x64/
 x86/
+[Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
 [Oo]bj/
+publish/
+publish-velopack/
+publish-linux/
+releases-velopack/
+output/
+
+# Downloaded build tools (auto-fetched by build scripts, not committed)
+build/nuget.exe
+
+# Build logs
 [Ll]og/
 [Ll]ogs/
+*.log
+*.lscache
 
-## NuGet
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.code-workspace
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.userobject
+*.dbmdl
+*.dbproj.json
+*.rptproj.json
+*.rptproj.bak
+
+# NuGet packages/artifacts
 *.nupkg
-**/packages/
-!**/packages/build/
+*.snupkg
 *.nuget.props
 *.nuget.targets
-project.lock.json
-project.fragment.lock.json
-artifacts/
 
-## User-specific
-*.rsuser
-*.tmp
-*.cache
-*.[Cc]ache
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug screenshots at repo root
+/spectralis_*.png
+/ss_*.png
+*.tmp.png
+
+# dotnet tool config
+/.config/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/data/
+
+# Else
+*.ignore
+
+# Local creator signing material
+*.private.json
+*_payload.zip
 metadata/
 AGENTS.md
-
-## OS
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-.DS_Store
