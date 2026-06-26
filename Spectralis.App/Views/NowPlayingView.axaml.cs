@@ -135,6 +135,12 @@ public NowPlayingView()
         }
     }
 
+    private void OnSongWarsPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm)
+            vm.SongWarsPopOutRequested?.Invoke();
+    }
+
     private void OnInspectLyrics(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not NowPlayingViewModel vm) return;
