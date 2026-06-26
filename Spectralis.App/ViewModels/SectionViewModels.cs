@@ -1484,6 +1484,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool MinimizeToTray
+    {
+        get => _settings.MinimizeToTray;
+        set
+        {
+            if (_settings.MinimizeToTray == value)
+            {
+                return;
+            }
+
+            _settings.MinimizeToTray = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool EnableDiscordRichPresence
     {
         get => _settings.EnableDiscordRichPresence;

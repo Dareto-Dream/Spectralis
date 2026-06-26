@@ -118,7 +118,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -155,9 +155,15 @@
                     IsChecked="{Binding RememberWindowPlacement}"
                     HorizontalAlignment="Left" />
 
-          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"
-                     ToolTip.Tip="Opening files or links from outside reuses this window instead of starting a new one" />
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Minimize to tray" VerticalAlignment="Center"
+                     ToolTip.Tip="Hide Spectralis to the system tray when minimized so playback and Discord presence keep running" />
           <CheckBox Grid.Row="6" Grid.Column="1"
+                    IsChecked="{Binding MinimizeToTray}"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="7" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"
+                     ToolTip.Tip="Opening files or links from outside reuses this window instead of starting a new one" />
+          <CheckBox Grid.Row="7" Grid.Column="1"
                     IsChecked="{Binding PreserveSession}"
                     HorizontalAlignment="Left" />
         </Grid>
