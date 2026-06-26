@@ -19,6 +19,7 @@ using Spectralis.Core.Integrations.Spotify;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Installed;
 using Spectralis.Core.Visualizers.Scripting;
+using Spectralis.Core.SongWars;
 
 namespace Spectralis.App.ViewModels;
 
@@ -209,6 +210,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     private bool _showLyrics;
+    private bool _showSongWarsPanel;
+    private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
     private bool _isReactiveActive;
@@ -395,6 +398,117 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasQueueItems => Queue.Count > 0;
+
+    public bool ShowSongWarsPanel
+    {
+        get => _showSongWarsPanel;
+        set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+    }
+
+    public SongWarsSessionController? SongWarsSession
+    {
+        get => _songWarsSession;
+        set { _songWarsSession = value; NotifySongWarsChanged(); }
+    }
+
+    public Action? SongWarsPopOutRequested { get; set; }
+
+    public bool SongWarsHasSession => _songWarsSession is not null;
+    public string SongWarsTournamentName => _songWarsSession?.Tournament.Name ?? "";
+    public string SongWarsTrackAName => _songWarsSession?.CurrentTrackA?.DisplayTitle ?? "—";
+    public string SongWarsTrackAArtist => _songWarsSession?.CurrentTrackA?.ArtistDisplayName ?? "";
+    public string SongWarsTrackBName => _songWarsSession?.CurrentTrackB?.DisplayTitle ?? "—";
+    public string SongWarsTrackBArtist => _songWarsSession?.CurrentTrackB?.ArtistDisplayName ?? "";
+
+    public string SongWarsMatchStatusText
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match is null) return _songWarsSession is null ? "" : "Tournament complete";
+            return $"{match.Bracket}  ·  {match.RoundId}  ·  {match.Phase}";
+        }
+    }
+
+    public string SongWarsPhaseText
+    {
+        get
+        {
+            var phase = _songWarsSession?.CurrentMatch?.Phase;
+            return phase switch
+            {
+                SongWarsMatchPhase.TrackAPlaying => "● Track A Playing",
+                SongWarsMatchPhase.TrackBPlaying => "● Track B Playing",
+                SongWarsMatchPhase.PrimaryVoting => "● Voting",
+                SongWarsMatchPhase.EliminationVoting => "● Elimination Vote",
+                SongWarsMatchPhase.Reveal => "Revealed",
+                SongWarsMatchPhase.Paused => "⏸ Paused",
+                SongWarsMatchPhase.Complete => "Complete",
+                SongWarsMatchPhase.Skipped => "Skipped",
+                _ => ""
+            };
+        }
+    }
+
+    public string SongWarsTallyText
+    {
+        get
+        {
+            if (_songWarsSession?.CurrentMatch is null) return "";
+            try
+            {
+                var t = _songWarsSession.TallyCurrentLive();
+                return $"Pass: {t.PassCount}  Fail: {t.FailCount}  Elim: {t.EliminatedCount}  ({t.SubmittedJudgeCount}/{_songWarsSession.Tournament.Judges.Count} submitted)";
+            }
+            catch { return ""; }
+        }
+    }
+
+    public bool SongWarsHasOutcome
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            return match?.Phase == SongWarsMatchPhase.Reveal && match.VoteSnapshots.LastOrDefault() is not null;
+        }
+    }
+
+    public string SongWarsOutcomeText
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match?.Phase != SongWarsMatchPhase.Reveal) return "";
+            var snap = match.VoteSnapshots.LastOrDefault();
+            return snap is null ? "" : $"Result: {snap.Outcome}";
+        }
+    }
+
+    public string SongWarsOutcomeDetail
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match?.Phase != SongWarsMatchPhase.Reveal) return "";
+            return match.VoteSnapshots.LastOrDefault()?.Explanation ?? "";
+        }
+    }
+
+    public void NotifySongWarsChanged()
+    {
+        this.RaisePropertyChanged(nameof(SongWarsHasSession));
+        this.RaisePropertyChanged(nameof(SongWarsTournamentName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackAName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackAArtist));
+        this.RaisePropertyChanged(nameof(SongWarsTrackBName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackBArtist));
+        this.RaisePropertyChanged(nameof(SongWarsMatchStatusText));
+        this.RaisePropertyChanged(nameof(SongWarsPhaseText));
+        this.RaisePropertyChanged(nameof(SongWarsTallyText));
+        this.RaisePropertyChanged(nameof(SongWarsHasOutcome));
+        this.RaisePropertyChanged(nameof(SongWarsOutcomeText));
+        this.RaisePropertyChanged(nameof(SongWarsOutcomeDetail));
+    }
 
     public string QueueHeaderText => Queue.Count == 1
         ? "Queue - 1 track"
