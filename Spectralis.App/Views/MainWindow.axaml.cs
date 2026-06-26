@@ -1097,22 +1097,62 @@ public partial class MainWindow : Window
 
     private void OnMenuSongWars(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (DataContext is not MainWindowViewModel vm) return;
+
         if (_songWarsWindow is { IsVisible: true })
         {
             _songWarsWindow.Activate();
             return;
         }
 
-        if (DataContext is not MainWindowViewModel vm) return;
+        if (vm.NowPlaying.ShowSongWarsPanel)
+        {
+            // Already docked — undock to bring up the window
+            SongWarsUndock(vm);
+            return;
+        }
+
+        OpenSongWarsWindow(vm);
+    }
+
+    private void OpenSongWarsWindow(MainWindowViewModel vm)
+    {
         _songWarsWindow = new SongWarsWindow();
         _songWarsWindow.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
+        _songWarsWindow.RequestDock = () => SongWarsDock(vm);
         _songWarsWindow.Closed += (_, _) =>
         {
             _songWarsWindow = null;
             vm.ObsOverlay.GetActiveTournament = null;
+            vm.NowPlaying.SongWarsPopOutRequested = null;
         };
-        vm.ObsOverlay.GetActiveTournament = () => _songWarsWindow?.CurrentTournament;
+        vm.ObsOverlay.GetActiveTournament = () =>
+            _songWarsWindow?.CurrentTournament ?? vm.NowPlaying.SongWarsSession?.Tournament;
         _songWarsWindow.Show(this);
+    }
+
+    private void SongWarsDock(MainWindowViewModel vm)
+    {
+        if (_songWarsWindow is null) return;
+        vm.NowPlaying.SongWarsSession = _songWarsWindow.CurrentSession;
+        vm.NowPlaying.NotifySongWarsChanged();
+        vm.NowPlaying.ShowSongWarsPanel = vm.NowPlaying.SongWarsHasSession;
+        vm.NowPlaying.SongWarsPopOutRequested = () => SongWarsUndock(vm);
+        _songWarsWindow.Hide();
+    }
+
+    private void SongWarsUndock(MainWindowViewModel vm)
+    {
+        vm.NowPlaying.ShowSongWarsPanel = false;
+        vm.NowPlaying.SongWarsPopOutRequested = null;
+        if (_songWarsWindow is not null)
+        {
+            _songWarsWindow.Show(this);
+        }
+        else
+        {
+            OpenSongWarsWindow(vm);
+        }
     }
 
     private async void OnMenuScrobblingSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
