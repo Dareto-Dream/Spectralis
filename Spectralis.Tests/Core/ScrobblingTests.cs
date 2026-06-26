@@ -133,4 +133,37 @@ public sealed class ScrobblingTests : IDisposable
         var weekStats = ListeningStats.Compute(history, DateTime.UtcNow.AddDays(-2));
         Assert.Equal(3, weekStats.TotalScrobbles);
     }
+
+    [Fact]
+    public void ActivitySnapshot_FromHistory_PullsFavoriteTrackAndArtist()
+    {
+        var today = DateTime.UtcNow.Date.AddHours(12);
+        var history = new List<ScrobbleRecord>
+        {
+            Record("Loop", "Delta", today, 180),
+            Record("Loop", "Delta", today.AddDays(-1), 180),
+            Record("Side", "Delta", today.AddDays(-2), 120),
+            Record("Other", "Someone", today.AddDays(-3), 200),
+        };
+
+        var snapshot = ListeningActivitySnapshot.FromHistory(history);
+
+        Assert.True(snapshot.HasHistory);
+        Assert.Equal(4, snapshot.TotalScrobbles);
+        Assert.Equal("Delta", snapshot.TopArtist);
+        Assert.Equal(3, snapshot.TopArtistPlays);
+        Assert.Equal("Loop", snapshot.TopTrackTitle);
+        Assert.Equal("Delta - Loop", snapshot.TopTrackDisplay);
+        Assert.Equal(2, snapshot.TopTrackPlays);
+    }
+
+    [Fact]
+    public void ActivitySnapshot_FromHistory_HandlesEmptyHistory()
+    {
+        var snapshot = ListeningActivitySnapshot.FromHistory([]);
+
+        Assert.False(snapshot.HasHistory);
+        Assert.Equal(0, snapshot.TotalScrobbles);
+        Assert.Equal("", snapshot.TopTrackDisplay);
+    }
 }
