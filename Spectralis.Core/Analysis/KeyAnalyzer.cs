@@ -1,85 +1,175 @@
-using System;
+using NAudio.Dsp;
+using NAudio.Wave;
 
-namespace Spectralis.Core.Analysis
+namespace Spectralis.Core.Analysis;
+
+/// <summary>Krumhansl-Schmuckler key estimation over a 30-second chromagram.</summary>
+public static class KeyAnalyzer
 {
-    public enum MusicalKey
+    private static readonly double[] MajorProfile =
+        [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+
+    private static readonly double[] MinorProfile =
+        [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+    private static readonly string[] NoteNames =
+        ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+
+    private const int FftSize = 4096;
+    private const int HopSamples = 2048;
+    private const int MaxSeconds = 30;
+
+    /// <summary>Reads the first 30 seconds of a file as mono and estimates its key.</summary>
+    public static string AnalyzeFile(string path)
     {
-        C, CSharp, D, DSharp, E, F, FSharp, G, GSharp, A, ASharp, B,
-        Cm, CSharpM, Dm, DSharpM, Em, Fm, FSharpM, Gm, GSharpM, Am, ASharpM, Bm
-    }
-
-    public struct KeyResult
-    {
-        public MusicalKey Key { get; init; }
-        public float Confidence { get; init; }
-        public string Name { get; init; }
-        public bool IsMajor => (int)Key < 12;
-        public bool IsValid => Confidence >= 0.35f;
-    }
-
-    public class KeyAnalyzer
-    {
-        private static readonly float[] MajorProfile = { 6.35f, 2.23f, 3.48f, 2.33f, 4.38f, 4.09f, 2.52f, 5.19f, 2.39f, 3.66f, 2.29f, 2.88f };
-        private static readonly float[] MinorProfile = { 6.33f, 2.68f, 3.52f, 5.38f, 2.60f, 3.53f, 2.54f, 4.75f, 3.98f, 2.69f, 3.34f, 3.17f };
-
-        private static readonly string[] NoteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-
-        public KeyResult Analyze(float[] chromagram)
+        try
         {
-            if (chromagram.Length < 12) return default;
+            using var reader = new AudioFileReader(path);
+            var sr = reader.WaveFormat.SampleRate;
+            var ch = reader.WaveFormat.Channels;
+            var maxRead = Math.Min(MaxSeconds * sr * ch, (int)(reader.Length / sizeof(float)));
+            var raw = new float[maxRead];
+            var totalRead = reader.Read(raw, 0, maxRead);
 
-            float[] chroma = NormalizeChroma(chromagram);
-
-            float bestScore = float.MinValue;
-            int bestKey = 0;
-            bool bestMajor = true;
-
-            for (int root = 0; root < 12; root++)
+            var monoLen = totalRead / ch;
+            var mono = new float[monoLen];
+            for (var i = 0; i < monoLen; i++)
             {
-                float majorScore = Correlate(chroma, MajorProfile, root);
-                float minorScore = Correlate(chroma, MinorProfile, root);
+                var sum = 0f;
+                for (var c = 0; c < ch; c++)
+                {
+                    sum += raw[(i * ch) + c];
+                }
 
-                if (majorScore > bestScore) { bestScore = majorScore; bestKey = root; bestMajor = true; }
-                if (minorScore > bestScore) { bestScore = minorScore; bestKey = root; bestMajor = false; }
+                mono[i] = sum / ch;
             }
 
-            float confidence = NormalizeScore(bestScore);
-            var key = bestMajor ? (MusicalKey)bestKey : (MusicalKey)(bestKey + 12);
-            string name = NoteNames[bestKey] + (bestMajor ? " Major" : " Minor");
+            return Analyze(mono, sr);
+        }
+        catch
+        {
+            return "";
+        }
+    }
 
-            return new KeyResult { Key = key, Confidence = confidence, Name = name };
+    public static string Analyze(float[] monoSamples, int sampleRate)
+    {
+        if (monoSamples.Length < FftSize)
+        {
+            return "";
         }
 
-        private float[] NormalizeChroma(float[] chroma)
-        {
-            float[] norm = new float[12];
-            float sum = 0f;
-            for (int i = 0; i < 12; i++) sum += chroma[i % 12];
-            if (sum < 0.001f) return norm;
-            for (int i = 0; i < 12; i++) norm[i] = chroma[i % 12] / sum;
-            return norm;
-        }
+        var chroma = new double[12];
+        var samples = Math.Min(monoSamples.Length, MaxSeconds * sampleRate);
+        var fftBuf = new Complex[FftSize];
+        var window = BuildHannWindow(FftSize);
 
-        private float Correlate(float[] chroma, float[] profile, int root)
+        var frameCount = (samples - FftSize) / HopSamples;
+        for (var f = 0; f < frameCount; f++)
         {
-            float sum = 0f;
-            float chromaMean = 0f, profileMean = 0f;
-            for (int i = 0; i < 12; i++) { chromaMean += chroma[i]; profileMean += profile[i]; }
-            chromaMean /= 12; profileMean /= 12;
-
-            float num = 0f, denomA = 0f, denomB = 0f;
-            for (int i = 0; i < 12; i++)
+            var offset = f * HopSamples;
+            for (var i = 0; i < FftSize; i++)
             {
-                float c = chroma[(i + root) % 12] - chromaMean;
-                float p = profile[i] - profileMean;
-                num += c * p;
-                denomA += c * c;
-                denomB += p * p;
+                fftBuf[i].X = monoSamples[offset + i] * window[i];
+                fftBuf[i].Y = 0f;
             }
-            float denom = MathF.Sqrt(denomA * denomB);
-            return denom < 0.001f ? 0f : num / denom;
+
+            FastFourierTransform.FFT(true, (int)Math.Log2(FftSize), fftBuf);
+
+            for (var bin = 1; bin < FftSize / 2; bin++)
+            {
+                var freq = bin * sampleRate / (double)FftSize;
+                if (freq < 32 || freq > 4200)
+                {
+                    continue;
+                }
+
+                var midiNote = 69 + (12 * Math.Log2(freq / 440.0));
+                var pitchClass = (((int)Math.Round(midiNote) % 12) + 12) % 12;
+
+                var mag = Math.Sqrt((fftBuf[bin].X * fftBuf[bin].X) + (fftBuf[bin].Y * fftBuf[bin].Y));
+                chroma[pitchClass] += mag;
+            }
         }
 
-        private float NormalizeScore(float score) => (score + 1f) / 2f;
+        if (chroma.All(v => v == 0))
+        {
+            return "";
+        }
+
+        var chromaMax = chroma.Max();
+        for (var i = 0; i < 12; i++)
+        {
+            chroma[i] /= chromaMax;
+        }
+
+        // Best key by Pearson correlation against rotated K-S profiles.
+        var bestCorr = double.MinValue;
+        var bestKey = 0;
+        var bestMajor = true;
+
+        for (var root = 0; root < 12; root++)
+        {
+            var majorCorr = Correlation(chroma, RotateProfile(MajorProfile, root));
+            var minorCorr = Correlation(chroma, RotateProfile(MinorProfile, root));
+
+            if (majorCorr > bestCorr)
+            {
+                bestCorr = majorCorr;
+                bestKey = root;
+                bestMajor = true;
+            }
+
+            if (minorCorr > bestCorr)
+            {
+                bestCorr = minorCorr;
+                bestKey = root;
+                bestMajor = false;
+            }
+        }
+
+        return $"{NoteNames[bestKey]} {(bestMajor ? "Major" : "Minor")}";
+    }
+
+    private static double[] RotateProfile(double[] profile, int steps)
+    {
+        var rotated = new double[12];
+        for (var i = 0; i < 12; i++)
+        {
+            rotated[i] = profile[(i - steps + 12) % 12];
+        }
+
+        return rotated;
+    }
+
+    private static double Correlation(double[] a, double[] b)
+    {
+        var meanA = a.Average();
+        var meanB = b.Average();
+        var num = 0.0;
+        var denA = 0.0;
+        var denB = 0.0;
+        for (var i = 0; i < 12; i++)
+        {
+            var da = a[i] - meanA;
+            var db = b[i] - meanB;
+            num += da * db;
+            denA += da * da;
+            denB += db * db;
+        }
+
+        var den = Math.Sqrt(denA * denB);
+        return den < 1e-10 ? 0 : num / den;
+    }
+
+    private static float[] BuildHannWindow(int size)
+    {
+        var w = new float[size];
+        for (var i = 0; i < size; i++)
+        {
+            w[i] = (float)(0.5 - (0.5 * Math.Cos(2 * Math.PI * i / (size - 1))));
+        }
+
+        return w;
     }
 }

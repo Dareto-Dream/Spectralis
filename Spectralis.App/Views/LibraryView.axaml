@@ -1,49 +1,141 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
-             xmlns:conv="using:Spectralis.App.Converters"
+             xmlns:design="using:Spectralis.App.Design"
              x:Class="Spectralis.App.Views.LibraryView"
-             x:DataType="vm:LibraryViewModel"
-             Background="#12121C">
+             x:DataType="vm:LibraryViewModel">
 
-  <Grid RowDefinitions="Auto,*">
+  <Panel>
 
-    <Border Grid.Row="0" Background="#1A1A24" Padding="8,6">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBox Grid.Column="0"
-                 Text="{Binding SearchQuery}"
-                 Watermark="Search library…"
-                 Background="#0E0E18" Foreground="White"
-                 BorderBrush="#333355" CornerRadius="4"/>
-        <Button Grid.Column="1" Content="Scan" Margin="8,0,0,0"
-                Command="{Binding LoadCommand}"
-                Background="#3D3D5C" Foreground="White" CornerRadius="4"/>
+    <!-- ============ Empty state ============ -->
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440"
+                IsVisible="{Binding !HasTracks}">
+      <PathIcon Data="{x:Static design:IconData.Library}"
+                Width="48" Height="48"
+                Foreground="{StaticResource Brush.Ink.Muted}"
+                HorizontalAlignment="Center"
+                Opacity="0.6"
+                Margin="0,0,0,16" />
+      <TextBlock Classes="display" Text="Library is empty"
+                 TextAlignment="Center" Margin="0,0,0,8" />
+      <TextBlock Classes="muted"
+                 Text="Drag a folder here, or add one to start scanning."
+                 TextAlignment="Center"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 Margin="0,0,0,20" />
+      <Button Content="Add folder…" Click="OnAddFolderClick" Classes="primary"
+              HorizontalAlignment="Center" />
+
+      <!-- One-time WinForms library migration offer -->
+      <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+              Background="{StaticResource Brush.Bg.Raised}"
+              Padding="16" Margin="0,24,0,0" MaxWidth="460"
+              IsVisible="{Binding OfferLegacyImport}">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="heading" Text="Import your existing library?" />
+          <TextBlock Classes="secondary" TextWrapping="Wrap"
+                     Text="A library from the previous Spectralis was found. Tracks will be re-scanned from disk (fresh tags); files no longer on disk are skipped and logged. The old library is left untouched." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary" Content="Import" Click="OnImportLegacyClick" />
+            <Button Content="Not now" Click="OnDismissLegacyClick" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Classes="data" Text="{Binding ScanStatus}" HorizontalAlignment="Center" />
+    </StackPanel>
+
+    <!-- ============ Track list ============ -->
+    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasTracks}">
+
+      <!-- Toolbar: live search, dense zone spacing -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="16,12">
+        <ComboBox Grid.Column="0"
+                  ItemsSource="{Binding FilterModes}"
+                  SelectedItem="{Binding SelectedFilterMode}"
+                  MinWidth="118"
+                  Margin="0,0,8,0" />
+        <TextBox Grid.Column="1"
+                 Text="{Binding SearchText, Mode=TwoWay}"
+                 Watermark="Search title, artist, album..." />
+        <Button Grid.Column="2" Content="Rescan" Click="OnRescanClick"
+                IsEnabled="{Binding !IsScanning}"
+                Margin="8,0,0,0"
+                ToolTip.Tip="Rescan all watched library folders" />
+        <Button Grid.Column="3" Content="Add folder..." Click="OnAddFolderClick"
+                Margin="8,0,0,0" />
       </Grid>
-    </Border>
 
-    <ListBox Grid.Row="1"
-             ItemsSource="{Binding Tracks}"
-             SelectedItem="{Binding SelectedTrack}"
-             Background="Transparent">
-      <ListBox.ItemTemplate>
-        <DataTemplate>
-          <Grid ColumnDefinitions="*,Auto,Auto" Margin="8,4">
-            <StackPanel Grid.Column="0">
-              <TextBlock Text="{Binding Title}" FontSize="13" Foreground="White"
-                         TextTrimming="CharacterEllipsis"/>
-              <TextBlock FontSize="11" Foreground="#888888" TextTrimming="CharacterEllipsis">
-                <Run Text="{Binding Artist}"/>
-                <Run Text=" — "/>
-                <Run Text="{Binding Album}"/>
-              </TextBlock>
-            </StackPanel>
-            <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="12,0"
-                       FontSize="11" Foreground="#666666"
-                       Text="{Binding Duration, Converter={x:Static conv:TimeSpanConverter.Instance}}"/>
-          </Grid>
-        </DataTemplate>
-      </ListBox.ItemTemplate>
-    </ListBox>
+      <DataGrid Grid.Row="1"
+                x:Name="TrackGrid"
+                ItemsSource="{Binding Rows}"
+                SelectedItem="{Binding SelectedRow}"
+                IsReadOnly="True"
+                CanUserSortColumns="True"
+                CanUserResizeColumns="True"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                Background="Transparent"
+                BorderThickness="0"
+                RowBackground="Transparent"
+                HorizontalGridLinesBrush="{StaticResource Brush.Border}"
+                DoubleTapped="OnRowDoubleTapped"
+                KeyDown="OnGridKeyDown"
+                SelectionMode="Extended">
+        <DataGrid.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Play" Click="OnContextPlay" />
+            <MenuItem Header="Play Next" Click="OnContextPlayNext" />
+            <MenuItem Header="Add to Queue" Click="OnContextAddToQueue" />
+            <Separator />
+            <MenuItem Header="Edit Tags..." Click="OnContextEditTags" />
+            <MenuItem Header="Content Warnings..." Click="OnContextContentWarnings" />
+            <MenuItem Header="Analyze BPM + Key" Click="OnContextAnalyze" />
+          </ContextMenu>
+        </DataGrid.ContextMenu>
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="#" Binding="{Binding TrackNumberText}"
+                              SortMemberPath="TrackNumber" Width="48">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="2*" />
+          <DataGridTextColumn Header="Artist" Binding="{Binding Artist}" Width="*" />
+          <DataGridTextColumn Header="Album" Binding="{Binding Album}" Width="*" />
+          <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}"
+                              SortMemberPath="DurationSeconds" Width="84">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Year" Binding="{Binding YearText}"
+                              SortMemberPath="Year" Width="60">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Plays" Binding="{Binding PlayCountText}"
+                              SortMemberPath="PlayCount" Width="60">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="BPM" Binding="{Binding BpmText}"
+                              SortMemberPath="Bpm" Width="60">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="56" />
+          <DataGridTextColumn Header="kbps" Binding="{Binding BitrateText}"
+                              SortMemberPath="BitrateKbps" Width="64">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Format" Binding="{Binding Format}" Width="110" />
+          <DataGridTextColumn Header="Size" Binding="{Binding SizeText}"
+                              SortMemberPath="SizeBytes" Width="84">
+            <DataGridTextColumn.CellStyleClasses>data right</DataGridTextColumn.CellStyleClasses>
+          </DataGridTextColumn>
+        </DataGrid.Columns>
+      </DataGrid>
 
-  </Grid>
+      <!-- Footer: count + scan status in the data face -->
+      <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="16,8">
+        <TextBlock Grid.Column="0" Classes="data" Text="{Binding CountText}" />
+        <TextBlock Grid.Column="2" Classes="data" Text="{Binding ScanStatus}" />
+      </Grid>
+    </Grid>
+  </Panel>
+
 </UserControl>

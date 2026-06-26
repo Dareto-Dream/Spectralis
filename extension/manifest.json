@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Spectralis Link Opener",
+  "description": "Open supported audio links in Spectralis and optionally hand them off automatically.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Spectralis",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "contentScript.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
+}

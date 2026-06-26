@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.MetronomeWindow"
+        Title="Metronome"
+        Icon="/Assets/icon.png"
+        Width="280" SizeToContent="Height"
+        CanResize="False"
+        Topmost="True"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel>
+    <!-- Beat flash strip -->
+    <Border x:Name="FlashPanel" Height="56" Background="{StaticResource Brush.Bg.Raised}" />
+
+    <StackPanel Margin="14,10,14,14" Spacing="10">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <TextBlock Grid.Column="0" Classes="secondary" Text="BPM" VerticalAlignment="Center" />
+        <NumericUpDown Grid.Column="1"
+                       x:Name="BpmBox"
+                       Minimum="40" Maximum="240"
+                       Increment="0.5"
+                       FormatString="0.0"
+                       ValueChanged="OnBpmChanged" />
+      </Grid>
+
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <Button Grid.Column="0" x:Name="ToggleButton" Content="▶ Start" Click="OnToggle" Classes="primary" MinWidth="86" />
+        <CheckBox Grid.Column="1" x:Name="AudioCheck" Content="Audio click" IsChecked="True"
+                  VerticalAlignment="Center" />
+      </Grid>
+
+      <Button x:Name="TapButton"
+              Content="Tap for BPM"
+              HorizontalAlignment="Stretch"
+              HorizontalContentAlignment="Center"
+              Height="48"
+              Click="OnTap" />
+    </StackPanel>
+  </StackPanel>
+</Window>
