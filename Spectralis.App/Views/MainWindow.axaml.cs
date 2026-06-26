@@ -219,9 +219,13 @@ public partial class MainWindow : Window
         }
 
         RestoreFromTray();
-        if (vm.NowPlaying.HasTrack && !vm.NowPlaying.IsPlaying)
+        if (vm.NowPlaying.HasTrack)
         {
-            vm.NowPlaying.TogglePlayback();
+            if (!vm.NowPlaying.IsPlaying)
+            {
+                vm.NowPlaying.TogglePlayback();
+            }
+
             return;
         }
 
