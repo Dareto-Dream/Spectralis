@@ -40,6 +40,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private RemoteAudioResolveResult? _pendingClipboardResolved;
     private byte[]? _clipboardToastArtwork;
     private DateTimeOffset _clipboardToastShownAt;
+    private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
 
     public MainWindowViewModel()
     {
@@ -78,6 +79,14 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return true;
             },
             TimeSpan.FromSeconds(5));
+        RefreshIdleActivity();
+        _idleActivityTick = Avalonia.Threading.DispatcherTimer.Run(
+            () =>
+            {
+                RefreshIdleActivity();
+                return true;
+            },
+            TimeSpan.FromSeconds(30));
 
         NowPlaying.LocalTrackLoaded += path =>
         {
@@ -135,7 +144,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         TimingStudio = new TimingStudioViewModel(Engine);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
-        DiscordPresence = new DiscordPresenceCoordinator(Engine);
+        DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
         ObsEditor = new ObsEditorViewModel(
             AppSettings,
@@ -184,6 +193,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.Artist):
                     this.RaisePropertyChanged(nameof(WindowTitle));
                     this.RaisePropertyChanged(nameof(StatusText));
+                    this.RaisePropertyChanged(nameof(StatusHintText));
                     this.RaisePropertyChanged(nameof(IsStatusAccent));
                     break;
 
@@ -193,6 +203,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.HasQueueItems):
                 case nameof(NowPlayingViewModel.QueueUpcomingText):
                     this.RaisePropertyChanged(nameof(StatusText));
+                    this.RaisePropertyChanged(nameof(StatusHintText));
                     this.RaisePropertyChanged(nameof(IsStatusAccent));
                     break;
 
@@ -255,8 +266,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string OutputStatusText => $"Output: {NowPlaying.OutputRateText}";
 
-    public string StatusHintText =>
+    private static string KeyboardShortcutText =>
         "Space: Play/Pause  ·  ←→: Seek  ·  ↑↓: Volume  ·  M: Mute  ·  Ctrl+←→: Prev/Next  ·  Ctrl+O: Open  ·  Ctrl+,: Settings";
+
+    public string StatusHintText => NowPlaying.HasTrack
+        ? KeyboardShortcutText
+        : IdleActivityText;
+
+    public string IdleActivityText => BuildIdleActivityText(IdleActivity);
 
     public string VersionText => $"v{DiagnosticsSnapshot.CurrentVersion}";
 
@@ -271,6 +288,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ScrobblingService Scrobbling { get; }
 
     private readonly IDisposable _scrobbleTick;
+    private readonly IDisposable _idleActivityTick;
+
+    public ListeningActivitySnapshot IdleActivity => _idleActivity;
 
     public EffectChain EffectChain { get; }
 
@@ -534,6 +554,42 @@ public sealed class MainWindowViewModel : ViewModelBase
             : AppSettings.EnableObsOverlay
                 ? $"Overlay server unavailable: {ObsOverlay.StartupError}"
                 : "Overlay server disabled.";
+    }
+
+    private void RefreshIdleActivity()
+    {
+        var next = ListeningActivitySnapshot.FromHistory(ScrobbleQueue.LoadHistory());
+        if (next == _idleActivity)
+        {
+            return;
+        }
+
+        _idleActivity = next;
+        this.RaisePropertyChanged(nameof(IdleActivity));
+        this.RaisePropertyChanged(nameof(IdleActivityText));
+        this.RaisePropertyChanged(nameof(StatusHintText));
+    }
+
+    private static string BuildIdleActivityText(ListeningActivitySnapshot snapshot)
+    {
+        if (!snapshot.HasHistory)
+        {
+            return "Idle activity: no local listens yet";
+        }
+
+        var hours = snapshot.TotalHours >= 10
+            ? snapshot.TotalHours.ToString("0")
+            : snapshot.TotalHours.ToString("0.#");
+        var favorite = string.IsNullOrWhiteSpace(snapshot.TopTrackDisplay)
+            ? ""
+            : $" | favorite {snapshot.TopTrackDisplay} ({snapshot.TopTrackPlays} plays)";
+        var artist = string.IsNullOrWhiteSpace(snapshot.TopArtist)
+            ? ""
+            : $" | top artist {snapshot.TopArtist} ({snapshot.TopArtistPlays} plays)";
+        var streak = snapshot.CurrentStreakDays > 1
+            ? $" | {snapshot.CurrentStreakDays} day streak"
+            : "";
+        return $"Idle activity: {snapshot.TotalScrobbles:N0} listens | {hours}h{favorite}{artist}{streak}";
     }
 
     private static string FormatResolvedClipboardSubtitle(string? title, string? artist) =>
