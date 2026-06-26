@@ -8,6 +8,8 @@ public sealed class AvaloniaTrayService : ITrayService
 {
     private readonly TrayIcon _trayIcon;
     private readonly NativeMenuItem _nowPlayingItem;
+    private string _currentHeader = string.Empty;
+    private string _currentTooltip = string.Empty;
 
     public event EventHandler? PlayMostRecentRequested;
     public event EventHandler? OpenRequested;
@@ -33,7 +35,7 @@ public sealed class AvaloniaTrayService : ITrayService
 
     public void Show(string tooltip)
     {
-        _trayIcon.ToolTipText = string.IsNullOrWhiteSpace(tooltip) ? "Spectralis" : tooltip;
+        SetTooltip(string.IsNullOrWhiteSpace(tooltip) ? "Spectralis" : tooltip);
         _trayIcon.IsVisible = true;
     }
 
@@ -45,8 +47,13 @@ public sealed class AvaloniaTrayService : ITrayService
                 ? title.Trim()
                 : $"{artist.Trim()} - {title.Trim()}";
 
-        _nowPlayingItem.Header = header;
-        _trayIcon.ToolTipText = $"Spectralis - {header}";
+        if (!string.Equals(_currentHeader, header, StringComparison.Ordinal))
+        {
+            _currentHeader = header;
+            _nowPlayingItem.Header = header;
+        }
+
+        SetTooltip($"Spectralis - {header}");
     }
 
     public void Hide()
@@ -72,6 +79,17 @@ public sealed class AvaloniaTrayService : ITrayService
             new NativeMenuItemSeparator(),
             exit,
         };
+    }
+
+    private void SetTooltip(string tooltip)
+    {
+        if (string.Equals(_currentTooltip, tooltip, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _currentTooltip = tooltip;
+        _trayIcon.ToolTipText = tooltip;
     }
 
     private static NativeMenuItem CreateItem(string header, Action onClick)

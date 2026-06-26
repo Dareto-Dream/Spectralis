@@ -271,12 +271,21 @@ public partial class MainWindow : Window
 
     private void OnTrayNowPlayingChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds)
+            or nameof(NowPlayingViewModel.LengthSeconds))
+        {
+            if (_hiddenToTray)
+            {
+                UpdateTrayState();
+            }
+
+            return;
+        }
+
         if (e.PropertyName is nameof(NowPlayingViewModel.HasTrack)
             or nameof(NowPlayingViewModel.Title)
             or nameof(NowPlayingViewModel.Artist)
-            or nameof(NowPlayingViewModel.IsPlaying)
-            or nameof(NowPlayingViewModel.PositionSeconds)
-            or nameof(NowPlayingViewModel.LengthSeconds))
+            or nameof(NowPlayingViewModel.IsPlaying))
         {
             UpdateTrayState();
         }
