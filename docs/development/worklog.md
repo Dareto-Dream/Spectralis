@@ -118,6 +118,10 @@ sustained stop (≥ 3 s) trigger the fade.
   but these are pre-pack loose manifests, not shipped capsules — benign for now.
 - `posted_creator_key.json` has UTF-8 BOM; C# handles this transparently but may trip Python
   tooling. Low priority since the file is only used by the capsule-builder script.
+- Deferred bugs from the Biding capsule pass:
+  - `Spectralis.Tests/Core/WebViewHostServiceTests.cs` fake host is missing `NavigationFailed`.
+  - `Spectralis.Tests/Core/CapsuleTests.cs` still uses the old trust-prompt delegate shape.
+  - `ObsOverlayServer.UpdateState` only updates supplied artwork when `artworkChanged` is true.
 
 ---
 
