@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Text.RegularExpressions;
 using Avalonia;
@@ -13,6 +14,7 @@ using Spectralis.App.ViewModels;
 using Spectralis.Core.Capsule;
 using Spectralis.Core.Common;
 using Spectralis.Core.Integrations.Spotify;
+using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
 
@@ -33,6 +35,11 @@ public partial class MainWindow : Window
     private readonly OpenUrlService _clipboardUrlResolver = new();
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
+    private ITrayService? _trayService;
+    private bool _hiddenToTray;
+    private bool _trayEventsAttached;
+    private bool _trayVmSubscribed;
+    private bool _trayNowPlayingSubscribed;
 
     public MainWindow()
     {
@@ -56,6 +63,7 @@ public partial class MainWindow : Window
                 vm.Capsules.TrustCreatorPrompt = PromptTrustCreatorAsync;
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 InitializeSpotifyPlaybackHost(vm);
+                InitializeTraySupport(vm);
             }
 
             if (IsVisible)
@@ -69,9 +77,15 @@ public partial class MainWindow : Window
             ApplySavedWindowPlacement();
             _clipboardMonitorTimer.Start();
             InitializeMediaSession();
+            UpdateTrayState();
             await ShowConsentDialogIfNeededAsync();
         };
-        Closed += (_, _) => _clipboardMonitorTimer.Stop();
+        Closed += (_, _) =>
+        {
+            _clipboardMonitorTimer.Stop();
+            _trayService?.Dispose();
+            _trayService = null;
+        };
         Closing += (_, _) =>
         {
             SaveWindowPlacement();
@@ -81,6 +95,157 @@ public partial class MainWindow : Window
     }
 
     // ── OS media session (SMTC on Windows) ──────────────────────────────────
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == WindowStateProperty && WindowState == WindowState.Minimized)
+        {
+            TryHideToTray();
+        }
+    }
+
+    private void InitializeTraySupport(MainWindowViewModel vm)
+    {
+        _trayService ??= new AvaloniaTrayService();
+        if (!_trayEventsAttached)
+        {
+            _trayService.OpenRequested += (_, _) => Dispatcher.UIThread.Post(RestoreFromTray);
+            _trayService.PlayPauseRequested += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                if (DataContext is MainWindowViewModel currentVm && currentVm.NowPlaying.HasTrack)
+                {
+                    currentVm.NowPlaying.TogglePlayback();
+                }
+            });
+            _trayService.NextRequested += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                if (DataContext is MainWindowViewModel currentVm)
+                {
+                    _ = currentVm.NowPlaying.PlayNextAsync();
+                }
+            });
+            _trayService.PreviousRequested += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                if (DataContext is MainWindowViewModel currentVm)
+                {
+                    _ = currentVm.NowPlaying.PlayPreviousAsync();
+                }
+            });
+            _trayService.ExitRequested += (_, _) => Dispatcher.UIThread.Post(Close);
+            _trayEventsAttached = true;
+        }
+
+        if (!_trayVmSubscribed)
+        {
+            vm.PropertyChanged += OnTrayViewModelChanged;
+            _trayVmSubscribed = true;
+        }
+
+        if (!_trayNowPlayingSubscribed)
+        {
+            vm.NowPlaying.PropertyChanged += OnTrayNowPlayingChanged;
+            _trayNowPlayingSubscribed = true;
+        }
+    }
+
+    private bool TryHideToTray()
+    {
+        if (DataContext is not MainWindowViewModel vm || !vm.AppSettings.MinimizeToTray)
+        {
+            return false;
+        }
+
+        InitializeTraySupport(vm);
+        SaveWindowPlacement();
+        _hiddenToTray = true;
+        ShowInTaskbar = false;
+        UpdateTrayState();
+        _trayService?.Show(BuildTrayTooltip(vm));
+        Hide();
+        return true;
+    }
+
+    private void RestoreFromTray()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        _hiddenToTray = false;
+        ShowInTaskbar = true;
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Show();
+        Activate();
+        UpdateTrayState();
+        if (vm.AppSettings.MinimizeToTray)
+        {
+            _trayService?.Hide();
+        }
+    }
+
+    private void UpdateTrayState()
+    {
+        if (_trayService is null || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (vm.NowPlaying.HasTrack)
+        {
+            _trayService.UpdateNowPlaying(vm.NowPlaying.Title, vm.NowPlaying.Artist);
+        }
+        else
+        {
+            _trayService.UpdateNowPlaying("Spectralis", vm.IdleActivityText);
+        }
+
+        if (_hiddenToTray)
+        {
+            _trayService.Show(BuildTrayTooltip(vm));
+        }
+    }
+
+    private void OnTrayViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainWindowViewModel.IdleActivityText) or nameof(MainWindowViewModel.StatusText))
+        {
+            UpdateTrayState();
+        }
+    }
+
+    private void OnTrayNowPlayingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(NowPlayingViewModel.HasTrack)
+            or nameof(NowPlayingViewModel.Title)
+            or nameof(NowPlayingViewModel.Artist)
+            or nameof(NowPlayingViewModel.IsPlaying)
+            or nameof(NowPlayingViewModel.PositionSeconds)
+            or nameof(NowPlayingViewModel.LengthSeconds))
+        {
+            UpdateTrayState();
+        }
+    }
+
+    private static string BuildTrayTooltip(MainWindowViewModel vm)
+    {
+        if (!vm.NowPlaying.HasTrack)
+        {
+            return $"Spectralis\n{vm.IdleActivityText}";
+        }
+
+        var state = vm.NowPlaying.IsPlaying ? "Playing" : "Paused";
+        var title = string.IsNullOrWhiteSpace(vm.NowPlaying.Artist)
+            ? vm.NowPlaying.Title
+            : $"{vm.NowPlaying.Artist} - {vm.NowPlaying.Title}";
+        return $"{state}: {title}\n{vm.NowPlaying.PositionText} / {vm.NowPlaying.LengthText}";
+    }
 
     private Spectralis.Core.Platform.IMediaSessionService? _mediaSession;
 
@@ -368,6 +533,11 @@ public partial class MainWindow : Window
 
     private void OnMinimizeWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (TryHideToTray())
+        {
+            return;
+        }
+
         WindowState = WindowState.Minimized;
     }
 

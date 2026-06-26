@@ -1,0 +1,106 @@
+using Avalonia.Controls;
+using Avalonia.Platform;
+using Spectralis.Core.Platform;
+
+namespace Spectralis.App.Services;
+
+public sealed class AvaloniaTrayService : ITrayService
+{
+    private readonly TrayIcon _trayIcon;
+    private readonly NativeMenuItem _nowPlayingItem;
+
+    public event EventHandler? PlayPauseRequested;
+    public event EventHandler? NextRequested;
+    public event EventHandler? PreviousRequested;
+    public event EventHandler? OpenRequested;
+    public event EventHandler? ExitRequested;
+
+    public AvaloniaTrayService()
+    {
+        _nowPlayingItem = new NativeMenuItem
+        {
+            Header = "Spectralis is idle",
+            IsEnabled = false,
+        };
+
+        _trayIcon = new TrayIcon
+        {
+            Icon = LoadIcon(),
+            ToolTipText = "Spectralis",
+            IsVisible = false,
+            Menu = BuildMenu(),
+        };
+        _trayIcon.Clicked += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Show(string tooltip)
+    {
+        _trayIcon.ToolTipText = string.IsNullOrWhiteSpace(tooltip) ? "Spectralis" : tooltip;
+        _trayIcon.IsVisible = true;
+    }
+
+    public void UpdateNowPlaying(string title, string artist)
+    {
+        var header = string.IsNullOrWhiteSpace(title)
+            ? "Spectralis is idle"
+            : string.IsNullOrWhiteSpace(artist)
+                ? title.Trim()
+                : $"{artist.Trim()} - {title.Trim()}";
+
+        _nowPlayingItem.Header = header;
+        _trayIcon.ToolTipText = $"Spectralis - {header}";
+    }
+
+    public void Hide()
+    {
+        _trayIcon.IsVisible = false;
+    }
+
+    public void Dispose()
+    {
+        _trayIcon.Dispose();
+    }
+
+    private NativeMenu BuildMenu()
+    {
+        var open = CreateItem("Open Spectralis", () => OpenRequested?.Invoke(this, EventArgs.Empty));
+        var playPause = CreateItem("Play/Pause", () => PlayPauseRequested?.Invoke(this, EventArgs.Empty));
+        var previous = CreateItem("Previous", () => PreviousRequested?.Invoke(this, EventArgs.Empty));
+        var next = CreateItem("Next", () => NextRequested?.Invoke(this, EventArgs.Empty));
+        var exit = CreateItem("Exit Spectralis", () => ExitRequested?.Invoke(this, EventArgs.Empty));
+
+        return new NativeMenu
+        {
+            _nowPlayingItem,
+            new NativeMenuItemSeparator(),
+            open,
+            new NativeMenuItemSeparator(),
+            playPause,
+            previous,
+            next,
+            new NativeMenuItemSeparator(),
+            exit,
+        };
+    }
+
+    private static NativeMenuItem CreateItem(string header, Action onClick)
+    {
+        var item = new NativeMenuItem { Header = header };
+        item.Click += (_, _) => onClick();
+        return item;
+    }
+
+    private static WindowIcon? LoadIcon()
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri("avares://Spectralis.App/Assets/icon.png"));
+            return new WindowIcon(stream);
+        }
+        catch (Exception ex)
+        {
+            SpectralisLog.Warn($"Tray icon failed to load: {ex.Message}");
+            return null;
+        }
+    }
+}
