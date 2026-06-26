@@ -127,6 +127,12 @@ public sealed class SongWarsSessionController
             TimerExpired: false, match.FocusSlot));
     }
 
+    public void Skip()
+    {
+        var match = RequireCurrentMatch();
+        SongWarsBracketEngine.AdvanceMatch(Tournament, match.MatchId, SongWarsOutcome.Skip);
+    }
+
     public IReadOnlyList<SongWarsVote> GetVotes(string matchId) =>
         _votesByMatch.TryGetValue(matchId, out var votes) ? votes.ToList() : [];
 
