@@ -1,56 +1,571 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:Spectralis.App.ViewModels"
-             xmlns:conv="using:Spectralis.App.Converters"
-             xmlns:ctrl="using:Spectralis.App.Controls"
-             x:Class="Spectralis.App.Views.NowPlayingView"
-             x:DataType="vm:PlayerViewModel"
-             Background="#1A1A24"
-             Height="80">
+<Grid xmlns="https://github.com/avaloniaui"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:vm="using:Spectralis.App.ViewModels"
+      xmlns:conv="using:Spectralis.App.Converters"
+      xmlns:controls="using:Spectralis.App.Controls"
+      xmlns:design="using:Spectralis.App.Design"
+      x:Class="Spectralis.App.Views.NowPlayingView"
+      x:DataType="vm:NowPlayingViewModel">
 
-  <Grid ColumnDefinitions="80,*,200" Margin="8,0">
+  <Grid.Styles>
+    <Style Selector="Ellipse.surface-dot">
+      <Setter Property="Fill" Value="{StaticResource Brush.Ink.Muted}" />
+      <Setter Property="Opacity" Value="0.42" />
+    </Style>
+    <Style Selector="Ellipse.surface-dot.active">
+      <Setter Property="Fill" Value="{StaticResource Brush.Signal}" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </Grid.Styles>
 
-    <Border Grid.Column="0" Width="64" Height="64"
-            CornerRadius="4" ClipToBounds="True"
-            VerticalAlignment="Center" Margin="0,0,8,0">
-      <Image Name="CoverArt" Stretch="UniformToFill"/>
+  <!-- ============ Empty state ============ -->
+  <Panel IsVisible="{Binding !HasTrack}">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
+
+      <!-- Identity -->
+      <Image Source="/Assets/icon.png"
+             Width="64" Height="64"
+             Stretch="Uniform"
+             HorizontalAlignment="Center"
+             Opacity="0.55"
+             Margin="0,0,0,18" />
+      <TextBlock Text="SPECTRALIS"
+                 Foreground="{StaticResource Brush.Ink.Muted}"
+                 FontFamily="{StaticResource Font.Data}"
+                 FontSize="10"
+                 LetterSpacing="5"
+                 HorizontalAlignment="Center"
+                 TextAlignment="Center"
+                 Margin="0,0,0,10" />
+
+      <!-- Headline -->
+      <TextBlock Classes="display"
+                 Text="Nothing playing."
+                 TextAlignment="Center"
+                 Margin="0,0,0,10" />
+
+      <!-- Drop hint -->
+      <TextBlock Classes="muted"
+                 Text="Drop audio files or a .spectralis capsule here"
+                 TextAlignment="Center"
+                 FontSize="{StaticResource FontSize.UI.Small}"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,24" />
+
+      <!-- CTAs -->
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+        <Button Content="Open file…" Click="OnOpenFileClick" Classes="primary" />
+        <Button Content="Open URL…" Click="OnOpenUrlClick" />
+        <Button Content="Play Spotify" Command="{Binding PlaySpotifyCommand}"
+                IsVisible="{Binding IsSpotifyLinked}" />
+      </StackPanel>
+
+      <!-- Status / error feedback -->
+      <TextBlock Classes="data"
+                 Text="{Binding RemoteStatus}"
+                 IsVisible="{Binding RemoteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                 TextAlignment="Center"
+                 Margin="0,16,0,0" />
+      <TextBlock Classes="error"
+                 Text="{Binding LoadError}"
+                 IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                 TextWrapping="Wrap" TextAlignment="Center"
+                 Margin="0,8,0,0" />
+    </StackPanel>
+  </Panel>
+
+  <!-- ============ Playing state ============ -->
+  <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasTrack}">
+
+    <!-- ─── Player column ─────────────────────────────────────────── -->
+    <Grid Grid.Column="0" RowDefinitions="*,Auto">
+
+      <!-- Artwork, visualizer, and YouTube span both rows so the controls bar overlays them -->
+      <Panel Grid.Row="0" Grid.RowSpan="2">
+
+        <Panel IsVisible="{Binding ShowArtworkSurface}">
+          <Image Source="{Binding CoverArtBytes, Converter={x:Static conv:BytesToBitmapConverter.Instance}}"
+                 Stretch="UniformToFill"
+                 IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <!-- Subtle scrim so any artwork color stays readable with text overlay -->
+          <Rectangle Fill="#280C0D0F" IsHitTestVisible="False"
+                     IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <Image Source="/Assets/icon.png"
+                 Width="120" Height="120"
+                 Opacity="0.09"
+                 Stretch="Uniform"
+                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                 IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNull}}" />
+        </Panel>
+
+        <Panel IsVisible="{Binding ShowVisualizerSurface}">
+          <controls:VisualizerHostControl Engine="{Binding Engine}"
+                                          Mode="{Binding SelectedVisualizerMode}"
+                                          AlbumArtBytes="{Binding CoverArtBytes}"
+                                          ShowPeaks="{Binding PeakHold}"
+                                          Sensitivity="{Binding VisualizerSensitivity}"
+                                          ScriptedRenderer="{Binding ScriptedVisualizerOverride}" />
+          <TextBlock Text="{Binding SelectedVisualizer.Label}"
+                     HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                     Margin="8,0,0,6" FontSize="10" LetterSpacing="0.5"
+                     Opacity="0.30" Foreground="{StaticResource Brush.Ink.Secondary}"
+                     IsHitTestVisible="False" />
+        </Panel>
+
+        <Panel IsVisible="{Binding ShowYouTubeVideo}" Background="Black">
+          <ContentControl x:Name="YouTubeVideoHost" />
+        </Panel>
+
+        <!-- Gradient vignette for overlay modes — not hit-testable -->
+        <Border VerticalAlignment="Bottom" Height="200" IsHitTestVisible="False">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+              <GradientStop Color="Transparent" Offset="0" />
+              <GradientStop Color="#CC0C0D0F" Offset="0.55" />
+              <GradientStop Color="#F50C0D0F" Offset="1" />
+            </LinearGradientBrush>
+          </Border.Background>
+        </Border>
+
+      </Panel>
+
+      <!-- HTML surface in Row 0 only — controls sit in Row 1 below, nothing is clipped -->
+      <Panel Grid.Row="0" IsVisible="{Binding ShowEmbeddedHtmlSurface}" Background="Black">
+        <ContentControl x:Name="EmbeddedHtmlHost" />
+      </Panel>
+
+      <!-- Exit button: top-right overlay, spans both rows -->
+      <Button Grid.Row="0" Grid.RowSpan="2"
+              Classes="ghost"
+              Width="36" Height="32" Padding="0"
+              HorizontalAlignment="Right" VerticalAlignment="Top"
+              Margin="0,10,10,0"
+              Click="OnExitSurfaceMode"
+              IsVisible="{Binding ShowSurfaceExitButton}"
+              Background="{StaticResource Brush.Bg.Overlay}"
+              ToolTip.Tip="Exit surface mode">
+        <PathIcon Data="{x:Static design:IconData.Close}" Width="16" Height="16" />
+      </Button>
+
+      <!-- Controls bar -->
+      <StackPanel Grid.Row="1">
+
+        <!-- Track identity + viz controls -->
+        <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,4">
+
+          <StackPanel Grid.Column="0" Spacing="2">
+            <TextBlock Classes="display-large" Text="{Binding Title}"
+                       TextTrimming="CharacterEllipsis" />
+            <StackPanel Orientation="Horizontal" Spacing="8"
+                        IsVisible="{Binding Artist, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Classes="secondary" Text="{Binding Artist}" FontSize="13" />
+              <TextBlock Classes="muted" Text="—" FontSize="13"
+                         IsVisible="{Binding Album, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="secondary" Text="{Binding Album}" FontSize="13" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowMoreInfo}">
+              <TextBlock Classes="data" Text="{Binding FormatBadge}" />
+              <Border Background="{StaticResource Brush.Bg.Overlay}"
+                      BorderBrush="{StaticResource Brush.Signal.Dim}" BorderThickness="1"
+                      Padding="6,1" IsVisible="{Binding HasEmbeddedModules}" VerticalAlignment="Center">
+                <TextBlock Text="{Binding EmbeddedStatusText}" FontSize="10"
+                           Foreground="{StaticResource Brush.Signal}" LetterSpacing="1" />
+              </Border>
+              <Border Background="{StaticResource Brush.Bg.Overlay}"
+                      BorderBrush="{StaticResource Brush.Signal.Dim}" BorderThickness="1"
+                      Padding="6,1" IsVisible="{Binding IsReactiveActive}" VerticalAlignment="Center">
+                <TextBlock Text="REACTIVE" FontSize="10"
+                           Foreground="{StaticResource Brush.Signal}" LetterSpacing="1" />
+              </Border>
+              <TextBlock Classes="data" Text="{Binding ReactiveSectionLabel}"
+                         IsVisible="{Binding IsReactiveActive}" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                      VerticalAlignment="Bottom" Margin="12,0,0,4"
+                      IsVisible="{Binding ShowVisualizerControls}">
+            <Button Classes="ghost" Content="‹"
+                    Command="{Binding PreviousVisualizerCommand}"
+                    ToolTip.Tip="Previous visualizer" />
+            <ComboBox ItemsSource="{Binding VisualizerOptions}"
+                      SelectedItem="{Binding SelectedVisualizer}"
+                      MinWidth="140"
+                      ToolTip.Tip="Choose visualizer" />
+            <Button Classes="ghost" Content="›"
+                    Command="{Binding NextVisualizerCommand}"
+                    ToolTip.Tip="Next visualizer" />
+            <ToggleButton Classes="ghost" Content="AUTO"
+                          IsChecked="{Binding AutoCycleVisualizers}"
+                          FontSize="{StaticResource FontSize.UI.Small}"
+                          ToolTip.Tip="Auto-cycle visualizers" />
+          </StackPanel>
+
+        </Grid>
+
+        <!-- Progress bar -->
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,0">
+          <TextBlock Grid.Column="0" Classes="data" Text="{Binding PositionText}"
+                     MinWidth="48" TextAlignment="Right" VerticalAlignment="Center"
+                     Margin="0,0,10,0"
+                     Cursor="Hand" PointerPressed="OnToggleTimeDisplay"
+                     ToolTip.Tip="Click to toggle elapsed / remaining" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+            <Slider Minimum="0"
+                    Maximum="{Binding LengthSeconds}"
+                    Value="{Binding PositionSeconds, Mode=TwoWay}" />
+            <controls:BeatGridOverlay Height="5"
+                                      Bpm="{Binding BeatGridBpm}"
+                                      FirstBeatSeconds="{Binding BeatGridOffsetSeconds}"
+                                      DurationSeconds="{Binding LengthSeconds}"
+                                      TickBrush="{StaticResource Brush.Signal.Dim}"
+                                      IsVisible="{Binding HasBeatGrid}" />
+          </StackPanel>
+          <TextBlock Grid.Column="2" Classes="data" Text="{Binding LengthText}"
+                     MinWidth="48" TextAlignment="Right" VerticalAlignment="Center"
+                     Margin="10,0,0,0" />
+        </Grid>
+
+        <!-- Transport bar -->
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,8">
+
+          <!-- Left: surface mode + stop -->
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <Button Classes="ghost" MinWidth="50" Padding="8,4,8,4"
+                    Click="OnCycleSurfaceMode"
+                    ToolTip.Tip="Cycle display: VIZ → PEAK → HTML → OFF">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding SurfaceModeLabel}"
+                           FontSize="{StaticResource FontSize.UI.Small}"
+                           HorizontalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" Spacing="3" HorizontalAlignment="Center">
+                  <Ellipse Width="4" Height="4" Classes="surface-dot" Classes.active="{Binding IsSurfaceVisualizer}" />
+                  <Ellipse Width="4" Height="4" Classes="surface-dot" Classes.active="{Binding IsSurfacePeak}" />
+                  <Ellipse Width="4" Height="4" Classes="surface-dot"
+                           Classes.active="{Binding IsSurfaceEmbedded}"
+                           IsVisible="{Binding HasEmbeddedHtml}" />
+                  <Ellipse Width="4" Height="4" Classes="surface-dot"
+                           Classes.active="{Binding IsSurfaceYouTube}"
+                           IsVisible="{Binding HasYouTubeVideo}" />
+                  <Ellipse Width="4" Height="4" Classes="surface-dot" Classes.active="{Binding IsSurfaceOff}" />
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost" Command="{Binding StopCommand}" ToolTip.Tip="Stop">
+              <PathIcon Data="{x:Static design:IconData.Stop}" Width="18" Height="18" />
+            </Button>
+          </StackPanel>
+
+          <!-- Center: transport -->
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <ToggleButton Classes="ghost" Width="34" Height="34" Padding="0"
+                          IsChecked="{Binding Shuffle}" ToolTip.Tip="Shuffle">
+              <PathIcon Data="{x:Static design:IconData.Shuffle}" Width="16" Height="16" />
+            </ToggleButton>
+            <Button Classes="ghost" Width="34" Height="34" Padding="0"
+                    Command="{Binding PreviousCommand}"
+                    IsEnabled="{Binding HasPrevious}" ToolTip.Tip="Previous">
+              <PathIcon Data="{x:Static design:IconData.Previous}" Width="16" Height="16" />
+            </Button>
+            <Button Classes="primary" Width="40" Height="40" Padding="0"
+                    Command="{Binding PlayPauseCommand}"
+                    ToolTip.Tip="Play / Pause (Space)">
+              <PathIcon Data="{Binding PlayPauseIconData}" Width="18" Height="18" />
+            </Button>
+            <Button Classes="ghost" Width="34" Height="34" Padding="0"
+                    Command="{Binding NextCommand}"
+                    IsEnabled="{Binding HasNext}"
+                    ToolTip.Tip="Next">
+              <PathIcon Data="{x:Static design:IconData.Next}" Width="16" Height="16" />
+            </Button>
+            <Button Classes="ghost" Width="34" Height="34" Padding="0"
+                    Click="OnCycleRepeat" ToolTip.Tip="Repeat: off / all / one">
+              <PathIcon Data="{Binding RepeatIconData}" Width="16" Height="16" />
+            </Button>
+          </StackPanel>
+
+          <!-- Right: panels + volume + mini -->
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+                      VerticalAlignment="Center">
+            <ToggleButton Classes="ghost" Content="LYRICS"
+                          IsChecked="{Binding ShowLyrics}"
+                          IsVisible="{Binding HasLyrics}"
+                          FontSize="{StaticResource FontSize.UI.Small}"
+                          ToolTip.Tip="Toggle lyrics panel" />
+            <Button Classes="ghost" Content="INSPECT"
+                    Click="OnInspectLyrics"
+                    IsVisible="{Binding HasLyrics}"
+                    FontSize="{StaticResource FontSize.UI.Small}"
+                    ToolTip.Tip="Inspect lyrics" />
+            <ToggleButton Classes="ghost" Content="QUEUE"
+                          IsChecked="{Binding ShowQueue}"
+                          FontSize="{StaticResource FontSize.UI.Small}"
+                          ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+            <Rectangle Width="1" Height="16" Fill="{StaticResource Brush.Border}"
+                       VerticalAlignment="Center" Margin="2,0" />
+            <Button Classes="ghost" Width="26" Height="26" Padding="0"
+                    Click="OnToggleMute"
+                    ToolTip.Tip="{Binding MuteMenuLabel}"
+                    VerticalAlignment="Center">
+              <Panel>
+                <PathIcon Data="{x:Static design:IconData.Volume}" Width="15" Height="15"
+                          IsVisible="{Binding !IsMuted}" />
+                <PathIcon Data="{x:Static design:IconData.VolumeMuted}" Width="15" Height="15"
+                          IsVisible="{Binding IsMuted}"
+                          Foreground="{StaticResource Brush.Signal}" />
+              </Panel>
+            </Button>
+            <Slider Width="80" Minimum="0" Maximum="100"
+                    Value="{Binding VolumePercent, Mode=TwoWay}"
+                    VerticalAlignment="Center" />
+            <Button Classes="ghost" Width="30" Height="30" Padding="0"
+                    Click="OnOpenMiniPlayer" ToolTip.Tip="Mini player">
+              <PathIcon Data="{x:Static design:IconData.MiniPlayer}" Width="15" Height="15" />
+            </Button>
+          </StackPanel>
+
+        </Grid>
+
+      </StackPanel>
+
+    </Grid>
+    <!-- ─── END Player column ─────────────────────────────────────── -->
+
+    <!-- ─── Lyrics sidebar ────────────────────────────────────────── -->
+    <Border Grid.Column="1" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowLyrics}">
+      <Border.Styles>
+        <Style Selector="TextBlock.seg">
+          <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Muted}" />
+        </Style>
+        <Style Selector="TextBlock.seg.seg-past">
+          <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+        </Style>
+        <Style Selector="TextBlock.seg.seg-active">
+          <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+          <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+      </Border.Styles>
+
+      <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Source label -->
+        <TextBlock Grid.Row="0"
+                   Text="{Binding LyricsSourceLabel}"
+                   IsVisible="{Binding LyricsSourceLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   Foreground="{StaticResource Brush.Ink.Muted}"
+                   FontFamily="{StaticResource Font.Data}"
+                   FontSize="9" LetterSpacing="2"
+                   Margin="18,14,18,0" />
+
+        <!-- ══ TIMED CAROUSEL (synced lyrics) ══ -->
+        <Grid Grid.Row="1" RowDefinitions="*,2*,*"
+              IsVisible="{Binding IsTimedLyrics}"
+              Margin="0,8,0,8">
+
+          <!-- Previous line -->
+          <Panel Grid.Row="0" VerticalAlignment="Center" Margin="20,0">
+            <TextBlock Text="{Binding PrevLyricLine.Text}"
+                       IsVisible="{Binding PrevLyricLine, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Foreground="{StaticResource Brush.Ink.Muted}"
+                       TextWrapping="Wrap" TextAlignment="Center"
+                       FontSize="{StaticResource FontSize.UI}"
+                       Opacity="0.55" />
+          </Panel>
+
+          <!-- Current line -->
+          <ContentControl Grid.Row="1"
+                          Content="{Binding CurrentLyricLine}"
+                          VerticalAlignment="Center" HorizontalAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Margin="16,0">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:LyricLineViewModel">
+                <Panel HorizontalAlignment="Center">
+                  <!-- Plain text (no word timings) -->
+                  <TextBlock Text="{Binding Text}"
+                             IsVisible="{Binding !HasWordTimings}"
+                             Foreground="{StaticResource Brush.Signal}"
+                             FontWeight="SemiBold" FontSize="15"
+                             TextWrapping="Wrap" TextAlignment="Center" />
+                  <!-- Word-timed segments -->
+                  <ItemsControl ItemsSource="{Binding Segments}"
+                                IsVisible="{Binding HasWordTimings}"
+                                HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:LyricSegmentViewModel">
+                        <TextBlock Text="{Binding Text}"
+                                   Classes="seg"
+                                   Classes.seg-past="{Binding IsPast}"
+                                   Classes.seg-active="{Binding IsActive}"
+                                   FontSize="15" FontWeight="SemiBold"
+                                   Margin="0,0,5,2" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Panel>
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+
+          <!-- Next line -->
+          <Panel Grid.Row="2" VerticalAlignment="Center" Margin="20,0">
+            <TextBlock Text="{Binding NextLyricLine.Text}"
+                       IsVisible="{Binding NextLyricLine, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Foreground="{StaticResource Brush.Ink.Muted}"
+                       TextWrapping="Wrap" TextAlignment="Center"
+                       FontSize="{StaticResource FontSize.UI}"
+                       Opacity="0.55" />
+          </Panel>
+
+        </Grid>
+
+        <!-- ══ UNTIMED SCROLL (description / plain-text lyrics) ══ -->
+        <ScrollViewer Grid.Row="1" x:Name="LyricsScroll" Padding="16,12,16,12"
+                      IsVisible="{Binding !IsTimedLyrics}">
+          <ScrollViewer.Styles>
+            <Style Selector="TextBlock.active">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+            </Style>
+          </ScrollViewer.Styles>
+          <ItemsControl x:Name="LyricsList" ItemsSource="{Binding LyricsLines}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LyricLineViewModel">
+                <TextBlock Text="{Binding Text}"
+                           Classes="secondary"
+                           Classes.active="{Binding IsActive}"
+                           TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSize.UI}"
+                           Margin="0,4" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Explanation strip (timed mode only) -->
+        <Border Grid.Row="2"
+                IsVisible="{Binding CurrentLyricLine.HasExplanation}"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0"
+                Padding="18,10,18,12">
+          <StackPanel Spacing="4">
+            <TextBlock Text="NOTE"
+                       FontFamily="{StaticResource Font.Data}"
+                       FontSize="9" LetterSpacing="2"
+                       Foreground="{StaticResource Brush.Signal.Dim}" />
+            <TextBlock Text="{Binding CurrentLyricLine.Explanation}"
+                       TextWrapping="Wrap"
+                       FontStyle="Italic"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Foreground="{StaticResource Brush.Ink.Secondary}" />
+          </StackPanel>
+        </Border>
+
+      </Grid>
     </Border>
 
-    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-      <TextBlock Text="{Binding CurrentTrack.Title, FallbackValue='No track loaded'}"
-                 FontSize="14" FontWeight="SemiBold" Foreground="White"
-                 TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="{Binding CurrentTrack.Artist, FallbackValue=''}"
-                 FontSize="12" Foreground="#AAAAAA"
-                 TextTrimming="CharacterEllipsis"/>
-      <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-        <Slider Grid.Column="0" Minimum="0" Maximum="{Binding Duration.TotalSeconds}"
-                Value="{Binding Position.TotalSeconds}" Height="16"
-                Name="SeekSlider"/>
-        <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0"
-                   FontSize="11" Foreground="#888888">
-          <TextBlock.Text>
-            <MultiBinding StringFormat="{}{0} / {1}" Converter="{x:Static conv:PlaybackProgressConverter.Instance}">
-              <Binding Path="Position"/>
-              <Binding Path="Duration"/>
-            </MultiBinding>
-          </TextBlock.Text>
-        </TextBlock>
-      </Grid>
-    </StackPanel>
+    <!-- ─── Queue sidebar ─────────────────────────────────────────── -->
+    <Border Grid.Column="2" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowQueue}">
+      <Grid RowDefinitions="Auto,Auto,*">
 
-    <StackPanel Grid.Column="2" VerticalAlignment="Center"
-                HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
-      <Button Command="{Binding PreviousCommand}" Content="&#x23EE;" FontSize="18"
-              Background="Transparent" Foreground="White" Padding="4"/>
-      <Button Command="{Binding PlayCommand}" Content="&#x25B6;" FontSize="22"
-              Background="#3D3D5C" Foreground="White" CornerRadius="20"
-              Width="40" Height="40" HorizontalContentAlignment="Center"/>
-      <Button Command="{Binding PauseCommand}" Content="&#x23F8;" FontSize="18"
-              Background="Transparent" Foreground="White" Padding="4"/>
-      <Button Command="{Binding NextCommand}" Content="&#x23ED;" FontSize="18"
-              Background="Transparent" Foreground="White" Padding="4"/>
-    </StackPanel>
+        <StackPanel Grid.Row="0" Margin="16,14,16,8" Spacing="2">
+          <TextBlock Classes="heading" Text="{Binding QueueHeaderText}" />
+          <TextBlock Classes="muted"
+                     Text="{Binding QueueUpcomingText}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     IsVisible="{Binding HasQueueItems}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="16,0,16,10">
+          <ToggleButton Classes="ghost" IsChecked="{Binding Shuffle}" ToolTip.Tip="Shuffle">
+            <PathIcon Data="{x:Static design:IconData.Shuffle}" Width="15" Height="15" />
+          </ToggleButton>
+          <Button Classes="ghost" Click="OnCycleRepeat" ToolTip.Tip="Repeat mode">
+            <PathIcon Data="{Binding RepeatIconData}" Width="15" Height="15" />
+          </Button>
+          <Button Classes="ghost" Content="Clear"
+                  FontSize="{StaticResource FontSize.UI.Small}"
+                  Click="OnQueueClear"
+                  IsEnabled="{Binding HasQueueItems}" />
+          <Button Classes="ghost" Content="Add..."
+                  FontSize="{StaticResource FontSize.UI.Small}"
+                  Click="OnQueueAddFiles" />
+        </StackPanel>
+
+        <ListBox Grid.Row="2"
+                 x:Name="QueueList"
+                 ItemsSource="{Binding QueueItems}"
+                 DoubleTapped="OnQueueItemDoubleTapped"
+                 KeyDown="OnQueueKeyDown"
+                 Background="Transparent">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="12,7" />
+            </Style>
+            <Style Selector="TextBlock.current">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Play" Click="OnQueuePlay" />
+              <MenuItem Header="Play Next" Click="OnQueuePlayNext" />
+              <Separator />
+              <MenuItem Header="Move Up" Click="OnQueueMoveUp" />
+              <MenuItem Header="Move Down" Click="OnQueueMoveDown" />
+              <MenuItem Header="Remove" Click="OnQueueRemove" />
+              <Separator />
+              <MenuItem Header="Edit Tags..." Click="OnQueueEditTags" />
+              <MenuItem Header="Content Warnings..." Click="OnQueueContentWarnings" />
+              <Separator />
+              <MenuItem Header="Add Files..." Click="OnQueueAddFiles" />
+              <MenuItem Header="Save as Playlist..." Click="OnQueueSaveAsPlaylist" />
+              <MenuItem Header="Clear Queue" Click="OnQueueClear" />
+            </ContextMenu>
+          </ListBox.ContextMenu>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:QueueItemViewModel">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Classes="data"
+                           Classes.current="{Binding IsCurrent}"
+                           Text="{Binding Number}"
+                           MinWidth="22" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Title}"
+                             Classes.current="{Binding IsCurrent}"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted"
+                             Text="{Binding Subtitle}"
+                             FontSize="{StaticResource FontSize.UI.Small}"
+                             TextTrimming="CharacterEllipsis"
+                             IsVisible="{Binding HasSubtitle}" />
+                </StackPanel>
+                <PathIcon Grid.Column="2"
+                          Data="{x:Static design:IconData.Play}"
+                          Width="11" Height="11"
+                          Foreground="{StaticResource Brush.Signal}"
+                          IsVisible="{Binding IsCurrent}"
+                          VerticalAlignment="Center" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+      </Grid>
+    </Border>
 
   </Grid>
-</UserControl>
+  <!-- ─── END Playing state ─────────────────────────────────────── -->
+
+</Grid>

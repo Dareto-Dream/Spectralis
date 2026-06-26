@@ -1,85 +1,181 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:Spectralis.App.ViewModels"
-        x:Class="Spectralis.App.Views.TimingStudioView"
-        Title="Timing Studio"
-        Width="800" Height="600"
-        Background="#0D0D0D">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.TimingStudioView"
+             x:DataType="vm:TimingStudioViewModel">
 
-  <Grid RowDefinitions="Auto, *, Auto">
+  <Grid ColumnDefinitions="*,*" Margin="16">
 
-    <!-- Toolbar -->
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="12,8">
-      <Button Content="Parse" Command="{Binding ParseRawCommand}" />
-      <Button Content="Stamp [Space]" Command="{Binding StampCurrentLineCommand}"
-              Background="#2A4A2A" />
-      <Button Content="-100ms" Command="{Binding NudgeTimestampCommand}"
-              CommandParameter="-100" />
-      <Button Content="+100ms" Command="{Binding NudgeTimestampCommand}"
-              CommandParameter="100" />
-      <Button Content="Export…" Command="{Binding ExportCommand}" />
-      <TextBlock Text="{Binding StatusText}"
-                 VerticalAlignment="Center"
-                 Foreground="#888"
-                 FontSize="12"
-                 Margin="12,0,0,0" />
-    </StackPanel>
-
-    <!-- Split: raw text left, timed lines right -->
-    <Grid Grid.Row="1" ColumnDefinitions="*, 8, *">
-
-      <Grid Grid.Column="0" RowDefinitions="Auto, *">
-        <TextBlock Grid.Row="0" Text="Raw LRC" Foreground="#666"
-                   FontSize="11" Margin="12,4" TextTransform="Uppercase" />
-        <TextBox Grid.Row="1"
-                 Text="{Binding RawLrcText}"
-                 AcceptsReturn="True"
-                 FontFamily="Consolas"
-                 FontSize="12"
-                 Background="#111"
-                 Foreground="#CCC"
-                 BorderThickness="0"
-                 Margin="8" />
-      </Grid>
-
-      <GridSplitter Grid.Column="1" Background="#1A1A1A" />
-
-      <Grid Grid.Column="2" RowDefinitions="Auto, *">
-        <TextBlock Grid.Row="0" Text="Timed Lines" Foreground="#666"
-                   FontSize="11" Margin="12,4" TextTransform="Uppercase" />
-        <ListBox Grid.Row="1"
-                 ItemsSource="{Binding Lines}"
-                 SelectedIndex="{Binding SelectedLineIndex}"
-                 Background="#111"
-                 BorderThickness="0">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <Grid ColumnDefinitions="120, *">
-                <TextBlock Grid.Column="0"
-                           Text="{Binding DisplayTimestamp}"
-                           FontFamily="Consolas"
-                           FontSize="12"
-                           Foreground="#FF6EC7" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding Text}"
-                           FontSize="12"
-                           Foreground="#CCC" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </Grid>
+    <!-- Left: plain lyrics input -->
+    <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="0,0,8,0">
+      <TextBlock Grid.Row="0" Classes="heading" Text="Plain lyrics" Margin="0,0,0,8" />
+      <TextBox Grid.Row="1"
+               Text="{Binding PlainText, Mode=TwoWay}"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               Watermark="Paste the lyric lines here, one per line..." />
+      <Button Grid.Row="2" Content="Load lines"
+              Command="{Binding LoadLinesCommand}"
+              Classes="primary"
+              HorizontalAlignment="Right" Margin="0,8,0,0" />
     </Grid>
 
-    <!-- Status bar -->
-    <Border Grid.Row="2" Background="#111" Padding="12,6">
-      <TextBlock>
-        <Run Text="Lines: " Foreground="#555" />
-        <Run Text="{Binding Lines.Count}" Foreground="#888" />
-        <Run Text="   Dirty: " Foreground="#555" />
-        <Run Text="{Binding IsDirty}" Foreground="#888" />
-      </TextBlock>
-    </Border>
+    <!-- Right: timing output -->
+    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="8,0,0,0">
+
+      <!-- Header row: title + mode toggle + position + play -->
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Classes="heading" Text="Timing" />
+          <ToggleButton Content="LINE"
+                        IsChecked="{Binding IsLineMode}"
+                        FontSize="{StaticResource FontSize.UI.Small}"
+                        ToolTip.Tip="Tap whole lines (standard LRC)" />
+          <ToggleButton Content="WORD"
+                        IsChecked="{Binding IsWordMode}"
+                        FontSize="{StaticResource FontSize.UI.Small}"
+                        ToolTip.Tip="Tap individual words (chip canvas)" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{Binding PositionText}"
+                     FontFamily="{StaticResource Font.Data}"
+                     FontSize="{StaticResource FontSize.Data}"
+                     Foreground="{StaticResource Brush.Signal}"
+                     VerticalAlignment="Center" />
+          <Button Content="▶ / ‖" Command="{Binding PlayPauseCommand}"
+                  HotKey="P" ToolTip.Tip="Play / Pause (P)" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Line mode list -->
+      <ScrollViewer Grid.Row="1" x:Name="TimingScroll"
+                    IsVisible="{Binding IsLineMode}">
+        <ScrollViewer.Styles>
+          <Style Selector="TextBlock.current">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+          </Style>
+          <Style Selector="Border.timing-row">
+            <Setter Property="Padding" Value="4,3,4,3" />
+            <Setter Property="Margin" Value="0,0,0,1" />
+            <Setter Property="Cursor" Value="Hand" />
+          </Style>
+          <Style Selector="Border.timing-row.selected">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+          </Style>
+        </ScrollViewer.Styles>
+        <ItemsControl ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TimedLineRow">
+              <Border Classes="timing-row" Classes.selected="{Binding IsSelected}"
+                      PointerPressed="OnRowPressed" Tag="{Binding}">
+                <Grid ColumnDefinitions="90,*">
+                  <TextBlock Grid.Column="0" Classes="data"
+                             Text="{Binding TimestampText}"
+                             TextAlignment="Right" Margin="0,0,12,0" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding Text}"
+                             Classes.current="{Binding IsCurrent}"
+                             TextTrimming="CharacterEllipsis" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Word chip canvas -->
+      <ScrollViewer Grid.Row="1" IsVisible="{Binding IsWordMode}">
+        <ScrollViewer.Styles>
+          <Style Selector="Border.chip">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="0,0,3,4" />
+            <Setter Property="Cursor" Value="Hand" />
+          </Style>
+          <Style Selector="Border.chip.timed">
+            <Setter Property="Background" Value="{StaticResource Brush.Selection}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+            <Setter Property="BorderThickness" Value="0" />
+          </Style>
+          <Style Selector="Border.chip.selected">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+            <Setter Property="BorderThickness" Value="1" />
+          </Style>
+          <Style Selector="Border.chip TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Muted}" />
+          </Style>
+          <Style Selector="Border.chip.timed TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+          </Style>
+          <Style Selector="Border.chip.selected TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+          </Style>
+        </ScrollViewer.Styles>
+        <ItemsControl ItemsSource="{Binding ChipLines}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TimingChipLine">
+              <ItemsControl ItemsSource="{Binding Chips}" Margin="0,0,0,10">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:TimingChip">
+                    <Border Classes="chip"
+                            Classes.timed="{Binding IsTimed}"
+                            Classes.selected="{Binding IsSelected}"
+                            PointerPressed="OnChipPressed"
+                            Tag="{Binding}">
+                      <TextBlock Text="{Binding Text}" FontSize="{StaticResource FontSize.UI}" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Tap row -->
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
+                  IsVisible="{Binding HasLines}">
+        <Button Classes="primary" Content="TAP  (T)"
+                Command="{Binding TapCommand}" HotKey="T" MinWidth="120" />
+        <Button Content="Undo" Command="{Binding UndoCommand}" />
+        <Button Content="Reset" Command="{Binding ResetCommand}" />
+      </StackPanel>
+
+      <!-- Line-mode nudge + seek row -->
+      <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0"
+                  IsVisible="{Binding IsLineMode}">
+        <Button Content="-0.50s" Command="{Binding NudgeCommand}" CommandParameter="-0.5"
+                ToolTip.Tip="Nudge selected line back 0.50 s" />
+        <Button Content="-0.10s" Command="{Binding NudgeCommand}" CommandParameter="-0.1"
+                ToolTip.Tip="Nudge selected line back 0.10 s" />
+        <Button Content="+0.10s" Command="{Binding NudgeCommand}" CommandParameter="0.1"
+                ToolTip.Tip="Nudge selected line forward 0.10 s" />
+        <Button Content="+0.50s" Command="{Binding NudgeCommand}" CommandParameter="0.5"
+                ToolTip.Tip="Nudge selected line forward 0.50 s" />
+        <Button Content="Seek" Command="{Binding SeekToLineCommand}"
+                ToolTip.Tip="Seek playback to selected line" />
+      </StackPanel>
+
+      <!-- Export row -->
+      <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0"
+                  IsVisible="{Binding HasLines}">
+        <Button Content="Copy LRC" Command="{Binding CopyLrcCommand}" />
+        <Button Content="Export .lrc" Command="{Binding ExportCommand}" />
+        <Button Content="Embed in Tags" Command="{Binding EmbedInTagsCommand}"
+                ToolTip.Tip="Write LRC timestamps directly into the file's Lyrics tag (ID3v2 USLT)" />
+      </StackPanel>
+
+      <TextBlock Grid.Row="5" Classes="data" Text="{Binding Status}" Margin="0,8,0,0" />
+    </Grid>
 
   </Grid>
-</Window>
+
+</UserControl>

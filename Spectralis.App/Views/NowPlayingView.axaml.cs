@@ -1,12 +1,1126 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Spectralis.App.Controls;
+using Spectralis.App.Services;
+using Spectralis.App.ViewModels;
+using Spectralis.Core.Common;
+using Spectralis.Core.Embedded;
+using Spectralis.Core.Integrations.Web;
+using Spectralis.Core.Platform;
 
-namespace Spectralis.App.Views
+namespace Spectralis.App.Views;
+
+public partial class NowPlayingView : Grid
 {
-    public partial class NowPlayingView : UserControl
+    private NowPlayingViewModel? _viewModel;
+    private LyricsInspectorWindow? _lyricsInspectorWindow;
+    private WebViewControl.WebView? _youTubeWebView;
+    private YouTubeVideoPageServer? _youTubeVideoServer;
+    private DispatcherTimer? _youTubeSyncTimer;
+    private string _loadedYouTubeVideoId = string.Empty;
+    private Control? _embeddedControl;
+    private IWebViewHost? _embeddedHost;
+    private WebViewHostService? _embeddedService;
+    // Persistent WebView2 host for capsule HTML (Windows only). Created once and reused
+    // across track changes so WebView2 never needs to re-initialize (~400ms) and the HWND
+    // is never destroyed while CreateCoreWebView2ControllerAsync is still in flight.
+#if WINDOWS
+    private WebView2Host? _persistentWv2;
+#endif
+    private DispatcherTimer? _embeddedFramePushTimer;
+    private string _loadedEmbeddedHtmlId = string.Empty;
+    private double _lastPushedTime = double.MinValue;
+    private bool _lastPushedActive;
+    private volatile bool _embeddedExecPending;
+    // Shared frame cache: timer writes on UI thread, CefGlue bridge reads on IPC thread.
+    // Volatile ensures memory visibility; string reference reads/writes are atomic.
+    private volatile string _latestFrameJson = string.Empty;
+
+    // Frame-push diagnostics
+    private static readonly string _webviewPerfLog = AppLogPaths.For("webview-perf.log");
+    private readonly Stopwatch _pushClock = new();
+    private long _pushCount;
+    private long _skipCount;
+    private long _lateCount;
+    private double _maxIntervalMs;
+    private double _sumIntervalMs;
+    private long _intervalSamples;
+    private long _lastStatsTick;
+
+public NowPlayingView()
     {
-        public NowPlayingView()
+        InitializeComponent();
+        DataContextChanged += (_, _) =>
         {
-            InitializeComponent();
+            if (_viewModel is not null)
+            {
+                _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            }
+
+            _viewModel = DataContext as NowPlayingViewModel;
+            if (_viewModel is not null)
+            {
+                _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+                ApplyYouTubeVideoMode();
+                ApplyEmbeddedHtmlMode();
+            }
+        };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            StopYouTubeVideoMode();
+            StopEmbeddedHtmlMode();
+#if WINDOWS
+            _persistentWv2?.Dispose();
+            _persistentWv2 = null;
+#endif
+        };
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
         }
+
+        if (e.PropertyName == nameof(NowPlayingViewModel.ActiveLyricIndex) &&
+            _viewModel.ActiveLyricIndex >= 0 &&
+            !_viewModel.IsTimedLyrics)
+        {
+            var container = LyricsList.ContainerFromIndex(_viewModel.ActiveLyricIndex);
+            container?.BringIntoView();
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.ShowYouTubeVideo) or
+            nameof(NowPlayingViewModel.YouTubeVideoId) or
+            nameof(NowPlayingViewModel.HasYouTubeVideo))
+        {
+            ApplyYouTubeVideoMode();
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.ShowEmbeddedHtml) or
+            nameof(NowPlayingViewModel.EmbeddedHtml) or
+            nameof(NowPlayingViewModel.HasEmbeddedHtml))
+        {
+            ApplyEmbeddedHtmlMode();
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.QueueUpcomingText) or
+            nameof(NowPlayingViewModel.ShowQueue))
+        {
+            ScrollQueueToCurrent();
+        }
+    }
+
+    private void ScrollQueueToCurrent()
+    {
+        if (_viewModel is not { ShowQueue: true })
+        {
+            return;
+        }
+
+        var current = _viewModel.QueueItems.FirstOrDefault(item => item.IsCurrent);
+        if (current is not null)
+        {
+            QueueList.ScrollIntoView(current);
+        }
+    }
+
+    private void OnInspectLyrics(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not NowPlayingViewModel vm) return;
+        if (vm.CurrentLyrics is null) return;
+        if (_lyricsInspectorWindow is { IsVisible: true }) { _lyricsInspectorWindow.Activate(); return; }
+
+        _lyricsInspectorWindow = new LyricsInspectorWindow(
+            vm.Title,
+            vm.Artist,
+            vm.Album,
+            vm.CurrentLyrics,
+            vm.PositionSeconds,
+            vm.CurrentTrackPath);
+        _lyricsInspectorWindow.Closed += (_, _) => _lyricsInspectorWindow = null;
+        _lyricsInspectorWindow.Show(TopLevel.GetTopLevel(this) as Window ?? throw new InvalidOperationException());
+    }
+
+    private void OnToggleTimeDisplay(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        (DataContext as NowPlayingViewModel)?.ToggleTimeDisplay();
+    }
+
+    private QueueItemViewModel? SelectedQueueItem => QueueList.SelectedItem as QueueItemViewModel;
+
+    private async void OnQueueItemDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            await vm.PlayQueueItemAsync(item);
+        }
+    }
+
+    private void OnQueueKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Delete &&
+            DataContext is NowPlayingViewModel vm &&
+            SelectedQueueItem is { } item)
+        {
+            e.Handled = true;
+            vm.RemoveQueueItem(item);
+        }
+    }
+
+    private async void OnQueuePlay(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            await vm.PlayQueueItemAsync(item);
+        }
+    }
+
+    private void OnQueuePlayNext(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            vm.PlayQueueItemNext(item);
+        }
+    }
+
+    private void OnQueueMoveUp(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            vm.MoveQueueItemUp(item);
+        }
+    }
+
+    private void OnQueueMoveDown(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            vm.MoveQueueItemDown(item);
+        }
+    }
+
+    private void OnQueueRemove(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && SelectedQueueItem is { } item)
+        {
+            vm.RemoveQueueItem(item);
+        }
+    }
+
+    private void OnQueueClear(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as NowPlayingViewModel)?.ClearQueue();
+    }
+
+    private async void OnQueueEditTags(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner ||
+            SelectedQueueItem is not { } item ||
+            !File.Exists(item.Path))
+        {
+            return;
+        }
+
+        var saved = await TagEditorWindow.EditAsync(owner, item.Path);
+        if (saved &&
+            owner.DataContext is MainWindowViewModel shell)
+        {
+            await shell.Library.ScanPathsAsync([item.Path]);
+            await shell.NowPlaying.RefreshCurrentTrackMetadataAsync(item.Path);
+        }
+    }
+
+    private async void OnQueueContentWarnings(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner ||
+            SelectedQueueItem is not { } item ||
+            !File.Exists(item.Path))
+        {
+            return;
+        }
+
+        await ContentWarningEditorWindow.ShowAsync(owner, item.Path);
+    }
+
+    private async void OnQueueSaveAsPlaylist(object? sender, RoutedEventArgs e)
+    {
+        // Playlist creation lives on the shell view model; reach it through the window.
+        if (TopLevel.GetTopLevel(this) is not Window { DataContext: MainWindowViewModel shell } owner ||
+            shell.NowPlaying.Queue.IsEmpty)
+        {
+            return;
+        }
+
+        var name = await NameInputWindow.PromptAsync(owner, "Save Queue as Playlist", "Playlist name:", "Queue");
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            shell.Playlists.CreatePlaylist(name, shell.NowPlaying.Queue.Items);
+        }
+    }
+
+    private async void OnQueueAddFiles(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not NowPlayingViewModel vm || TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Add files to queue",
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Audio files")
+                {
+                    Patterns = SupportedAudioFormats.Extensions.Select(ext => "*" + ext).ToArray(),
+                },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        var paths = files
+            .Select(file => file.TryGetLocalPath())
+            .Where(path => path is not null && File.Exists(path) && SupportedAudioFormats.IsSupportedExtension(path))
+            .Select(path => path!)
+            .ToList();
+
+        if (paths.Count > 0)
+        {
+            await vm.QueueFilesAsync(paths, playIfQueueWasEmpty: true);
+        }
+    }
+
+    private void OnCycleRepeat(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as NowPlayingViewModel)?.CycleRepeat();
+    }
+
+    private void OnToggleMute(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as NowPlayingViewModel)?.ToggleMute();
+    }
+
+    private void OnCycleSurfaceMode(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as NowPlayingViewModel)?.CycleSurfaceMode();
+    }
+
+    private void OnExitSurfaceMode(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm)
+        {
+            vm.UseArtworkSurface();
+        }
+    }
+
+    private void OnOpenMiniPlayer(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window mainWindow || DataContext is not NowPlayingViewModel vm)
+        {
+            return;
+        }
+
+        var mini = new MiniPlayerWindow { DataContext = vm };
+        mini.ExpandRequested += (_, _) =>
+        {
+            // Returning to the full player preserves playback state and position:
+            // the engine never stops, only the chrome changes.
+            mainWindow.Show();
+            mini.Close();
+        };
+        mini.Closed += (_, _) =>
+        {
+            if (!mainWindow.IsVisible)
+            {
+                mainWindow.Show();
+            }
+        };
+
+        mini.Show();
+        mainWindow.Hide();
+    }
+
+    private async void OnOpenFileClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not NowPlayingViewModel vm || TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open audio file",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Audio files")
+                {
+                    Patterns = SupportedAudioFormats.Extensions.Select(ext => "*" + ext).ToArray(),
+                },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (path is not null)
+        {
+            await vm.LoadTrackAsync(path);
+        }
+    }
+
+    private async void OnOpenUrlClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not NowPlayingViewModel vm || TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var url = await OpenUrlWindow.PromptAsync(topLevel);
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            await vm.LoadUrlAsync(url);
+        }
+    }
+
+    private void ApplyYouTubeVideoMode()
+    {
+        if (_viewModel is not { ShowYouTubeVideo: true, HasYouTubeVideo: true })
+        {
+            StopYouTubeVideoMode();
+            return;
+        }
+
+        if (_youTubeWebView is not null &&
+            string.Equals(_loadedYouTubeVideoId, _viewModel.YouTubeVideoId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        StopYouTubeVideoMode();
+
+        _loadedYouTubeVideoId = _viewModel.YouTubeVideoId;
+        _youTubeWebView = new WebViewControl.WebView
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        YouTubeVideoHost.Content = _youTubeWebView;
+
+        try
+        {
+            _youTubeVideoServer = YouTubeVideoPageServer.Start(
+                _viewModel.YouTubeVideoId,
+                _viewModel.PositionSeconds,
+                _viewModel.IsPlaying);
+            _youTubeWebView.LoadUrl(_youTubeVideoServer.Url);
+
+            _youTubeSyncTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500),
+            };
+            _youTubeSyncTimer.Tick += OnYouTubeSyncTimerTick;
+            _youTubeSyncTimer.Start();
+        }
+        catch
+        {
+            StopYouTubeVideoMode();
+            _viewModel.ShowYouTubeVideo = false;
+        }
+    }
+
+    private void OnYouTubeSyncTimerTick(object? sender, EventArgs e) => SyncYouTubeVideoFrame();
+
+    private void SyncYouTubeVideoFrame()
+    {
+        if (_viewModel is not { ShowYouTubeVideo: true } || _youTubeWebView is null)
+        {
+            return;
+        }
+
+        var seconds = YouTubeVideoPageServer.FormatSeconds(_viewModel.PositionSeconds);
+        var shouldPlay = _viewModel.IsPlaying ? "true" : "false";
+        try
+        {
+            _youTubeWebView.ExecuteScript($"window.ytpSync && window.ytpSync({seconds}, {shouldPlay})");
+        }
+        catch
+        {
+        }
+    }
+
+    private void StopYouTubeVideoMode()
+    {
+        _youTubeSyncTimer?.Stop();
+        if (_youTubeSyncTimer is not null)
+        {
+            _youTubeSyncTimer.Tick -= OnYouTubeSyncTimerTick;
+        }
+
+        _youTubeSyncTimer = null;
+
+        try
+        {
+            _youTubeWebView?.ExecuteScript("window.ytpPause && window.ytpPause()");
+        }
+        catch
+        {
+        }
+
+        YouTubeVideoHost.Content = null;
+        _youTubeWebView?.Dispose();
+        _youTubeWebView = null;
+        _youTubeVideoServer?.Dispose();
+        _youTubeVideoServer = null;
+        _loadedYouTubeVideoId = string.Empty;
+    }
+
+    private void ApplyEmbeddedHtmlMode()
+    {
+        if (_viewModel is not { ShowEmbeddedHtml: true, EmbeddedHtml: { } context })
+        {
+            StopEmbeddedHtmlMode();
+            return;
+        }
+
+        if (_embeddedControl is not null &&
+            string.Equals(_loadedEmbeddedHtmlId, context.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        StopEmbeddedHtmlMode();
+
+        _loadedEmbeddedHtmlId = context.Id;
+
+        if (OperatingSystem.IsWindows())
+        {
+#if WINDOWS
+            // GPU-accelerated path: WebView2 renders via DirectComposition — no OSR bitmap roundtrip.
+            // The host is created once and reused across capsule track changes so the HWND
+            // stays alive and WebView2 never has to re-initialize (~400ms overhead).
+            _persistentWv2 ??= new WebView2Host
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            _embeddedControl = _persistentWv2;
+            _embeddedHost = _persistentWv2;
+#endif
+        }
+        else
+        {
+            var cefWebView = new WebViewControl.WebView
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            var cefHost = new CefGlueWebViewHost(cefWebView);
+            // Pull model: bridge reads the volatile cache populated by the timer.
+            // No cross-process ExecuteScript calls are made for CefGlue — the JS
+            // rAF loop pulls via spectralisBridge.getFrameJson() on its own cadence.
+            cefHost.FrameJsonProvider = () => _latestFrameJson;
+            _embeddedControl = cefWebView;
+            _embeddedHost = cefHost;
+        }
+
+        _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
+        _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
+        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: context.Id);
+        _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
+        _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
+        _embeddedService.SeekRequested += OnEmbeddedSeekRequested;
+        _embeddedService.ExitWorldRequested += OnEmbeddedExitRequested;
+        _embeddedService.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
+        EmbeddedHtmlHost.Content = _embeddedControl;
+
+        try
+        {
+            _embeddedHost.NavigateToString(BuildEmbeddedHtmlDocument(context, _viewModel));
+        }
+        catch
+        {
+            StopEmbeddedHtmlMode();
+            _viewModel.ShowEmbeddedHtml = false;
+        }
+    }
+
+    private void OnEmbeddedPauseRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel is { IsPlaying: true })
+        {
+            _viewModel.TogglePlayback();
+        }
+    }
+
+    private void OnEmbeddedResumeRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel is { IsPlaying: false, HasTrack: true })
+        {
+            _viewModel.TogglePlayback();
+        }
+    }
+
+    private void OnEmbeddedSeekRequested(object? sender, double seconds)
+    {
+        if (_viewModel is not null)
+        {
+            _viewModel.PositionSeconds = Math.Clamp(seconds, 0, _viewModel.LengthSeconds);
+        }
+    }
+
+    private void OnEmbeddedExitRequested(object? sender, EventArgs e) =>
+        _viewModel?.UseArtworkSurface();
+
+    private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
+    {
+        if (_viewModel?.CurrentTrackPath is { } path && !string.IsNullOrEmpty(path))
+        {
+            var worldDir = Spectralis.Core.Capsule.AlbumWorldCacheStore.WorldDir(
+                System.Convert.ToHexString(
+                    System.Security.Cryptography.SHA1.HashData(
+                        System.Text.Encoding.UTF8.GetBytes(path))));
+            Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
+        }
+    }
+
+    private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
+    {
+        SpectralisLog.Warn("Embedded HTML navigation failed; falling back to visualizer.");
+        StopEmbeddedHtmlMode();
+        if (_viewModel is not null)
+        {
+            _viewModel.ShowEmbeddedHtml = false;
+            _viewModel.UseArtworkSurface();
+        }
+    }
+
+    private void OnEmbeddedNavigationCompleted(object? sender, EventArgs e)
+    {
+        _embeddedFramePushTimer?.Stop();
+        _lastPushedTime = double.MinValue;
+        _lastPushedActive = false;
+        _pushCount = 0;
+        _skipCount = 0;
+        _lateCount = 0;
+        _maxIntervalMs = 0;
+        _sumIntervalMs = 0;
+        _intervalSamples = 0;
+        _lastStatsTick = 0;
+        _pushClock.Restart();
+        var mode = _embeddedHost is CefGlueWebViewHost ? "pull/CefGlue" : "push/WebView2";
+        AppLogPaths.AppendTimestamped(_webviewPerfLog, $"[EMBEDDED] frame pump start — mode={mode} target=16ms");
+        _embeddedFramePushTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(16),
+            DispatcherPriority.Normal,
+            OnEmbeddedFramePushTick);
+        _embeddedFramePushTimer.Start();
+    }
+
+    private void OnEmbeddedFramePushTick(object? sender, EventArgs e)
+    {
+        if (_embeddedHost is null || _viewModel is not { ShowEmbeddedHtml: true })
+            return;
+
+        var elapsedMs = _pushClock.Elapsed.TotalMilliseconds;
+        _pushClock.Restart();
+
+        if (_intervalSamples > 0)
+        {
+            _sumIntervalMs += elapsedMs;
+            if (elapsedMs > _maxIntervalMs) _maxIntervalMs = elapsedMs;
+            if (elapsedMs > 50) _lateCount++;
+        }
+        _intervalSamples++;
+
+        // Always refresh the volatile frame cache. CefGlue reads this synchronously
+        // from the renderer process when the JS rAF loop calls getFrameJson(); no IPC
+        // push is needed on that path. The timer only exists here to keep the cache fresh.
+        var json = BuildEmbeddedFrameJson();
+        _latestFrameJson = json;
+
+        // WebView2 uses a push model: ExecuteScript queues the frame in JS so the rAF
+        // pump can pick it up without a C#→renderer IPC pull. _embeddedExecPending
+        // limits the queue depth to 1 (WebView2's ExecuteScriptAsync is truly async).
+        if (_embeddedHost is CefGlueWebViewHost || string.IsNullOrEmpty(json))
+        {
+            // CefGlue: pull-only, no IPC push. Count as "skipped" only for comparability
+            // with the old stats; real throughput is now driven by the renderer's rAF.
+            _skipCount++;
+            FlushStatsIfDue();
+            return;
+        }
+
+        var active = _viewModel.IsPlaying;
+        var time = _viewModel.PositionSeconds;
+
+        if (!active && !_lastPushedActive && Math.Abs(time - _lastPushedTime) < 0.05)
+        {
+            _skipCount++;
+        }
+        else if (_embeddedExecPending)
+        {
+            _skipCount++;
+        }
+        else
+        {
+            var execSw = Stopwatch.StartNew();
+            _embeddedExecPending = true;
+            _ = _embeddedHost.ExecuteScriptAsync(
+                $"window.__spectralisReceiveFrame && window.__spectralisReceiveFrame({json})")
+                .ContinueWith(_ => _embeddedExecPending = false);
+            execSw.Stop();
+
+            _lastPushedTime = time;
+            _lastPushedActive = active;
+            _pushCount++;
+
+            if (execSw.ElapsedMilliseconds > 10)
+            {
+                AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                    $"[SLOW-PUSH] interval={elapsedMs:F1}ms exec={execSw.ElapsedMilliseconds}ms active={active} t={time:F2}s");
+            }
+        }
+
+        FlushStatsIfDue();
+    }
+
+    private void FlushStatsIfDue()
+    {
+        var wallSec = (long)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 5000);
+        if (wallSec == _lastStatsTick) return;
+
+        _lastStatsTick = wallSec;
+        var avgMs = _intervalSamples > 1 ? _sumIntervalMs / (_intervalSamples - 1) : 0;
+        var mode = _embeddedHost is CefGlueWebViewHost ? "pull" : "push";
+        AppLogPaths.AppendTimestamped(_webviewPerfLog,
+            $"[STATS:{mode}] pushed={_pushCount} skipped={_skipCount} late={_lateCount} " +
+            $"avg={avgMs:F1}ms max={_maxIntervalMs:F1}ms samples={_intervalSamples}");
+        _pushCount = 0;
+        _skipCount = 0;
+        _lateCount = 0;
+        _maxIntervalMs = 0;
+        _sumIntervalMs = 0;
+        _intervalSamples = 0;
+    }
+
+    private string BuildEmbeddedFrameJson()
+    {
+        if (_viewModel is not { ShowEmbeddedHtml: true })
+        {
+            return string.Empty;
+        }
+
+        var frame = _viewModel.Engine.GetVisualizerFrame();
+        return JsonSerializer.Serialize(new
+        {
+            levels = SampleSpectrum(frame.Spectrum, 32),
+            peak = Math.Clamp(frame.PeakLevel, 0f, 1.25f),
+            rms = Math.Clamp(frame.RmsLevel, 0f, 1.25f),
+            active = _viewModel.IsPlaying,
+            time = _viewModel.PositionSeconds,
+        });
+    }
+
+    private void StopEmbeddedHtmlMode()
+    {
+        if (_embeddedFramePushTimer is not null)
+        {
+            _embeddedFramePushTimer.Stop();
+            AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                $"[EMBEDDED] frame pump stop — total pushed={_pushCount} skipped={_skipCount} late={_lateCount}");
+        }
+        _embeddedFramePushTimer = null;
+        _lastPushedTime = double.MinValue;
+        _lastPushedActive = false;
+        _embeddedExecPending = false;
+
+        if (_embeddedService is not null)
+        {
+            _embeddedService.PauseRequested -= OnEmbeddedPauseRequested;
+            _embeddedService.ResumeRequested -= OnEmbeddedResumeRequested;
+            _embeddedService.SeekRequested -= OnEmbeddedSeekRequested;
+            _embeddedService.ExitWorldRequested -= OnEmbeddedExitRequested;
+            _embeddedService.SaveBookmarkRequested -= OnEmbeddedSaveBookmark;
+            _embeddedService.Dispose();
+            _embeddedService = null;
+        }
+
+        if (_embeddedHost is not null)
+        {
+            _embeddedHost.NavigationCompleted -= OnEmbeddedNavigationCompleted;
+            _embeddedHost.NavigationFailed -= OnEmbeddedNavigationFailed;
+            if (_embeddedHost is CefGlueWebViewHost cefHost)
+                cefHost.FrameJsonProvider = null;
+        }
+
+        // Keep the persistent WV2 host in the visual tree across track changes and
+        // NavigationFailed fallback calls. Check EmbeddedHtmlHost.Content rather than
+        // _embeddedHost because _embeddedHost is already null on re-entrant calls
+        // (e.g. ShowEmbeddedHtml=false fires ApplyEmbeddedHtmlMode which calls this
+        // again after OnEmbeddedNavigationFailed already cleared _embeddedHost).
+        // Removing _persistentWv2 from the visual tree would destroy its HWND — if the
+        // controller was live, that closes it and the browser process exits, leaving the
+        // cached CoreWebView2Environment stale so the next capsule's CreateController fails.
+#if WINDOWS
+        var keepPersistentWv2 = _persistentWv2 is not null &&
+                                 ReferenceEquals(EmbeddedHtmlHost.Content, _persistentWv2);
+#else
+        const bool keepPersistentWv2 = false;
+#endif
+        if (!keepPersistentWv2)
+        {
+            EmbeddedHtmlHost.Content = null;
+            _embeddedHost?.Dispose();
+        }
+
+        _embeddedHost = null;
+        _embeddedControl = null;
+        _loadedEmbeddedHtmlId = string.Empty;
+    }
+
+    private string BuildEmbeddedHtmlDocument(EmbeddedHtmlContext context, NowPlayingViewModel? vm)
+    {
+        var html = Encoding.UTF8.GetString(context.HtmlBytes);
+        html = StripInlineEventHandlers(html);
+        html = ResolveEmbeddedAssetReferences(html, context.BinaryAssets, context.TextAssets);
+        html = InjectEmbeddedPerformancePrelude(html);
+        html = InjectTrackMeta(html, vm);
+        html = InjectBridgeBootstrap(html);
+        return WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
+    }
+
+    private string InjectTrackMeta(string html, NowPlayingViewModel? vm)
+    {
+        var track = vm?.Engine?.CurrentTrack;
+
+        string? artworkDataUrl = null;
+        if (track?.CoverArt is { Length: > 0 } art)
+        {
+            var mime = string.IsNullOrWhiteSpace(track.CoverArtMimeType) ? "image/jpeg" : track.CoverArtMimeType;
+            artworkDataUrl = $"data:{mime};base64,{Convert.ToBase64String(art)}";
+        }
+        else if (vm?.CoverArtBytes is { Length: > 0 } vmArt)
+        {
+            artworkDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(vmArt)}";
+        }
+
+        var metaJson = JsonSerializer.Serialize(new
+        {
+            title = vm?.Title ?? track?.DisplayTitle ?? string.Empty,
+            artist = vm?.Artist ?? track?.Artist ?? string.Empty,
+            album = vm?.Album ?? track?.Album ?? string.Empty,
+            albumArtist = track?.AlbumArtist ?? string.Empty,
+            genre = track?.Genre ?? string.Empty,
+            year = (int)(track?.Year ?? 0),
+            trackNumber = (int)(track?.TrackNumber ?? 0),
+            duration = vm?.LengthSeconds ?? track?.Duration.TotalSeconds ?? 0.0,
+            bpm = track?.Bpm,
+            key = track?.MusicalKey,
+            sampleRate = track?.SampleRateHz ?? 0,
+            channels = track?.Channels ?? 0,
+            artwork = artworkDataUrl,
+        });
+
+        var script = $"<script>window.spectral=window.spectral||{{}};window.spectral.meta={metaJson};</script>";
+
+        // Inject after <head> opens so it's available before any capsule script runs.
+        var headIndex = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
+        if (headIndex >= 0)
+        {
+            var headClose = html.IndexOf('>', headIndex);
+            if (headClose >= 0)
+                return html.Insert(headClose + 1, script);
+        }
+
+        return script + html;
+    }
+
+    private static string InjectEmbeddedPerformancePrelude(string html)
+    {
+        const string script =
+            """
+            <script>
+            (() => {
+              if (window.__spectralisPerformancePreludeInstalled) return;
+              window.__spectralisPerformancePreludeInstalled = true;
+              try {
+                Object.defineProperty(window, "devicePixelRatio", {
+                  get: function() { return 1; },
+                  configurable: true
+                });
+              } catch {
+              }
+            })();
+            </script>
+            """;
+
+        var headIndex = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
+        if (headIndex >= 0)
+        {
+            var headClose = html.IndexOf('>', headIndex);
+            if (headClose >= 0)
+            {
+                return html.Insert(headClose + 1, script);
+            }
+        }
+
+        return script + html;
+    }
+
+    private static string InjectBridgeBootstrap(string html)
+    {
+        var script = "<script>" + WebViewHostService.BuildBootstrapScript() + BuildEmbeddedFrameBridgeScript() + "</script>";
+        var bodyIndex = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+        if (bodyIndex >= 0)
+        {
+            return html.Insert(bodyIndex, script);
+        }
+
+        return html + script;
+    }
+
+    private static string BuildEmbeddedFrameBridgeScript() =>
+        """
+        (() => {
+          if (window.__spectralisFrameBridgeInstalled) return;
+          window.__spectralisFrameBridgeInstalled = true;
+
+          // Pushed-frame slot: WebView2 path writes here; CefGlue path ignores it
+          // because spectralisBridge.getFrameJson() always returns live data.
+          let pushedFrame = null;
+          window.__spectralisReceiveFrame = function(frame) {
+            pushedFrame = frame;
+            window.spectral._lastFrame = frame;
+          };
+
+          let bars = null;
+          let nextBarsRefresh = 0;
+          let interpBaseTime = 0;
+          let interpBaseWall = 0;
+          let interpActive = false;
+          let lastAppliedTime = -1;
+
+          function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, Number(v) || 0)); }
+
+          function getBars() {
+            const now = performance.now();
+            if (!bars || now >= nextBarsRefresh) {
+              bars = document.querySelectorAll('[data-audio-bars] span, .spectrum span');
+              nextBarsRefresh = now + 1000;
+            }
+            return bars;
+          }
+
+          function applyFrame(frame, now) {
+            const barNodes = getBars();
+            const lvls = frame.levels || [];
+            for (let i = 0; i < barNodes.length; i++) {
+              const v = clamp(lvls[i], 0, 1.25);
+              const floor = frame.active ? 0.04 : 0.025;
+              barNodes[i].style.height = `${Math.max(5, Math.round((floor + v * 0.96) * 100))}%`;
+              barNodes[i].style.opacity = String(frame.active ? Math.min(1, 0.38 + v * 0.72) : 0.26);
+              barNodes[i].style.transform = `scaleY(${frame.active ? 0.86 + v * 0.28 : 0.55})`;
+            }
+
+            const t = Number(frame.time) || 0;
+            const dur = window.spectral?.meta?.duration || 0;
+            document.documentElement.style.setProperty('--audio-peak', String(clamp(frame.peak, 0, 1)));
+            document.documentElement.style.setProperty('--audio-rms', String(clamp(frame.rms, 0, 1)));
+            document.documentElement.style.setProperty('--audio-time', String(t));
+            document.documentElement.style.setProperty('--spectral-progress', String(dur > 0 ? Math.min(1, t / dur) : 0));
+            document.documentElement.classList.toggle('audio-active', Boolean(frame.active));
+
+            interpBaseTime = t;
+            interpBaseWall = now;
+            interpActive = Boolean(frame.active);
+            lastAppliedTime = t;
+
+            if (typeof window.spectral?.onPlaybackFrame === 'function') window.spectral.onPlaybackFrame(frame);
+            if (typeof window.onSpectralisFrame === 'function') window.onSpectralisFrame(frame);
+            if (typeof window.onAudioTime === 'function') window.onAudioTime(frame.time);
+          }
+
+          // Apply spectral.meta once it's ready (injected at document-build time).
+          function applyMetaOnce() {
+            const meta = window.spectral?.meta;
+            if (!meta) return;
+            const dur = meta.duration || 0;
+            if (dur > 0) {
+              document.documentElement.style.setProperty('--spectral-duration', String(dur));
+            }
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', applyMetaOnce, { once: true });
+          } else {
+            applyMetaOnce();
+          }
+
+          let rafFrames = 0;
+          let rafWindowStart = performance.now();
+
+          function pump(now) {
+            rafFrames++;
+            if (now - rafWindowStart >= 5000) {
+              const fps = (rafFrames / (now - rafWindowStart) * 1000).toFixed(1);
+              try {
+                spectralisBridge.postMessage(JSON.stringify({
+                  __rafStats: true, fps: parseFloat(fps), elapsed: Math.round(now - rafWindowStart)
+                }));
+              } catch {}
+              rafFrames = 0;
+              rafWindowStart = now;
+            }
+
+            // ── Frame acquisition (v5 pull-first model) ───────────────────
+            // 1. Try spectralisBridge.getFrameJson() — live C# data on CefGlue,
+            //    returns '' on WebView2 (which uses the push slot below).
+            // 2. Fall back to pushedFrame written by window.__spectralisReceiveFrame.
+            let frame = null;
+            try {
+              const raw = spectralisBridge.getFrameJson();
+              if (raw) frame = JSON.parse(raw);
+            } catch {}
+            if (!frame) frame = pushedFrame;
+
+            if (frame) {
+              applyFrame(frame, now);
+            }
+
+            // Extrapolate --audio-time between frames for smooth CSS animations.
+            if (interpActive && interpBaseWall > 0) {
+              const extrapolated = interpBaseTime + (now - interpBaseWall) / 1000;
+              document.documentElement.style.setProperty('--audio-time', String(extrapolated));
+              const dur = window.spectral?.meta?.duration || 0;
+              if (dur > 0) {
+                document.documentElement.style.setProperty('--spectral-progress',
+                  String(Math.min(1, extrapolated / dur)));
+              }
+            }
+
+            requestAnimationFrame(pump);
+          }
+
+          requestAnimationFrame(pump);
+        })();
+        """;
+
+    private static string StripInlineEventHandlers(string html) =>
+        Regex.Replace(
+            html,
+            "\\s+on\\w+\\s*=\\s*[\"']?[^\"']*[\"']?",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+    private static string ResolveEmbeddedAssetReferences(
+        string html,
+        IReadOnlyDictionary<string, byte[]> binaryAssets,
+        IReadOnlyDictionary<string, string> textAssets)
+    {
+        if (binaryAssets.Count == 0 && textAssets.Count == 0)
+        {
+            return html;
+        }
+
+        var withBinaryAssets = Regex.Replace(
+            html,
+            "delta-(?:asset|bin):([A-Za-z0-9_.-]+)",
+            match =>
+            {
+                var assetId = match.Groups[1].Value;
+                if (!binaryAssets.TryGetValue(assetId, out var bytes))
+                {
+                    return match.Value;
+                }
+
+                return $"data:{GetMimeType(bytes, assetId)};base64,{Convert.ToBase64String(bytes)}";
+            },
+            RegexOptions.IgnoreCase);
+
+        return Regex.Replace(
+            withBinaryAssets,
+            "\"?delta-data-json:([A-Za-z0-9_.-]+)\"?",
+            match =>
+            {
+                var assetId = match.Groups[1].Value;
+                return textAssets.TryGetValue(assetId, out var text)
+                    ? JsonSerializer.Serialize(text)
+                    : "null";
+            },
+            RegexOptions.IgnoreCase);
+    }
+
+    private static string GetMimeType(byte[] bytes, string assetId)
+    {
+        if (bytes.Length >= 8 &&
+            bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47)
+        {
+            return "image/png";
+        }
+
+        if (bytes.Length >= 3 &&
+            bytes[0] == 0xFF &&
+            bytes[1] == 0xD8 &&
+            bytes[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+
+        if (bytes.Length >= 6 &&
+            Encoding.ASCII.GetString(bytes, 0, 6) is "GIF87a" or "GIF89a")
+        {
+            return "image/gif";
+        }
+
+        if (bytes.Length >= 12 &&
+            Encoding.ASCII.GetString(bytes, 0, 4) == "RIFF" &&
+            Encoding.ASCII.GetString(bytes, 8, 4) == "WEBP")
+        {
+            return "image/webp";
+        }
+
+        return Path.GetExtension(assetId).ToLowerInvariant() switch
+        {
+            ".svg" => "image/svg+xml",
+            ".woff" => "font/woff",
+            ".woff2" => "font/woff2",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".json" => "application/json",
+            ".css" => "text/css",
+            ".js" => "text/javascript",
+            _ => "application/octet-stream",
+        };
+    }
+
+    private static float[] SampleSpectrum(float[] spectrum, int count)
+    {
+        if (spectrum.Length == 0)
+        {
+            return new float[count];
+        }
+
+        var result = new float[count];
+        var ratio = (double)spectrum.Length / count;
+        for (var i = 0; i < count; i++)
+        {
+            var src = (int)(i * ratio);
+            result[i] = Math.Clamp(spectrum[Math.Min(src, spectrum.Length - 1)], 0, 1.25f);
+        }
+
+        return result;
     }
 }
