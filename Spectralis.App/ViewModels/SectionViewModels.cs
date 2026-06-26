@@ -1484,17 +1484,17 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
-    public bool MinimizeToTray
+    public bool CloseToTray
     {
-        get => _settings.MinimizeToTray;
+        get => _settings.CloseToTray;
         set
         {
-            if (_settings.MinimizeToTray == value)
+            if (_settings.CloseToTray == value)
             {
                 return;
             }
 
-            _settings.MinimizeToTray = value;
+            _settings.CloseToTray = value;
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
         }

@@ -15,9 +15,7 @@ public interface ITrayService : IDisposable
     void Show(string tooltip);
     void UpdateNowPlaying(string title, string artist);
     void Hide();
-    event EventHandler? PlayPauseRequested;
-    event EventHandler? NextRequested;
-    event EventHandler? PreviousRequested;
+    event EventHandler? PlayMostRecentRequested;
     event EventHandler? OpenRequested;
     event EventHandler? ExitRequested;
 }

@@ -155,10 +155,11 @@
                     IsChecked="{Binding RememberWindowPlacement}"
                     HorizontalAlignment="Left" />
 
-          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Minimize to tray" VerticalAlignment="Center"
-                     ToolTip.Tip="Hide Spectralis to the system tray when minimized so playback and Discord presence keep running" />
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Taskbar behavior" VerticalAlignment="Center"
+                     ToolTip.Tip="When the X is clicked, keep Spectralis running from the taskbar instead of closing playback and Discord presence" />
           <CheckBox Grid.Row="6" Grid.Column="1"
-                    IsChecked="{Binding MinimizeToTray}"
+                    Content="Close button keeps app running"
+                    IsChecked="{Binding CloseToTray}"
                     HorizontalAlignment="Left" />
 
           <TextBlock Grid.Row="7" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"

@@ -37,6 +37,8 @@ public partial class MainWindow : Window
     private bool _checkingClipboard;
     private ITrayService? _trayService;
     private bool _hiddenToTray;
+    private bool _forceClose;
+    private bool _closePromptOpen;
     private bool _trayEventsAttached;
     private bool _trayVmSubscribed;
     private bool _trayNowPlayingSubscribed;
@@ -86,8 +88,18 @@ public partial class MainWindow : Window
             _trayService?.Dispose();
             _trayService = null;
         };
-        Closing += (_, _) =>
+        Closing += (_, e) =>
         {
+            if (!_forceClose &&
+                !_hiddenToTray &&
+                DataContext is MainWindowViewModel vm &&
+                vm.AppSettings.CloseToTray)
+            {
+                e.Cancel = true;
+                _ = HandleCloseButtonAsync();
+                return;
+            }
+
             SaveWindowPlacement();
             _mediaSession?.Dispose();
             _mediaSession = null;
@@ -96,44 +108,14 @@ public partial class MainWindow : Window
 
     // ── OS media session (SMTC on Windows) ──────────────────────────────────
 
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-
-        if (change.Property == WindowStateProperty && WindowState == WindowState.Minimized)
-        {
-            TryHideToTray();
-        }
-    }
-
     private void InitializeTraySupport(MainWindowViewModel vm)
     {
         _trayService ??= new AvaloniaTrayService();
         if (!_trayEventsAttached)
         {
             _trayService.OpenRequested += (_, _) => Dispatcher.UIThread.Post(RestoreFromTray);
-            _trayService.PlayPauseRequested += (_, _) => Dispatcher.UIThread.Post(() =>
-            {
-                if (DataContext is MainWindowViewModel currentVm && currentVm.NowPlaying.HasTrack)
-                {
-                    currentVm.NowPlaying.TogglePlayback();
-                }
-            });
-            _trayService.NextRequested += (_, _) => Dispatcher.UIThread.Post(() =>
-            {
-                if (DataContext is MainWindowViewModel currentVm)
-                {
-                    _ = currentVm.NowPlaying.PlayNextAsync();
-                }
-            });
-            _trayService.PreviousRequested += (_, _) => Dispatcher.UIThread.Post(() =>
-            {
-                if (DataContext is MainWindowViewModel currentVm)
-                {
-                    _ = currentVm.NowPlaying.PlayPreviousAsync();
-                }
-            });
-            _trayService.ExitRequested += (_, _) => Dispatcher.UIThread.Post(Close);
+            _trayService.PlayMostRecentRequested += (_, _) => Dispatcher.UIThread.Post(() => _ = PlayMostRecentFromTrayAsync());
+            _trayService.ExitRequested += (_, _) => Dispatcher.UIThread.Post(RequestAppExit);
             _trayEventsAttached = true;
         }
 
@@ -150,11 +132,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryHideToTray()
+    private void HideToTray()
     {
-        if (DataContext is not MainWindowViewModel vm || !vm.AppSettings.MinimizeToTray)
+        if (DataContext is not MainWindowViewModel vm)
         {
-            return false;
+            return;
         }
 
         InitializeTraySupport(vm);
@@ -164,7 +146,6 @@ public partial class MainWindow : Window
         UpdateTrayState();
         _trayService?.Show(BuildTrayTooltip(vm));
         Hide();
-        return true;
     }
 
     private void RestoreFromTray()
@@ -184,10 +165,74 @@ public partial class MainWindow : Window
         Show();
         Activate();
         UpdateTrayState();
-        if (vm.AppSettings.MinimizeToTray)
+        _trayService?.Hide();
+    }
+
+    private async Task HandleCloseButtonAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm)
         {
-            _trayService?.Hide();
+            RequestAppExit();
+            return;
         }
+
+        if (!vm.AppSettings.CloseToTray)
+        {
+            RequestAppExit();
+            return;
+        }
+
+        if (!vm.AppSettings.CloseToTrayPromptDismissed)
+        {
+            if (_closePromptOpen)
+            {
+                return;
+            }
+
+            _closePromptOpen = true;
+            var result = await CloseToTrayPromptWindow.ShowAsync(this, vm.AppSettings.CloseToTray);
+            _closePromptOpen = false;
+            if (!result.Accepted)
+            {
+                return;
+            }
+
+            vm.Settings.CloseToTray = result.CloseToTray;
+            vm.AppSettings.CloseToTrayPromptDismissed = true;
+            AppSettingsStore.Save(vm.AppSettings);
+
+            if (!result.CloseToTray)
+            {
+                RequestAppExit();
+                return;
+            }
+        }
+
+        HideToTray();
+    }
+
+    private async Task PlayMostRecentFromTrayAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        RestoreFromTray();
+        if (vm.NowPlaying.HasTrack && !vm.NowPlaying.IsPlaying)
+        {
+            vm.NowPlaying.TogglePlayback();
+            return;
+        }
+
+        await vm.PlayMostRecentSongAsync();
+    }
+
+    private void RequestAppExit()
+    {
+        _forceClose = true;
+        _trayService?.Hide();
+        Close();
     }
 
     private void UpdateTrayState()
@@ -533,11 +578,6 @@ public partial class MainWindow : Window
 
     private void OnMinimizeWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (TryHideToTray())
-        {
-            return;
-        }
-
         WindowState = WindowState.Minimized;
     }
 
@@ -548,9 +588,9 @@ public partial class MainWindow : Window
             : WindowState.Maximized;
     }
 
-    private void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        Close();
+        await HandleCloseButtonAsync();
     }
 
     private void OnToggleSidebar(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -838,7 +878,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMenuExit(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close();
+    private void OnMenuExit(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => RequestAppExit();
 
     private void OnMenuNowPlaying(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
