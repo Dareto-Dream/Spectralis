@@ -96,6 +96,14 @@ async fn main() -> Result<()> {
             get(get_queue).post(post_queue),
         )
         .route("/shared-play/v2/sessions/:code/queue/items", post(post_queue_item))
+        .route(
+            "/shared-play/v2/sessions/:code/presence",
+            get(get_presence).post(post_presence),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/reactions",
+            get(get_reactions).post(post_reaction),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -628,6 +636,145 @@ async fn post_queue_item(
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_json(queue_path, &queue).await?;
     Ok(Json(queue))
+}
+
+// ── Presence handlers ─────────────────────────────────────────────────────────
+
+async fn get_presence(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let presence_path = session_root.join("presence.json");
+    let mut presence = read_json(presence_path.clone())
+        .await
+        .unwrap_or_else(|_| empty_presence(&room_code));
+    prune_presence(&mut presence);
+    write_json(presence_path, &presence).await?;
+    Ok(Json(presence))
+}
+
+async fn post_presence(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let presence_path = session_root.join("presence.json");
+    let mut presence = read_json(presence_path.clone())
+        .await
+        .unwrap_or_else(|_| empty_presence(&room_code));
+    prune_presence(&mut presence);
+
+    let client_id = clean_client_id(
+        payload.get("clientId").and_then(Value::as_str).unwrap_or(""),
+    )
+    .unwrap_or_else(|| {
+        let (code, _) = generate_room_code();
+        code
+    });
+    let display_name = clean_short_text(
+        payload.get("displayName").and_then(Value::as_str).unwrap_or(""),
+        32,
+    )
+    .unwrap_or_else(|| "Listener".to_string());
+    let now = Utc::now().to_rfc3339();
+
+    let participants = presence
+        .get_mut("participants")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| AppError::bad_request("Presence payload was invalid."))?;
+
+    if let Some(existing) = participants.iter_mut().find(|p| {
+        p.get("clientId")
+            .and_then(Value::as_str)
+            .is_some_and(|v| v == client_id)
+    }) {
+        existing["displayName"] = json!(&display_name);
+        existing["lastSeenUtc"] = json!(&now);
+    } else {
+        participants.push(json!({
+            "clientId": client_id,
+            "displayName": display_name,
+            "lastSeenUtc": &now
+        }));
+    }
+
+    update_presence_counts(&mut presence);
+    write_json(presence_path, &presence).await?;
+    Ok(Json(presence))
+}
+
+// ── Reaction handlers ─────────────────────────────────────────────────────────
+
+async fn get_reactions(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let reactions_path = session_root.join("reactions.json");
+    let mut reactions = read_json(reactions_path.clone())
+        .await
+        .unwrap_or_else(|_| empty_reactions(&room_code));
+    prune_reactions(&mut reactions);
+    write_json(reactions_path, &reactions).await?;
+    Ok(Json(reactions))
+}
+
+async fn post_reaction(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let reactions_path = session_root.join("reactions.json");
+    let mut reactions = read_json(reactions_path.clone())
+        .await
+        .unwrap_or_else(|_| empty_reactions(&room_code));
+    prune_reactions(&mut reactions);
+
+    let reaction_type = normalize_reaction_type(
+        payload.get("type").and_then(Value::as_str).unwrap_or("spark"),
+    );
+    let label = clean_short_text(
+        payload.get("label").and_then(Value::as_str).unwrap_or(""),
+        18,
+    )
+    .unwrap_or_else(|| reaction_label(&reaction_type).to_string());
+    let client_id = clean_client_id(
+        payload.get("clientId").and_then(Value::as_str).unwrap_or(""),
+    )
+    .unwrap_or_else(|| {
+        let (code, _) = generate_room_code();
+        code
+    });
+    let now = Utc::now().to_rfc3339();
+    let (reaction_id, _) = generate_room_code();
+    let reaction = json!({
+        "id": reaction_id,
+        "type": reaction_type,
+        "label": label,
+        "clientId": client_id,
+        "createdAtUtc": &now
+    });
+
+    let items = reactions
+        .get_mut("items")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| AppError::bad_request("Reaction payload was invalid."))?;
+    items.push(reaction);
+    if items.len() > MAX_REACTIONS {
+        let drain = items.len() - MAX_REACTIONS;
+        items.drain(0..drain);
+    }
+
+    reactions["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(reactions_path, &reactions).await?;
+    Ok(Json(reactions))
 }
 
 // ── Room code generation ──────────────────────────────────────────────────────
