@@ -10,7 +10,7 @@
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <title>Spectralis Shared Play</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%230a0a0a'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%23d8a13a'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%230a0a0a'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%230a0a0a'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%23d8a13a'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%230a0a0a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -47,6 +47,108 @@
 
   <!-- Player shell: shown after joining a room -->
   <main class="player" id="playerShell" hidden>
+
+    <!-- Top bar: logo, room badge, listener count + status dot -->
+    <header class="player-topbar">
+      <div class="topbar-brand">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-hidden="true">
+          <rect width="64" height="64" rx="8" fill="#0a0a0a"/>
+          <circle cx="32" cy="32" r="21" fill="#d8a13a"/>
+          <circle cx="32" cy="32" r="8" fill="#0a0a0a"/>
+        </svg>
+        <span>Spectralis</span>
+      </div>
+      <div class="topbar-room">
+        <span class="room-badge" id="roomBadge">—</span>
+      </div>
+      <div class="topbar-status">
+        <span class="listener-pill" id="listenerCount" title="Listeners in this room">1</span>
+        <span class="status-dot" id="statusDot" aria-label="Connection status"></span>
+      </div>
+    </header>
+
+    <!-- Stage: spinning disc + spectrum meter canvas -->
+    <section class="stage" aria-label="Playback visualizer">
+      <div class="disc-wrap" id="discWrap">
+        <div class="disc" id="disc">
+          <img class="disc-art" id="discArt" src="" alt="" aria-hidden="true">
+          <div class="disc-core" aria-hidden="true"></div>
+        </div>
+      </div>
+      <canvas class="meter-canvas" id="meterCanvas" aria-hidden="true"></canvas>
+    </section>
+
+    <!-- Track info + synced lyrics -->
+    <section class="track-info" aria-live="polite" aria-label="Now playing">
+      <p class="track-kicker" id="trackKicker">Now Playing</p>
+      <h2 class="track-title" id="trackTitle">Waiting for host…</h2>
+      <p class="track-artist" id="trackArtist"></p>
+      <div class="lyrics-panel" id="lyricsPanel" hidden aria-live="polite">
+        <p class="lyric-current" id="lyricCurrent"></p>
+        <p class="lyric-next" id="lyricNext"></p>
+      </div>
+    </section>
+
+    <!-- Playback timeline (display only — no seeking on listener side) -->
+    <section class="timeline" aria-label="Playback position">
+      <span class="time-label" id="currentTime">0:00</span>
+      <div class="seek-track" role="progressbar" aria-label="Playback progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+        <div class="seek-fill" id="seekFill"></div>
+      </div>
+      <span class="time-label" id="durationTime">0:00</span>
+    </section>
+
+    <!-- Reactions -->
+    <div class="reaction-bar" aria-label="Room reactions">
+      <button class="reaction-btn" type="button" data-reaction="love" title="Love">❤️</button>
+      <button class="reaction-btn" type="button" data-reaction="fire" title="Fire">🔥</button>
+      <button class="reaction-btn" type="button" data-reaction="wow" title="Whoa">😮</button>
+      <button class="reaction-btn" type="button" data-reaction="boost" title="Boost">⚡</button>
+      <button class="reaction-btn" type="button" data-reaction="plus" title="+1">+1</button>
+    </div>
+
+    <!-- Floating reactions layer -->
+    <div class="reaction-layer" id="reactionLayer" aria-hidden="true"></div>
+
+    <!-- Volume + action buttons -->
+    <div class="controls">
+      <label class="volume-wrap" for="volumeSlider" title="Volume">
+        <svg class="volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <input id="volumeSlider" type="range" min="0" max="100" value="90">
+      </label>
+      <button class="ghost-btn" id="copyButton" type="button">Copy Link</button>
+      <button class="ghost-btn" id="openAppButton" type="button">Open in App</button>
+    </div>
+
+    <!-- Queue (collapsible) -->
+    <details class="queue-panel" id="queuePanel">
+      <summary class="queue-toggle">
+        <span>Queue</span>
+        <span class="queue-count" id="queueCount"></span>
+      </summary>
+      <ol class="queue-list" id="queueList"></ol>
+      <form class="queue-add-form" id="queueAddForm" autocomplete="off">
+        <input id="queueUrlInput" type="text" inputmode="url" spellcheck="false"
+               placeholder="Request a Spotify, YouTube, or audio link">
+        <button class="ghost-btn" type="submit">Request</button>
+      </form>
+    </details>
+
+    <!-- Live channel info (channel mode only) -->
+    <section class="channel-panel" id="channelPanel" hidden aria-label="Live Channel">
+      <strong id="channelName"></strong>
+      <div class="channel-stats" id="channelStats" hidden>
+        <span id="channelSharedHours"></span>
+        <span id="channelListenerHours"></span>
+        <span id="channelPeakListeners"></span>
+        <span id="channelTopTrack"></span>
+      </div>
+    </section>
+
     <p class="status-line" id="statusLine">Connecting…</p>
   </main>
 
