@@ -74,6 +74,28 @@ async fn main() -> Result<()> {
         .route("/spectralis/web-share", get(index))
         .route("/spectralis/web-share/index.html", get(index))
         .route("/spectralis/web-share/*path", get(web_share_static))
+        .route("/shared-play/v2/sessions", post(create_session))
+        .route("/shared-play/v2/sessions/:code/package", put(upload_package))
+        .route("/shared-play/v2/sessions/:code/tracks", post(register_track))
+        .route(
+            "/shared-play/v2/sessions/:code/tracks/:key/package",
+            put(upload_track_package),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/tracks/:key/activate",
+            post(activate_track),
+        )
+        .route("/shared-play/v2/sessions/:code", get(get_session))
+        .route("/shared-play/v2/sessions/:code/manifest", get(get_session))
+        .route(
+            "/shared-play/v2/sessions/:code/state",
+            get(get_state).post(post_state),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/queue",
+            get(get_queue).post(post_queue),
+        )
+        .route("/shared-play/v2/sessions/:code/queue/items", post(post_queue_item))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -119,6 +141,493 @@ async fn web_share_static(
 ) -> Result<Response, AppError> {
     let safe_path = clean_relative_path(&path)?;
     send_file(state.web_share_root.join(safe_path), None).await
+}
+
+// ── Session handlers ──────────────────────────────────────────────────────────
+
+async fn create_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<impl IntoResponse, AppError> {
+    cleanup_expired_sessions(&state).await;
+
+    let (room_code, session_key) = generate_room_code();
+    let session_root = session_root(&state, &room_code)?;
+    fs::create_dir_all(&session_root).await?;
+
+    let now = Utc::now();
+    let expires_at = now + Duration::hours(SESSION_TTL_HOURS);
+    let track = payload.get("track").cloned().unwrap_or_else(|| json!({}));
+    let package = payload.get("package").cloned().unwrap_or_else(|| json!({}));
+    let playback = payload.get("playback").cloned();
+    let track_id = package
+        .get("trackId")
+        .or_else(|| payload.get("trackId"))
+        .cloned()
+        .unwrap_or_else(|| json!(&room_code));
+    let track_id_text = track_id_to_string(&track_id);
+
+    let mut manifest = json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "roomCode": &room_code,
+        "sessionKey": &session_key,
+        "createdAtUtc": now.to_rfc3339(),
+        "expiresAtUtc": expires_at.to_rfc3339(),
+        "activeTrackId": &track_id_text,
+        "trackId": &track_id_text,
+        "track": track.clone(),
+        "package": package.clone(),
+        "tracks": {},
+        "capabilities": payload.get("capabilities").cloned().unwrap_or_else(|| json!({}))
+    });
+    upsert_active_track(&mut manifest, &track_id_text, track, package);
+    write_json(session_root.join("manifest.json"), &manifest).await?;
+
+    if let Some(playback) = playback {
+        write_playback_state(&state, &room_code, playback).await?;
+    }
+
+    let base = base_url(&state, &headers);
+    let join_url = format!("{base}/spectralis/web-share?session={room_code}");
+    let state_url = format!("{base}/shared-play/v2/sessions/{room_code}/state");
+    let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
+    let presence_url = format!("{base}/shared-play/v2/sessions/{room_code}/presence");
+    let reactions_url = format!("{base}/shared-play/v2/sessions/{room_code}/reactions");
+    let upload_url = format!("{base}/shared-play/v2/sessions/{room_code}/package");
+    let package_url = format!("{base}/shared-play/v2/sessions/{room_code}/package");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "roomCode": &room_code,
+            "displayCode": display_room_code(&room_code),
+            "trackId": &track_id_text,
+            "joinUrl": &join_url,
+            "stateUrl": &state_url,
+            "queueUrl": &queue_url,
+            "presenceUrl": &presence_url,
+            "reactionsUrl": &reactions_url,
+            "expiresAtUtc": expires_at.to_rfc3339(),
+            "uploads": [{
+                "name": "spectralis-package",
+                "method": "PUT",
+                "uploadUrl": &upload_url,
+                "assetUrl": &package_url,
+                "headers": {
+                    "content-type": "application/vnd.spectralis.shared-play+zip"
+                }
+            }]
+        })),
+    ))
+}
+
+async fn upload_package(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    body: Bytes,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    if body.is_empty() {
+        return Err(AppError::bad_request("Upload body was empty."));
+    }
+    if body.len() > MAX_PACKAGE_BYTES {
+        return Err(AppError::payload_too_large("Upload body is too large."));
+    }
+
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let temp_path = session_root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let package_path = session_root.join("spectralis-rich.zip");
+    fs::write(&temp_path, &body).await?;
+    fs::rename(&temp_path, &package_path).await?;
+
+    if let Ok(manifest) = read_json(session_root.join("manifest.json")).await {
+        if let Some(track_id) = active_track_id(&manifest) {
+            let track_root = session_root.join("tracks").join(track_asset_key(&track_id));
+            fs::create_dir_all(&track_root).await?;
+            fs::copy(&package_path, track_root.join("spectralis-rich.zip")).await?;
+        }
+    }
+
+    Ok(Json(json!({ "ok": true, "bytes": body.len() })))
+}
+
+async fn register_track(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<impl IntoResponse, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let manifest_path = session_root.join("manifest.json");
+    let mut manifest = read_json(manifest_path.clone()).await?;
+
+    let track = payload.get("track").cloned().unwrap_or_else(|| json!({}));
+    let package = payload.get("package").cloned().unwrap_or_else(|| json!({}));
+    let track_id = package
+        .get("trackId")
+        .or_else(|| payload.get("trackId"))
+        .cloned()
+        .unwrap_or_else(|| {
+            let (code, _) = generate_room_code();
+            json!(code)
+        });
+    let track_id_text = track_id_to_string(&track_id);
+    let track_key = track_asset_key(&track_id_text);
+    let activate_on_upload = payload
+        .get("activateOnUpload")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    upsert_pending_track(&mut manifest, &track_id_text, track, package);
+    manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(manifest_path, &manifest).await?;
+
+    let base = base_url(&state, &headers);
+    let upload_url = if activate_on_upload {
+        format!("{base}/shared-play/v2/sessions/{room_code}/tracks/{track_key}/package")
+    } else {
+        format!("{base}/shared-play/v2/sessions/{room_code}/tracks/{track_key}/package?activate=false")
+    };
+    let package_url = format!("{base}/shared-play/v2/sessions/{room_code}/tracks/{track_key}/package");
+    let state_url = format!("{base}/shared-play/v2/sessions/{room_code}/state");
+    let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "roomCode": &room_code,
+            "trackId": &track_id_text,
+            "stateUrl": &state_url,
+            "queueUrl": &queue_url,
+            "expiresAtUtc": manifest.get("expiresAtUtc").cloned().unwrap_or(Value::Null),
+            "uploads": [{
+                "name": "spectralis-package",
+                "method": "PUT",
+                "uploadUrl": &upload_url,
+                "assetUrl": &package_url,
+                "headers": {
+                    "content-type": "application/vnd.spectralis.shared-play+zip"
+                }
+            }]
+        })),
+    ))
+}
+
+async fn upload_track_package(
+    State(state): State<AppState>,
+    AxumPath((code, key)): AxumPath<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    body: Bytes,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let track_key = clean_asset_key(&key)?;
+    if body.is_empty() {
+        return Err(AppError::bad_request("Upload body was empty."));
+    }
+    if body.len() > MAX_PACKAGE_BYTES {
+        return Err(AppError::payload_too_large("Upload body is too large."));
+    }
+
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let track_root = session_root.join("tracks").join(&track_key);
+    fs::create_dir_all(&track_root).await?;
+
+    let temp_path = track_root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let package_path = track_root.join("spectralis-rich.zip");
+    fs::write(&temp_path, &body).await?;
+    fs::rename(&temp_path, &package_path).await?;
+
+    if query
+        .get("activate")
+        .is_none_or(|v| !v.eq_ignore_ascii_case("false"))
+    {
+        activate_track_package(&state, &room_code, &track_key, None).await?;
+    } else {
+        let manifest_path = session_root.join("manifest.json");
+        if let Ok(mut manifest) = read_json(manifest_path.clone()).await {
+            if let Some(entry) = manifest
+                .get_mut("tracks")
+                .and_then(Value::as_object_mut)
+                .and_then(|tracks| {
+                    tracks.values_mut().find(|e| {
+                        e.get("assetKey")
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| v == track_key)
+                    })
+                })
+            {
+                entry["status"] = json!("ready");
+                entry["packageReadyAtUtc"] = json!(Utc::now().to_rfc3339());
+                manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+                write_json(manifest_path, &manifest).await?;
+            }
+        }
+    }
+
+    Ok(Json(json!({ "ok": true, "bytes": body.len() })))
+}
+
+async fn activate_track(
+    State(state): State<AppState>,
+    AxumPath((code, key)): AxumPath<(String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let track_key = clean_asset_key(&key)?;
+    let body = activate_track_package(&state, &room_code, &track_key, Some(payload)).await?;
+    Ok(Json(body))
+}
+
+async fn activate_track_package(
+    state: &AppState,
+    room_code: &str,
+    track_key: &str,
+    playback_payload: Option<Value>,
+) -> Result<Value, AppError> {
+    let session_root = existing_session_root(state, room_code).await?;
+    let track_package = session_root.join("tracks").join(track_key).join("spectralis-rich.zip");
+    if fs::metadata(&track_package).await.is_err() {
+        return Err(AppError::not_found("Shared Play track package was not found."));
+    }
+    fs::copy(&track_package, session_root.join("spectralis-rich.zip")).await?;
+
+    let manifest_path = session_root.join("manifest.json");
+    let mut manifest = read_json(manifest_path.clone()).await?;
+    if !activate_track_by_asset_key(&mut manifest, track_key) {
+        return Err(AppError::not_found("Shared Play track was not found."));
+    }
+    manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(manifest_path, &manifest).await?;
+
+    let state_body = if let Some(payload) = playback_payload {
+        Some(write_playback_state(state, room_code, payload).await?)
+    } else {
+        None
+    };
+
+    Ok(json!({
+        "ok": true,
+        "roomCode": room_code,
+        "trackKey": track_key,
+        "trackId": active_track_id(&manifest),
+        "state": state_body
+    }))
+}
+
+async fn get_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(read_session_payload(&state, &headers, &code).await?))
+}
+
+async fn read_session_payload(
+    state: &AppState,
+    headers: &HeaderMap,
+    code: &str,
+) -> Result<Value, AppError> {
+    let room_code = clean_room_code(code)?;
+    let session_root = existing_session_root(state, &room_code).await?;
+    let manifest = read_json(session_root.join("manifest.json")).await?;
+    let playback_state = read_json(session_root.join("state.json")).await.ok();
+    let base = base_url(state, headers);
+
+    let active_track_id = active_track_id(&manifest);
+    let active_track = active_track_entry(&manifest, &active_track_id);
+    let track = active_track
+        .as_ref()
+        .and_then(|e| e.get("track").cloned())
+        .or_else(|| manifest.get("track").cloned())
+        .unwrap_or_else(|| json!({}));
+    let package = active_track
+        .as_ref()
+        .and_then(|e| e.get("package").cloned())
+        .or_else(|| manifest.get("package").cloned())
+        .unwrap_or_else(|| json!({}));
+
+    let package_url = active_track_id
+        .as_deref()
+        .map(|id| format!("{base}/shared-play/v2/sessions/{room_code}/tracks/{}/package", track_asset_key(id)))
+        .unwrap_or_else(|| format!("{base}/shared-play/v2/sessions/{room_code}/package"));
+    let legacy_package_url = format!("{base}/shared-play/v2/sessions/{room_code}/package");
+    let state_url = format!("{base}/shared-play/v2/sessions/{room_code}/state");
+    let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
+    let presence_url = format!("{base}/shared-play/v2/sessions/{room_code}/presence");
+    let reactions_url = format!("{base}/shared-play/v2/sessions/{room_code}/reactions");
+    let join_url = format!("{base}/spectralis/web-share?session={room_code}");
+
+    let mut session = json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "roomCode": &room_code,
+        "displayCode": display_room_code(&room_code),
+        "joinUrl": &join_url,
+        "stateUrl": &state_url,
+        "queueUrl": &queue_url,
+        "presenceUrl": &presence_url,
+        "reactionsUrl": &reactions_url,
+        "activeTrackId": &active_track_id,
+        "trackId": &active_track_id,
+        "packageUrl": &package_url,
+        "spectralisPackageUrl": &package_url,
+        "legacyPackageUrl": &legacy_package_url,
+        "expiresAtUtc": manifest.get("expiresAtUtc").cloned().unwrap_or(Value::Null),
+        "track": track,
+        "package": merge_object(package, json!({ "assetUrl": &package_url, "url": &package_url })),
+        "links": {
+            "state": &state_url,
+            "queue": &queue_url,
+            "presence": &presence_url,
+            "reactions": &reactions_url
+        }
+    });
+
+    if let Some(playback_state) = playback_state {
+        let playback = playback_state
+            .get("playback")
+            .or_else(|| playback_state.get("state"))
+            .cloned()
+            .unwrap_or(playback_state);
+        session["playback"] = playback;
+    }
+
+    Ok(json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "session": session,
+        "roomCode": &room_code,
+        "displayCode": display_room_code(&room_code),
+        "joinUrl": &join_url,
+        "stateUrl": &state_url,
+        "queueUrl": &queue_url,
+        "packageUrl": &package_url,
+        "expiresAtUtc": manifest.get("expiresAtUtc").cloned().unwrap_or(Value::Null)
+    }))
+}
+
+async fn get_state(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(read_state_payload(&state, &headers, &code).await?))
+}
+
+async fn post_state(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let body = write_playback_state(&state, &room_code, payload).await?;
+    Ok(Json(body))
+}
+
+async fn read_state_payload(
+    state: &AppState,
+    headers: &HeaderMap,
+    code: &str,
+) -> Result<Value, AppError> {
+    let room_code = clean_room_code(code)?;
+    let session_root = existing_session_root(state, &room_code).await?;
+    let mut payload = read_json(session_root.join("state.json")).await?;
+    let manifest = read_json(session_root.join("manifest.json")).await?;
+    let base = base_url(state, headers);
+    enrich_with_active_track(&mut payload, &manifest, &base, &room_code);
+    Ok(payload)
+}
+
+async fn write_playback_state(
+    state: &AppState,
+    room_code: &str,
+    payload: Value,
+) -> Result<Value, AppError> {
+    let room_code = clean_room_code(room_code)?;
+    let session_root = existing_session_root(state, &room_code).await?;
+    let top_track_id = payload_track_id(&payload);
+    let chosen = payload
+        .get("playback")
+        .or_else(|| payload.get("state"))
+        .cloned()
+        .unwrap_or_else(|| payload.clone());
+    let manifest = read_json(session_root.join("manifest.json")).await.ok();
+    let track_id = payload_track_id(&chosen)
+        .or(top_track_id)
+        .or_else(|| manifest.as_ref().and_then(active_track_id));
+    let body = json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "roomCode": &room_code,
+        "trackId": &track_id,
+        "activeTrackId": &track_id,
+        "updatedAtUtc": Utc::now().to_rfc3339(),
+        "state": chosen.clone(),
+        "playback": chosen
+    });
+    write_json(session_root.join("state.json"), &body).await?;
+    Ok(body)
+}
+
+async fn get_queue(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let queue_path = existing_session_root(&state, &room_code)
+        .await?
+        .join("queue.json");
+    let queue = read_json(queue_path).await.unwrap_or_else(|_| empty_queue(&room_code));
+    Ok(Json(queue))
+}
+
+async fn post_queue(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut queue = normalize_queue_payload(&room_code, payload);
+    queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("queue.json"), &queue).await?;
+    Ok(Json(queue))
+}
+
+async fn post_queue_item(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let queue_path = session_root.join("queue.json");
+    let mut queue = read_json(queue_path.clone())
+        .await
+        .unwrap_or_else(|_| empty_queue(&room_code));
+
+    let item = normalize_queue_item(payload)?;
+    let duplicate_id = item.get("id").and_then(Value::as_str).map(|v| v.to_string());
+
+    let items = queue
+        .get_mut("items")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| AppError::bad_request("Queue payload was invalid."))?;
+
+    if let Some(dup_id) = duplicate_id {
+        if !items
+            .iter()
+            .any(|e| e.get("id").and_then(Value::as_str).is_some_and(|id| id == dup_id))
+        {
+            items.push(item);
+        }
+    } else {
+        items.push(item);
+    }
+
+    queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(queue_path, &queue).await?;
+    Ok(Json(queue))
 }
 
 // ── Room code generation ──────────────────────────────────────────────────────
