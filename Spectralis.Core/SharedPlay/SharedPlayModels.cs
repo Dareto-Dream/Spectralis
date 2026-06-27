@@ -1,4 +1,4 @@
-﻿namespace Spectralis.Core.SharedPlay;
+namespace Spectralis.Core.SharedPlay;
 
 public sealed record SharedPlayTrackDescriptor(
     string DisplayName,
@@ -42,16 +42,25 @@ public sealed record SharedPlayPlaybackSnapshot(
 public sealed record SharedPlaySessionSnapshot(
     bool IsEnabled,
     bool IsUploading,
-    string? SessionId,
+    string? RoomCode,
+    string? DisplayCode,
     string? JoinUrl,
     string? TrackId,
     string? ChannelUrl,
     string? LastError);
 
-public sealed record SharedPlayUploadRequest(
+public sealed record SharedPlayRoomSession(
+    string RoomCode,
+    string DisplayCode,
+    string JoinUrl,
+    string TrackId,
+    Uri StateUrl,
+    Uri QueueUrl,
+    DateTimeOffset? ExpiresAtUtc);
+
+public sealed record SharedPlayCreateSessionRequest(
     string ProtocolVersion,
     string ClientName,
-    string PackageKind,
     SharedPlayTrackDescriptor Track,
     SharedPlayPackageDescriptor Package,
     SharedPlayPlaybackSnapshot Playback,
@@ -73,9 +82,10 @@ public sealed record SharedPlayCapabilityDescriptor(
     bool PreservesEmbeddedVisualizer,
     bool BrowserFallbackIncluded);
 
-public sealed class SharedPlayUploadResponse
+public sealed class SharedPlayCreateSessionResponse
 {
-    public string? SessionId { get; init; }
+    public string? RoomCode { get; init; }
+    public string? DisplayCode { get; init; }
     public string? TrackId { get; init; }
     public string? JoinUrl { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
@@ -93,30 +103,12 @@ public sealed class SharedPlayUploadTarget
     public Dictionary<string, string>? Headers { get; init; }
 }
 
-public sealed class SharedPlaySession
-{
-    public required string SessionId { get; init; }
-    public required string JoinUrl { get; init; }
-    public required string TrackId { get; init; }
-    public required Uri StateUrl { get; init; }
-    public required Uri QueueUrl { get; init; }
-    public DateTimeOffset? ExpiresAtUtc { get; init; }
-}
-
 public sealed record SharedPlayPreparedTrack(
     string FileKey,
     string TrackId,
     Uri PackageUrl,
     SharedPlayTrackDescriptor Track,
     DateTimeOffset PreparedAtUtc);
-
-public sealed record SharedPlayRemoteSession(
-    string SessionId,
-    string? TrackId,
-    Uri StateUrl,
-    Uri QueueUrl,
-    Uri PackageUrl,
-    DateTimeOffset? ExpiresAtUtc);
 
 public sealed record SharedPlayQueueSnapshot(
     int Version,
@@ -143,7 +135,7 @@ public sealed record SharedPlayChannelPublishRequest(
     string OwnerToken,
     string DisplayName,
     bool IsLive,
-    string? SessionId,
+    string? RoomCode,
     string? JoinUrl,
     string? TrackId,
     SharedPlayTrackDescriptor? Track,
@@ -154,6 +146,6 @@ public sealed class SharedPlayChannelResponse
     public string? ChannelId { get; init; }
     public string? ChannelUrl { get; init; }
     public bool IsLive { get; init; }
-    public string? SessionId { get; init; }
+    public string? RoomCode { get; init; }
     public string? JoinUrl { get; init; }
 }

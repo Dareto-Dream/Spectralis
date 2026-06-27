@@ -1,15 +1,19 @@
-﻿namespace Spectralis.Core.SharedPlay;
+using System.Text.RegularExpressions;
+
+namespace Spectralis.Core.SharedPlay;
 
 public static class SharedPlayDefaults
 {
     public const string LegacyCdnBaseUrl = "https://cdn.deltavdevs.com";
     public const string CdnBaseUrl = "https://audioplayer-production-5b83.up.railway.app";
-    public const string ProtocolVersion = "shared-play-v1";
+    public const string ProtocolVersion = "shared-play-v2";
     public const string ClientName = "Spectralis";
     public const string RichPackageContentType = "application/vnd.spectralis.shared-play+zip";
-    public const string WebSharePlayerPath = "/spectralis/web-share/index.html";
+    public const string WebSharePlayerPath = "/spectralis/web-share";
     public const string DiscordActivitySource = "discord";
     public const long MaxPackageBytes = 512L * 1024L * 1024L;
+
+    private static readonly Regex RoomCodePattern = new(@"^[A-Z0-9]{6}$", RegexOptions.Compiled);
 
     public static string NormalizeCdnBaseUrl(string? value)
     {
@@ -18,7 +22,6 @@ public static class SharedPlayDefaults
         {
             return CdnBaseUrl;
         }
-
         return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
     }
 
@@ -28,18 +31,20 @@ public static class SharedPlayDefaults
         return new Uri(cdnBaseUri, normalizedPath);
     }
 
-    public static Uri BuildWebShareJoinUrl(Uri cdnBaseUri, string sessionId)
+    public static Uri BuildWebShareJoinUrl(Uri cdnBaseUri, string roomCode)
     {
-        var encodedSessionId = Uri.EscapeDataString(sessionId.Trim());
-        return AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')), encodedSessionId, null);
+        var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
+        var encodedCode = Uri.EscapeDataString(code);
+        return AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')), encodedCode, null);
     }
 
-    public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string sessionId)
+    public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string roomCode)
     {
-        var encodedSessionId = Uri.EscapeDataString(sessionId.Trim());
+        var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
+        var encodedCode = Uri.EscapeDataString(code);
         return AddSessionQuery(
             new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')),
-            encodedSessionId,
+            encodedCode,
             DiscordActivitySource);
     }
 
@@ -48,27 +53,36 @@ public static class SharedPlayDefaults
         if (!Uri.TryCreate(joinUrl, UriKind.Absolute, out var uri))
             return joinUrl;
 
-        var sessionId = TryReadSessionId(uri);
-        if (string.IsNullOrWhiteSpace(sessionId))
+        var roomCode = TryReadRoomCode(uri);
+        if (string.IsNullOrWhiteSpace(roomCode))
             return joinUrl;
 
-        return BuildDiscordActivityJoinUrl(new Uri(uri.GetLeftPart(UriPartial.Authority)), sessionId).ToString();
+        return BuildDiscordActivityJoinUrl(new Uri(uri.GetLeftPart(UriPartial.Authority)), roomCode).ToString();
     }
 
-    private static Uri AddSessionQuery(Uri playerUrl, string encodedSessionId, string? source)
+    /// <summary>Formats a raw room code as a display string with a dash: "X7K-29Q".</summary>
+    public static string DisplayRoomCode(string code)
     {
-        var builder = new UriBuilder(playerUrl);
-        var existingQuery = builder.Query.TrimStart('?');
-        var sourceQuery = string.IsNullOrWhiteSpace(source)
-            ? ""
-            : $"&source={Uri.EscapeDataString(source)}&mode=activity";
-        builder.Query = string.IsNullOrWhiteSpace(existingQuery)
-            ? $"session={encodedSessionId}{sourceQuery}"
-            : $"{existingQuery}&session={encodedSessionId}{sourceQuery}";
-        return builder.Uri;
+        var raw = NormalizeRoomCode(code);
+        if (raw is null || raw.Length != 6) return code;
+        return $"{raw[..3]}-{raw[3..]}";
     }
 
-    private static string? TryReadSessionId(Uri uri)
+    /// <summary>Strips dashes, uppercases, validates 6 alphanumeric chars. Returns null if invalid.</summary>
+    public static string? NormalizeRoomCode(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        var cleaned = new string(
+            input.Trim()
+                 .Where(c => char.IsAsciiLetterOrDigit(c))
+                 .Select(char.ToUpperInvariant)
+                 .Take(7)
+                 .ToArray());
+        return cleaned.Length == 6 ? cleaned : null;
+    }
+
+    /// <summary>Tries to read a room code from a query string param (session= or code=).</summary>
+    public static string? TryReadRoomCode(Uri uri)
     {
         var query = uri.Query.TrimStart('?');
         foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
@@ -76,17 +90,29 @@ public static class SharedPlayDefaults
             var parts = pair.Split('=', 2);
             var key = Uri.UnescapeDataString(parts[0].Replace('+', ' '));
             if (!string.Equals(key, "session", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(key, "sessionId", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(key, "id", StringComparison.OrdinalIgnoreCase))
+                !string.Equals(key, "code", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(key, "sessionId", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
-
-            return parts.Length > 1
+            var raw = parts.Length > 1
                 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')).Trim()
                 : null;
+            return NormalizeRoomCode(raw);
         }
-
         return null;
+    }
+
+    private static Uri AddSessionQuery(Uri playerUrl, string encodedCode, string? source)
+    {
+        var builder = new UriBuilder(playerUrl);
+        var existingQuery = builder.Query.TrimStart('?');
+        var sourceQuery = string.IsNullOrWhiteSpace(source)
+            ? ""
+            : $"&source={Uri.EscapeDataString(source)}&mode=activity";
+        builder.Query = string.IsNullOrWhiteSpace(existingQuery)
+            ? $"session={encodedCode}{sourceQuery}"
+            : $"{existingQuery}&session={encodedCode}{sourceQuery}";
+        return builder.Uri;
     }
 }
