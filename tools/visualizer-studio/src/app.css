@@ -8,6 +8,11 @@
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg0); color: var(--text);
   font: 12px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+/* File > Settings > UI scale — zoom on the root (not #app) so the whole
+   viewport coordinate system rescales from the top, the same way a browser's
+   own Ctrl+/Ctrl- zoom works; scaling a 100%-sized child directly would just
+   overflow/clip against its unscaled parent instead. */
+html { zoom: var(--ui-scale, 1); }
 
 /* Pragmatic accessibility baseline (plan §L) — not a WCAG audit, just: every
    interactive element gets a visible keyboard-focus ring, and drop targets

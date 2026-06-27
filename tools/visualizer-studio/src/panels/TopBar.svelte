@@ -2,30 +2,21 @@
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
   import type { AssetsState } from '../state/assets.svelte';
-  import { confirmDialog } from '../state/confirmModal.svelte';
   import { toast } from '../state/toast.svelte';
-  import { autosave } from '../state/autosave.svelte';
-  import { downloadText } from '../lib/downloadText';
-  import { TEMPLATES } from '../lib/templates';
-  import { buildExportFiles } from '../export/exportAll';
   import { fmtTime } from '../lib/fmtTime';
   import { dropZone } from '../lib/dropZone';
-  import { importLrcFile } from '../lib/lrcImport';
-  import { confirmUnsavedIfNeeded, importProjectFile } from '../lib/projectImport';
+  import { assetDrop } from '../lib/dragAsset';
+  import { exportSettings } from '../state/exportSettings.svelte';
   import type { Aspect } from '../types/project';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
-  import Redo2 from '@lucide/svelte/icons/redo-2';
+  import type { AssetEntry } from '../types/asset';
   import Music from '@lucide/svelte/icons/music';
   import X from '@lucide/svelte/icons/x';
 
+  // Everything that used to be a row of action buttons here (Load/Save
+  // Project, Load Template, Undo/Redo, Export) now lives in the File/Edit/
+  // Tools menus — this strip is project PROPERTIES (data fields), not
+  // commands, so it stays visible regardless of which dockers are open.
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
-
-  let projectFileInput: HTMLInputElement | undefined = $state();
-  let lrcFileInput: HTMLInputElement | undefined = $state();
-  let coverFileInput: HTMLInputElement | undefined = $state();
-  let selectedTemplateId = $state(TEMPLATES[0].id);
-  let exporting = $state(false);
-  let sharedPlay = $state(false);
 
   function onSlugInput(e: Event) {
     const el = e.target as HTMLInputElement;
@@ -39,103 +30,19 @@
     if (!isNaN(v) && v > 0) store.updateMeta({ songEnd: v });
   }
 
-  function saveProject() {
-    downloadText(`${store.project.meta.slug || 'project'}.studio.json`, JSON.stringify(store.project, null, 2));
-    autosave.clear();
-    toast.push('success', 'Project saved');
-  }
-
-  async function onLoadProjectClick() {
-    if (await confirmUnsavedIfNeeded(store)) projectFileInput?.click();
-  }
-
-  function onProjectFileChosen(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) importProjectFile(store, file);
-  }
-
-  async function onTemplateClick() {
-    if (!(await confirmUnsavedIfNeeded(store))) return;
-    const tpl = TEMPLATES.find((t) => t.id === selectedTemplateId);
-    if (!tpl) return;
-    store.loadProject(tpl.build());
-    toast.push('success', `Loaded "${tpl.label}"`);
-  }
-
-  function onAudioFileChosen(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (file) audio.loadFile(file);
-  }
-
-  function onLrcFileChosen(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) importLrcFile(store, file);
-  }
-
-  function onCoverFileChosen(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (file) assets.loadCover(file);
-  }
-
-  // Drag-and-drop file intake (plan QoL §C) — the old tool has zero drop
-  // handlers anywhere. The existing hidden-<input> + button path stays
-  // primary (already keyboard/click accessible); drop is additive.
   function isAudioFile(f: File) {
     return f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name);
-  }
-  function isLrcFile(f: File) {
-    return f.name.toLowerCase().endsWith('.lrc') || f.type === 'text/plain';
   }
   function isImageFile(f: File) {
     return f.type.startsWith('image/');
   }
-  function isProjectFile(f: File) {
-    return f.name.toLowerCase().endsWith('.json');
-  }
 
-  // QoL export pre-flight: slug is a hard requirement (nothing to name the files
-  // with); zero layers / no audio are warn-level confirms, not hard blocks — a
-  // silent visualizer with no audio, or an export with no layers yet, are both
-  // legal if unusual, so they get a nudge instead of being refused outright.
-  async function preflightOk(): Promise<boolean> {
-    if (!store.project.meta.slug) {
-      toast.push('error', 'Set a slug in the top bar first.');
-      return false;
+  function onCoverAsset(entry: AssetEntry) {
+    if (entry.kind !== 'image' && entry.kind !== 'svg') {
+      toast.push('error', 'Drop an image or SVG asset onto the cover slot');
+      return;
     }
-    if (store.project.layers.length === 0) {
-      const ok = await confirmDialog({ title: 'Export with no layers?', body: 'This project has no layers yet — the exported visualizer will render nothing but the section background.', confirmLabel: 'Export anyway' });
-      if (!ok) return false;
-    }
-    if (!audio.loaded) {
-      const ok = await confirmDialog({ title: 'Export without audio?', body: 'No audio is loaded — the manifest\'s audio.sha256 will be a placeholder until you load a track and re-export.', confirmLabel: 'Export anyway' });
-      if (!ok) return false;
-    }
-    return true;
-  }
-
-  async function doExport() {
-    if (!(await preflightOk())) return;
-    exporting = true;
-    try {
-      // buildVisualizerHtml et al are plain (non-Svelte) modules so they stay
-      // testable without the runes machinery — structuredClone inside them can't
-      // clone a live $state proxy directly, so snapshot to a plain object first.
-      const project = $state.snapshot(store.project) as typeof store.project;
-      const files = buildExportFiles({
-        project,
-        audioSha256: audio.sha256,
-        coverExtension: assets.coverImage ? assets.extension : null,
-        sharedPlay,
-      });
-      for (const file of files) downloadText(file.name, file.content);
-      toast.push('success', `Exported ${files.length} files for ${store.project.meta.slug}`);
-    } finally {
-      exporting = false;
-    }
+    assets.setCoverFromAsset(entry.name, entry.dataUrl);
   }
 </script>
 
@@ -152,83 +59,42 @@
     </select>
   </div>
 
-  <div class="group">
-    <button class="small ghost" onclick={() => store.undo()} disabled={!store.history.canUndo} title="Undo (Ctrl+Z)"><Undo2 size={12} /> Undo</button>
-    <button class="small ghost" onclick={() => store.redo()} disabled={!store.history.canRedo} title="Redo (Ctrl+Shift+Z)"><Redo2 size={12} /> Redo</button>
+  <div
+    class="group"
+    title="Drop an audio file here to load it"
+    use:dropZone={{
+      accept: isAudioFile,
+      onDrop: (f) => audio.loadFile(f),
+      onReject: () => toast.push('error', "That doesn't look like an audio file"),
+    }}
+  >
+    <span class="audioStatus" class:ok={audio.loaded}>
+      <Music size={13} />
+      {audio.loaded ? (audio.file?.name ?? 'Audio loaded') : 'No audio (drop one here, or File > Import)'}
+    </span>
+    {#if audio.error}<span class="err">{audio.error}</span>{/if}
   </div>
 
   <div
-    class="group"
-    title="Drop a .studio.json project file here to load it"
-    use:dropZone={{
-      accept: isProjectFile,
-      onDrop: (f) => importProjectFile(store, f),
-      onReject: () => toast.push('error', "That doesn't look like a Studio project (.json)"),
-    }}
+    class="group coverGroup"
+    title="Drop a cover image here — or drag an asset in from the Assets docker"
+    use:dropZone={{ accept: isImageFile, onDrop: (f) => assets.loadCover(f), onReject: () => toast.push('error', "That doesn't look like an image file") }}
+    use:assetDrop={{ onAsset: onCoverAsset }}
   >
-    <select bind:value={selectedTemplateId} title="Starter template">
-      {#each TEMPLATES as t (t.id)}
-        <option value={t.id}>{t.label}</option>
-      {/each}
-    </select>
-    <button onclick={onTemplateClick}>Load Template</button>
-    <button data-action="save-project" onclick={saveProject}>Save Project</button>
-    <button onclick={onLoadProjectClick}>Load Project</button>
-    <input bind:this={projectFileInput} type="file" accept="application/json" hidden onchange={onProjectFileChosen} />
-  </div>
-
-  <div class="group">
-    <label
-      class="fileBtn"
-      title="Click, or drop an audio file here"
-      use:dropZone={{
-        accept: isAudioFile,
-        onDrop: (f) => audio.loadFile(f),
-        onReject: () => toast.push('error', "That doesn't look like an audio file"),
-      }}
-    >
-      Load Audio
-      <input type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
-    </label>
-    {#if audio.loaded}<span class="ok" title="Audio loaded"><Music size={13} /></span>{/if}
-    {#if audio.error}<span class="err">{audio.error}</span>{/if}
-    <span
-      class="dropWrap"
-      title="Drop a .lrc lyrics file here"
-      use:dropZone={{
-        accept: isLrcFile,
-        onDrop: (f) => importLrcFile(store, f),
-        onReject: () => toast.push('error', "That doesn't look like an .lrc lyrics file"),
-      }}
-    >
-      <button onclick={() => lrcFileInput?.click()}>Import LRC…</button>
-    </span>
-    <input bind:this={lrcFileInput} type="file" accept=".lrc,text/plain" hidden onchange={onLrcFileChosen} />
-    <span
-      class="dropWrap"
-      title="Drop a cover image here"
-      use:dropZone={{
-        accept: isImageFile,
-        onDrop: (f) => assets.loadCover(f),
-        onReject: () => toast.push('error', "That doesn't look like an image file"),
-      }}
-    >
-      <button onclick={() => coverFileInput?.click()}>Load Cover…</button>
-      {#if assets.coverImage}
-        <img class="coverThumb" src={assets.coverImage.dataUrl} alt="Cover" />
-        <button class="icon ghost" onclick={() => assets.clearCover()} title="Remove cover" aria-label="Remove cover"><X size={12} /></button>
-      {/if}
-    </span>
-    <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />
+    {#if assets.coverImage}
+      <img class="coverThumb" src={assets.coverImage.dataUrl} alt="Cover" />
+      <button class="icon ghost" onclick={() => assets.clearCover()} title="Remove cover" aria-label="Remove cover"><X size={12} /></button>
+    {:else}
+      <span class="coverPlaceholder">No cover</span>
+    {/if}
   </div>
 
   <label class="sharedPlay" title="Manifest capabilities include sharedPlay.* only when this is checked">
-    <input type="checkbox" bind:checked={sharedPlay} /> Shared Play
+    <input type="checkbox" bind:checked={exportSettings.sharedPlay} /> Shared Play
   </label>
 
   <div class="spacer"></div>
   <span class="readout">{fmtTime(store.playhead)}</span>
-  <button class="export" onclick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export Capsule'}</button>
 </div>
 
 <style>
@@ -247,6 +113,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    border-radius: 3px;
   }
   .field {
     display: flex;
@@ -265,22 +132,15 @@
   input[type='number'] {
     width: 60px;
   }
-  .fileBtn {
+  .audioStatus {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
-    background: var(--bg3);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .dropWrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    gap: 5px;
+    color: var(--dim2);
+    padding: 4px 6px;
     border-radius: 3px;
   }
-  .ok {
+  .audioStatus.ok {
     color: var(--good);
   }
   .err {
@@ -290,12 +150,23 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .coverGroup {
+    min-width: 32px;
+    min-height: 24px;
+    padding: 2px 4px;
+    border: 1px dashed var(--line);
+  }
   .coverThumb {
     width: 22px;
     height: 22px;
     object-fit: cover;
     border-radius: 3px;
     border: 1px solid var(--line);
+  }
+  .coverPlaceholder {
+    color: var(--dim2);
+    font-size: 10px;
+    padding: 0 4px;
   }
   .sharedPlay {
     display: flex;
@@ -307,10 +178,5 @@
   }
   .readout {
     font-variant-numeric: tabular-nums;
-  }
-  .export {
-    background: var(--accent);
-    color: #0a1420;
-    font-weight: 600;
   }
 </style>

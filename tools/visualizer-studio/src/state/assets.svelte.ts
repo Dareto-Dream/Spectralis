@@ -18,6 +18,15 @@ export class AssetsState {
     this.coverImage = { file, dataUrl };
   }
 
+  // Godot-style asset swapping: an asset dragged in from the Assets docker
+  // already has a dataUrl, so this skips the FileReader round-trip loadCover()
+  // needs for a raw drag-drop File. The export pipeline only ever reads
+  // coverImage.dataUrl and coverImage.file.name (for the extension) — never
+  // the file's actual bytes, so an empty synthetic File is a safe stand-in.
+  setCoverFromAsset(name: string, dataUrl: string) {
+    this.coverImage = { file: new File([], name), dataUrl };
+  }
+
   clearCover() {
     this.coverImage = null;
   }

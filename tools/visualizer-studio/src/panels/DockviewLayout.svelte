@@ -1,65 +1,57 @@
 <script lang="ts">
   import { onMount, onDestroy, mount, unmount, type Component } from 'svelte';
-  import { DockviewComponent, type IDockviewPanel } from 'dockview-core';
+  import { DockviewComponent } from 'dockview-core';
   import 'dockview-core/dist/styles/dockview.css';
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
+  import type { AssetsState } from '../state/assets.svelte';
   import LayersPanel from './LayersPanel.svelte';
   import InspectorPanel from './InspectorPanel.svelte';
   import PreviewCanvas from '../preview/PreviewCanvas.svelte';
   import TimelinePanelContent from './TimelinePanelContent.svelte';
-  import Layers from '@lucide/svelte/icons/layers';
-  import MonitorPlay from '@lucide/svelte/icons/monitor-play';
-  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
-  import ChartGantt from '@lucide/svelte/icons/chart-gantt';
-  import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+  import AssetsPanel from './AssetsPanel.svelte';
+  import WorldPanel from '../world-tab/WorldPanel.svelte';
+  import StoryPanel from '../story-tab/StoryPanel.svelte';
+  import ScriptConsole from './ScriptConsole.svelte';
+  import SvgMaker from './SvgMaker.svelte';
+  import { dockManager, DOCK_PANEL_TITLES, type DockPanelId } from './dockManager.svelte';
 
-  let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
+  let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
 
   let container: HTMLDivElement | undefined = $state();
   let dv: DockviewComponent | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Bumped to v2 when the default arrangement changed (preview/timeline column
-  // + inspector/layers column, plus the window toolbar) — a v1 save from
-  // before that redesign would otherwise silently mask it on next load.
-  const LAYOUT_KEY = 'visualizer-studio:layout:v2';
+  // Bumped to v3 for the unified workspace redesign (World/Story/Assets/Script
+  // Console/SVG Maker folded into the same dockview instance as Studio's own
+  // panels, menu bar replacing the old per-workspace toolbar) — a v2 save from
+  // before that redesign only knows about 4 panel ids and would otherwise mask
+  // the new default arrangement on next load.
+  const LAYOUT_KEY = 'visualizer-studio:layout:v3';
 
-  // Window/panel toolbar (plan follow-up: "toolbar + docker system for better
-  // management"). Layout is two columns: Preview stacked above Timeline on the
-  // left (the main working area), Inspector stacked above Layers on the right
-  // (the properties rail) — AE's composition/timeline + effect-controls split.
-  type PanelId = 'layers' | 'preview' | 'inspector' | 'timeline';
-  const PANEL_TITLES: Record<PanelId, string> = {
-    preview: 'Preview',
-    timeline: 'Timeline',
-    inspector: 'Inspector',
-    layers: 'Layers',
-  };
-  const TOOLBAR_ORDER: { id: PanelId; icon: Component<{ size?: number }> }[] = [
-    { id: 'preview', icon: MonitorPlay },
-    { id: 'timeline', icon: ChartGantt },
-    { id: 'inspector', icon: SlidersHorizontal },
-    { id: 'layers', icon: Layers },
-  ];
+  const DEFAULT_OPEN: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets'];
 
-  let openPanelIds: Set<string> = $state(new Set());
-  function syncOpenIds() {
-    openPanelIds = new Set(dv?.api.panels.map((p) => p.id) ?? []);
-  }
-
-  // Reference-panel chain for each id, in priority order — re-adding a panel
-  // after it's been closed picks the first still-open candidate to dock
-  // against, so the two-column arrangement re-forms itself instead of the
-  // panel landing wherever dockview's default fallback happens to put it.
-  const POSITION_CHAIN: Record<PanelId, { direction: 'right' | 'below'; candidates: PanelId[] } | null> = {
+  // Reference-panel chain per id, in priority order — (re)opening a panel
+  // picks the first still-open candidate to dock against, so the intended
+  // arrangement re-forms itself regardless of what's currently open. Preview/
+  // Timeline form the main column; Inspector/Layers the properties rail;
+  // Assets pins full-width at the bottom; World/Story/SVG Maker join Preview
+  // as alternate "viewport" tabs; Script Console joins Assets as a fellow
+  // utility panel — each one is its own dockable viewport that can be opened
+  // independently rather than a hard-coded tab switcher.
+  const POSITION_CHAIN: Record<DockPanelId, { direction: 'right' | 'below' | 'within'; candidates: DockPanelId[] } | null> = {
     preview: null,
-    timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers'] },
+    timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers', 'assets'] },
     inspector: { direction: 'right', candidates: ['preview', 'timeline', 'layers'] },
     layers: { direction: 'below', candidates: ['inspector', 'preview', 'timeline'] },
+    assets: { direction: 'below', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
+    world: { direction: 'within', candidates: ['preview', 'timeline', 'inspector'] },
+    story: { direction: 'within', candidates: ['preview', 'world', 'timeline'] },
+    svgmaker: { direction: 'within', candidates: ['preview', 'world', 'story'] },
+    script: { direction: 'within', candidates: ['assets', 'timeline', 'preview'] },
   };
 
-  function positionFor(id: PanelId) {
+  function positionFor(id: DockPanelId) {
     const chain = POSITION_CHAIN[id];
     if (!chain || !dv) return undefined;
     for (const candidate of chain.candidates) {
@@ -68,30 +60,21 @@
     return undefined;
   }
 
-  function addPanelById(id: PanelId) {
+  function addPanelById(id: DockPanelId) {
     if (!dv || dv.api.getPanel(id)) return;
-    dv.addPanel({ id, component: id, title: PANEL_TITLES[id], position: positionFor(id) });
+    dv.addPanel({ id, component: id, title: DOCK_PANEL_TITLES[id], position: positionFor(id) });
     if (id === 'timeline') dv.api.getPanel('timeline')?.api.setSize({ height: 260 });
+    if (id === 'assets') dv.api.getPanel('assets')?.api.setSize({ height: 220 });
     if (id === 'inspector' || id === 'layers') dv.api.getPanel(id)?.api.setSize({ width: 360 });
-  }
-
-  function togglePanel(id: PanelId) {
-    const existing = dv?.api.getPanel(id);
-    if (existing) dv?.removePanel(existing);
-    else addPanelById(id);
   }
 
   function addDefaultPanels() {
     if (!dv) return;
-    addPanelById('preview');
-    addPanelById('timeline');
-    addPanelById('inspector');
-    addPanelById('layers');
+    for (const id of DEFAULT_OPEN) addPanelById(id);
   }
 
-  function resetLayout() {
-    dv?.clear();
-    addDefaultPanels();
+  function syncOpenIds() {
+    dockManager.sync(dv?.api.panels.map((p) => p.id) ?? []);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,6 +83,11 @@
     preview: PreviewCanvas,
     inspector: InspectorPanel,
     timeline: TimelinePanelContent,
+    assets: AssetsPanel,
+    world: WorldPanel,
+    story: StoryPanel,
+    script: ScriptConsole,
+    svgmaker: SvgMaker,
   };
 
   onMount(() => {
@@ -116,7 +104,7 @@
           element: el,
           init: () => {
             const Comp = PANEL_COMPONENTS[options.name];
-            if (Comp) instance = mount(Comp, { target: el, props: { store, audio } });
+            if (Comp) instance = mount(Comp, { target: el, props: { store, audio, assets } });
           },
           dispose: () => {
             if (instance) unmount(instance);
@@ -153,63 +141,41 @@
         }
       }, 400);
     });
+
+    dockManager.register(
+      {
+        isOpen: (id) => !!dv?.api.getPanel(id),
+        open: (id) => addPanelById(id),
+        close: (id) => {
+          const p = dv?.api.getPanel(id);
+          if (p) dv?.removePanel(p);
+        },
+        focusOrOpen: (id) => {
+          const p = dv?.api.getPanel(id);
+          if (p) dv?.setActivePanel(p);
+          else addPanelById(id);
+        },
+        resetLayout: () => {
+          dv?.clear();
+          addDefaultPanels();
+        },
+      },
+      dv.api.panels.map((p) => p.id)
+    );
   });
 
-  onDestroy(() => dv?.dispose());
+  onDestroy(() => {
+    dockManager.unregister();
+    dv?.dispose();
+  });
 </script>
 
-<div class="dockViewRoot">
-  <div class="windowToolbar">
-    {#each TOOLBAR_ORDER as { id, icon: Icon } (id)}
-      <button
-        class="small ghost"
-        class:active={openPanelIds.has(id)}
-        title={openPanelIds.has(id) ? `Hide ${PANEL_TITLES[id]}` : `Show ${PANEL_TITLES[id]}`}
-        aria-label={openPanelIds.has(id) ? `Hide ${PANEL_TITLES[id]} panel` : `Show ${PANEL_TITLES[id]} panel`}
-        aria-pressed={openPanelIds.has(id)}
-        onclick={() => togglePanel(id)}
-      >
-        <Icon size={13} />
-        {PANEL_TITLES[id]}
-      </button>
-    {/each}
-    <span class="spacer"></span>
-    <button class="small ghost" title="Restore the default panel arrangement" onclick={resetLayout}>
-      <LayoutTemplate size={13} /> Reset Layout
-    </button>
-  </div>
-  <div class="dockRoot" bind:this={container}></div>
-</div>
+<div class="dockRoot" bind:this={container}></div>
 
 <style>
-  .dockViewRoot {
-    display: flex;
-    flex-direction: column;
+  .dockRoot {
     width: 100%;
     height: 100%;
-    min-height: 0;
-  }
-  .windowToolbar {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    flex-shrink: 0;
-    background: var(--bg1);
-    border-bottom: 1px solid var(--line);
-  }
-  .windowToolbar .spacer {
-    flex: 1;
-  }
-  .windowToolbar button.active {
-    background: var(--bg3);
-    border-color: var(--line2);
-    color: var(--accent);
-  }
-  .dockRoot {
-    flex: 1;
-    min-height: 0;
-    width: 100%;
   }
   :global(.dockview-theme-abyss) {
     --dv-group-view-background-color: var(--bg0);
