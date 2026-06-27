@@ -303,7 +303,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // TrackEnded arrives on the audio device callback thread; auto-advance on the UI thread.
         _engine.TrackEnded += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = AutoAdvanceAsync());
-        _engine.StateMachine.StateChanged += (_, _) => RefreshFromEngine();
+        _engine.StateMachine.StateChanged += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(RefreshFromEngine);
 
         PlayPauseCommand = ReactiveCommand.Create(TogglePlayback);
         StopCommand = ReactiveCommand.Create(StopPlayback);
@@ -2026,13 +2027,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 reactive = ReactiveTimelineLoader.LoadSidecar(path);
             });
 
-            if (!seamless && startPlayback && await ShouldPlayWithContentWarningAsync(path))
+            if (startPlayback && !_engine.IsPlaying && await ShouldPlayWithContentWarningAsync(path))
             {
                 _engine.Play();
-            }
-            else if (seamless && startPlayback)
-            {
-                // TrySeamlessAdvance preserves the playing state; no extra Play() needed.
             }
             RemoteAudioCache.TryDelete(oldRemotePath);
             ApplyTrack(_engine.CurrentTrack);
