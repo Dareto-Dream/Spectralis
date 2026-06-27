@@ -16,7 +16,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private CancellationTokenSource cancellation = new();
     private Uri cdnBaseUri = new(SharedPlayDefaults.CdnBaseUrl);
-    private SharedPlaySession? session;
+    private SharedPlayRoomSession? session;
     private string? activeTrackFileKey;
     private SharedPlayTrackDescriptor? activeTrackDescriptor;
     private bool enabled;
@@ -56,7 +56,8 @@ public sealed class SharedPlaySessionController : IDisposable
                 return new SharedPlaySessionSnapshot(
                     enabled,
                     isUploading,
-                    session?.SessionId,
+                    session?.RoomCode,
+                    session?.DisplayCode,
                     session?.JoinUrl,
                     session?.TrackId,
                     liveChannelUrl,
@@ -83,7 +84,7 @@ public sealed class SharedPlaySessionController : IDisposable
             liveChannelOwnerToken = channelOwnerToken;
             liveChannelDisplayName = channelDisplayName;
             liveChannelUrl = liveChannelEnabled
-                ? SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/spectralis/web-share/index.html?channel={Uri.EscapeDataString(liveChannelId)}").ToString()
+                ? SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/spectralis/web-share?channel={Uri.EscapeDataString(liveChannelId)}").ToString()
                 : null;
 
             if (!enabled)
@@ -144,6 +145,8 @@ public sealed class SharedPlaySessionController : IDisposable
 
     public string? GetJoinUrl() => Snapshot.JoinUrl;
     public string? GetChannelUrl() => Snapshot.ChannelUrl;
+    public string? GetRoomCode() => Snapshot.RoomCode;
+    public string? GetDisplayCode() => Snapshot.DisplayCode;
 
     public void ClearActiveSession()
     {
@@ -279,7 +282,7 @@ public sealed class SharedPlaySessionController : IDisposable
             var package = await cacheStore.CreateOrGetPackageAsync(track, cancellationToken);
             Log($"Package ready: {package.PackagePath} ({package.PackageBytes} bytes)");
             var newSession = await cdnClient.CreateSessionAndUploadAsync(cdnBaseUri, package, playback, cancellationToken);
-            Log($"Session ready: {newSession.SessionId} {newSession.JoinUrl}");
+            Log($"Session ready: Room {newSession.DisplayCode} — {newSession.JoinUrl}");
 
             lock (statusLock)
             {
@@ -303,7 +306,7 @@ public sealed class SharedPlaySessionController : IDisposable
     }
 
     private async Task UpdateSessionTrackAsync(
-        SharedPlaySession existingSession,
+        SharedPlayRoomSession existingSession,
         TrackInfo track,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken)
@@ -311,7 +314,7 @@ public sealed class SharedPlaySessionController : IDisposable
         SetUploading(true);
         try
         {
-            Log($"Adding track '{track.DisplayTitle}' ({track.SourcePath}) to session {existingSession.SessionId}");
+            Log($"Adding track '{track.DisplayTitle}' ({track.SourcePath}) to room {existingSession.DisplayCode}");
             var trackFileKey = CreateTrackFileKey(track);
             if (TryTakePreparedTrack(trackFileKey, out var preparedTrack))
             {
@@ -321,7 +324,7 @@ public sealed class SharedPlaySessionController : IDisposable
                     preparedTrack,
                     playback,
                     cancellationToken);
-                Log($"Prepared session track activated: {activatedSession.SessionId} {activatedSession.TrackId}");
+                Log($"Prepared track activated: {activatedSession.DisplayCode} → {activatedSession.TrackId}");
 
                 lock (statusLock)
                 {
@@ -347,7 +350,7 @@ public sealed class SharedPlaySessionController : IDisposable
                 package,
                 playback,
                 cancellationToken);
-            Log($"Session track ready: {updatedSession.SessionId} {updatedSession.TrackId}");
+            Log($"Session track ready: {updatedSession.DisplayCode} → {updatedSession.TrackId}");
 
             lock (statusLock)
             {
@@ -384,30 +387,17 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private static bool CanPackageTrack(TrackInfo track)
     {
-        try
-        {
-            return File.Exists(track.SourcePath);
-        }
-        catch
-        {
-            return false;
-        }
+        try { return File.Exists(track.SourcePath); }
+        catch { return false; }
     }
 
     private static bool CanPackagePath(string path)
     {
-        try
-        {
-            return File.Exists(path);
-        }
-        catch
-        {
-            return false;
-        }
+        try { return File.Exists(path); }
+        catch { return false; }
     }
 
-    private static string CreateTrackFileKey(TrackInfo track) =>
-        CreateTrackFileKey(track.SourcePath);
+    private static string CreateTrackFileKey(TrackInfo track) => CreateTrackFileKey(track.SourcePath);
 
     private static string CreateTrackFileKey(string path)
     {
@@ -416,10 +406,7 @@ public sealed class SharedPlaySessionController : IDisposable
             var info = new FileInfo(path);
             return $"{info.FullName}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
         }
-        catch
-        {
-            return path;
-        }
+        catch { return path; }
     }
 
     private bool TryTakePreparedTrack(string fileKey, out SharedPlayPreparedTrack preparedTrack)
@@ -429,7 +416,6 @@ public sealed class SharedPlaySessionController : IDisposable
             if (preparedTracks.Remove(fileKey, out preparedTrack!))
                 return true;
         }
-
         return false;
     }
 
@@ -454,16 +440,14 @@ public sealed class SharedPlaySessionController : IDisposable
             try
             {
                 activeSession = GetSession();
-                if (activeSession is null)
-                    return;
+                if (activeSession is null) return;
 
                 lock (statusLock)
                 {
-                    if (preparedTracks.ContainsKey(fileKey))
-                        return;
+                    if (preparedTracks.ContainsKey(fileKey)) return;
                 }
 
-                Log($"Preparing next queued track '{path}' for session {activeSession.SessionId}");
+                Log($"Preparing next queued track '{path}' for room {activeSession.DisplayCode}");
                 var package = await cacheStore.CreateOrGetPackageAsync(path, cancellationToken);
                 var playback = new SharedPlayPlaybackSnapshot(
                     false,
@@ -486,9 +470,9 @@ public sealed class SharedPlaySessionController : IDisposable
                     if (preparedTracks.Count > 12)
                     {
                         foreach (var staleKey in preparedTracks
-                            .OrderBy(pair => pair.Value.PreparedAtUtc)
+                            .OrderBy(p => p.Value.PreparedAtUtc)
                             .Take(preparedTracks.Count - 12)
-                            .Select(pair => pair.Key)
+                            .Select(p => p.Key)
                             .ToArray())
                         {
                             preparedTracks.Remove(staleKey);
@@ -496,16 +480,14 @@ public sealed class SharedPlaySessionController : IDisposable
                     }
                 }
 
-                Log($"Prepared queued track {prepared.TrackId} for session {activeSession.SessionId}");
+                Log($"Prepared queued track {prepared.TrackId} for room {activeSession.DisplayCode}");
             }
             finally
             {
                 operationGate.Release();
             }
         }
-        catch (OperationCanceledException)
-        {
-        }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             Log($"Queued track prepare failed: {ex.Message}");
@@ -513,7 +495,7 @@ public sealed class SharedPlaySessionController : IDisposable
     }
 
     private async Task PublishLiveChannelAsync(
-        SharedPlaySession activeSession,
+        SharedPlayRoomSession activeSession,
         TrackInfo track,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken)
@@ -551,7 +533,7 @@ public sealed class SharedPlaySessionController : IDisposable
             track.HasEmbeddedContent,
             []);
 
-        var signature = $"{activeSession.SessionId}:{activeSession.TrackId}:{playback.IsPlaying}:{Math.Round(playback.PositionSeconds, 0)}";
+        var signature = $"{activeSession.RoomCode}:{activeSession.TrackId}:{playback.IsPlaying}:{Math.Round(playback.PositionSeconds, 0)}";
         lock (statusLock)
         {
             if (string.Equals(signature, lastPublishedChannelSignature, StringComparison.Ordinal))
@@ -567,7 +549,7 @@ public sealed class SharedPlaySessionController : IDisposable
                 ownerToken,
                 displayName,
                 true,
-                activeSession.SessionId,
+                activeSession.RoomCode,
                 activeSession.JoinUrl,
                 activeSession.TrackId,
                 descriptor,
@@ -602,7 +584,6 @@ public sealed class SharedPlaySessionController : IDisposable
         {
             if (string.Equals(playback.Reason, "tick", StringComparison.OrdinalIgnoreCase))
                 lastTickPublishedUtc = playback.HostClockUtc;
-
             lastPublishedSignature = $"{playback.IsPlaying}:{Math.Round(playback.PositionSeconds, 2)}:{playback.Reason}";
         }
     }
@@ -625,22 +606,16 @@ public sealed class SharedPlaySessionController : IDisposable
     }
 
     private static string BuildQueueSignature(SharedPlayQueueSnapshot queue) =>
-        $"{queue.CurrentIndex}:{string.Join("|", queue.Items.Select(item => $"{item.Id}:{item.TrackId}:{item.PackageUrl}"))}";
+        $"{queue.CurrentIndex}:{string.Join("|", queue.Items.Select(i => $"{i.Id}:{i.TrackId}:{i.PackageUrl}"))}";
 
-    private SharedPlaySession? GetSession()
+    private SharedPlayRoomSession? GetSession()
     {
-        lock (statusLock)
-        {
-            return session;
-        }
+        lock (statusLock) { return session; }
     }
 
     private CancellationToken GetCancellationToken()
     {
-        lock (statusLock)
-        {
-            return cancellation.Token;
-        }
+        lock (statusLock) { return cancellation.Token; }
     }
 
     private void ClearSession()
@@ -660,11 +635,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private void SetUploading(bool value)
     {
-        lock (statusLock)
-        {
-            isUploading = value;
-        }
-
+        lock (statusLock) { isUploading = value; }
         OnStatusChanged();
     }
 
@@ -688,18 +659,12 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private DateTimeOffset GetNextRetryUtc()
     {
-        lock (statusLock)
-        {
-            return nextRetryUtc;
-        }
+        lock (statusLock) { return nextRetryUtc; }
     }
 
     private Uri GetCdnBaseUri()
     {
-        lock (statusLock)
-        {
-            return cdnBaseUri;
-        }
+        lock (statusLock) { return cdnBaseUri; }
     }
 
     public void Dispose()
