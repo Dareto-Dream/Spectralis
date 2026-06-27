@@ -17,10 +17,7 @@ public sealed class SharedPlayCdnClient : IDisposable
     private readonly HttpClient httpClient;
 
     public SharedPlayCdnClient()
-        : this(new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(45)
-        })
+        : this(new HttpClient { Timeout = TimeSpan.FromSeconds(45) })
     {
     }
 
@@ -29,7 +26,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         this.httpClient = httpClient;
     }
 
-    public async Task<SharedPlaySession> CreateSessionAndUploadAsync(
+    public async Task<SharedPlayRoomSession> CreateSessionAndUploadAsync(
         Uri cdnBaseUri,
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
@@ -37,24 +34,22 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
-        var response = await RequestUploadUrlsAsync(
-            SharedPlayDefaults.BuildEndpoint(cdnBaseUri, "/shared-play/v1/upload-urls"),
+        var response = await RequestCreateSessionAsync(
+            SharedPlayDefaults.BuildEndpoint(cdnBaseUri, "/shared-play/v2/sessions"),
             package,
             playback,
             cancellationToken);
-        if (string.IsNullOrWhiteSpace(response.SessionId))
-            throw new InvalidOperationException("The CDN did not return a Shared Play session ID.");
 
-        if (!TryCreateHttpsUri(response.StateUrl, out var stateUri))
-            throw new InvalidOperationException("The CDN did not return a valid HTTPS Shared Play state URL.");
-        var queueUri = TryCreateHttpsUri(response.QueueUrl, out var parsedQueueUri)
-            ? parsedQueueUri
-            : SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/shared-play/v1/sessions/{Uri.EscapeDataString(response.SessionId)}/queue");
+        var roomCode = response.RoomCode?.Trim();
+        if (string.IsNullOrWhiteSpace(roomCode))
+            throw new InvalidOperationException("The CDN did not return a Shared Play room code.");
 
-        var joinUri = SharedPlayDefaults.BuildWebShareJoinUrl(cdnBaseUri, response.SessionId);
+        var stateUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "state");
+        var queueUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "queue");
+        var joinUri = SharedPlayDefaults.BuildWebShareJoinUrl(cdnBaseUri, roomCode);
 
         var uploadTarget = response.Uploads?
-            .FirstOrDefault(static upload => string.Equals(upload.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(static u => string.Equals(u.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
             ?? response.Uploads?.FirstOrDefault();
 
         if (uploadTarget is null)
@@ -62,41 +57,33 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         await UploadPackageAsync(uploadTarget, package, cancellationToken);
 
-        return new SharedPlaySession
-        {
-            SessionId = response.SessionId,
-            JoinUrl = joinUri.ToString(),
-            TrackId = string.IsNullOrWhiteSpace(response.TrackId) ? package.TrackId : response.TrackId,
-            StateUrl = stateUri,
-            QueueUrl = queueUri,
-            ExpiresAtUtc = response.ExpiresAtUtc
-        };
+        return new SharedPlayRoomSession(
+            roomCode,
+            SharedPlayDefaults.DisplayRoomCode(roomCode),
+            joinUri.ToString(),
+            string.IsNullOrWhiteSpace(response.TrackId) ? package.TrackId : response.TrackId,
+            stateUri,
+            queueUri,
+            response.ExpiresAtUtc);
     }
 
-    public async Task<SharedPlaySession> UploadTrackToSessionAsync(
+    public async Task<SharedPlayRoomSession> UploadTrackToSessionAsync(
         Uri cdnBaseUri,
-        SharedPlaySession session,
+        SharedPlayRoomSession session,
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken)
     {
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
-        var encodedSessionId = Uri.EscapeDataString(session.SessionId);
-        var response = await RequestUploadUrlsAsync(
-            SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/shared-play/v1/sessions/{encodedSessionId}/tracks"),
+        var response = await RequestCreateSessionAsync(
+            BuildSessionEndpoint(cdnBaseUri, session.RoomCode, "tracks"),
             package,
             playback,
             cancellationToken);
 
-        if (!TryCreateHttpsUri(response.StateUrl, out var stateUri))
-            stateUri = session.StateUrl;
-        var queueUri = TryCreateHttpsUri(response.QueueUrl, out var parsedQueueUri)
-            ? parsedQueueUri
-            : session.QueueUrl;
-
         var uploadTarget = response.Uploads?
-            .FirstOrDefault(static upload => string.Equals(upload.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(static u => string.Equals(u.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
             ?? response.Uploads?.FirstOrDefault();
 
         if (uploadTarget is null)
@@ -104,20 +91,16 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         await UploadPackageAsync(uploadTarget, package, cancellationToken);
 
-        return new SharedPlaySession
+        return session with
         {
-            SessionId = string.IsNullOrWhiteSpace(response.SessionId) ? session.SessionId : response.SessionId,
-            JoinUrl = session.JoinUrl,
             TrackId = string.IsNullOrWhiteSpace(response.TrackId) ? package.TrackId : response.TrackId,
-            StateUrl = stateUri,
-            QueueUrl = queueUri,
             ExpiresAtUtc = response.ExpiresAtUtc ?? session.ExpiresAtUtc
         };
     }
 
     public async Task<SharedPlayPreparedTrack> PrepareTrackInSessionAsync(
         Uri cdnBaseUri,
-        SharedPlaySession session,
+        SharedPlayRoomSession session,
         string fileKey,
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
@@ -125,16 +108,15 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
-        var encodedSessionId = Uri.EscapeDataString(session.SessionId);
-        var response = await RequestUploadUrlsAsync(
-            SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/shared-play/v1/sessions/{encodedSessionId}/tracks"),
+        var response = await RequestCreateSessionAsync(
+            BuildSessionEndpoint(cdnBaseUri, session.RoomCode, "tracks"),
             package,
             playback,
             cancellationToken,
             activateOnUpload: false);
 
         var uploadTarget = response.Uploads?
-            .FirstOrDefault(static upload => string.Equals(upload.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(static u => string.Equals(u.Name, "spectralis-package", StringComparison.OrdinalIgnoreCase))
             ?? response.Uploads?.FirstOrDefault();
 
         if (uploadTarget is null)
@@ -142,11 +124,10 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         await UploadPackageAsync(uploadTarget, package, cancellationToken);
 
+        var trackKey = TrackAssetKey(package.TrackId);
         var packageUrl = TryCreateHttpsUri(uploadTarget.AssetUrl, out var parsedPackageUri)
             ? parsedPackageUri
-            : SharedPlayDefaults.BuildEndpoint(
-                cdnBaseUri,
-                $"/shared-play/v1/packages/{encodedSessionId}/tracks/{Uri.EscapeDataString(TrackAssetKey(package.TrackId))}/spectralis-rich.zip");
+            : new Uri(cdnBaseUri, $"shared-play/v2/sessions/{Uri.EscapeDataString(session.RoomCode)}/tracks/{Uri.EscapeDataString(trackKey)}/package");
 
         return new SharedPlayPreparedTrack(
             fileKey,
@@ -156,9 +137,9 @@ public sealed class SharedPlayCdnClient : IDisposable
             DateTimeOffset.UtcNow);
     }
 
-    public async Task<SharedPlaySession> ActivatePreparedTrackAsync(
+    public async Task<SharedPlayRoomSession> ActivatePreparedTrackAsync(
         Uri cdnBaseUri,
-        SharedPlaySession session,
+        SharedPlayRoomSession session,
         SharedPlayPreparedTrack preparedTrack,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken)
@@ -166,76 +147,49 @@ public sealed class SharedPlayCdnClient : IDisposable
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
         var trackKey = TrackAssetKey(preparedTrack.TrackId);
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            SharedPlayDefaults.BuildEndpoint(
-                cdnBaseUri,
-                $"/shared-play/v1/sessions/{Uri.EscapeDataString(session.SessionId)}/tracks/{Uri.EscapeDataString(trackKey)}/activate"))
+        var endpoint = new Uri(cdnBaseUri,
+            $"shared-play/v2/sessions/{Uri.EscapeDataString(session.RoomCode)}/tracks/{Uri.EscapeDataString(trackKey)}/activate");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = JsonContent(new
             {
                 protocolVersion = SharedPlayDefaults.ProtocolVersion,
-                sessionId = session.SessionId,
+                roomCode = session.RoomCode,
                 trackId = preparedTrack.TrackId,
                 activeTrackId = preparedTrack.TrackId,
-                currentTrackId = preparedTrack.TrackId,
-                playback = playback with { TrackId = preparedTrack.TrackId },
-                state = playback with { TrackId = preparedTrack.TrackId }
+                playback = playback with { TrackId = preparedTrack.TrackId }
             })
         };
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play prepared track activation", cancellationToken);
 
-        return new SharedPlaySession
-        {
-            SessionId = session.SessionId,
-            JoinUrl = session.JoinUrl,
-            TrackId = preparedTrack.TrackId,
-            StateUrl = session.StateUrl,
-            QueueUrl = session.QueueUrl,
-            ExpiresAtUtc = session.ExpiresAtUtc
-        };
+        return session with { TrackId = preparedTrack.TrackId };
     }
 
-    public async Task<SharedPlayRemoteSession> FetchSessionAsync(
-        Uri cdnBaseUri,
-        string sessionId,
-        CancellationToken cancellationToken)
+    public async Task<(string RoomCode, string? TrackId, Uri StateUrl, Uri QueueUrl, Uri PackageUrl, DateTimeOffset? ExpiresAtUtc)>
+        FetchSessionAsync(
+            Uri cdnBaseUri,
+            string roomCodeInput,
+            CancellationToken cancellationToken)
     {
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
-        var normalizedSessionId = NormalizeSessionId(sessionId);
-        if (string.IsNullOrWhiteSpace(normalizedSessionId))
-            throw new InvalidOperationException("Shared Play session ID was empty.");
+        var roomCode = SharedPlayDefaults.NormalizeRoomCode(roomCodeInput)
+            ?? throw new InvalidOperationException("Shared Play room code was invalid.");
 
-        var encodedSessionId = Uri.EscapeDataString(normalizedSessionId);
-        var candidates = new[]
-        {
-            $"/shared-play/v1/sessions/{encodedSessionId}",
-            $"/shared-play/v1/sessions/{encodedSessionId}/manifest",
-            $"/shared-play/v1/join/{encodedSessionId}",
-            $"/shared-play/join/{encodedSessionId}"
-        };
+        var endpoint = new Uri(cdnBaseUri, $"shared-play/v2/sessions/{Uri.EscapeDataString(roomCode)}");
 
-        Exception? lastError = null;
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                return await FetchSessionFromEndpointAsync(
-                    SharedPlayDefaults.BuildEndpoint(cdnBaseUri, candidate),
-                    cdnBaseUri,
-                    normalizedSessionId,
-                    cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                lastError = ex;
-            }
-        }
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        throw new InvalidOperationException("Shared Play session could not be loaded from the CDN.", lastError);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Shared Play session fetch", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        return ReadFetchedSession(document.RootElement, cdnBaseUri, roomCode);
     }
 
     public async Task<SharedPlayPlaybackSnapshot?> FetchPlaybackStateAsync(
@@ -281,19 +235,16 @@ public sealed class SharedPlayCdnClient : IDisposable
         while (true)
         {
             var read = await input.ReadAsync(buffer, cancellationToken);
-            if (read == 0)
-                break;
-
+            if (read == 0) break;
             totalBytes += read;
             if (totalBytes > SharedPlayDefaults.MaxPackageBytes)
                 throw new InvalidOperationException("Shared Play package is larger than the download safety limit.");
-
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
         }
     }
 
     public async Task PublishPlaybackStateAsync(
-        SharedPlaySession session,
+        SharedPlayRoomSession session,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken)
     {
@@ -305,10 +256,9 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(new
             {
                 protocolVersion = SharedPlayDefaults.ProtocolVersion,
-                sessionId = session.SessionId,
+                roomCode = session.RoomCode,
                 trackId = session.TrackId,
                 activeTrackId = session.TrackId,
-                currentTrackId = session.TrackId,
                 state = playbackWithTrack,
                 playback = playbackWithTrack
             })
@@ -335,7 +285,7 @@ public sealed class SharedPlayCdnClient : IDisposable
     }
 
     public async Task PublishQueueStateAsync(
-        SharedPlaySession session,
+        SharedPlayRoomSession session,
         SharedPlayQueueSnapshot queue,
         CancellationToken cancellationToken)
     {
@@ -346,7 +296,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(new
             {
                 protocolVersion = SharedPlayDefaults.ProtocolVersion,
-                sessionId = session.SessionId,
+                roomCode = session.RoomCode,
                 queue
             })
         };
@@ -364,7 +314,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         EnsureHttps(cdnBaseUri, "CDN base URL");
         var endpoint = SharedPlayDefaults.BuildEndpoint(
             cdnBaseUri,
-            $"/shared-play/v1/channels/{Uri.EscapeDataString(channelId)}");
+            $"/shared-play/v2/channels/{Uri.EscapeDataString(channelId)}");
 
         using var request = new HttpRequestMessage(HttpMethod.Put, endpoint)
         {
@@ -378,7 +328,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         return await JsonSerializer.DeserializeAsync<SharedPlayChannelResponse>(stream, JsonOptions, cancellationToken);
     }
 
-    private async Task<SharedPlayUploadResponse> RequestUploadUrlsAsync(
+    private async Task<SharedPlayCreateSessionResponse> RequestCreateSessionAsync(
         Uri endpoint,
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
@@ -386,125 +336,73 @@ public sealed class SharedPlayCdnClient : IDisposable
         bool activateOnUpload = true)
     {
         var playbackWithTrack = playback with { TrackId = package.TrackId };
-        var uploadRequest = new SharedPlayUploadRequest(
-            SharedPlayDefaults.ProtocolVersion,
-            SharedPlayDefaults.ClientName,
-            "spectralis-rich",
-            package.Track,
-            new SharedPlayPackageDescriptor(
-                package.TrackId,
-                package.AudioSha256,
-                package.PackageSha256,
-                package.AudioBytes,
-                package.PackageBytes,
-                package.AudioExtension,
-                SharedPlayDefaults.RichPackageContentType),
-            playbackWithTrack,
-            SharedPlayCacheStore.CreateCapabilities());
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = JsonContent(new
             {
-                uploadRequest.ProtocolVersion,
-                uploadRequest.ClientName,
-                uploadRequest.PackageKind,
-                uploadRequest.Track,
-                uploadRequest.Package,
-                uploadRequest.Playback,
-                uploadRequest.Capabilities,
+                protocolVersion = SharedPlayDefaults.ProtocolVersion,
+                clientName = SharedPlayDefaults.ClientName,
+                packageKind = "spectralis-rich",
+                track = package.Track,
+                package = new SharedPlayPackageDescriptor(
+                    package.TrackId,
+                    package.AudioSha256,
+                    package.PackageSha256,
+                    package.AudioBytes,
+                    package.PackageBytes,
+                    package.AudioExtension,
+                    SharedPlayDefaults.RichPackageContentType),
+                playback = playbackWithTrack,
+                capabilities = SharedPlayCacheStore.CreateCapabilities(),
                 activateOnUpload
             })
         };
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, "Shared Play upload session request", cancellationToken);
+        await EnsureSuccessAsync(response, "Shared Play create session request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await JsonSerializer.DeserializeAsync<SharedPlayUploadResponse>(stream, JsonOptions, cancellationToken)
-            ?? throw new InvalidOperationException("The CDN returned an empty Shared Play upload response.");
+        return await JsonSerializer.DeserializeAsync<SharedPlayCreateSessionResponse>(stream, JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("The CDN returned an empty Shared Play session response.");
     }
 
-    private async Task<SharedPlayRemoteSession> FetchSessionFromEndpointAsync(
-        Uri endpoint,
-        Uri cdnBaseUri,
-        string fallbackSessionId,
-        CancellationToken cancellationToken)
+    private static (string RoomCode, string? TrackId, Uri StateUrl, Uri QueueUrl, Uri PackageUrl, DateTimeOffset? ExpiresAtUtc)
+        ReadFetchedSession(JsonElement payload, Uri cdnBaseUri, string fallbackRoomCode)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var source = TryGetObject(payload, "session", out var sessionElement) ? sessionElement : payload;
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, "Shared Play session fetch", cancellationToken);
+        var roomCode = FirstString(source, "roomCode") ??
+            FirstString(payload, "roomCode") ??
+            fallbackRoomCode;
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        return ReadRemoteSession(document.RootElement, cdnBaseUri, fallbackSessionId);
-    }
-
-    private static SharedPlayRemoteSession ReadRemoteSession(
-        JsonElement payload,
-        Uri cdnBaseUri,
-        string fallbackSessionId)
-    {
-        var source = TryGetObject(payload, "session", out var sessionElement)
-            ? sessionElement
-            : payload;
-
-        var sessionId = FirstString(source, "sessionId") ??
-            FirstString(payload, "sessionId") ??
-            fallbackSessionId;
-
-        if (string.IsNullOrWhiteSpace(sessionId))
-            throw new InvalidOperationException("The CDN session response did not include a session ID.");
-
-        var encodedSessionId = Uri.EscapeDataString(sessionId);
         var trackId = FirstString(source, "activeTrackId", "currentTrackId", "trackId") ??
             FirstString(payload, "activeTrackId", "currentTrackId", "trackId");
-        var stateUrl = FirstUrl(
-            cdnBaseUri,
+
+        var encodedCode = Uri.EscapeDataString(roomCode);
+        var stateUrl = FirstUrl(cdnBaseUri,
             FirstString(source, "stateUrl"),
             FirstNestedString(source, "links", "state"),
             FirstString(payload, "stateUrl"),
-            FirstNestedString(payload, "links", "state"),
-            $"/shared-play/v1/sessions/{encodedSessionId}/state");
+            $"/shared-play/v2/sessions/{encodedCode}/state")
+            ?? throw new InvalidOperationException("The CDN session response did not include a valid state URL.");
 
-        if (stateUrl is null)
-            throw new InvalidOperationException("The CDN session response did not include a valid state URL.");
-
-        var packageUrl = FirstUrl(
-            cdnBaseUri,
+        var packageUrl = FirstUrl(cdnBaseUri,
             FirstString(source, "packageUrl"),
             FirstString(source, "spectralisPackageUrl"),
-            FirstString(source, "assetUrl"),
             FirstNestedString(source, "package", "assetUrl"),
             FirstNestedString(source, "package", "url"),
-            FirstNestedString(source, "assets", "spectralisPackage", "url"),
-            FirstNestedString(source, "assets", "package", "url"),
-            FirstNestedString(payload, "package", "assetUrl"),
-            FindUploadAssetUrl(source, "spectralis-package"),
-            FindUploadAssetUrl(payload, "spectralis-package"));
+            $"/shared-play/v2/sessions/{encodedCode}/package")
+            ?? throw new InvalidOperationException("The CDN session response did not include a valid package URL.");
 
-        if (packageUrl is null)
-            throw new InvalidOperationException("The CDN session response did not include a valid package URL.");
-
-        var queueUrl = FirstUrl(
-            cdnBaseUri,
+        var queueUrl = FirstUrl(cdnBaseUri,
             FirstString(source, "queueUrl"),
             FirstNestedString(source, "links", "queue"),
             FirstString(payload, "queueUrl"),
-            FirstNestedString(payload, "links", "queue"),
-            $"/shared-play/v1/sessions/{encodedSessionId}/queue");
+            $"/shared-play/v2/sessions/{encodedCode}/queue")
+            ?? throw new InvalidOperationException("The CDN session response did not include a valid queue URL.");
 
-        if (queueUrl is null)
-            throw new InvalidOperationException("The CDN session response did not include a valid queue URL.");
-
-        return new SharedPlayRemoteSession(
-            sessionId,
-            trackId,
-            stateUrl,
-            queueUrl,
-            packageUrl,
+        return (roomCode, trackId, stateUrl, queueUrl, packageUrl,
             FirstDateTimeOffset(source, "expiresAtUtc") ?? FirstDateTimeOffset(payload, "expiresAtUtc"));
     }
 
@@ -525,30 +423,25 @@ public sealed class SharedPlayCdnClient : IDisposable
         content.Headers.ContentLength = package.PackageBytes;
         content.Headers.ContentType = new MediaTypeHeaderValue(SharedPlayDefaults.RichPackageContentType);
 
-        using var request = new HttpRequestMessage(method, uploadUri)
-        {
-            Content = content
-        };
-
+        using var request = new HttpRequestMessage(method, uploadUri) { Content = content };
         ApplyUploadHeaders(request, uploadTarget.Headers);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play package upload", cancellationToken);
     }
 
+    private static Uri BuildSessionEndpoint(Uri cdnBaseUri, string roomCode, string segment)
+    {
+        return new Uri(cdnBaseUri, $"shared-play/v2/sessions/{Uri.EscapeDataString(roomCode)}/{segment}");
+    }
+
     private static void ApplyUploadHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string>? headers)
     {
-        if (headers is null)
-            return;
-
+        if (headers is null) return;
         foreach (var (name, value) in headers)
         {
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value))
-                continue;
-
-            if (IsRestrictedHeader(name, value))
-                continue;
-
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value)) continue;
+            if (IsRestrictedHeader(name, value)) continue;
             if (!request.Headers.TryAddWithoutValidation(name, value))
                 request.Content?.Headers.TryAddWithoutValidation(name, value);
         }
@@ -561,7 +454,6 @@ public sealed class SharedPlayCdnClient : IDisposable
         {
             return true;
         }
-
         return string.Equals(name, "authorization", StringComparison.OrdinalIgnoreCase) &&
             value.TrimStart().StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
     }
@@ -571,43 +463,35 @@ public sealed class SharedPlayCdnClient : IDisposable
         playback = new SharedPlayPlaybackSnapshot(false, 0, 0, "remote", DateTimeOffset.UtcNow);
         var payloadTrackId = FirstString(payload, "activeTrackId", "currentTrackId", "trackId");
 
-        if (TryGetObject(payload, "playback", out var playbackElement) &&
-            HasPlaybackFields(playbackElement))
+        if (TryGetObject(payload, "playback", out var playbackElement) && HasPlaybackFields(playbackElement))
         {
             playback = ReadPlaybackSnapshot(playbackElement, payloadTrackId);
             return true;
         }
-
         if (TryGetObject(payload, "state", out var stateElement))
         {
-            if (TryGetObject(stateElement, "playback", out var statePlaybackElement) &&
-                HasPlaybackFields(statePlaybackElement))
+            if (TryGetObject(stateElement, "playback", out var sp) && HasPlaybackFields(sp))
             {
-                playback = ReadPlaybackSnapshot(statePlaybackElement, payloadTrackId);
+                playback = ReadPlaybackSnapshot(sp, payloadTrackId);
                 return true;
             }
-
             if (HasPlaybackFields(stateElement))
             {
                 playback = ReadPlaybackSnapshot(stateElement, payloadTrackId);
                 return true;
             }
         }
-
-        if (TryGetObject(payload, "session", out var sessionElement) &&
-            TryGetObject(sessionElement, "playback", out var sessionPlaybackElement) &&
-            HasPlaybackFields(sessionPlaybackElement))
+        if (TryGetObject(payload, "session", out var sessionEl) &&
+            TryGetObject(sessionEl, "playback", out var sp2) && HasPlaybackFields(sp2))
         {
-            playback = ReadPlaybackSnapshot(sessionPlaybackElement, payloadTrackId);
+            playback = ReadPlaybackSnapshot(sp2, payloadTrackId);
             return true;
         }
-
         if (HasPlaybackFields(payload))
         {
             playback = ReadPlaybackSnapshot(payload, payloadTrackId);
             return true;
         }
-
         return false;
     }
 
@@ -631,10 +515,8 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         foreach (var value in values)
         {
-            if (TryCreateHttpsUri(cdnBaseUri, value, out var uri))
-                return uri;
+            if (TryCreateHttpsUri(cdnBaseUri, value, out var uri)) return uri;
         }
-
         return null;
     }
 
@@ -648,7 +530,6 @@ public sealed class SharedPlayCdnClient : IDisposable
                 uri = absolute;
                 return true;
             }
-
             if (Uri.TryCreate(cdnBaseUri, value.TrimStart('/'), out var relative) &&
                 string.Equals(relative.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             {
@@ -656,151 +537,86 @@ public sealed class SharedPlayCdnClient : IDisposable
                 return true;
             }
         }
-
         uri = new Uri(SharedPlayDefaults.CdnBaseUrl);
         return false;
     }
 
-    private static string? FindUploadAssetUrl(JsonElement element, string name)
-    {
-        if (!TryGetArray(element, "uploads", out var uploads))
-            return null;
-
-        foreach (var upload in uploads.EnumerateArray())
-        {
-            if (upload.ValueKind != JsonValueKind.Object)
-                continue;
-
-            var uploadName = FirstString(upload, "name");
-            if (string.Equals(uploadName, name, StringComparison.OrdinalIgnoreCase))
-                return FirstString(upload, "assetUrl");
-        }
-
-        return null;
-    }
-
-    private static string? FirstNestedString(JsonElement element, params string[] propertyPath)
+    private static string? FirstNestedString(JsonElement element, params string[] path)
     {
         var current = element;
-        foreach (var propertyName in propertyPath)
+        foreach (var prop in path)
         {
-            if (!TryGetObjectProperty(current, propertyName, out current))
-                return null;
+            if (!TryGetObjectProperty(current, prop, out current)) return null;
         }
-
         return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
     }
 
-    private static string? FirstString(JsonElement element, params string[] propertyNames)
+    private static string? FirstString(JsonElement element, params string[] names)
     {
-        foreach (var propertyName in propertyNames)
+        foreach (var name in names)
         {
-            if (TryGetObjectProperty(element, propertyName, out var value) &&
+            if (TryGetObjectProperty(element, name, out var value) &&
                 value.ValueKind == JsonValueKind.String)
             {
                 var text = value.GetString();
-                if (!string.IsNullOrWhiteSpace(text))
-                    return text.Trim();
+                if (!string.IsNullOrWhiteSpace(text)) return text.Trim();
             }
         }
-
         return null;
     }
 
-    private static double? FirstDouble(JsonElement element, params string[] propertyNames)
+    private static double? FirstDouble(JsonElement element, params string[] names)
     {
-        foreach (var propertyName in propertyNames)
+        foreach (var name in names)
         {
-            if (!TryGetObjectProperty(element, propertyName, out var value))
-                continue;
-
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
-                return number;
-
-            if (value.ValueKind == JsonValueKind.String &&
-                double.TryParse(value.GetString(), out var parsed))
-            {
-                return parsed;
-            }
+            if (!TryGetObjectProperty(element, name, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var n)) return n;
+            if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out var p)) return p;
         }
-
         return null;
     }
 
-    private static bool? FirstBool(JsonElement element, params string[] propertyNames)
+    private static bool? FirstBool(JsonElement element, params string[] names)
     {
-        foreach (var propertyName in propertyNames)
+        foreach (var name in names)
         {
-            if (!TryGetObjectProperty(element, propertyName, out var value))
-                continue;
-
-            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                return value.GetBoolean();
-
-            if (value.ValueKind == JsonValueKind.String &&
-                bool.TryParse(value.GetString(), out var parsed))
-            {
-                return parsed;
-            }
+            if (!TryGetObjectProperty(element, name, out var value)) continue;
+            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) return value.GetBoolean();
+            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var p)) return p;
         }
-
         return null;
     }
 
-    private static DateTimeOffset? FirstDateTimeOffset(JsonElement element, params string[] propertyNames)
+    private static DateTimeOffset? FirstDateTimeOffset(JsonElement element, params string[] names)
     {
-        foreach (var propertyName in propertyNames)
+        foreach (var name in names)
         {
-            var value = FirstString(element, propertyName);
-            if (DateTimeOffset.TryParse(value, out var parsed))
-                return parsed;
+            var value = FirstString(element, name);
+            if (DateTimeOffset.TryParse(value, out var parsed)) return parsed;
         }
-
         return null;
     }
 
-    private static bool TryGetObject(JsonElement element, string propertyName, out JsonElement value) =>
-        TryGetObjectProperty(element, propertyName, out value) &&
-        value.ValueKind == JsonValueKind.Object;
+    private static bool TryGetObject(JsonElement element, string name, out JsonElement value) =>
+        TryGetObjectProperty(element, name, out value) && value.ValueKind == JsonValueKind.Object;
 
-    private static bool TryGetArray(JsonElement element, string propertyName, out JsonElement value) =>
-        TryGetObjectProperty(element, propertyName, out value) &&
-        value.ValueKind == JsonValueKind.Array;
-
-    private static bool TryGetObjectProperty(JsonElement element, string propertyName, out JsonElement value)
+    private static bool TryGetObjectProperty(JsonElement element, string name, out JsonElement value)
     {
-        if (element.ValueKind == JsonValueKind.Object &&
-            element.TryGetProperty(propertyName, out value))
-        {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out value))
             return true;
-        }
-
         value = default;
         return false;
     }
 
-    private static string NormalizeSessionId(string value)
-    {
-        var chars = value
-            .Trim()
-            .Where(static character =>
-                char.IsAsciiLetterOrDigit(character) ||
-                character is '.' or '_' or ':' or '-')
-            .ToArray();
-
-        return new string(chars);
-    }
-
     private static string TrackAssetKey(string trackId)
     {
-        var chars = trackId
-            .Trim()
-            .Select(static character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'
-                ? character
-                : '-')
+        var chars = trackId.Trim()
+            .Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-')
             .ToArray();
         var normalized = new string(chars).Trim('-');
-        return string.IsNullOrWhiteSpace(normalized) ? Guid.NewGuid().ToString("N") : normalized[..Math.Min(96, normalized.Length)];
+        return string.IsNullOrWhiteSpace(normalized)
+            ? Guid.NewGuid().ToString("N")
+            : normalized[..Math.Min(96, normalized.Length)];
     }
 
     private static HttpContent JsonContent<T>(T value) =>
@@ -811,19 +627,15 @@ public sealed class SharedPlayCdnClient : IDisposable
         string operation,
         CancellationToken cancellationToken)
     {
-        if (response.IsSuccessStatusCode)
-            return;
+        if (response.IsSuccessStatusCode) return;
 
         var detail = "";
         try
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!string.IsNullOrWhiteSpace(body))
-                detail = $" Response: {body.Trim()}";
+            if (!string.IsNullOrWhiteSpace(body)) detail = $" Response: {body.Trim()}";
         }
-        catch
-        {
-        }
+        catch { }
 
         throw new HttpRequestException(
             $"{operation} failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}.{detail}",
@@ -839,7 +651,6 @@ public sealed class SharedPlayCdnClient : IDisposable
             uri = parsed;
             return true;
         }
-
         uri = new Uri(SharedPlayDefaults.CdnBaseUrl);
         return false;
     }
@@ -850,8 +661,5 @@ public sealed class SharedPlayCdnClient : IDisposable
             throw new InvalidOperationException($"{label} must use HTTPS.");
     }
 
-    public void Dispose()
-    {
-        httpClient.Dispose();
-    }
+    public void Dispose() => httpClient.Dispose();
 }
