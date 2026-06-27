@@ -24,7 +24,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private readonly SharedPlaySessionController _controller = new();
     private string _statusText = "No active room";
     private string _joinUrl = string.Empty;
-    private string _sessionId = string.Empty;
+    private string _roomCode = string.Empty;
     private bool _isHosting;
     private string _lastError = string.Empty;
 
@@ -58,6 +58,12 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         get => _joinUrl;
         private set => this.RaiseAndSetIfChanged(ref _joinUrl, value);
+    }
+
+    public string RoomCode
+    {
+        get => _roomCode;
+        private set => this.RaiseAndSetIfChanged(ref _roomCode, value);
     }
 
     public string LastError
@@ -114,8 +120,9 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private void OnStatusChanged(object? sender, EventArgs _)
     {
         var snap = _controller.Snapshot;
-        IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.SessionId);
+        IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.RoomCode);
         JoinUrl = snap.JoinUrl ?? string.Empty;
+        RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
     }
@@ -125,7 +132,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         if (!snap.IsEnabled) return "Shared Play is disabled.";
         if (!string.IsNullOrEmpty(snap.LastError)) return $"Error: {snap.LastError}";
         if (snap.IsUploading) return "Uploading track...";
-        if (!string.IsNullOrEmpty(snap.SessionId)) return $"Hosting room {snap.SessionId}";
+        if (!string.IsNullOrEmpty(snap.DisplayCode)) return $"Room: {snap.DisplayCode}";
+        if (!string.IsNullOrEmpty(snap.RoomCode)) return $"Room: {SharedPlayDefaults.DisplayRoomCode(snap.RoomCode)}";
         return "Ready to host.";
     }
 
