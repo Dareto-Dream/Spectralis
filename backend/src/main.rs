@@ -104,6 +104,16 @@ async fn main() -> Result<()> {
             "/shared-play/v2/sessions/:code/reactions",
             get(get_reactions).post(post_reaction),
         )
+        .route(
+            "/shared-play/v2/channels/:channel",
+            get(get_channel).put(put_channel),
+        )
+        .route("/shared-play/v2/channels/:channel/stats", get(get_channel_stats))
+        .route("/shared-play/v2/sessions/:code/package", get(get_package))
+        .route(
+            "/shared-play/v2/sessions/:code/tracks/:key/package",
+            get(get_track_package),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -775,6 +785,256 @@ async fn post_reaction(
     reactions["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_json(reactions_path, &reactions).await?;
     Ok(Json(reactions))
+}
+
+// ── Channel handlers ──────────────────────────────────────────────────────────
+
+async fn get_channel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(channel): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+    Ok(Json(read_channel_payload(&state, &headers, &channel_id).await?))
+}
+
+async fn get_channel_stats(
+    State(state): State<AppState>,
+    AxumPath(channel): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+    let path = channel_path(&state, &channel_id)?;
+    let channel = read_json(path).await?;
+    Ok(Json(channel.get("stats").cloned().unwrap_or_else(empty_channel_stats)))
+}
+
+async fn put_channel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(channel): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+    let owner_token = clean_owner_token(
+        payload.get("ownerToken").and_then(Value::as_str).unwrap_or(""),
+    )?;
+    let path = channel_path(&state, &channel_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    let mut channel = read_json(path.clone()).await.unwrap_or_else(|_| json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "channelId": &channel_id,
+        "ownerToken": &owner_token,
+        "createdAtUtc": Utc::now().to_rfc3339(),
+        "stats": empty_channel_stats()
+    }));
+
+    let existing_token = channel.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !existing_token.is_empty() && existing_token != owner_token {
+        return Err(AppError::forbidden("Live channel owner token was invalid."));
+    }
+
+    let was_live = channel.get("isLive").and_then(Value::as_bool).unwrap_or(false);
+    let was_playing = channel
+        .get("playback")
+        .and_then(|p| p.get("isPlaying"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let previous_updated = channel.get("updatedAtUtc").and_then(Value::as_str).and_then(parse_utc);
+    let now = Utc::now();
+    let is_live = payload.get("isLive").and_then(Value::as_bool).unwrap_or(false);
+    let session_room_code = payload
+        .get("roomCode")
+        .or_else(|| payload.get("sessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let listener_count = if is_live {
+        match session_room_code {
+            Some(code) => read_session_listener_count(&state, code).await.unwrap_or(0),
+            None => 0,
+        }
+    } else {
+        0
+    };
+
+    if was_live && was_playing {
+        if let Some(prev) = previous_updated {
+            let delta = (now - prev).num_seconds().clamp(0, 10);
+            if delta > 0 {
+                let prev_track = channel.get("track").cloned();
+                let prev_track_id = channel.get("trackId").and_then(Value::as_str).map(ToOwned::to_owned);
+                let prev_reactions_seen = channel.get("reactionsSeen").and_then(Value::as_u64).unwrap_or(0);
+                update_channel_stats(&mut channel, delta, listener_count, prev_track, prev_track_id, prev_reactions_seen);
+            }
+        }
+    }
+
+    let display_name = clean_short_text(
+        payload.get("displayName").and_then(Value::as_str).unwrap_or(""),
+        32,
+    )
+    .unwrap_or_else(|| "Spectralis Listener".to_string());
+    let join_url = payload
+        .get("joinUrl")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("");
+
+    channel["ownerToken"] = json!(owner_token);
+    channel["displayName"] = json!(display_name);
+    channel["isLive"] = json!(is_live);
+    channel["roomCode"] = payload.get("roomCode").cloned().unwrap_or(Value::Null);
+    channel["sessionId"] = payload.get("roomCode").or_else(|| payload.get("sessionId")).cloned().unwrap_or(Value::Null);
+    channel["joinUrl"] = json!(join_url);
+    channel["trackId"] = payload.get("trackId").cloned().unwrap_or(Value::Null);
+    channel["track"] = payload.get("track").cloned().unwrap_or(Value::Null);
+    channel["playback"] = payload.get("playback").cloned().unwrap_or(Value::Null);
+    channel["listenerCount"] = json!(listener_count);
+    channel["updatedAtUtc"] = json!(now.to_rfc3339());
+    channel["channelUrl"] = json!(format!(
+        "{}/spectralis/web-share?channel={}",
+        base_url(&state, &headers),
+        &channel_id
+    ));
+
+    write_json(path, &channel).await?;
+    Ok(Json(public_channel_payload(channel)))
+}
+
+async fn read_channel_payload(
+    state: &AppState,
+    headers: &HeaderMap,
+    channel_id: &str,
+) -> Result<Value, AppError> {
+    let path = channel_path(state, channel_id)?;
+    let mut channel = read_json(path).await?;
+    if channel.get("isLive").and_then(Value::as_bool).unwrap_or(false) {
+        let updated_at = channel.get("updatedAtUtc").and_then(Value::as_str).and_then(parse_utc);
+        if updated_at
+            .map(|v| Utc::now() - v > Duration::seconds(CHANNEL_HEARTBEAT_TTL_SECONDS))
+            .unwrap_or(true)
+        {
+            channel["isLive"] = json!(false);
+            channel["roomCode"] = Value::Null;
+            channel["sessionId"] = Value::Null;
+            channel["joinUrl"] = json!("");
+            channel["listenerCount"] = json!(0);
+        }
+    }
+    channel["channelUrl"] = json!(format!(
+        "{}/spectralis/web-share?channel={}",
+        base_url(state, headers),
+        channel_id
+    ));
+    Ok(public_channel_payload(channel))
+}
+
+fn public_channel_payload(mut channel: Value) -> Value {
+    if let Some(obj) = channel.as_object_mut() {
+        obj.remove("ownerToken");
+    }
+    channel
+}
+
+fn update_channel_stats(
+    channel: &mut Value,
+    delta_seconds: i64,
+    listener_count: usize,
+    track: Option<Value>,
+    track_id: Option<String>,
+    reactions_seen: u64,
+) {
+    if !channel.get("stats").is_some_and(Value::is_object) {
+        channel["stats"] = empty_channel_stats();
+    }
+    let stats = channel.get_mut("stats").expect("stats initialized above");
+    let total_shared = stats.get("totalSharedSeconds").and_then(Value::as_i64).unwrap_or(0) + delta_seconds;
+    let total_listener = stats.get("totalListenerSeconds").and_then(Value::as_i64).unwrap_or(0)
+        + delta_seconds * listener_count as i64;
+    let peak = stats
+        .get("peakConcurrentListeners")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        .max(listener_count as u64);
+
+    stats["totalSharedSeconds"] = json!(total_shared);
+    stats["totalListenerSeconds"] = json!(total_listener);
+    stats["peakConcurrentListeners"] = json!(peak);
+
+    let Some(track_id) = track_id.filter(|v| !v.trim().is_empty()) else { return };
+    if !stats.get("trackStats").is_some_and(Value::is_array) {
+        stats["trackStats"] = json!([]);
+    }
+
+    let title = track
+        .as_ref()
+        .and_then(|v| v.get("displayName").or_else(|| v.get("title")))
+        .and_then(Value::as_str)
+        .unwrap_or("Shared Play Track")
+        .to_string();
+    let artist = track
+        .as_ref()
+        .and_then(|v| v.get("artist"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    if let Some(items) = stats.get_mut("trackStats").and_then(Value::as_array_mut) {
+        if let Some(existing) = items
+            .iter_mut()
+            .find(|i| i.get("trackId").and_then(Value::as_str).is_some_and(|v| v == track_id))
+        {
+            existing["title"] = json!(title);
+            existing["artist"] = json!(artist);
+            existing["playSeconds"] = json!(existing.get("playSeconds").and_then(Value::as_i64).unwrap_or(0) + delta_seconds);
+            existing["listenerSeconds"] = json!(existing.get("listenerSeconds").and_then(Value::as_i64).unwrap_or(0) + delta_seconds * listener_count as i64);
+            existing["reactions"] = json!(existing.get("reactions").and_then(Value::as_u64).unwrap_or(0).max(reactions_seen));
+        } else {
+            items.push(json!({
+                "trackId": track_id,
+                "title": title,
+                "artist": artist,
+                "playSeconds": delta_seconds,
+                "listenerSeconds": delta_seconds * listener_count as i64,
+                "reactions": reactions_seen
+            }));
+        }
+        items.sort_by_key(|i| std::cmp::Reverse(i.get("listenerSeconds").and_then(Value::as_i64).unwrap_or(0)));
+        if items.len() > 50 {
+            items.truncate(50);
+        }
+    }
+}
+
+// ── Package download handlers ─────────────────────────────────────────────────
+
+async fn get_package(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Response, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let package_path = existing_session_root(&state, &room_code)
+        .await?
+        .join("spectralis-rich.zip");
+    send_file(package_path, Some("application/vnd.spectralis.shared-play+zip")).await
+}
+
+async fn get_track_package(
+    State(state): State<AppState>,
+    AxumPath((code, key)): AxumPath<(String, String)>,
+) -> Result<Response, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let track_key = clean_asset_key(&key)?;
+    let package_path = existing_session_root(&state, &room_code)
+        .await?
+        .join("tracks")
+        .join(track_key)
+        .join("spectralis-rich.zip");
+    send_file(package_path, Some("application/vnd.spectralis.shared-play+zip")).await
 }
 
 // ── Room code generation ──────────────────────────────────────────────────────
