@@ -84,6 +84,9 @@ public sealed class AppSettings
     /// <summary>IDs of CDN warning.json notices the user has already dismissed.</summary>
     public List<string> DismissedWarningIds { get; set; } = [];
 
+    /// <summary>Streamer dead zones — areas hidden by camera or UI overlays. Widgets avoid these when applied.</summary>
+    public List<Spectralis.Core.Integrations.Obs.DeadZone> DeadZones { get; set; } = [];
+
     public AppSettings Clone() =>
         new()
         {
@@ -152,6 +155,7 @@ public sealed class AppSettings
             SqCdnBaseUrl = SqCdnBaseUrl,
             SqRoomId = SqRoomId,
             SqOwnerToken = SqOwnerToken,
+            DeadZones = DeadZones.Select(z => z.Clone()).ToList(),
         };
 }
 
@@ -240,6 +244,9 @@ public static class AppSettingsStore
             .Where(folder => !string.IsNullOrWhiteSpace(folder))
             .Select(folder => folder.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        settings.DeadZones = (settings.DeadZones ?? [])
+            .Where(z => z.W > 0 && z.H > 0)
             .ToList();
         settings.LastSeenAppVersion = settings.LastSeenAppVersion?.Trim() ?? string.Empty;
         settings.IgnoredUpdateVersion = settings.IgnoredUpdateVersion?.Trim() ?? string.Empty;
