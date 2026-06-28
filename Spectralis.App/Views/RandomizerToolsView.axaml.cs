@@ -40,7 +40,11 @@ public partial class RandomizerToolsView : UserControl
         _coinTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(75), DispatcherPriority.Render, OnCoinTick);
 
         DataContextChanged += OnDataContextChanged;
-        Loaded += (_, _) => DrawWheel();
+        Loaded += (_, _) =>
+        {
+            WheelCanvas.SizeChanged += (_, _) => DrawWheel();
+            DrawWheel();
+        };
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -129,20 +133,32 @@ public partial class RandomizerToolsView : UserControl
 
     // ── Wheel drawing ─────────────────────────────────────────────────────────
 
+    private (double cx, double cy, double r) WheelDimensions()
+    {
+        double w = WheelCanvas.Bounds.Width;
+        double h = WheelCanvas.Bounds.Height;
+        double cx = w / 2;
+        double cy = h / 2;
+        double r = Math.Min(cx, cy) - 12;
+        return (cx, cy, r);
+    }
+
     private void DrawWheel()
     {
         WheelCanvas.Children.Clear();
 
+        var (cx, cy, r) = WheelDimensions();
+        if (r < 10) return;
+
         if (_vm is null || _vm.WheelEntries.Count == 0)
         {
-            DrawEmptyState();
+            DrawEmptyState(cx, cy, r);
             return;
         }
 
         var entries = _vm.WheelEntries.ToList();
         int n = entries.Count;
         double sliceAngle = 360.0 / n;
-        const double cx = 110, cy = 110, r = 104;
 
         for (int i = 0; i < n; i++)
         {
@@ -171,10 +187,11 @@ public partial class RandomizerToolsView : UserControl
                 StrokeThickness = 1.5,
             });
 
-            double midRad  = (_currentRotation + (i + 0.5) * sliceAngle - 90.0) * Math.PI / 180.0;
+            double midRad = (_currentRotation + (i + 0.5) * sliceAngle - 90.0) * Math.PI / 180.0;
             double lr = r * 0.63;
-            double fontSize = Math.Max(8.0, Math.Min(12.0, 160.0 / n));
-            int maxChars = n <= 8 ? 10 : 6;
+            double fontSize = Math.Max(9.0, Math.Min(18.0, r * 1.2 / n));
+            double labelWidth = r * 0.5;
+            int maxChars = n <= 8 ? 14 : 8;
 
             var label = new TextBlock
             {
@@ -182,66 +199,67 @@ public partial class RandomizerToolsView : UserControl
                 Foreground = Brushes.White,
                 FontSize = fontSize,
                 FontWeight = FontWeight.Medium,
-                Width = 56,
+                Width = labelWidth,
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 IsHitTestVisible = false,
             };
-            Canvas.SetLeft(label, cx + lr * Math.Cos(midRad) - 28);
+            Canvas.SetLeft(label, cx + lr * Math.Cos(midRad) - labelWidth / 2);
             Canvas.SetTop(label, cy + lr * Math.Sin(midRad) - fontSize / 2);
             WheelCanvas.Children.Add(label);
         }
 
-        // Center cap
+        double capR = Math.Max(9, r * 0.04);
         var cap = new Ellipse
         {
-            Width = 18, Height = 18,
+            Width = capR * 2, Height = capR * 2,
             Fill = new SolidColorBrush(Color.FromRgb(18, 16, 20)),
             Stroke = Brushes.White,
             StrokeThickness = 2,
         };
-        Canvas.SetLeft(cap, cx - 9);
-        Canvas.SetTop(cap, cy - 9);
+        Canvas.SetLeft(cap, cx - capR);
+        Canvas.SetTop(cap, cy - capR);
         WheelCanvas.Children.Add(cap);
 
-        DrawPointer(cx);
+        DrawPointer(cx, r);
     }
 
-    private void DrawEmptyState()
+    private void DrawEmptyState(double cx, double cy, double r)
     {
         var ring = new Ellipse
         {
-            Width = 208, Height = 208,
+            Width = r * 2, Height = r * 2,
             Stroke = new SolidColorBrush(Color.FromRgb(70, 62, 75)),
             StrokeThickness = 2,
             Fill = new SolidColorBrush(Color.FromRgb(28, 25, 31)),
             StrokeDashArray = [6, 4],
         };
-        Canvas.SetLeft(ring, 6);
-        Canvas.SetTop(ring, 6);
+        Canvas.SetLeft(ring, cx - r);
+        Canvas.SetTop(ring, cy - r);
         WheelCanvas.Children.Add(ring);
 
         var hint = new TextBlock
         {
             Text = "Add entries to spin",
             Foreground = new SolidColorBrush(Color.FromRgb(110, 100, 118)),
-            FontSize = 13,
+            FontSize = 14,
         };
-        Canvas.SetLeft(hint, 48);
-        Canvas.SetTop(hint, 102);
+        Canvas.SetLeft(hint, cx - 74);
+        Canvas.SetTop(hint, cy - 7);
         WheelCanvas.Children.Add(hint);
 
-        DrawPointer(110);
+        DrawPointer(cx, r);
     }
 
-    private void DrawPointer(double cx)
+    private void DrawPointer(double cx, double r)
     {
+        double pSize = Math.Max(8, r * 0.05);
         var geom = new StreamGeometry();
         using (var ctx = geom.Open())
         {
-            ctx.BeginFigure(new Point(cx, 9), true);
-            ctx.LineTo(new Point(cx - 9, 0));
-            ctx.LineTo(new Point(cx + 9, 0));
+            ctx.BeginFigure(new Point(cx, pSize * 1.5), true);
+            ctx.LineTo(new Point(cx - pSize, 0));
+            ctx.LineTo(new Point(cx + pSize, 0));
             ctx.EndFigure(true);
         }
         WheelCanvas.Children.Add(new ShapePath
