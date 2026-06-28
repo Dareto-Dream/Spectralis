@@ -1,9 +1,5 @@
 param(
     [Parameter(Mandatory = $true)][string]$Version,
-    # TODO 5.1.0: add linux-x64 and osx-x64/osx-arm64 channels so Linux and
-    # macOS users get Velopack auto-updates. Each channel needs a vpk pack run,
-    # a matching releases.<channel>.json on the CDN, and platform branching in
-    # VelopackUpdateService.cs (OperatingSystem.IsLinux / IsOSX).
     [string]$Channel = "win-x64"
 )
 
