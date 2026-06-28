@@ -164,6 +164,7 @@ public sealed class StreamerQueueState
     public List<StreamerQueueSkipRequest> SkipRequests { get; init; } = [];
     public List<StreamerQueueSkipRequest> SuperSkipRequests { get; init; } = [];
     public string? StripePublishableKey { get; init; }
+    public bool StripeConnected { get; init; }
 }
 
 public sealed class StreamerQueueSettings
@@ -222,5 +223,6 @@ public sealed class StreamerQueuePutRequest
 
 public sealed class StreamerQueueStripeConnectResponse
 {
-    public string? Url { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("connectUrl")]
+    public string? ConnectUrl { get; init; }
 }

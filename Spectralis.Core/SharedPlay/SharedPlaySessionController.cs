@@ -211,6 +211,13 @@ public sealed class SharedPlaySessionController : IDisposable
             creds.Value.CdnBaseUri, creds.Value.RoomCode, creds.Value.SessionKey, itemId, cancellationToken);
     }
 
+    public async Task DisconnectStripeAsync(CancellationToken cancellationToken)
+    {
+        var ch = GetChannelCredentials();
+        if (ch is null) throw new InvalidOperationException("No channel credentials configured.");
+        await cdnClient.DisconnectStripeAsync(GetCdnBaseUri(), ch.Value.ChannelId, ch.Value.OwnerToken, cancellationToken);
+    }
+
     public void ClearActiveSession()
     {
         CancellationTokenSource? oldCancellation = null;
