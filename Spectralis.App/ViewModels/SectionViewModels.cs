@@ -210,6 +210,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public bool SqAnyFeeEnabled => SqQueueFeeEnabled || SqSkipEnabled || SqSuperSkipEnabled;
 
+    public bool SqChannelRequired => _controller.GetChannelCredentials() is null;
+
     public bool SqStripeConnected
     {
         get => _sqStripeConnected;
@@ -264,7 +266,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
             if (!string.IsNullOrEmpty(url))
             {
                 OpenUrlRequested?.Invoke(url);
-                SqStatus = "Complete Stripe Connect in your browser, then refresh.";
+                SqStatus = "Complete Stripe Connect in your browser…";
+                _ = SqPollForStripeConnectionAsync();
             }
             else
             {
@@ -277,11 +280,47 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private async Task SqPollForStripeConnectionAsync()
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            try
+            {
+                var state = await _controller.FetchStreamerQueueAsync(CancellationToken.None);
+                if (state is not null && state.StripeConnected)
+                {
+                    SqStripeConnected = true;
+                    SqStripeStatus = "Connected";
+                    SqStatus = "Stripe account connected.";
+                    return;
+                }
+            }
+            catch { }
+        }
+        SqStatus = "Stripe Connect timed out. Refresh after completing in your browser.";
+    }
+
     private void SqDisconnectStripe()
     {
-        SqStripeConnected = false;
-        SqStripeStatus = "Not connected";
-        SqStatus = "Stripe account disconnected. Save settings to apply.";
+        _ = SqDisconnectStripeAsync();
+    }
+
+    private async Task SqDisconnectStripeAsync()
+    {
+        SqStatus = "Disconnecting Stripe…";
+        try
+        {
+            await _controller.DisconnectStripeAsync(CancellationToken.None);
+            SqStripeConnected = false;
+            SqStripeStatus = "Not connected";
+            SqStatus = "Stripe account disconnected.";
+        }
+        catch (Exception ex)
+        {
+            SqStatus = $"Disconnect failed: {ex.Message}";
+        }
     }
 
     private void SqCopySubmitUrl()
@@ -381,6 +420,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         SqSkipVotes = s.SkipRequests.VotesRequired.ToString();
         SqSuperSkipEnabled = s.SuperSkips.Enabled;
         SqSuperSkipAmount = s.SuperSkips.Amount.ToString("0.00");
+        SqStripeConnected = state.StripeConnected;
+        SqStripeStatus = state.StripeConnected ? "Connected" : "Not connected";
 
         var pending = state.Submissions
             .Where(sub => sub.Status == "pending")
@@ -389,36 +430,6 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         SqPendingItems.Clear();
         foreach (var sub in pending)
             SqPendingItems.Add(new SqPendingItemVm(sub.Id, sub.DisplayName, sub.Url, SqApproveItem, SqRejectItem));
-
-        this.RaisePropertyChanged(nameof(SqHasPending));
-        this.RaisePropertyChanged(nameof(SqPendingHeaderText));
-    }
-
-    public void ApplySqSnapshot(bool enabled, string submitUrl, bool requireApproval,
-        bool allowDuplicates, int maxQueueLength, bool queueFeeEnabled, decimal queueFeeAmount,
-        bool skipEnabled, decimal skipAmount, int skipVotes,
-        bool superSkipEnabled, decimal superSkipAmount,
-        bool stripeConnected, string stripeStatus,
-        IEnumerable<(string Id, string DisplayName, string Url)> pendingItems)
-    {
-        SqEnabled = enabled;
-        SqSubmitUrl = submitUrl;
-        SqRequireApproval = requireApproval;
-        SqAllowDuplicates = allowDuplicates;
-        SqMaxQueueLength = maxQueueLength.ToString();
-        SqQueueFeeEnabled = queueFeeEnabled;
-        SqQueueFeeAmount = queueFeeAmount.ToString("0.00");
-        SqSkipEnabled = skipEnabled;
-        SqSkipAmount = skipAmount.ToString("0.00");
-        SqSkipVotes = skipVotes.ToString();
-        SqSuperSkipEnabled = superSkipEnabled;
-        SqSuperSkipAmount = superSkipAmount.ToString("0.00");
-        SqStripeConnected = stripeConnected;
-        SqStripeStatus = stripeStatus;
-
-        SqPendingItems.Clear();
-        foreach (var (id, name, url) in pendingItems)
-            SqPendingItems.Add(new SqPendingItemVm(id, name, url, SqApproveItem, SqRejectItem));
 
         this.RaisePropertyChanged(nameof(SqHasPending));
         this.RaisePropertyChanged(nameof(SqPendingHeaderText));
@@ -531,6 +542,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         {
             SqSubmitUrl = string.Empty;
         }
+
+        this.RaisePropertyChanged(nameof(SqChannelRequired));
 
         // Start/stop streamer queue polling when hosting state changes
         if (_isHosting && !wasHosting)
