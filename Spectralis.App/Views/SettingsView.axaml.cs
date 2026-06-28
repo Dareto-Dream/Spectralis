@@ -12,6 +12,37 @@ public partial class SettingsView : UserControl
     public SettingsView()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is not SettingsViewModel vm || vm.StreamerSettings is not { } ss) return;
+        DeadZoneDesigner.SetAspectRatio(ss.CanvasAspectRatio);
+        DeadZoneDesigner.LoadZones(ss.GetDeadZones());
+        DeadZoneDesigner.ZonesChanged -= OnDeadZonesChanged;
+        DeadZoneDesigner.ZonesChanged += OnDeadZonesChanged;
+    }
+
+    private void OnDeadZonesChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is SettingsViewModel { StreamerSettings: { } ss })
+            ss.SaveDeadZones(DeadZoneDesigner.CollectZones());
+    }
+
+    private void OnApplyDeadZones(object? sender, RoutedEventArgs e) =>
+        (DataContext as SettingsViewModel)?.StreamerSettings?.ApplyToCurrentLayout();
+
+    private void OnRemoveSelectedDeadZone(object? sender, RoutedEventArgs e)
+    {
+        DeadZoneDesigner.RemoveSelected();
+    }
+
+    private void OnClearDeadZones(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel { StreamerSettings: { } ss }) return;
+        ss.ClearAll();
+        DeadZoneDesigner.LoadZones([]);
     }
 
     private async void OnLibraryAddFolder(object? sender, RoutedEventArgs e)
