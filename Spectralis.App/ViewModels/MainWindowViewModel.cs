@@ -169,12 +169,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             layout => ObsOverlay.SetLayout(layout),
             (id, layout) => ObsOverlay.SetNamedLayout(id, layout),
             id => ObsOverlay.RemoveNamedLayout(id));
+        StreamerSettings = new StreamerSettingsViewModel(AppSettings, ObsEditor);
         Settings = new SettingsViewModel(
             AppSettings,
             NowPlaying,
             enabled => DiscordPresence.SetEnabled(enabled),
             ObsEditor,
-            Library);
+            Library,
+            StreamerSettings);
 
         Sections = new ObservableCollection<NavSection>
         {
@@ -289,6 +291,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ObsOverlayCoordinator ObsOverlay { get; }
 
     public ObsEditorViewModel ObsEditor { get; }
+
+    public StreamerSettingsViewModel StreamerSettings { get; }
 
     public DiscordPresenceCoordinator DiscordPresence { get; }
 
