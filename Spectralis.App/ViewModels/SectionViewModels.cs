@@ -19,6 +19,27 @@ namespace Spectralis.App.ViewModels;
 // Section ViewModels start as routed placeholders; each gains its real state as
 // its feature lands. They stay in separate-but-small form here until they grow.
 
+// ─── Pending approval item for the Streamer Queue review panel ────────────────
+
+public sealed class SqPendingItemVm : ViewModelBase
+{
+    public SqPendingItemVm(string id, string displayName, string url,
+        Action<string> onApprove, Action<string> onReject)
+    {
+        Id = id;
+        DisplayName = displayName;
+        Url = url;
+        ApproveCommand = ReactiveCommand.Create(() => onApprove(id));
+        RejectCommand  = ReactiveCommand.Create(() => onReject(id));
+    }
+
+    public string Id { get; }
+    public string DisplayName { get; }
+    public string Url { get; }
+    public ReactiveCommand<Unit, Unit> ApproveCommand { get; }
+    public ReactiveCommand<Unit, Unit> RejectCommand { get; }
+}
+
 public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 {
     private readonly SharedPlaySessionController _controller = new();
@@ -28,19 +49,48 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private bool _isHosting;
     private string _lastError = string.Empty;
 
+    // ─── Streamer Queue state ─────────────────────────────────────────────────
+    private bool _sqEnabled;
+    private string _sqSubmitUrl = string.Empty;
+    private bool _sqRequireApproval;
+    private bool _sqAllowDuplicates;
+    private string _sqMaxQueueLength = "50";
+    private bool _sqQueueFeeEnabled;
+    private string _sqQueueFeeAmount = "5.00";
+    private bool _sqSkipEnabled;
+    private string _sqSkipAmount = "2.00";
+    private string _sqSkipVotes = "3";
+    private bool _sqSuperSkipEnabled;
+    private string _sqSuperSkipAmount = "10.00";
+    private bool _sqStripeConnected;
+    private string _sqStripeStatus = "Not connected";
+    private string _sqStatus = string.Empty;
+
     public SharedPlayViewModel()
     {
         _controller.StatusChanged += OnStatusChanged;
         HostCommand  = ReactiveCommand.CreateFromTask(HostAsync);
         StopCommand  = ReactiveCommand.Create(Stop);
         CopyLinkCommand = ReactiveCommand.Create(CopyLink, this.WhenAnyValue(x => x.IsHosting));
+
+        var whenHosting = this.WhenAnyValue(x => x.IsHosting);
+        SqSaveCommand           = ReactiveCommand.CreateFromTask(SqSaveAsync, whenHosting);
+        SqCopySubmitUrlCommand  = ReactiveCommand.Create(SqCopySubmitUrl,
+            this.WhenAnyValue(x => x.SqSubmitUrl, url => !string.IsNullOrEmpty(url)));
+        SqConnectStripeCommand  = ReactiveCommand.CreateFromTask(SqConnectStripeAsync, whenHosting);
+        SqDisconnectStripeCommand = ReactiveCommand.Create(SqDisconnectStripe, whenHosting);
     }
 
     public ReactiveCommand<Unit, Unit> HostCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
+    public ReactiveCommand<Unit, Unit> SqSaveCommand { get; }
+    public ReactiveCommand<Unit, Unit> SqCopySubmitUrlCommand { get; }
+    public ReactiveCommand<Unit, Unit> SqConnectStripeCommand { get; }
+    public ReactiveCommand<Unit, Unit> SqDisconnectStripeCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
+    public event Action<string>? OpenUrlRequested;
 
     public bool IsHosting
     {
@@ -71,6 +121,182 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         get => _lastError;
         private set => this.RaiseAndSetIfChanged(ref _lastError, value);
     }
+
+    // ─── Streamer Queue reactive properties ───────────────────────────────────
+
+    public bool SqEnabled
+    {
+        get => _sqEnabled;
+        set => this.RaiseAndSetIfChanged(ref _sqEnabled, value);
+    }
+
+    public string SqSubmitUrl
+    {
+        get => _sqSubmitUrl;
+        set => this.RaiseAndSetIfChanged(ref _sqSubmitUrl, value);
+    }
+
+    public bool SqRequireApproval
+    {
+        get => _sqRequireApproval;
+        set => this.RaiseAndSetIfChanged(ref _sqRequireApproval, value);
+    }
+
+    public bool SqAllowDuplicates
+    {
+        get => _sqAllowDuplicates;
+        set => this.RaiseAndSetIfChanged(ref _sqAllowDuplicates, value);
+    }
+
+    public string SqMaxQueueLength
+    {
+        get => _sqMaxQueueLength;
+        set => this.RaiseAndSetIfChanged(ref _sqMaxQueueLength, value);
+    }
+
+    public bool SqQueueFeeEnabled
+    {
+        get => _sqQueueFeeEnabled;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sqQueueFeeEnabled, value);
+            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
+        }
+    }
+
+    public string SqQueueFeeAmount
+    {
+        get => _sqQueueFeeAmount;
+        set => this.RaiseAndSetIfChanged(ref _sqQueueFeeAmount, value);
+    }
+
+    public bool SqSkipEnabled
+    {
+        get => _sqSkipEnabled;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sqSkipEnabled, value);
+            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
+        }
+    }
+
+    public string SqSkipAmount
+    {
+        get => _sqSkipAmount;
+        set => this.RaiseAndSetIfChanged(ref _sqSkipAmount, value);
+    }
+
+    public string SqSkipVotes
+    {
+        get => _sqSkipVotes;
+        set => this.RaiseAndSetIfChanged(ref _sqSkipVotes, value);
+    }
+
+    public bool SqSuperSkipEnabled
+    {
+        get => _sqSuperSkipEnabled;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sqSuperSkipEnabled, value);
+            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
+        }
+    }
+
+    public string SqSuperSkipAmount
+    {
+        get => _sqSuperSkipAmount;
+        set => this.RaiseAndSetIfChanged(ref _sqSuperSkipAmount, value);
+    }
+
+    public bool SqAnyFeeEnabled => SqQueueFeeEnabled || SqSkipEnabled || SqSuperSkipEnabled;
+
+    public bool SqStripeConnected
+    {
+        get => _sqStripeConnected;
+        set => this.RaiseAndSetIfChanged(ref _sqStripeConnected, value);
+    }
+
+    public string SqStripeStatus
+    {
+        get => _sqStripeStatus;
+        set => this.RaiseAndSetIfChanged(ref _sqStripeStatus, value);
+    }
+
+    public string SqStatus
+    {
+        get => _sqStatus;
+        set => this.RaiseAndSetIfChanged(ref _sqStatus, value);
+    }
+
+    public ObservableCollection<SqPendingItemVm> SqPendingItems { get; } = [];
+
+    public bool SqHasPending => SqPendingItems.Count > 0;
+
+    public string SqPendingHeaderText =>
+        SqPendingItems.Count == 1
+            ? "1 submission awaiting approval"
+            : $"{SqPendingItems.Count} submissions awaiting approval";
+
+    // ─── Streamer Queue command handlers (API wiring added in Task #4) ────────
+
+    private Task SqSaveAsync()
+    {
+        SqStatus = "Settings saved.";
+        return Task.CompletedTask;
+    }
+
+    private Task SqConnectStripeAsync()
+    {
+        SqStatus = "Opening Stripe Connect…";
+        return Task.CompletedTask;
+    }
+
+    private void SqDisconnectStripe()
+    {
+        SqStripeConnected = false;
+        SqStripeStatus = "Not connected";
+        SqStatus = "Stripe account disconnected.";
+    }
+
+    private void SqCopySubmitUrl()
+    {
+        if (!string.IsNullOrEmpty(_sqSubmitUrl))
+            CopyToClipboardRequested?.Invoke(_sqSubmitUrl);
+    }
+
+    // ─── Called by Task #4 controller when streamer queue state changes ───────
+    public void ApplySqSnapshot(bool enabled, string submitUrl, bool requireApproval,
+        bool allowDuplicates, int maxQueueLength, bool queueFeeEnabled, decimal queueFeeAmount,
+        bool skipEnabled, decimal skipAmount, int skipVotes,
+        bool superSkipEnabled, decimal superSkipAmount,
+        bool stripeConnected, string stripeStatus,
+        IEnumerable<(string Id, string DisplayName, string Url)> pendingItems)
+    {
+        SqEnabled = enabled;
+        SqSubmitUrl = submitUrl;
+        SqRequireApproval = requireApproval;
+        SqAllowDuplicates = allowDuplicates;
+        SqMaxQueueLength = maxQueueLength.ToString();
+        SqQueueFeeEnabled = queueFeeEnabled;
+        SqQueueFeeAmount = queueFeeAmount.ToString("0.00");
+        SqSkipEnabled = skipEnabled;
+        SqSkipAmount = skipAmount.ToString("0.00");
+        SqSkipVotes = skipVotes.ToString();
+        SqSuperSkipEnabled = superSkipEnabled;
+        SqSuperSkipAmount = superSkipAmount.ToString("0.00");
+        SqStripeConnected = stripeConnected;
+        SqStripeStatus = stripeStatus;
+
+        SqPendingItems.Clear();
+        foreach (var (id, name, url) in pendingItems)
+            SqPendingItems.Add(new SqPendingItemVm(id, name, url, SqApproveItem, SqRejectItem));
+
+        this.RaisePropertyChanged(nameof(SqHasPending));
+        this.RaisePropertyChanged(nameof(SqPendingHeaderText));
+    }
+
+    private void SqApproveItem(string id) { }
+    private void SqRejectItem(string id) { }
 
     public void ApplySettings(AppSettings settings)
     {
@@ -125,6 +351,28 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
+
+        // Derive the submit URL from the join URL: replace /listen with /submit-queue
+        // The actual page is web-share/submit.html?session=CODE served by the backend.
+        if (!string.IsNullOrEmpty(snap.RoomCode) && !string.IsNullOrEmpty(snap.JoinUrl))
+        {
+            var baseUri = snap.JoinUrl.Contains("?session=")
+                ? snap.JoinUrl.Substring(0, snap.JoinUrl.LastIndexOf('/') + 1)
+                : snap.JoinUrl.TrimEnd('/') + "/";
+
+            // Build: {origin}/spectralis/web-share/submit.html?session={CODE}
+            var joinUri = snap.JoinUrl;
+            var schemeEnd = joinUri.IndexOf("://", StringComparison.Ordinal);
+            var slashAfterHost = schemeEnd >= 0
+                ? joinUri.IndexOf('/', schemeEnd + 3)
+                : joinUri.IndexOf('/');
+            var origin = slashAfterHost >= 0 ? joinUri[..slashAfterHost] : joinUri;
+            SqSubmitUrl = $"{origin}/spectralis/web-share/submit.html?session={snap.RoomCode}";
+        }
+        else
+        {
+            SqSubmitUrl = string.Empty;
+        }
     }
 
     private static string BuildStatusText(SharedPlaySessionSnapshot snap)
