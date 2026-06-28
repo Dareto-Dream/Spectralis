@@ -16,11 +16,14 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Duration, Utc};
+use hmac::{Hmac, Mac};
 use rand::Rng;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::{fs, net::TcpListener};
 use tower_http::cors::{Any, CorsLayer};
+
+type HmacSha256 = Hmac<Sha256>;
 
 const PROTOCOL_VERSION: &str = "shared-play-v2";
 const SESSION_TTL_HOURS: i64 = 12;
@@ -31,12 +34,19 @@ const PRESENCE_TTL_SECONDS: i64 = 45;
 const REACTION_TTL_SECONDS: i64 = 90;
 const MAX_REACTIONS: usize = 40;
 const CHANNEL_HEARTBEAT_TTL_SECONDS: i64 = 30;
+const STRIPE_API_BASE: &str = "https://api.stripe.com/v1";
+const STRIPE_CONNECT_AUTHORIZE: &str = "https://connect.stripe.com/oauth/authorize";
+const STRIPE_CONNECT_TOKEN: &str = "https://connect.stripe.com/oauth/token";
 
 #[derive(Clone)]
 struct AppState {
     data_dir: Arc<PathBuf>,
     web_share_root: Arc<PathBuf>,
     public_base_url: Option<String>,
+    stripe_secret_key: Option<Arc<String>>,
+    stripe_webhook_secret: Option<Arc<String>>,
+    stripe_connect_client_id: Option<Arc<String>>,
+    stripe_publishable_key: Option<Arc<String>>,
 }
 
 #[tokio::main]
@@ -57,6 +67,10 @@ async fn main() -> Result<()> {
         .ok()
         .map(|value| value.trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty());
+    let stripe_secret_key = env::var("STRIPE_SECRET_KEY").ok().map(Arc::new);
+    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").ok().map(Arc::new);
+    let stripe_connect_client_id = env::var("STRIPE_CONNECT_CLIENT_ID").ok().map(Arc::new);
+    let stripe_publishable_key = env::var("STRIPE_PUBLISHABLE_KEY").ok().map(Arc::new);
 
     fs::create_dir_all(data_dir.join("sessions")).await?;
 
@@ -64,6 +78,10 @@ async fn main() -> Result<()> {
         data_dir: Arc::new(data_dir),
         web_share_root: Arc::new(web_share_root),
         public_base_url,
+        stripe_secret_key,
+        stripe_webhook_secret,
+        stripe_connect_client_id,
+        stripe_publishable_key,
     };
 
     let app = Router::new()
@@ -109,6 +127,37 @@ async fn main() -> Result<()> {
             get(get_channel).put(put_channel),
         )
         .route("/shared-play/v2/channels/:channel/stats", get(get_channel_stats))
+        .route("/shared-play/v2/channels/:channel/stripe/connect", get(get_stripe_connect_url))
+        .route("/shared-play/v2/channels/:channel/stripe/callback", get(get_stripe_oauth_callback))
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue",
+            get(get_streamer_queue),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/settings",
+            put(put_streamer_queue_settings),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/submit",
+            post(post_streamer_queue_submit),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/skip-request",
+            post(post_streamer_queue_skip_request),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/super-skip",
+            post(post_streamer_queue_super_skip),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/items/:item_id/approve",
+            post(post_streamer_queue_approve),
+        )
+        .route(
+            "/shared-play/v2/sessions/:code/streamer-queue/items/:item_id/reject",
+            post(post_streamer_queue_reject),
+        )
+        .route("/webhooks/stripe", post(post_stripe_webhook))
         .route("/shared-play/v2/sessions/:code/package", get(get_package))
         .route(
             "/shared-play/v2/sessions/:code/tracks/:key/package",
@@ -1672,6 +1721,9 @@ impl AppError {
     fn payload_too_large(message: &str) -> Self {
         Self { status: StatusCode::PAYLOAD_TOO_LARGE, message: message.to_string() }
     }
+    fn internal(message: impl ToString) -> Self {
+        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: message.to_string() }
+    }
 }
 
 impl IntoResponse for AppError {
@@ -1697,4 +1749,979 @@ impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
         Self { status: StatusCode::BAD_REQUEST, message: e.to_string() }
     }
+}
+
+// ── Streamer Queue handlers ───────────────────────────────────────────────────
+
+async fn get_streamer_queue(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    let any_fee_enabled = ["queueEntryFee", "skipRequests", "superSkips"].iter().any(|k| {
+        sq.get("settings")
+            .and_then(|s| s.get(*k))
+            .and_then(|f| f.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    if any_fee_enabled {
+        sq["stripePublishableKey"] = json!(state.stripe_publishable_key.as_deref());
+    }
+    Ok(Json(public_streamer_queue(sq)))
+}
+
+async fn put_streamer_queue_settings(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    validate_session_key(
+        &state,
+        &room_code,
+        payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
+    )
+    .await?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    if let Some(v) = payload.get("enabled").and_then(Value::as_bool) {
+        sq["enabled"] = json!(v);
+    }
+    if let Some(channel_id) = payload.get("channelId").and_then(Value::as_str) {
+        sq["channelId"] = json!(clean_channel_id(channel_id)?);
+    }
+    if let Some(settings) = payload.get("settings") {
+        let current = sq["settings"].clone();
+        sq["settings"] = normalize_streamer_queue_settings(settings, &current);
+    }
+
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    Ok(Json(public_streamer_queue(sq)))
+}
+
+async fn post_streamer_queue_submit(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::not_found("Streamer queue is not enabled for this session."));
+    }
+
+    let url = payload
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| AppError::bad_request("URL is required."))?;
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("spotify:")) {
+        return Err(AppError::bad_request("URL must be http(s) or spotify:."));
+    }
+
+    let display_name = clean_short_text(
+        payload.get("displayName").and_then(Value::as_str).unwrap_or(""),
+        32,
+    )
+    .unwrap_or_else(|| "Listener".to_string());
+    let client_id = clean_client_id(
+        payload.get("clientId").and_then(Value::as_str).unwrap_or(""),
+    )
+    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
+    let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
+
+    let settings = sq.get("settings").cloned().unwrap_or_else(|| json!({}));
+    let max_queue = settings.get("maxQueueLength").and_then(Value::as_u64).unwrap_or(50) as usize;
+    let allow_duplicates = settings.get("allowDuplicates").and_then(Value::as_bool).unwrap_or(false);
+    let require_approval = settings.get("requireApproval").and_then(Value::as_bool).unwrap_or(false);
+
+    // Enforce limits
+    let active_count = sq
+        .get("submissions")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played")))
+                .count()
+        })
+        .unwrap_or(0);
+    if active_count >= max_queue {
+        return Err(AppError::bad_request("The queue is full right now. Try again later."));
+    }
+    if !allow_duplicates {
+        let already_in = sq
+            .get("submissions")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| {
+                arr.iter().any(|s| {
+                    s.get("url").and_then(Value::as_str).is_some_and(|u| u == url)
+                        && !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played"))
+                })
+            });
+        if already_in {
+            return Err(AppError::bad_request("This track is already in the queue."));
+        }
+    }
+
+    let submission_id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let fee_settings = settings.get("queueEntryFee").cloned().unwrap_or_else(|| json!({"enabled": false}));
+    let fee_enabled = fee_settings.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+
+    if fee_enabled {
+        let amount = fee_settings.get("amount").and_then(Value::as_f64).unwrap_or(0.0);
+        let currency = fee_settings.get("currency").and_then(Value::as_str).unwrap_or("USD");
+        if amount <= 0.0 {
+            return Err(AppError::bad_request("Queue entry fee amount is not configured."));
+        }
+        let channel_id = sq.get("channelId").and_then(Value::as_str).unwrap_or("");
+        if channel_id.is_empty() {
+            return Err(AppError::bad_request("Paid queue requires a channel to be configured."));
+        }
+        let stripe_key = state
+            .stripe_secret_key
+            .as_deref()
+            .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
+        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let stripe_account_id = channel
+            .get("stripeAccountId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::bad_request("Stripe account is not connected for this channel."))?
+            .to_string();
+
+        let pi = create_stripe_payment_intent(stripe_key, amount_to_cents(amount), currency, &stripe_account_id).await?;
+        let client_secret = pi
+            .get("client_secret")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a client secret."))?
+            .to_string();
+        let pi_id = pi
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a payment intent ID."))?
+            .to_string();
+
+        let submission = json!({
+            "id": &submission_id,
+            "displayName": &display_name,
+            "clientId": &client_id,
+            "url": url,
+            "title": title,
+            "artist": artist,
+            "status": "awaiting_payment",
+            "paymentIntentId": &pi_id,
+            "paymentStatus": "pending",
+            "submittedAtUtc": &now
+        });
+        sq["submissions"]
+            .as_array_mut()
+            .ok_or_else(|| AppError::internal("Submissions array missing."))?
+            .push(submission);
+        sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "submissionId": submission_id,
+                "clientSecret": client_secret,
+                "status": "awaiting_payment"
+            })),
+        ));
+    }
+
+    // Free submission path
+    let initial_status = if require_approval { "pending" } else { "queued" };
+    let submission = json!({
+        "id": &submission_id,
+        "displayName": &display_name,
+        "clientId": &client_id,
+        "url": url,
+        "title": title,
+        "artist": artist,
+        "status": initial_status,
+        "paymentIntentId": null,
+        "paymentStatus": "none",
+        "submittedAtUtc": &now
+    });
+    sq["submissions"]
+        .as_array_mut()
+        .ok_or_else(|| AppError::internal("Submissions array missing."))?
+        .push(submission);
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+    let mut position = None;
+    if !require_approval {
+        position = Some(
+            append_submission_to_queue(&session_root, &room_code, &submission_id, url, &title, &artist, &now).await?,
+        );
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "submissionId": submission_id,
+            "status": initial_status,
+            "position": position
+        })),
+    ))
+}
+
+async fn post_streamer_queue_skip_request(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::not_found("Streamer queue is not enabled."));
+    }
+    let settings = sq.get("settings").cloned().unwrap_or_else(|| json!({}));
+    let skip_settings = settings.get("skipRequests").cloned().unwrap_or_else(|| json!({"enabled": false}));
+    if !skip_settings.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::bad_request("Skip requests are not enabled for this queue."));
+    }
+
+    let display_name = clean_short_text(
+        payload.get("displayName").and_then(Value::as_str).unwrap_or(""),
+        32,
+    )
+    .unwrap_or_else(|| "Listener".to_string());
+    let client_id = clean_client_id(
+        payload.get("clientId").and_then(Value::as_str).unwrap_or(""),
+    )
+    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let amount = skip_settings.get("amount").and_then(Value::as_f64).unwrap_or(0.0);
+    let currency = skip_settings.get("currency").and_then(Value::as_str).unwrap_or("USD");
+
+    if amount > 0.0 {
+        let channel_id = sq.get("channelId").and_then(Value::as_str).unwrap_or("");
+        if channel_id.is_empty() {
+            return Err(AppError::bad_request("Paid skip requests require a channel to be configured."));
+        }
+        let stripe_key = state
+            .stripe_secret_key
+            .as_deref()
+            .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
+        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let stripe_account_id = channel
+            .get("stripeAccountId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::bad_request("Stripe account is not connected for this channel."))?
+            .to_string();
+
+        let pi = create_stripe_payment_intent(stripe_key, amount_to_cents(amount), currency, &stripe_account_id).await?;
+        let client_secret = pi
+            .get("client_secret")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a client secret."))?
+            .to_string();
+        let pi_id = pi
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a payment intent ID."))?
+            .to_string();
+
+        let request = json!({
+            "id": &request_id,
+            "displayName": &display_name,
+            "clientId": &client_id,
+            "paymentIntentId": &pi_id,
+            "paymentStatus": "pending",
+            "requestedAtUtc": &now
+        });
+        sq["skipRequests"]
+            .as_array_mut()
+            .ok_or_else(|| AppError::internal("Skip requests array missing."))?
+            .push(request);
+        sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({ "requestId": request_id, "clientSecret": client_secret, "status": "awaiting_payment" })),
+        ));
+    }
+
+    let request = json!({
+        "id": &request_id,
+        "displayName": &display_name,
+        "clientId": &client_id,
+        "paymentIntentId": null,
+        "paymentStatus": "none",
+        "requestedAtUtc": &now
+    });
+    sq["skipRequests"]
+        .as_array_mut()
+        .ok_or_else(|| AppError::internal("Skip requests array missing."))?
+        .push(request);
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "requestId": request_id, "status": "submitted" }))))
+}
+
+async fn post_streamer_queue_super_skip(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let room_code = clean_room_code(&code)?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::not_found("Streamer queue is not enabled."));
+    }
+    let settings = sq.get("settings").cloned().unwrap_or_else(|| json!({}));
+    let super_settings = settings.get("superSkips").cloned().unwrap_or_else(|| json!({"enabled": false}));
+    if !super_settings.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::bad_request("Super skips are not enabled for this queue."));
+    }
+
+    let display_name = clean_short_text(
+        payload.get("displayName").and_then(Value::as_str).unwrap_or(""),
+        32,
+    )
+    .unwrap_or_else(|| "Listener".to_string());
+    let client_id = clean_client_id(
+        payload.get("clientId").and_then(Value::as_str).unwrap_or(""),
+    )
+    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let amount = super_settings.get("amount").and_then(Value::as_f64).unwrap_or(0.0);
+    let currency = super_settings.get("currency").and_then(Value::as_str).unwrap_or("USD");
+
+    if amount > 0.0 {
+        let channel_id = sq.get("channelId").and_then(Value::as_str).unwrap_or("");
+        if channel_id.is_empty() {
+            return Err(AppError::bad_request("Paid super skips require a channel to be configured."));
+        }
+        let stripe_key = state
+            .stripe_secret_key
+            .as_deref()
+            .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
+        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let stripe_account_id = channel
+            .get("stripeAccountId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::bad_request("Stripe account is not connected for this channel."))?
+            .to_string();
+
+        let pi = create_stripe_payment_intent(stripe_key, amount_to_cents(amount), currency, &stripe_account_id).await?;
+        let client_secret = pi
+            .get("client_secret")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a client secret."))?
+            .to_string();
+        let pi_id = pi
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::internal("Stripe did not return a payment intent ID."))?
+            .to_string();
+
+        let request = json!({
+            "id": &request_id,
+            "displayName": &display_name,
+            "clientId": &client_id,
+            "paymentIntentId": &pi_id,
+            "paymentStatus": "pending",
+            "requestedAtUtc": &now
+        });
+        sq["superSkipRequests"]
+            .as_array_mut()
+            .ok_or_else(|| AppError::internal("Super skip requests array missing."))?
+            .push(request);
+        sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({ "requestId": request_id, "clientSecret": client_secret, "status": "awaiting_payment" })),
+        ));
+    }
+
+    let request = json!({
+        "id": &request_id,
+        "displayName": &display_name,
+        "clientId": &client_id,
+        "paymentIntentId": null,
+        "paymentStatus": "none",
+        "requestedAtUtc": &now
+    });
+    sq["superSkipRequests"]
+        .as_array_mut()
+        .ok_or_else(|| AppError::internal("Super skip requests array missing."))?
+        .push(request);
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "requestId": request_id, "status": "submitted" }))))
+}
+
+async fn post_streamer_queue_approve(
+    State(state): State<AppState>,
+    AxumPath((code, item_id)): AxumPath<(String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    validate_session_key(
+        &state,
+        &room_code,
+        payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
+    )
+    .await?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    let idx = sq
+        .get("submissions")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.iter().position(|s| s.get("id").and_then(Value::as_str).is_some_and(|id| id == item_id)))
+        .ok_or_else(|| AppError::not_found("Submission not found."))?;
+
+    let status = sq["submissions"][idx]["status"].as_str().unwrap_or("").to_string();
+    if status != "pending" {
+        return Err(AppError::bad_request(&format!("Submission is '{status}', not pending.")));
+    }
+    sq["submissions"][idx]["status"] = json!("queued");
+
+    let url = sq["submissions"][idx]["url"].as_str().unwrap_or("").to_string();
+    let title: Option<String> = sq["submissions"][idx]["title"].as_str().map(ToOwned::to_owned);
+    let artist: Option<String> = sq["submissions"][idx]["artist"].as_str().map(ToOwned::to_owned);
+    let added_at = sq["submissions"][idx]["submittedAtUtc"]
+        .as_str()
+        .unwrap_or(&Utc::now().to_rfc3339())
+        .to_string();
+
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+    if !url.is_empty() {
+        append_submission_to_queue(&session_root, &room_code, &item_id, &url, &title, &artist, &added_at).await?;
+    }
+
+    Ok(Json(json!({ "submissionId": item_id, "status": "queued" })))
+}
+
+async fn post_streamer_queue_reject(
+    State(state): State<AppState>,
+    AxumPath((code, item_id)): AxumPath<(String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room_code = clean_room_code(&code)?;
+    validate_session_key(
+        &state,
+        &room_code,
+        payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
+    )
+    .await?;
+    let session_root = existing_session_root(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
+    let idx = sq
+        .get("submissions")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.iter().position(|s| s.get("id").and_then(Value::as_str).is_some_and(|id| id == item_id)))
+        .ok_or_else(|| AppError::not_found("Submission not found."))?;
+
+    sq["submissions"][idx]["status"] = json!("rejected");
+    sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+
+    Ok(Json(json!({ "submissionId": item_id, "status": "rejected" })))
+}
+
+// ── Stripe OAuth handlers ─────────────────────────────────────────────────────
+
+async fn get_stripe_connect_url(
+    State(state): State<AppState>,
+    AxumPath(channel): AxumPath<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+    let owner_token = clean_owner_token(params.get("ownerToken").map(|s| s.as_str()).unwrap_or(""))?;
+
+    let path = channel_path(&state, &channel_id)?;
+    let ch = read_json(path).await?;
+    let existing_token = ch.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !existing_token.is_empty() && existing_token != owner_token {
+        return Err(AppError::forbidden("Channel owner token was invalid."));
+    }
+
+    let client_id = state
+        .stripe_connect_client_id
+        .as_deref()
+        .ok_or_else(|| AppError::internal("Stripe Connect is not configured on this server."))?;
+
+    let connect_url = format!(
+        "{}?response_type=code&client_id={}&scope=read_write&state={}",
+        STRIPE_CONNECT_AUTHORIZE, client_id, channel_id
+    );
+
+    Ok(Json(json!({ "connectUrl": connect_url, "channelId": channel_id })))
+}
+
+async fn get_stripe_oauth_callback(
+    State(state): State<AppState>,
+    AxumPath(channel): AxumPath<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Response, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+
+    let state_param = params.get("state").map(|s| s.as_str()).unwrap_or("");
+    if state_param != channel_id {
+        return Err(AppError::bad_request("OAuth state parameter mismatch."));
+    }
+    if let Some(err) = params.get("error") {
+        return Err(AppError::bad_request(&format!("Stripe OAuth error: {err}")));
+    }
+
+    let code = params.get("code").ok_or_else(|| AppError::bad_request("OAuth code is missing."))?;
+    let stripe_key = state
+        .stripe_secret_key
+        .as_deref()
+        .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
+
+    let stripe_account_id = exchange_stripe_code(stripe_key, code).await?;
+
+    let path = channel_path(&state, &channel_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    let mut ch = read_json(path.clone()).await.unwrap_or_else(|_| {
+        json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "channelId": &channel_id,
+            "stats": empty_channel_stats()
+        })
+    });
+    ch["stripeAccountId"] = json!(stripe_account_id);
+    ch["stripeConnectedAt"] = json!(Utc::now().to_rfc3339());
+    write_json(path, &ch).await?;
+
+    let html = r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Stripe Connected</title><style>body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#f0ede8;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}section{text-align:center;padding:32px}h2{font-size:1.5rem;margin-bottom:.5rem}p{color:rgba(240,237,232,.6)}</style></head><body><section><h2>✓ Stripe connected</h2><p>You can close this window and return to Spectralis.</p></section></body></html>"#;
+    let mut response = Response::new(Body::from(html));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    Ok(response)
+}
+
+async fn post_stripe_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, AppError> {
+    let webhook_secret = state
+        .stripe_webhook_secret
+        .as_deref()
+        .ok_or_else(|| AppError::internal("Stripe webhook secret is not configured."))?;
+
+    let signature = headers
+        .get("stripe-signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::bad_request("Missing Stripe-Signature header."))?;
+
+    if !verify_stripe_signature(&body, signature, webhook_secret) {
+        return Err(AppError::forbidden("Stripe signature verification failed."));
+    }
+
+    let event: Value = serde_json::from_slice(&body)?;
+    let event_type = event.get("type").and_then(Value::as_str).unwrap_or("");
+
+    match event_type {
+        "payment_intent.succeeded" => {
+            if let Some(pi_id) = event
+                .get("data")
+                .and_then(|d| d.get("object"))
+                .and_then(|o| o.get("id"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+            {
+                handle_payment_intent_succeeded(&state, &pi_id).await?;
+            }
+        }
+        "payment_intent.payment_failed" => {
+            if let Some(pi_id) = event
+                .get("data")
+                .and_then(|d| d.get("object"))
+                .and_then(|o| o.get("id"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+            {
+                handle_payment_intent_failed(&state, &pi_id).await?;
+            }
+        }
+        _ => {}
+    }
+
+    Ok(Json(json!({ "received": true })))
+}
+
+// ── Streamer Queue helpers ────────────────────────────────────────────────────
+
+fn empty_streamer_queue(room_code: &str) -> Value {
+    json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "roomCode": room_code,
+        "channelId": null,
+        "enabled": false,
+        "settings": {
+            "requireApproval": false,
+            "maxQueueLength": 50,
+            "allowDuplicates": false,
+            "queueEntryFee": { "enabled": false, "amount": 0.0, "currency": "USD" },
+            "skipRequests": { "enabled": false, "amount": 0.0, "currency": "USD", "votesRequired": 3 },
+            "superSkips": { "enabled": false, "amount": 0.0, "currency": "USD" }
+        },
+        "submissions": [],
+        "skipRequests": [],
+        "superSkipRequests": [],
+        "updatedAtUtc": Utc::now().to_rfc3339()
+    })
+}
+
+async fn read_streamer_queue(session_root: &Path, room_code: &str) -> Value {
+    read_json(session_root.join("streamer-queue.json"))
+        .await
+        .unwrap_or_else(|_| empty_streamer_queue(room_code))
+}
+
+fn public_streamer_queue(mut sq: Value) -> Value {
+    for key in &["submissions", "skipRequests", "superSkipRequests"] {
+        if let Some(arr) = sq.get_mut(*key).and_then(Value::as_array_mut) {
+            for item in arr.iter_mut() {
+                if let Some(obj) = item.as_object_mut() {
+                    obj.remove("paymentIntentId");
+                }
+            }
+        }
+    }
+    sq
+}
+
+async fn validate_session_key(state: &AppState, room_code: &str, provided: &str) -> Result<(), AppError> {
+    let cleaned = clean_owner_token(provided)
+        .map_err(|_| AppError::forbidden("Session key was invalid."))?;
+    let session_root = existing_session_root(state, room_code).await?;
+    let manifest = read_json(session_root.join("manifest.json")).await?;
+    let stored = manifest.get("sessionKey").and_then(Value::as_str).unwrap_or("");
+    if stored.is_empty() || stored != cleaned {
+        return Err(AppError::forbidden("Session key was invalid."));
+    }
+    Ok(())
+}
+
+async fn append_submission_to_queue(
+    session_root: &Path,
+    room_code: &str,
+    submission_id: &str,
+    url: &str,
+    title: &Option<String>,
+    artist: &Option<String>,
+    added_at: &str,
+) -> Result<usize, AppError> {
+    let queue_path = session_root.join("queue.json");
+    let mut queue = read_json(queue_path.clone()).await.unwrap_or_else(|_| empty_queue(room_code));
+    let items = queue
+        .get_mut("items")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| AppError::internal("Queue items array missing."))?;
+
+    if !items.iter().any(|i| i.get("id").and_then(Value::as_str).is_some_and(|id| id == submission_id)) {
+        items.push(json!({
+            "id": submission_id,
+            "sourceKind": detect_source_kind(url),
+            "title": title.as_deref().unwrap_or(url),
+            "artist": artist,
+            "url": url,
+            "addedBy": "streamer-queue",
+            "addedAtUtc": added_at
+        }));
+    }
+    let position = items.len();
+    queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(queue_path, &queue).await?;
+    Ok(position)
+}
+
+fn detect_source_kind(url: &str) -> &'static str {
+    if url.starts_with("spotify:") || url.contains("spotify.com") {
+        "spotify"
+    } else if url.contains("youtube.com") || url.contains("youtu.be") {
+        "youtube"
+    } else if url.contains("soundcloud.com") {
+        "soundcloud"
+    } else if url.contains("suno.com") || url.contains("suno.ai") {
+        "suno"
+    } else {
+        "url"
+    }
+}
+
+fn amount_to_cents(amount: f64) -> u64 {
+    (amount * 100.0).round() as u64
+}
+
+fn normalize_streamer_queue_settings(incoming: &Value, current: &Value) -> Value {
+    let mut settings = current.clone();
+    if let Some(v) = incoming.get("requireApproval").and_then(Value::as_bool) {
+        settings["requireApproval"] = json!(v);
+    }
+    if let Some(v) = incoming.get("allowDuplicates").and_then(Value::as_bool) {
+        settings["allowDuplicates"] = json!(v);
+    }
+    if let Some(v) = incoming.get("maxQueueLength").and_then(Value::as_u64) {
+        settings["maxQueueLength"] = json!(v.clamp(1, 200));
+    }
+    for fee_key in &["queueEntryFee", "skipRequests", "superSkips"] {
+        if let Some(fee) = incoming.get(*fee_key) {
+            let current_fee = settings[*fee_key].clone();
+            settings[*fee_key] = normalize_fee_settings(fee, &current_fee, *fee_key == "skipRequests");
+        }
+    }
+    settings
+}
+
+fn normalize_fee_settings(incoming: &Value, current: &Value, has_votes: bool) -> Value {
+    let mut fee = if current.is_object() {
+        current.clone()
+    } else {
+        json!({"enabled": false, "amount": 0.0, "currency": "USD"})
+    };
+    if let Some(v) = incoming.get("enabled").and_then(Value::as_bool) {
+        fee["enabled"] = json!(v);
+    }
+    if let Some(v) = incoming.get("amount").and_then(Value::as_f64) {
+        fee["amount"] = json!((v.max(0.0) * 100.0).round() / 100.0);
+    }
+    if let Some(v) = incoming.get("currency").and_then(Value::as_str) {
+        let c = v.trim().to_uppercase();
+        if ["USD", "EUR", "GBP", "CAD", "AUD"].contains(&c.as_str()) {
+            fee["currency"] = json!(c);
+        }
+    }
+    if has_votes {
+        if let Some(v) = incoming.get("votesRequired").and_then(Value::as_u64) {
+            fee["votesRequired"] = json!(v.clamp(1, 100));
+        }
+    }
+    fee
+}
+
+// ── Stripe helpers ────────────────────────────────────────────────────────────
+
+async fn create_stripe_payment_intent(
+    secret_key: &str,
+    amount_cents: u64,
+    currency: &str,
+    destination_account: &str,
+) -> Result<Value, AppError> {
+    let params = [
+        ("amount", amount_cents.to_string()),
+        ("currency", currency.to_lowercase()),
+        ("transfer_data[destination]", destination_account.to_string()),
+        ("automatic_payment_methods[enabled]", "true".to_string()),
+    ];
+    let response = reqwest::Client::new()
+        .post(format!("{STRIPE_API_BASE}/payment_intents"))
+        .basic_auth(secret_key, Some(""))
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| AppError::internal(format!("Stripe request failed: {e}")))?;
+
+    let http_status = response.status();
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| AppError::internal(format!("Stripe response parse error: {e}")))?;
+
+    if !http_status.is_success() {
+        let msg = body
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("Stripe payment intent creation failed.");
+        return Err(AppError::internal(msg));
+    }
+    Ok(body)
+}
+
+async fn exchange_stripe_code(secret_key: &str, code: &str) -> Result<String, AppError> {
+    let params = [("grant_type", "authorization_code"), ("code", code)];
+    let response = reqwest::Client::new()
+        .post(STRIPE_CONNECT_TOKEN)
+        .basic_auth(secret_key, Some(""))
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| AppError::internal(format!("Stripe OAuth request failed: {e}")))?;
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| AppError::internal(format!("Stripe OAuth response parse error: {e}")))?;
+
+    if let Some(err) = body.get("error").and_then(Value::as_str) {
+        return Err(AppError::internal(format!("Stripe OAuth error: {err}")));
+    }
+    body.get("stripe_user_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| AppError::internal("Stripe OAuth did not return stripe_user_id."))
+}
+
+fn verify_stripe_signature(body: &[u8], signature_header: &str, secret: &str) -> bool {
+    let mut timestamp: Option<&str> = None;
+    let mut signatures: Vec<&str> = Vec::new();
+    for part in signature_header.split(',') {
+        if let Some(v) = part.strip_prefix("t=") {
+            timestamp = Some(v);
+        } else if let Some(v) = part.strip_prefix("v1=") {
+            signatures.push(v);
+        }
+    }
+    let Some(t) = timestamp else { return false };
+    if signatures.is_empty() {
+        return false;
+    }
+    let signed_payload = format!("{}.{}", t, String::from_utf8_lossy(body));
+    let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) else { return false };
+    mac.update(signed_payload.as_bytes());
+    let computed = bytes_to_hex(&mac.finalize().into_bytes());
+    signatures.iter().any(|sig| *sig == computed)
+}
+
+async fn handle_payment_intent_succeeded(state: &AppState, pi_id: &str) -> Result<(), AppError> {
+    let sessions_root = state.data_dir.join("sessions");
+    let Ok(mut entries) = fs::read_dir(&sessions_root).await else {
+        return Ok(());
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let session_root = entry.path();
+        if !session_root.is_dir() {
+            continue;
+        }
+        let sq_path = session_root.join("streamer-queue.json");
+        let Ok(mut sq) = read_json(sq_path.clone()).await else {
+            continue;
+        };
+
+        let room_code = sq.get("roomCode").and_then(Value::as_str).unwrap_or("").to_string();
+        let require_approval = sq
+            .get("settings")
+            .and_then(|s| s.get("requireApproval"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        // Check submissions
+        let sub_idx = sq.get("submissions").and_then(Value::as_array).and_then(|arr| {
+            arr.iter()
+                .position(|s| s.get("paymentIntentId").and_then(Value::as_str).is_some_and(|id| id == pi_id))
+        });
+        if let Some(idx) = sub_idx {
+            sq["submissions"][idx]["paymentStatus"] = json!("succeeded");
+            if sq["submissions"][idx]["status"].as_str() == Some("awaiting_payment") {
+                let new_status = if require_approval { "pending" } else { "queued" };
+                sq["submissions"][idx]["status"] = json!(new_status);
+            }
+
+            if !require_approval {
+                let url = sq["submissions"][idx]["url"].as_str().unwrap_or("").to_string();
+                let title: Option<String> = sq["submissions"][idx]["title"].as_str().map(ToOwned::to_owned);
+                let artist: Option<String> = sq["submissions"][idx]["artist"].as_str().map(ToOwned::to_owned);
+                let sub_id = sq["submissions"][idx]["id"].as_str().unwrap_or("").to_string();
+                let added_at = sq["submissions"][idx]["submittedAtUtc"]
+                    .as_str()
+                    .unwrap_or(&Utc::now().to_rfc3339())
+                    .to_string();
+                if !url.is_empty() && !sub_id.is_empty() && !room_code.is_empty() {
+                    let _ = append_submission_to_queue(&session_root, &room_code, &sub_id, &url, &title, &artist, &added_at).await;
+                }
+            }
+
+            sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+            let _ = write_json(sq_path, &sq).await;
+            return Ok(());
+        }
+
+        // Check skip / super-skip requests
+        let mut modified = false;
+        for key in &["skipRequests", "superSkipRequests"] {
+            if let Some(idx) = sq.get(*key).and_then(Value::as_array).and_then(|arr| {
+                arr.iter()
+                    .position(|r| r.get("paymentIntentId").and_then(Value::as_str).is_some_and(|id| id == pi_id))
+            }) {
+                sq[*key][idx]["paymentStatus"] = json!("succeeded");
+                modified = true;
+                break;
+            }
+        }
+        if modified {
+            sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+            let _ = write_json(sq_path, &sq).await;
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+async fn handle_payment_intent_failed(state: &AppState, pi_id: &str) -> Result<(), AppError> {
+    let sessions_root = state.data_dir.join("sessions");
+    let Ok(mut entries) = fs::read_dir(&sessions_root).await else {
+        return Ok(());
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let session_root = entry.path();
+        if !session_root.is_dir() {
+            continue;
+        }
+        let sq_path = session_root.join("streamer-queue.json");
+        let Ok(mut sq) = read_json(sq_path.clone()).await else {
+            continue;
+        };
+        let mut modified = false;
+        for key in &["submissions", "skipRequests", "superSkipRequests"] {
+            if let Some(idx) = sq.get(*key).and_then(Value::as_array).and_then(|arr| {
+                arr.iter()
+                    .position(|i| i.get("paymentIntentId").and_then(Value::as_str).is_some_and(|id| id == pi_id))
+            }) {
+                sq[*key][idx]["paymentStatus"] = json!("failed");
+                if sq[*key][idx]["status"].as_str() == Some("awaiting_payment") {
+                    sq[*key][idx]["status"] = json!("payment_failed");
+                }
+                modified = true;
+                break;
+            }
+        }
+        if modified {
+            sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+            let _ = write_json(sq_path, &sq).await;
+            return Ok(());
+        }
+    }
+    Ok(()
+    )
 }
