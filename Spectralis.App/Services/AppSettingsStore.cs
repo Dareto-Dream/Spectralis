@@ -74,6 +74,10 @@ public sealed class AppSettings
     /// <summary>Unlocked by clicking the version number 5 times in Settings; reveals the Developer Tools section.</summary>
     public bool DeveloperModeUnlocked { get; set; }
 
+    public string SqCdnBaseUrl { get; set; } = string.Empty;
+    public string SqRoomId { get; set; } = string.Empty;
+    public string SqOwnerToken { get; set; } = string.Empty;
+
     /// <summary>Set after the first-launch UI Reveal sequence has played (or been skipped) once.</summary>
     public bool HasSeenUiReveal { get; set; }
 
@@ -145,6 +149,9 @@ public sealed class AppSettings
             DeveloperModeUnlocked = DeveloperModeUnlocked,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
+            SqCdnBaseUrl = SqCdnBaseUrl,
+            SqRoomId = SqRoomId,
+            SqOwnerToken = SqOwnerToken,
         };
 }
 
