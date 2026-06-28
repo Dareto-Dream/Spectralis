@@ -56,7 +56,8 @@ public sealed record SharedPlayRoomSession(
     string TrackId,
     Uri StateUrl,
     Uri QueueUrl,
-    DateTimeOffset? ExpiresAtUtc);
+    DateTimeOffset? ExpiresAtUtc,
+    string SessionKey = "");
 
 public sealed record SharedPlayCreateSessionRequest(
     string ProtocolVersion,
@@ -86,6 +87,7 @@ public sealed class SharedPlayCreateSessionResponse
 {
     public string? RoomCode { get; init; }
     public string? DisplayCode { get; init; }
+    public string? SessionKey { get; init; }
     public string? TrackId { get; init; }
     public string? JoinUrl { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
