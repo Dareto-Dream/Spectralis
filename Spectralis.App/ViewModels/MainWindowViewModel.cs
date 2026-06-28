@@ -126,6 +126,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         SharedPlay = new SharedPlayViewModel();
         SharedPlay.ApplySettings(AppSettings);
+        StreamerQueue = new StreamerQueueViewModel();
+        StreamerQueue.ApplySettings(AppSettings);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or
@@ -181,6 +183,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Playlists", IconData.Playlists, Playlists),
             new("Capsules", IconData.Capsules, Capsules),
             new("Shared Play", IconData.SharedPlay, SharedPlay),
+            new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
@@ -312,6 +315,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public LibraryViewModel Library { get; }
     public PlaylistsViewModel Playlists { get; }
     public SharedPlayViewModel SharedPlay { get; }
+    public StreamerQueueViewModel StreamerQueue { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
     public SettingsViewModel Settings { get; }
