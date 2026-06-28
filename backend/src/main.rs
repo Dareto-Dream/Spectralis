@@ -129,6 +129,7 @@ async fn main() -> Result<()> {
         .route("/shared-play/v2/channels/:channel/stats", get(get_channel_stats))
         .route("/shared-play/v2/channels/:channel/stripe/connect", get(get_stripe_connect_url))
         .route("/shared-play/v2/channels/:channel/stripe/callback", get(get_stripe_oauth_callback))
+        .route("/shared-play/v2/channels/:channel/stripe/disconnect", post(post_stripe_disconnect))
         .route(
             "/shared-play/v2/sessions/:code/streamer-queue",
             get(get_streamer_queue),
@@ -1761,6 +1762,7 @@ async fn get_streamer_queue(
     let room_code = clean_room_code(&code)?;
     let session_root = existing_session_root(&state, &room_code).await?;
     let mut sq = read_streamer_queue(&session_root, &room_code).await;
+
     let any_fee_enabled = ["queueEntryFee", "skipRequests", "superSkips"].iter().any(|k| {
         sq.get("settings")
             .and_then(|s| s.get(*k))
@@ -1771,7 +1773,51 @@ async fn get_streamer_queue(
     if any_fee_enabled {
         sq["stripePublishableKey"] = json!(state.stripe_publishable_key.as_deref());
     }
+
+    // Inject stripe connection status from the channel record
+    let channel_id = sq.get("channelId").and_then(Value::as_str).unwrap_or("").to_string();
+    let stripe_connected = if !channel_id.is_empty() {
+        if let Ok(ch_path) = channel_path(&state, &channel_id) {
+            read_json(ch_path).await.ok()
+                .and_then(|ch| ch.get("stripeAccountId").and_then(Value::as_str).map(|s| !s.is_empty()))
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    sq["stripeConnected"] = json!(stripe_connected);
+
     Ok(Json(public_streamer_queue(sq)))
+}
+
+async fn post_stripe_disconnect(
+    State(state): State<AppState>,
+    AxumPath(channel): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let channel_id = clean_channel_id(&channel)?;
+    let owner_token = clean_owner_token(
+        payload.get("ownerToken").and_then(Value::as_str).unwrap_or(""),
+    )?;
+
+    let path = channel_path(&state, &channel_id)?;
+    let mut ch = read_json(path.clone()).await?;
+
+    let existing_token = ch.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !existing_token.is_empty() && existing_token != owner_token {
+        return Err(AppError::forbidden("Channel owner token was invalid."));
+    }
+
+    if let Some(obj) = ch.as_object_mut() {
+        obj.remove("stripeAccountId");
+        obj.remove("stripeConnectedAt");
+    }
+    ch["stripeDisconnectedAt"] = json!(Utc::now().to_rfc3339());
+    write_json(path, &ch).await?;
+
+    Ok(Json(json!({ "ok": true, "stripeConnected": false })))
 }
 
 async fn put_streamer_queue_settings(

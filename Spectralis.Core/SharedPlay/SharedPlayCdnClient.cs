@@ -369,7 +369,26 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var result = await JsonSerializer.DeserializeAsync<StreamerQueueStripeConnectResponse>(stream, JsonOptions, cancellationToken);
-        return result?.Url;
+        return result?.ConnectUrl;
+    }
+
+    public async Task DisconnectStripeAsync(
+        Uri cdnBaseUri,
+        string channelId,
+        string ownerToken,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = SharedPlayDefaults.BuildEndpoint(cdnBaseUri,
+            $"/shared-play/v2/channels/{Uri.EscapeDataString(channelId)}/stripe/disconnect");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent(new { ownerToken })
+        };
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Stripe disconnect", cancellationToken);
     }
 
     public async Task ApproveSubmissionAsync(
