@@ -147,6 +147,69 @@ public sealed class SharedPlaySessionController : IDisposable
     public string? GetChannelUrl() => Snapshot.ChannelUrl;
     public string? GetRoomCode() => Snapshot.RoomCode;
     public string? GetDisplayCode() => Snapshot.DisplayCode;
+    public Uri GetCdnBaseUriPublic() => GetCdnBaseUri();
+
+    public (string RoomCode, string SessionKey, Uri CdnBaseUri)? GetSessionCredentials()
+    {
+        lock (statusLock)
+        {
+            if (session is null || string.IsNullOrEmpty(session.RoomCode))
+                return null;
+            return (session.RoomCode, session.SessionKey, cdnBaseUri);
+        }
+    }
+
+    public (string ChannelId, string OwnerToken)? GetChannelCredentials()
+    {
+        lock (statusLock)
+        {
+            if (!liveChannelEnabled || string.IsNullOrEmpty(liveChannelId) || string.IsNullOrEmpty(liveChannelOwnerToken))
+                return null;
+            return (liveChannelId, liveChannelOwnerToken);
+        }
+    }
+
+    public async Task<StreamerQueueState?> FetchStreamerQueueAsync(CancellationToken cancellationToken)
+    {
+        var creds = GetSessionCredentials();
+        if (creds is null) return null;
+        return await cdnClient.GetStreamerQueueAsync(creds.Value.CdnBaseUri, creds.Value.RoomCode, cancellationToken);
+    }
+
+    public async Task SaveStreamerQueueSettingsAsync(
+        bool enabled, StreamerQueueSettings settings, CancellationToken cancellationToken)
+    {
+        var creds = GetSessionCredentials();
+        if (creds is null) throw new InvalidOperationException("No active session.");
+        await cdnClient.PutStreamerQueueSettingsAsync(
+            creds.Value.CdnBaseUri, creds.Value.RoomCode, creds.Value.SessionKey,
+            enabled, settings, cancellationToken);
+    }
+
+    public async Task<string?> GetStripeConnectUrlAsync(CancellationToken cancellationToken)
+    {
+        var creds = GetSessionCredentials();
+        var ch = GetChannelCredentials();
+        if (creds is null || ch is null) return null;
+        return await cdnClient.GetStripeConnectUrlAsync(
+            creds.Value.CdnBaseUri, ch.Value.ChannelId, ch.Value.OwnerToken, cancellationToken);
+    }
+
+    public async Task ApproveStreamerQueueItemAsync(string itemId, CancellationToken cancellationToken)
+    {
+        var creds = GetSessionCredentials();
+        if (creds is null) throw new InvalidOperationException("No active session.");
+        await cdnClient.ApproveSubmissionAsync(
+            creds.Value.CdnBaseUri, creds.Value.RoomCode, creds.Value.SessionKey, itemId, cancellationToken);
+    }
+
+    public async Task RejectStreamerQueueItemAsync(string itemId, CancellationToken cancellationToken)
+    {
+        var creds = GetSessionCredentials();
+        if (creds is null) throw new InvalidOperationException("No active session.");
+        await cdnClient.RejectSubmissionAsync(
+            creds.Value.CdnBaseUri, creds.Value.RoomCode, creds.Value.SessionKey, itemId, cancellationToken);
+    }
 
     public void ClearActiveSession()
     {

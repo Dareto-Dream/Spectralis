@@ -64,7 +64,8 @@ public sealed class SharedPlayCdnClient : IDisposable
             string.IsNullOrWhiteSpace(response.TrackId) ? package.TrackId : response.TrackId,
             stateUri,
             queueUri,
-            response.ExpiresAtUtc);
+            response.ExpiresAtUtc,
+            response.SessionKey ?? string.Empty);
     }
 
     public async Task<SharedPlayRoomSession> UploadTrackToSessionAsync(

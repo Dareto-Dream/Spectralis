@@ -270,6 +270,7 @@ async fn create_session(
             "protocolVersion": PROTOCOL_VERSION,
             "roomCode": &room_code,
             "displayCode": display_room_code(&room_code),
+            "sessionKey": &session_key,
             "trackId": &track_id_text,
             "joinUrl": &join_url,
             "stateUrl": &state_url,
