@@ -996,6 +996,73 @@ public sealed class ObsEditorViewModel : ViewModelBase
     }
 }
 
+public sealed class StreamerSettingsViewModel : ViewModelBase
+{
+    private readonly AppSettings _settings;
+    private readonly ObsEditorViewModel? _obsEditor;
+    private string _status = string.Empty;
+
+    public StreamerSettingsViewModel(AppSettings settings, ObsEditorViewModel? obsEditor = null)
+    {
+        _settings = settings;
+        _obsEditor = obsEditor;
+    }
+
+    public string Status
+    {
+        get => _status;
+        private set => this.RaiseAndSetIfChanged(ref _status, value);
+    }
+
+    public double CanvasAspectRatio =>
+        _settings.ObsCanvasWidth > 0 && _settings.ObsCanvasHeight > 0
+            ? (double)_settings.ObsCanvasWidth / _settings.ObsCanvasHeight
+            : 16.0 / 9.0;
+
+    public string DeadZoneCountText =>
+        _settings.DeadZones.Count == 0
+            ? "No dead zones defined"
+            : _settings.DeadZones.Count == 1
+                ? "1 dead zone defined"
+                : $"{_settings.DeadZones.Count} dead zones defined";
+
+    public IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> GetDeadZones() =>
+        _settings.DeadZones;
+
+    public void SaveDeadZones(IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> zones)
+    {
+        _settings.DeadZones = zones.ToList();
+        AppSettingsStore.Save(_settings);
+        this.RaisePropertyChanged(nameof(DeadZoneCountText));
+    }
+
+    public void ClearAll()
+    {
+        _settings.DeadZones.Clear();
+        AppSettingsStore.Save(_settings);
+        this.RaisePropertyChanged(nameof(DeadZoneCountText));
+        Status = "Dead zones cleared.";
+    }
+
+    public void ApplyToCurrentLayout()
+    {
+        if (_obsEditor is null)
+        {
+            Status = "OBS editor not connected.";
+            return;
+        }
+        if (_settings.DeadZones.Count == 0)
+        {
+            Status = "No dead zones to apply.";
+            return;
+        }
+        var layout = _obsEditor.GetCurrentLayout();
+        var adjusted = Spectralis.Core.Integrations.Obs.DeadZoneHelper.ApplyDeadZones(layout, _settings.DeadZones);
+        _obsEditor.ApplyDesignerLayout(adjusted);
+        Status = "Layout adjusted around dead zones. Reload the browser source.";
+    }
+}
+
 public enum SettingsCategory
 {
     Appearance,
@@ -1004,6 +1071,7 @@ public enum SettingsCategory
     Library,
     Integrations,
     SharedPlay,
+    Streamer,
     Updates,
     About,
     Developer,
@@ -1033,13 +1101,15 @@ public sealed class SettingsViewModel : ViewModelBase
         NowPlayingViewModel nowPlaying,
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
-        LibraryViewModel? library = null)
+        LibraryViewModel? library = null,
+        StreamerSettingsViewModel? streamerSettings = null)
     {
         _settings = settings;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
         ObsEditor = obsEditor ?? new ObsEditorViewModel(settings);
         Library = library;
+        StreamerSettings = streamerSettings;
         ThemeModeOptions = Enum.GetValues<AppThemeMode>()
             .Select(mode => new SelectionOption<AppThemeMode>(ThemeModeLabel(mode), mode))
             .ToArray();
@@ -1198,6 +1268,7 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     public ObsEditorViewModel ObsEditor { get; }
+    public StreamerSettingsViewModel? StreamerSettings { get; }
 
     public IReadOnlyList<SelectionOption<AppThemeMode>> ThemeModeOptions { get; }
     public IReadOnlyList<SelectionOption<AppThemeAccent>> ThemeAccentOptions { get; }
@@ -1600,6 +1671,7 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsLibraryVisible));
             this.RaisePropertyChanged(nameof(IsIntegrationsVisible));
             this.RaisePropertyChanged(nameof(IsSharedPlayVisible));
+            this.RaisePropertyChanged(nameof(IsStreamerVisible));
             this.RaisePropertyChanged(nameof(IsUpdatesVisible));
             this.RaisePropertyChanged(nameof(IsAboutVisible));
             this.RaisePropertyChanged(nameof(IsDeveloperVisible));
@@ -1612,6 +1684,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool IsLibraryVisible => _selectedCategory == SettingsCategory.Library;
     public bool IsIntegrationsVisible => _selectedCategory == SettingsCategory.Integrations;
     public bool IsSharedPlayVisible => _selectedCategory == SettingsCategory.SharedPlay;
+    public bool IsStreamerVisible => _selectedCategory == SettingsCategory.Streamer;
     public bool IsUpdatesVisible => _selectedCategory == SettingsCategory.Updates;
     public bool IsAboutVisible => _selectedCategory == SettingsCategory.About;
     public bool IsDeveloperVisible => _selectedCategory == SettingsCategory.Developer;
@@ -1631,6 +1704,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private static string CategoryLabel(SettingsCategory category) => category switch
     {
         SettingsCategory.SharedPlay => "Shared Play",
+        SettingsCategory.Streamer => "Streamer",
         _ => category.ToString(),
     };
 
