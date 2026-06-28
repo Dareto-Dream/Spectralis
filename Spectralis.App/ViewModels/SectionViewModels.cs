@@ -19,27 +19,6 @@ namespace Spectralis.App.ViewModels;
 // Section ViewModels start as routed placeholders; each gains its real state as
 // its feature lands. They stay in separate-but-small form here until they grow.
 
-// ─── Pending approval item for the Streamer Queue review panel ────────────────
-
-public sealed class SqPendingItemVm : ViewModelBase
-{
-    public SqPendingItemVm(string id, string displayName, string url,
-        Action<string> onApprove, Action<string> onReject)
-    {
-        Id = id;
-        DisplayName = displayName;
-        Url = url;
-        ApproveCommand = ReactiveCommand.Create(() => onApprove(id));
-        RejectCommand  = ReactiveCommand.Create(() => onReject(id));
-    }
-
-    public string Id { get; }
-    public string DisplayName { get; }
-    public string Url { get; }
-    public ReactiveCommand<Unit, Unit> ApproveCommand { get; }
-    public ReactiveCommand<Unit, Unit> RejectCommand { get; }
-}
-
 public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 {
     private readonly SharedPlaySessionController _controller = new();
@@ -49,48 +28,19 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private bool _isHosting;
     private string _lastError = string.Empty;
 
-    // ─── Streamer Queue state ─────────────────────────────────────────────────
-    private bool _sqEnabled;
-    private string _sqSubmitUrl = string.Empty;
-    private bool _sqRequireApproval;
-    private bool _sqAllowDuplicates;
-    private string _sqMaxQueueLength = "50";
-    private bool _sqQueueFeeEnabled;
-    private string _sqQueueFeeAmount = "5.00";
-    private bool _sqSkipEnabled;
-    private string _sqSkipAmount = "2.00";
-    private string _sqSkipVotes = "3";
-    private bool _sqSuperSkipEnabled;
-    private string _sqSuperSkipAmount = "10.00";
-    private bool _sqStripeConnected;
-    private string _sqStripeStatus = "Not connected";
-    private string _sqStatus = string.Empty;
-
     public SharedPlayViewModel()
     {
         _controller.StatusChanged += OnStatusChanged;
-        HostCommand  = ReactiveCommand.CreateFromTask(HostAsync);
-        StopCommand  = ReactiveCommand.Create(Stop);
+        HostCommand     = ReactiveCommand.CreateFromTask(HostAsync);
+        StopCommand     = ReactiveCommand.Create(Stop);
         CopyLinkCommand = ReactiveCommand.Create(CopyLink, this.WhenAnyValue(x => x.IsHosting));
-
-        var whenHosting = this.WhenAnyValue(x => x.IsHosting);
-        SqSaveCommand           = ReactiveCommand.CreateFromTask(SqSaveAsync, whenHosting);
-        SqCopySubmitUrlCommand  = ReactiveCommand.Create(SqCopySubmitUrl,
-            this.WhenAnyValue(x => x.SqSubmitUrl, url => !string.IsNullOrEmpty(url)));
-        SqConnectStripeCommand  = ReactiveCommand.CreateFromTask(SqConnectStripeAsync, whenHosting);
-        SqDisconnectStripeCommand = ReactiveCommand.Create(SqDisconnectStripe, whenHosting);
     }
 
     public ReactiveCommand<Unit, Unit> HostCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
-    public ReactiveCommand<Unit, Unit> SqSaveCommand { get; }
-    public ReactiveCommand<Unit, Unit> SqCopySubmitUrlCommand { get; }
-    public ReactiveCommand<Unit, Unit> SqConnectStripeCommand { get; }
-    public ReactiveCommand<Unit, Unit> SqDisconnectStripeCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
-    public event Action<string>? OpenUrlRequested;
 
     public bool IsHosting
     {
@@ -122,356 +72,6 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _lastError, value);
     }
 
-    // ─── Streamer Queue reactive properties ───────────────────────────────────
-
-    public bool SqEnabled
-    {
-        get => _sqEnabled;
-        set => this.RaiseAndSetIfChanged(ref _sqEnabled, value);
-    }
-
-    public string SqSubmitUrl
-    {
-        get => _sqSubmitUrl;
-        set => this.RaiseAndSetIfChanged(ref _sqSubmitUrl, value);
-    }
-
-    public bool SqRequireApproval
-    {
-        get => _sqRequireApproval;
-        set => this.RaiseAndSetIfChanged(ref _sqRequireApproval, value);
-    }
-
-    public bool SqAllowDuplicates
-    {
-        get => _sqAllowDuplicates;
-        set => this.RaiseAndSetIfChanged(ref _sqAllowDuplicates, value);
-    }
-
-    public string SqMaxQueueLength
-    {
-        get => _sqMaxQueueLength;
-        set => this.RaiseAndSetIfChanged(ref _sqMaxQueueLength, value);
-    }
-
-    public bool SqQueueFeeEnabled
-    {
-        get => _sqQueueFeeEnabled;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _sqQueueFeeEnabled, value);
-            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
-        }
-    }
-
-    public string SqQueueFeeAmount
-    {
-        get => _sqQueueFeeAmount;
-        set => this.RaiseAndSetIfChanged(ref _sqQueueFeeAmount, value);
-    }
-
-    public bool SqSkipEnabled
-    {
-        get => _sqSkipEnabled;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _sqSkipEnabled, value);
-            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
-        }
-    }
-
-    public string SqSkipAmount
-    {
-        get => _sqSkipAmount;
-        set => this.RaiseAndSetIfChanged(ref _sqSkipAmount, value);
-    }
-
-    public string SqSkipVotes
-    {
-        get => _sqSkipVotes;
-        set => this.RaiseAndSetIfChanged(ref _sqSkipVotes, value);
-    }
-
-    public bool SqSuperSkipEnabled
-    {
-        get => _sqSuperSkipEnabled;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _sqSuperSkipEnabled, value);
-            this.RaisePropertyChanged(nameof(SqAnyFeeEnabled));
-        }
-    }
-
-    public string SqSuperSkipAmount
-    {
-        get => _sqSuperSkipAmount;
-        set => this.RaiseAndSetIfChanged(ref _sqSuperSkipAmount, value);
-    }
-
-    public bool SqAnyFeeEnabled => SqQueueFeeEnabled || SqSkipEnabled || SqSuperSkipEnabled;
-
-    public bool SqChannelRequired => _controller.GetChannelCredentials() is null;
-
-    public bool SqStripeConnected
-    {
-        get => _sqStripeConnected;
-        set => this.RaiseAndSetIfChanged(ref _sqStripeConnected, value);
-    }
-
-    public string SqStripeStatus
-    {
-        get => _sqStripeStatus;
-        set => this.RaiseAndSetIfChanged(ref _sqStripeStatus, value);
-    }
-
-    public string SqStatus
-    {
-        get => _sqStatus;
-        set => this.RaiseAndSetIfChanged(ref _sqStatus, value);
-    }
-
-    public ObservableCollection<SqPendingItemVm> SqPendingItems { get; } = [];
-
-    public bool SqHasPending => SqPendingItems.Count > 0;
-
-    public string SqPendingHeaderText =>
-        SqPendingItems.Count == 1
-            ? "1 submission awaiting approval"
-            : $"{SqPendingItems.Count} submissions awaiting approval";
-
-    // ─── Streamer Queue command handlers ─────────────────────────────────────
-
-    private async Task SqSaveAsync()
-    {
-        SqStatus = "Saving…";
-        try
-        {
-            var settings = BuildSqSettings();
-            await _controller.SaveStreamerQueueSettingsAsync(_sqEnabled, settings, CancellationToken.None);
-            SqStatus = "Settings saved.";
-            _ = SqPollAsync();
-        }
-        catch (Exception ex)
-        {
-            SqStatus = $"Save failed: {ex.Message}";
-        }
-    }
-
-    private async Task SqConnectStripeAsync()
-    {
-        SqStatus = "Opening Stripe Connect…";
-        try
-        {
-            var url = await _controller.GetStripeConnectUrlAsync(CancellationToken.None);
-            if (!string.IsNullOrEmpty(url))
-            {
-                OpenUrlRequested?.Invoke(url);
-                SqStatus = "Complete Stripe Connect in your browser…";
-                _ = SqPollForStripeConnectionAsync();
-            }
-            else
-            {
-                SqStatus = "Could not get Stripe Connect URL. Check channel settings.";
-            }
-        }
-        catch (Exception ex)
-        {
-            SqStatus = $"Stripe Connect failed: {ex.Message}";
-        }
-    }
-
-    private async Task SqPollForStripeConnectionAsync()
-    {
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(5);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(5));
-            try
-            {
-                var state = await _controller.FetchStreamerQueueAsync(CancellationToken.None);
-                if (state is not null && state.StripeConnected)
-                {
-                    SqStripeConnected = true;
-                    SqStripeStatus = "Connected";
-                    SqStatus = "Stripe account connected.";
-                    return;
-                }
-            }
-            catch { }
-        }
-        SqStatus = "Stripe Connect timed out. Refresh after completing in your browser.";
-    }
-
-    private void SqDisconnectStripe()
-    {
-        _ = SqDisconnectStripeAsync();
-    }
-
-    private async Task SqDisconnectStripeAsync()
-    {
-        SqStatus = "Disconnecting Stripe…";
-        try
-        {
-            await _controller.DisconnectStripeAsync(CancellationToken.None);
-            SqStripeConnected = false;
-            SqStripeStatus = "Not connected";
-            SqStatus = "Stripe account disconnected.";
-        }
-        catch (Exception ex)
-        {
-            SqStatus = $"Disconnect failed: {ex.Message}";
-        }
-    }
-
-    private void SqCopySubmitUrl()
-    {
-        if (!string.IsNullOrEmpty(_sqSubmitUrl))
-            CopyToClipboardRequested?.Invoke(_sqSubmitUrl);
-    }
-
-    private void SqApproveItem(string id)
-    {
-        _ = SqApproveItemAsync(id);
-    }
-
-    private void SqRejectItem(string id)
-    {
-        _ = SqRejectItemAsync(id);
-    }
-
-    private async Task SqApproveItemAsync(string id)
-    {
-        try
-        {
-            await _controller.ApproveStreamerQueueItemAsync(id, CancellationToken.None);
-            _ = SqPollAsync();
-        }
-        catch (Exception ex)
-        {
-            SqStatus = $"Approve failed: {ex.Message}";
-        }
-    }
-
-    private async Task SqRejectItemAsync(string id)
-    {
-        try
-        {
-            await _controller.RejectStreamerQueueItemAsync(id, CancellationToken.None);
-            _ = SqPollAsync();
-        }
-        catch (Exception ex)
-        {
-            SqStatus = $"Reject failed: {ex.Message}";
-        }
-    }
-
-    // ─── Polling ──────────────────────────────────────────────────────────────
-
-    private CancellationTokenSource? _sqPollCts;
-
-    private void StartSqPolling()
-    {
-        StopSqPolling();
-        _sqPollCts = new CancellationTokenSource();
-        _ = SqPollLoopAsync(_sqPollCts.Token);
-    }
-
-    private void StopSqPolling()
-    {
-        _sqPollCts?.Cancel();
-        _sqPollCts?.Dispose();
-        _sqPollCts = null;
-    }
-
-    private async Task SqPollLoopAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            await SqPollAsync();
-            try { await Task.Delay(TimeSpan.FromSeconds(10), ct); }
-            catch (OperationCanceledException) { break; }
-        }
-    }
-
-    private async Task SqPollAsync()
-    {
-        try
-        {
-            var state = await _controller.FetchStreamerQueueAsync(CancellationToken.None);
-            if (state is not null)
-                ApplySqSnapshot(state);
-        }
-        catch { }
-    }
-
-    // ─── Apply snapshot from the server ───────────────────────────────────────
-
-    private void ApplySqSnapshot(StreamerQueueState state)
-    {
-        var s = state.Settings;
-        SqEnabled = state.Enabled;
-        SqRequireApproval = s.RequireApproval;
-        SqAllowDuplicates = s.AllowDuplicates;
-        SqMaxQueueLength = s.MaxQueueLength.ToString();
-        SqQueueFeeEnabled = s.QueueEntryFee.Enabled;
-        SqQueueFeeAmount = s.QueueEntryFee.Amount.ToString("0.00");
-        SqSkipEnabled = s.SkipRequests.Enabled;
-        SqSkipAmount = s.SkipRequests.Amount.ToString("0.00");
-        SqSkipVotes = s.SkipRequests.VotesRequired.ToString();
-        SqSuperSkipEnabled = s.SuperSkips.Enabled;
-        SqSuperSkipAmount = s.SuperSkips.Amount.ToString("0.00");
-        SqStripeConnected = state.StripeConnected;
-        SqStripeStatus = state.StripeConnected ? "Connected" : "Not connected";
-
-        var pending = state.Submissions
-            .Where(sub => sub.Status == "pending")
-            .ToList();
-
-        SqPendingItems.Clear();
-        foreach (var sub in pending)
-            SqPendingItems.Add(new SqPendingItemVm(sub.Id, sub.DisplayName, sub.Url, SqApproveItem, SqRejectItem));
-
-        this.RaisePropertyChanged(nameof(SqHasPending));
-        this.RaisePropertyChanged(nameof(SqPendingHeaderText));
-    }
-
-    // ─── Build settings object from VM state ──────────────────────────────────
-
-    private StreamerQueueSettings BuildSqSettings()
-    {
-        decimal.TryParse(_sqQueueFeeAmount, out var feeAmt);
-        decimal.TryParse(_sqSkipAmount, out var skipAmt);
-        int.TryParse(_sqSkipVotes, out var skipVotes);
-        decimal.TryParse(_sqSuperSkipAmount, out var superAmt);
-        int.TryParse(_sqMaxQueueLength, out var maxLen);
-
-        return new StreamerQueueSettings
-        {
-            RequireApproval = _sqRequireApproval,
-            AllowDuplicates = _sqAllowDuplicates,
-            MaxQueueLength = Math.Max(1, maxLen),
-            QueueEntryFee = new StreamerQueueFeeSettings
-            {
-                Enabled = _sqQueueFeeEnabled,
-                Amount = Math.Max(0, feeAmt),
-                Currency = "USD",
-            },
-            SkipRequests = new StreamerQueueSkipFeeSettings
-            {
-                Enabled = _sqSkipEnabled,
-                Amount = Math.Max(0, skipAmt),
-                Currency = "USD",
-                VotesRequired = Math.Max(1, skipVotes),
-            },
-            SuperSkips = new StreamerQueueFeeSettings
-            {
-                Enabled = _sqSuperSkipEnabled,
-                Amount = Math.Max(0, superAmt),
-                Currency = "USD",
-            },
-        };
-    }
-
     public void ApplySettings(AppSettings settings)
     {
         _controller.ApplySettings(
@@ -491,8 +91,6 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private Task HostAsync()
     {
-        // Hosting starts automatically when enabled and a track is playing.
-        // Toggle the enabled state; the NowPlaying tick drives the first upload.
         _controller.ApplySettings(
             enableSharedPlay: true,
             cdnBaseUrl: null,
@@ -520,36 +118,11 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private void OnStatusChanged(object? sender, EventArgs _)
     {
         var snap = _controller.Snapshot;
-        var wasHosting = _isHosting;
         IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.RoomCode);
         JoinUrl = snap.JoinUrl ?? string.Empty;
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
-
-        // Build submit URL: {origin}/spectralis/web-share/submit.html?session={CODE}
-        if (!string.IsNullOrEmpty(snap.RoomCode) && !string.IsNullOrEmpty(snap.JoinUrl))
-        {
-            var joinUri = snap.JoinUrl;
-            var schemeEnd = joinUri.IndexOf("://", StringComparison.Ordinal);
-            var slashAfterHost = schemeEnd >= 0
-                ? joinUri.IndexOf('/', schemeEnd + 3)
-                : joinUri.IndexOf('/');
-            var origin = slashAfterHost >= 0 ? joinUri[..slashAfterHost] : joinUri;
-            SqSubmitUrl = $"{origin}/spectralis/web-share/submit.html?session={snap.RoomCode}";
-        }
-        else
-        {
-            SqSubmitUrl = string.Empty;
-        }
-
-        this.RaisePropertyChanged(nameof(SqChannelRequired));
-
-        // Start/stop streamer queue polling when hosting state changes
-        if (_isHosting && !wasHosting)
-            StartSqPolling();
-        else if (!_isHosting && wasHosting)
-            StopSqPolling();
     }
 
     private static string BuildStatusText(SharedPlaySessionSnapshot snap)
@@ -562,11 +135,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         return "Ready to host.";
     }
 
-    public void Dispose()
-    {
-        StopSqPolling();
-        _controller.Dispose();
-    }
+    public void Dispose() => _controller.Dispose();
 }
 
 public sealed class CapsuleTrackViewModel
