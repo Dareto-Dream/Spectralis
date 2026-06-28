@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Request a Track — Spectralis</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://js.stripe.com/v3/" async></script>
+</head>
+<body>
+
+<header class="sq-topbar">
+  <div class="sq-logo">
+    <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" stroke="var(--accent)" stroke-width="2.5"/>
+      <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
+    </svg>
+    <span>Spectralis</span>
+  </div>
+  <div class="sq-room-badge" id="roomBadge" hidden></div>
+</header>
+
+<div class="sq-disabled" id="disabledState" hidden>
+  <p class="sq-disabled-icon">🎵</p>
+  <h2>Requests aren't open right now</h2>
+  <p class="sq-disabled-sub">The streamer hasn't enabled the queue yet.</p>
+</div>
+
+<div class="sq-disabled" id="errorState" hidden>
+  <p class="sq-disabled-icon">⚠</p>
+  <h2 id="errorTitle">Something went wrong</h2>
+  <p class="sq-disabled-sub" id="errorMessage">Couldn't load the request queue.</p>
+</div>
+
+<main class="sq-main" id="mainContent" hidden>
+
+  <!-- Now playing -->
+  <section class="sq-now-playing" id="nowPlaying" hidden>
+    <p class="sq-section-label">NOW PLAYING</p>
+    <div class="sq-np-inner">
+      <div class="sq-disc" id="npDisc"></div>
+      <div class="sq-np-info">
+        <p class="sq-np-title" id="npTitle">—</p>
+        <p class="sq-np-artist" id="npArtist"></p>
+        <div class="sq-p2w-badge" id="p2wBadge" hidden>P2W</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Submit form -->
+  <section class="sq-card" id="requestSection">
+    <div class="sq-card-header">
+      <h2 class="sq-card-title">Request a Track</h2>
+      <span class="sq-queue-count" id="queueCount"></span>
+    </div>
+
+    <div class="sq-tabs" id="submitTabs">
+      <button class="sq-tab sq-tab-active" data-tab="link" type="button">Link</button>
+      <button class="sq-tab" data-tab="upload" type="button" id="uploadTab" hidden>Upload File</button>
+    </div>
+
+    <!-- Link form -->
+    <form class="sq-form" id="requestForm" novalidate>
+      <label class="sq-label" for="inputName">Your name</label>
+      <input class="sq-input" id="inputName" type="text" maxlength="32" autocomplete="nickname" placeholder="Listener" />
+
+      <label class="sq-label" for="inputUrl">Track link</label>
+      <div class="sq-url-row">
+        <input class="sq-input" id="inputUrl" type="url" placeholder="Spotify, YouTube, SoundCloud…" required />
+        <span class="sq-url-spinner" id="urlSpinner" hidden></span>
+      </div>
+
+      <div class="sq-meta-row" id="metaRow" hidden>
+        <div>
+          <label class="sq-label" for="inputTitle">Title</label>
+          <input class="sq-input" id="inputTitle" type="text" maxlength="120" />
+        </div>
+        <div>
+          <label class="sq-label" for="inputArtist">Artist</label>
+          <input class="sq-input" id="inputArtist" type="text" maxlength="120" />
+        </div>
+      </div>
+
+      <!-- Wait estimate — filled after metadata resolved -->
+      <div class="sq-wait" id="waitEstimate" hidden>
+        <span class="sq-wait-label">Estimated wait:</span>
+        <span id="waitText"></span>
+      </div>
+
+      <!-- Entry fee -->
+      <div class="sq-fee-block" id="feeBlock" hidden>
+        <div class="sq-fee-header">
+          <span class="sq-fee-icon">💳</span>
+          <span id="feeLabel">Queue entry</span>
+        </div>
+        <div id="stripeElements"></div>
+      </div>
+
+      <p class="sq-form-error" id="submitError" hidden></p>
+
+      <button class="sq-btn sq-btn-primary" id="submitBtn" type="submit">
+        <span id="submitBtnText">Request Track</span>
+        <span class="sq-spinner" id="submitSpinner" hidden></span>
+      </button>
+    </form>
+
+    <!-- Upload form -->
+    <form class="sq-form" id="uploadForm" novalidate hidden>
+      <label class="sq-label" for="uploadName">Your name</label>
+      <input class="sq-input" id="uploadName" type="text" maxlength="32" autocomplete="nickname" placeholder="Listener" />
+
+      <label class="sq-label" for="uploadFile">Audio file (MP3, FLAC, OGG, WAV — max 50 MB)</label>
+      <input class="sq-input" id="uploadFile" type="file" accept=".mp3,.flac,.ogg,.wav,.m4a,.aac,.opus" required />
+
+      <div id="uploadMetaRow">
+        <label class="sq-label" for="uploadTitle">Title</label>
+        <input class="sq-input" id="uploadTitle" type="text" maxlength="120" />
+        <label class="sq-label" for="uploadArtist">Artist</label>
+        <input class="sq-input" id="uploadArtist" type="text" maxlength="120" />
+      </div>
+
+      <div class="sq-wait" id="uploadWait" hidden>
+        <span class="sq-wait-label">Estimated wait:</span>
+        <span id="uploadWaitText"></span>
+      </div>
+
+      <p class="sq-form-error" id="uploadError" hidden></p>
+
+      <button class="sq-btn sq-btn-primary" id="uploadBtn" type="submit">
+        <span id="uploadBtnText">Upload Track</span>
+        <span class="sq-spinner" id="uploadSpinner" hidden></span>
+      </button>
+    </form>
+
+    <div class="sq-success" id="submitSuccess" hidden>
+      <p class="sq-success-icon">✓</p>
+      <p class="sq-success-msg" id="successMsg">You're in the queue!</p>
+      <p class="sq-success-sub" id="successWaitText"></p>
+      <button class="sq-btn sq-btn-ghost" id="requestAnotherBtn">Request another</button>
+    </div>
+  </section>
+
+  <!-- Skip -->
+  <section class="sq-card sq-skip-card" id="skipSection" hidden>
+    <div class="sq-card-header">
+      <h2 class="sq-card-title">Priority Bump</h2>
+      <span class="sq-skip-price" id="skipPriceLabel"></span>
+    </div>
+    <p class="sq-card-sub">Move your track to the front of the skip tier.</p>
+    <form class="sq-form sq-skip-form" id="skipForm" novalidate>
+      <label class="sq-label" for="skipName">Your name</label>
+      <input class="sq-input" id="skipName" type="text" maxlength="32" placeholder="Listener" />
+      <div class="sq-fee-block" id="skipFeeBlock" hidden>
+        <div id="skipStripeElements"></div>
+      </div>
+      <p class="sq-form-error" id="skipError" hidden></p>
+      <button class="sq-btn sq-btn-secondary" id="skipBtn" type="submit">
+        <span id="skipBtnText">Request Priority Bump</span>
+        <span class="sq-spinner" id="skipSpinner" hidden></span>
+      </button>
+    </form>
+    <p class="sq-success-inline" id="skipSuccess" hidden>✓ Priority bump requested!</p>
+  </section>
+
+  <!-- Super Skip -->
+  <section class="sq-card sq-superskip-card" id="superSkipSection" hidden>
+    <div class="sq-card-header">
+      <h2 class="sq-card-title">⚡ Super Skip</h2>
+      <span class="sq-skip-price sq-skip-price-super" id="superSkipPriceLabel"></span>
+    </div>
+    <p class="sq-card-sub">Highest priority — goes to the very front of the queue.</p>
+    <form class="sq-form sq-skip-form" id="superSkipForm" novalidate>
+      <label class="sq-label" for="superSkipName">Your name</label>
+      <input class="sq-input" id="superSkipName" type="text" maxlength="32" placeholder="Listener" />
+      <div class="sq-fee-block" id="superSkipFeeBlock" hidden>
+        <div id="superSkipStripeElements"></div>
+      </div>
+      <p class="sq-form-error" id="superSkipError" hidden></p>
+      <button class="sq-btn sq-btn-secondary" id="superSkipBtn" type="submit">
+        <span id="superSkipBtnText">Super Skip</span>
+        <span class="sq-spinner" id="superSkipSpinner" hidden></span>
+      </button>
+    </form>
+    <p class="sq-success-inline" id="superSkipSuccess" hidden>✓ Super skip sent!</p>
+  </section>
+
+</main>
+
+<script src="sq.js"></script>
+</body>
+</html>
