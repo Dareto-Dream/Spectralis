@@ -305,6 +305,112 @@ public sealed class SharedPlayCdnClient : IDisposable
         await EnsureSuccessAsync(response, "Shared Play queue publish", cancellationToken);
     }
 
+    // ─── Streamer Queue ────────────────────────────────────────────────────────
+
+    public async Task<StreamerQueueState?> GetStreamerQueueAsync(
+        Uri cdnBaseUri,
+        string roomCode,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = BuildSessionEndpoint(cdnBaseUri, roomCode, "streamer-queue");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Get streamer queue", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync<StreamerQueueState>(stream, JsonOptions, cancellationToken);
+    }
+
+    public async Task PutStreamerQueueSettingsAsync(
+        Uri cdnBaseUri,
+        string roomCode,
+        string sessionKey,
+        bool enabled,
+        StreamerQueueSettings settings,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = BuildSessionEndpoint(cdnBaseUri, roomCode, "streamer-queue/settings");
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, endpoint)
+        {
+            Content = JsonContent(new StreamerQueuePutRequest
+            {
+                SessionKey = sessionKey,
+                Enabled = enabled,
+                Settings = settings
+            })
+        };
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Put streamer queue settings", cancellationToken);
+    }
+
+    public async Task<string?> GetStripeConnectUrlAsync(
+        Uri cdnBaseUri,
+        string channelId,
+        string ownerToken,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = SharedPlayDefaults.BuildEndpoint(cdnBaseUri,
+            $"/shared-play/v2/channels/{Uri.EscapeDataString(channelId)}/stripe/connect?ownerToken={Uri.EscapeDataString(ownerToken)}");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Get Stripe Connect URL", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var result = await JsonSerializer.DeserializeAsync<StreamerQueueStripeConnectResponse>(stream, JsonOptions, cancellationToken);
+        return result?.Url;
+    }
+
+    public async Task ApproveSubmissionAsync(
+        Uri cdnBaseUri,
+        string roomCode,
+        string sessionKey,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = BuildSessionEndpoint(cdnBaseUri, roomCode,
+            $"streamer-queue/items/{Uri.EscapeDataString(itemId)}/approve");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent(new { sessionKey })
+        };
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Approve submission", cancellationToken);
+    }
+
+    public async Task RejectSubmissionAsync(
+        Uri cdnBaseUri,
+        string roomCode,
+        string sessionKey,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(cdnBaseUri, "CDN base URL");
+        var endpoint = BuildSessionEndpoint(cdnBaseUri, roomCode,
+            $"streamer-queue/items/{Uri.EscapeDataString(itemId)}/reject");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent(new { sessionKey })
+        };
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Reject submission", cancellationToken);
+    }
+
     public async Task<SharedPlayChannelResponse?> PublishChannelAsync(
         Uri cdnBaseUri,
         string channelId,

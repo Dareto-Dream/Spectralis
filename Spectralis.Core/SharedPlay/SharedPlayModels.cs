@@ -149,3 +149,76 @@ public sealed class SharedPlayChannelResponse
     public string? RoomCode { get; init; }
     public string? JoinUrl { get; init; }
 }
+
+// ─── Streamer Queue ────────────────────────────────────────────────────────────
+
+public sealed class StreamerQueueState
+{
+    public string RoomCode { get; init; } = string.Empty;
+    public bool Enabled { get; init; }
+    public string? ChannelId { get; init; }
+    public StreamerQueueSettings Settings { get; init; } = new();
+    public List<StreamerQueueSubmission> Submissions { get; init; } = [];
+    public List<StreamerQueueSkipRequest> SkipRequests { get; init; } = [];
+    public List<StreamerQueueSkipRequest> SuperSkipRequests { get; init; } = [];
+    public string? StripePublishableKey { get; init; }
+}
+
+public sealed class StreamerQueueSettings
+{
+    public bool RequireApproval { get; init; }
+    public int MaxQueueLength { get; init; } = 50;
+    public bool AllowDuplicates { get; init; }
+    public StreamerQueueFeeSettings QueueEntryFee { get; init; } = new();
+    public StreamerQueueSkipFeeSettings SkipRequests { get; init; } = new();
+    public StreamerQueueFeeSettings SuperSkips { get; init; } = new();
+}
+
+public sealed class StreamerQueueFeeSettings
+{
+    public bool Enabled { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = "USD";
+}
+
+public sealed class StreamerQueueSkipFeeSettings
+{
+    public bool Enabled { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = "USD";
+    public int VotesRequired { get; init; } = 3;
+}
+
+public sealed class StreamerQueueSubmission
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string ClientId { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public string? Title { get; init; }
+    public string? Artist { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public string PaymentStatus { get; init; } = string.Empty;
+    public DateTimeOffset SubmittedAtUtc { get; init; }
+}
+
+public sealed class StreamerQueueSkipRequest
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string ClientId { get; init; } = string.Empty;
+    public string PaymentStatus { get; init; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; init; }
+}
+
+public sealed class StreamerQueuePutRequest
+{
+    public string? SessionKey { get; init; }
+    public bool Enabled { get; init; }
+    public StreamerQueueSettings? Settings { get; init; }
+}
+
+public sealed class StreamerQueueStripeConnectResponse
+{
+    public string? Url { get; init; }
+}
