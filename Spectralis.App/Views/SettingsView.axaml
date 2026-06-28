@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:views="using:Spectralis.App.Views"
              x:Class="Spectralis.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -302,6 +303,34 @@
         <TextBox Text="{Binding SharedPlayLiveChannelOwnerToken}" PasswordChar="•" />
         <TextBlock Classes="secondary" Text="Display name" />
         <TextBox Text="{Binding SharedPlayLiveChannelDisplayName}" Watermark="Spectralis Listener" />
+      </StackPanel>
+
+      <!-- Streamer dead zones -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsStreamerVisible}">
+        <TextBlock Classes="heading" Text="Streamer Dead Zones" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Draw zones where your camera or scene overlays appear. Click Apply to automatically reposition OBS widgets around them." />
+
+        <!-- Designer canvas -->
+        <Border Height="220" CornerRadius="6" ClipToBounds="True">
+          <views:DeadZoneDesignerView x:Name="DeadZoneDesigner" />
+        </Border>
+
+        <TextBlock Classes="secondary" FontStyle="Italic"
+                   Text="Click and drag to draw a zone. Click a zone to select it. Drag corners to resize." />
+
+        <TextBlock Classes="data" Text="{Binding StreamerSettings.DeadZoneCountText}"
+                   IsVisible="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Apply to OBS layout" Click="OnApplyDeadZones" Classes="primary"
+                  IsEnabled="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <Button Content="Remove selected" Click="OnRemoveSelectedDeadZone" />
+          <Button Content="Clear all" Click="OnClearDeadZones" Classes="destructive" />
+        </StackPanel>
+
+        <TextBlock Classes="data" Text="{Binding StreamerSettings.Status}"
+                   IsVisible="{Binding StreamerSettings.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
       <!-- Developer -->
