@@ -40,6 +40,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private RemoteAudioResolveResult? _pendingClipboardResolved;
     private byte[]? _clipboardToastArtwork;
     private DateTimeOffset _clipboardToastShownAt;
+    private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
+    private string _mostRecentSongSource = string.Empty;
+    private string _mostRecentSongLabel = string.Empty;
 
     public MainWindowViewModel()
     {
@@ -78,6 +81,14 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return true;
             },
             TimeSpan.FromSeconds(5));
+        RefreshIdleActivity();
+        _idleActivityTick = Avalonia.Threading.DispatcherTimer.Run(
+            () =>
+            {
+                RefreshIdleActivity();
+                return true;
+            },
+            TimeSpan.FromSeconds(30));
 
         NowPlaying.LocalTrackLoaded += path =>
         {
@@ -85,6 +96,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             ApplyBeatGridForTrack(path);
             if (Engine.CurrentTrack is { } track)
             {
+                RememberMostRecentSong(path, track.DisplayTitle, track.Artist);
                 Scrobbling.NotifyTrackLoaded(
                     path,
                     track.DisplayTitle,
@@ -95,7 +107,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         };
 
         NowPlaying.RemoteTrackLoaded += (sourceUrl, title, artist, album, durationSeconds) =>
+        {
+            RememberMostRecentSong(sourceUrl, title, artist);
             Scrobbling.NotifyTrackLoaded(sourceUrl, title, artist, album, durationSeconds);
+        };
 
         Library.TrackAnalyzed += (_, result) =>
         {
@@ -111,6 +126,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         SharedPlay = new SharedPlayViewModel();
         SharedPlay.ApplySettings(AppSettings);
+        RandomizerTools = new RandomizerToolsViewModel();
+        StreamerQueue = new StreamerQueueViewModel();
+        StreamerQueue.ApplySettings(AppSettings);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or
@@ -130,12 +148,21 @@ public sealed class MainWindowViewModel : ViewModelBase
                 track,
                 startPlayback,
                 ownsTemporaryFile: true));
+        Capsules.AlbumWorldAttach  = (html, readyJson, dir) => NowPlaying.AttachAlbumWorld(html, readyJson, dir);
+        Capsules.AlbumWorldNavigate = () => SelectSection(NowPlaying);
+        Capsules.AlbumWorldDetach  = () => NowPlaying.DetachAlbumWorld();
+        Capsules.AlbumWorldTrackPlaybackStarting = NowPlaying.BeginAlbumWorldTrackPlayback;
+        Capsules.AlbumWorldTrackChanged = NowPlaying.NotifyAlbumWorldTrackChanged;
+        Capsules.AlbumWorldTrackCompleted = NowPlaying.NotifyAlbumWorldTrackCompleted;
+        NowPlaying.AlbumPlayTrackDelegate = (trackId, positionSeconds) => _ = Capsules.LoadAlbumTrackAsync(trackId, positionSeconds);
+        NowPlaying.AlbumWorldTick = (pos, playing) => Capsules.TickAlbumWorld(pos, playing);
+        NowPlaying.AlbumWorldExitDelegate = Capsules.Clear;
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
-        DiscordPresence = new DiscordPresenceCoordinator(Engine);
+        DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
         ObsEditor = new ObsEditorViewModel(
             AppSettings,
@@ -152,12 +179,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             layout => ObsOverlay.SetLayout(layout),
             (id, layout) => ObsOverlay.SetNamedLayout(id, layout),
             id => ObsOverlay.RemoveNamedLayout(id));
+        StreamerSettings = new StreamerSettingsViewModel(AppSettings, ObsEditor);
         Settings = new SettingsViewModel(
             AppSettings,
             NowPlaying,
             enabled => DiscordPresence.SetEnabled(enabled),
             ObsEditor,
-            Library);
+            Library,
+            StreamerSettings);
 
         Sections = new ObservableCollection<NavSection>
         {
@@ -166,6 +195,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Playlists", IconData.Playlists, Playlists),
             new("Capsules", IconData.Capsules, Capsules),
             new("Shared Play", IconData.SharedPlay, SharedPlay),
+            new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
+            new("Randomizer", IconData.Randomizer, RandomizerTools),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
@@ -184,6 +215,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.Artist):
                     this.RaisePropertyChanged(nameof(WindowTitle));
                     this.RaisePropertyChanged(nameof(StatusText));
+                    this.RaisePropertyChanged(nameof(StatusHintText));
                     this.RaisePropertyChanged(nameof(IsStatusAccent));
                     break;
 
@@ -193,6 +225,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.HasQueueItems):
                 case nameof(NowPlayingViewModel.QueueUpcomingText):
                     this.RaisePropertyChanged(nameof(StatusText));
+                    this.RaisePropertyChanged(nameof(StatusHintText));
                     this.RaisePropertyChanged(nameof(IsStatusAccent));
                     break;
 
@@ -255,14 +288,22 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string OutputStatusText => $"Output: {NowPlaying.OutputRateText}";
 
-    public string StatusHintText =>
+    private static string KeyboardShortcutText =>
         "Space: Play/Pause  ·  ←→: Seek  ·  ↑↓: Volume  ·  M: Mute  ·  Ctrl+←→: Prev/Next  ·  Ctrl+O: Open  ·  Ctrl+,: Settings";
+
+    public string StatusHintText => NowPlaying.HasTrack
+        ? KeyboardShortcutText
+        : IdleActivityText;
+
+    public string IdleActivityText => BuildIdleActivityText(IdleActivity);
 
     public string VersionText => $"v{DiagnosticsSnapshot.CurrentVersion}";
 
     public ObsOverlayCoordinator ObsOverlay { get; }
 
     public ObsEditorViewModel ObsEditor { get; }
+
+    public StreamerSettingsViewModel StreamerSettings { get; }
 
     public DiscordPresenceCoordinator DiscordPresence { get; }
 
@@ -271,6 +312,13 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ScrobblingService Scrobbling { get; }
 
     private readonly IDisposable _scrobbleTick;
+    private readonly IDisposable _idleActivityTick;
+
+    public ListeningActivitySnapshot IdleActivity => _idleActivity;
+
+    public bool CanPlayMostRecentSong => !string.IsNullOrWhiteSpace(_mostRecentSongSource);
+
+    public string MostRecentSongLabel => _mostRecentSongLabel;
 
     public EffectChain EffectChain { get; }
 
@@ -282,6 +330,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public LibraryViewModel Library { get; }
     public PlaylistsViewModel Playlists { get; }
     public SharedPlayViewModel SharedPlay { get; }
+    public StreamerQueueViewModel StreamerQueue { get; }
+    public RandomizerToolsViewModel RandomizerTools { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
     public SettingsViewModel Settings { get; }
@@ -430,6 +480,28 @@ public sealed class MainWindowViewModel : ViewModelBase
         await NowPlaying.LoadUrlAsync(url);
     }
 
+    public async Task PlayMostRecentSongAsync()
+    {
+        var source = _mostRecentSongSource;
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        SelectSection(NowPlaying);
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            await NowPlaying.LoadUrlAsync(source);
+            return;
+        }
+
+        if (File.Exists(source))
+        {
+            await NowPlaying.PlayQueueAsync([source], 0);
+        }
+    }
+
     /// <summary>
     /// Entry point for drops and OS file-open: files play, folders scan into the library.
     /// </summary>
@@ -456,14 +528,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             var hasAlbumWorld = capsuleFiles.Any(p =>
                 Path.GetExtension(p).Equals(".spectral", StringComparison.OrdinalIgnoreCase));
             if (!hasAlbumWorld)
-            {
                 SelectSection(NowPlaying);
-            }
+            // Album world navigation is handled by AlbumWorldNavigate callback inside OpenFilesAsync.
             await Capsules.OpenFilesAsync(capsuleFiles, AppSettings.AutoPlayOnOpen);
-            if (hasAlbumWorld)
-            {
-                SelectSection(Capsules);
-            }
         }
 
         if (files.Count > 0)
@@ -534,6 +601,59 @@ public sealed class MainWindowViewModel : ViewModelBase
             : AppSettings.EnableObsOverlay
                 ? $"Overlay server unavailable: {ObsOverlay.StartupError}"
                 : "Overlay server disabled.";
+    }
+
+    private void RefreshIdleActivity()
+    {
+        var next = ListeningActivitySnapshot.FromHistory(ScrobbleQueue.LoadHistory());
+        if (next == _idleActivity)
+        {
+            return;
+        }
+
+        _idleActivity = next;
+        this.RaisePropertyChanged(nameof(IdleActivity));
+        this.RaisePropertyChanged(nameof(IdleActivityText));
+        this.RaisePropertyChanged(nameof(StatusHintText));
+    }
+
+    private void RememberMostRecentSong(string source, string title, string artist)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        _mostRecentSongSource = source;
+        _mostRecentSongLabel = string.IsNullOrWhiteSpace(title)
+            ? source
+            : string.IsNullOrWhiteSpace(artist)
+                ? title
+                : $"{artist} - {title}";
+        this.RaisePropertyChanged(nameof(CanPlayMostRecentSong));
+        this.RaisePropertyChanged(nameof(MostRecentSongLabel));
+    }
+
+    private static string BuildIdleActivityText(ListeningActivitySnapshot snapshot)
+    {
+        if (!snapshot.HasHistory)
+        {
+            return "Idle activity: no local listens yet";
+        }
+
+        var hours = snapshot.TotalHours >= 10
+            ? snapshot.TotalHours.ToString("0")
+            : snapshot.TotalHours.ToString("0.#");
+        var favorite = string.IsNullOrWhiteSpace(snapshot.TopTrackDisplay)
+            ? ""
+            : $" | favorite {snapshot.TopTrackDisplay} ({snapshot.TopTrackPlays} plays)";
+        var artist = string.IsNullOrWhiteSpace(snapshot.TopArtist)
+            ? ""
+            : $" | top artist {snapshot.TopArtist} ({snapshot.TopArtistPlays} plays)";
+        var streak = snapshot.CurrentStreakDays > 1
+            ? $" | {snapshot.CurrentStreakDays} day streak"
+            : "";
+        return $"Idle activity: {snapshot.TotalScrobbles:N0} listens | {hours}h{favorite}{artist}{streak}";
     }
 
     private static string FormatResolvedClipboardSubtitle(string? title, string? artist) =>

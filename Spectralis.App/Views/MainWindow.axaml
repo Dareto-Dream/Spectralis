@@ -3,7 +3,6 @@
         xmlns:vm="using:Spectralis.App.ViewModels"
         xmlns:design="using:Spectralis.App.Design"
         xmlns:conv="using:Spectralis.App.Converters"
-        xmlns:controls="using:Spectralis.App.Controls"
         x:Class="Spectralis.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
@@ -115,8 +114,6 @@
             </MenuItem>
           </MenuItem>
           <MenuItem Header="_Help">
-            <MenuItem Header="UI Reveal..." Click="OnMenuUiReveal" />
-            <Separator />
             <MenuItem Header="Check for Updates" Click="OnMenuCheckUpdates" />
             <Separator />
             <MenuItem Header="Redeem Visualizer..." Click="OnMenuRedeemVisualizer" />
@@ -416,13 +413,6 @@
         </StackPanel>
       </Grid>
     </Border>
-
-    <!-- UI Reveal overlay — full-window fake legacy WinForms skin, blasts away at the drop -->
-    <controls:UiRevealOverlay x:Name="RevealOverlay"
-                               Grid.Row="0"
-                               Grid.RowSpan="3"
-                               IsVisible="False"
-                               ZIndex="200" />
 
     <!-- Resize handle overlay — transparent 5 px strips at each edge/corner.
          The outer Grid has no Background so clicks on the center pass through.

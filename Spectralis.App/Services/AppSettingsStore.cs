@@ -26,6 +26,8 @@ public sealed class AppSettings
     public bool AutoPlayOnOpen { get; set; } = true;
     public bool QueueByDefault { get; set; }
     public bool RememberWindowPlacement { get; set; } = true;
+    public bool CloseToTray { get; set; } = true;
+    public bool CloseToTrayPromptDismissed { get; set; }
     public bool PreserveSession { get; set; } = true;
     public bool ExternalApiConsentAccepted { get; set; }
     public int WindowX { get; set; }
@@ -72,11 +74,18 @@ public sealed class AppSettings
     /// <summary>Unlocked by clicking the version number 5 times in Settings; reveals the Developer Tools section.</summary>
     public bool DeveloperModeUnlocked { get; set; }
 
+    public string SqCdnBaseUrl { get; set; } = string.Empty;
+    public string SqRoomId { get; set; } = string.Empty;
+    public string SqOwnerToken { get; set; } = string.Empty;
+
     /// <summary>Set after the first-launch UI Reveal sequence has played (or been skipped) once.</summary>
     public bool HasSeenUiReveal { get; set; }
 
     /// <summary>IDs of CDN warning.json notices the user has already dismissed.</summary>
     public List<string> DismissedWarningIds { get; set; } = [];
+
+    /// <summary>Streamer dead zones — areas hidden by camera or UI overlays. Widgets avoid these when applied.</summary>
+    public List<Spectralis.Core.Integrations.Obs.DeadZone> DeadZones { get; set; } = [];
 
     public AppSettings Clone() =>
         new()
@@ -99,6 +108,8 @@ public sealed class AppSettings
             AutoPlayOnOpen = AutoPlayOnOpen,
             QueueByDefault = QueueByDefault,
             RememberWindowPlacement = RememberWindowPlacement,
+            CloseToTray = CloseToTray,
+            CloseToTrayPromptDismissed = CloseToTrayPromptDismissed,
             PreserveSession = PreserveSession,
             ExternalApiConsentAccepted = ExternalApiConsentAccepted,
             WindowX = WindowX,
@@ -141,6 +152,10 @@ public sealed class AppSettings
             DeveloperModeUnlocked = DeveloperModeUnlocked,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
+            SqCdnBaseUrl = SqCdnBaseUrl,
+            SqRoomId = SqRoomId,
+            SqOwnerToken = SqOwnerToken,
+            DeadZones = DeadZones.Select(z => z.Clone()).ToList(),
         };
 }
 
@@ -229,6 +244,9 @@ public static class AppSettingsStore
             .Where(folder => !string.IsNullOrWhiteSpace(folder))
             .Select(folder => folder.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        settings.DeadZones = (settings.DeadZones ?? [])
+            .Where(z => z.W > 0 && z.H > 0)
             .ToList();
         settings.LastSeenAppVersion = settings.LastSeenAppVersion?.Trim() ?? string.Empty;
         settings.IgnoredUpdateVersion = settings.IgnoredUpdateVersion?.Trim() ?? string.Empty;

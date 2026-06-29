@@ -12,10 +12,14 @@ namespace Spectralis.App.Services;
 /// </summary>
 public sealed class VelopackUpdateService : IUpdateService
 {
-    // TODO 5.1.0: select channel by platform (win-x64 / linux-x64 / osx-x64|arm64)
-    // once non-Windows Velopack builds are produced by build-velopack.ps1.
     private const string ReleasesUrl = "https://cdn.deltavdevs.com/spectralis";
-    private const string Channel = "win-x64";
+
+    private static string Channel =>
+        OperatingSystem.IsWindows() ? "win-x64" :
+        OperatingSystem.IsLinux()   ? "linux-x64" :
+        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
+            System.Runtime.InteropServices.Architecture.Arm64
+            ? "osx-arm64" : "osx-x64";
 
     public static string UpdateLogPath => AppLogPaths.For("updates.log");
 

@@ -4,6 +4,7 @@ using System.Text;
 using DiscordRPC;
 
 using Spectralis.Core.Common;
+using Spectralis.Core.Scrobbling;
 
 namespace Spectralis.Core.Integrations;
 
@@ -14,6 +15,7 @@ public sealed class DiscordRichPresenceService : IDisposable
     private const string DownloadUrl = "https://www.deltavdevs.com/projects/spectralis";
     private const string DownloadButtonLabel = "Download Spectralis";
     private const string ListenTogetherButtonLabel = "Listen Together";
+    private const string IdleDetails = "Idle in Spectralis";
     private const int MaxPresenceTextBytes = 128;
     private const int MaxButtonUrlCharacters = 512;
     private const int InitializeRetryDelayMilliseconds = 30_000;
@@ -53,7 +55,8 @@ public sealed class DiscordRichPresenceService : IDisposable
         TimeSpan length,
         string? sharedPlayJoinUrl = null,
         int queuePosition = 0,
-        int queueCount = 0)
+        int queueCount = 0,
+        ListeningActivitySnapshot? idleActivity = null)
     {
         if (disposed)
         {
@@ -67,7 +70,7 @@ public sealed class DiscordRichPresenceService : IDisposable
 
         if (track is null)
         {
-            ClearPresence();
+            UpdateIdleActivity(idleActivity);
             return;
         }
 
@@ -112,6 +115,34 @@ public sealed class DiscordRichPresenceService : IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"Discord rich presence update failed: {ex}");
+            ResetClient();
+        }
+    }
+
+    private void UpdateIdleActivity(ListeningActivitySnapshot? activity)
+    {
+        if (!EnsureClient())
+        {
+            return;
+        }
+
+        var snapshot = activity ?? ListeningActivitySnapshot.Empty;
+        var signature = BuildIdlePresenceSignature(snapshot);
+        if (signature == lastPresenceSignature)
+        {
+            return;
+        }
+
+        try
+        {
+            client?.SetPresence(BuildIdlePresence(snapshot));
+            lastPresenceSignature = signature;
+            lastSentPositionSeconds = 0;
+            lastSentAtUtc = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Discord rich presence idle update failed: {ex}");
             ResetClient();
         }
     }
@@ -253,6 +284,52 @@ public sealed class DiscordRichPresenceService : IDisposable
         return presence;
     }
 
+    private static RichPresence BuildIdlePresence(ListeningActivitySnapshot snapshot) =>
+        new()
+        {
+            Type = ActivityType.Listening,
+            StatusDisplay = StatusDisplayType.Details,
+            Details = ClampPresenceText(BuildIdleDetails(snapshot), IdleDetails),
+            State = ClampPresenceText(BuildIdleState(snapshot), "No local listens yet"),
+            Buttons = BuildButtons(null)
+        };
+
+    private static string BuildIdleDetails(ListeningActivitySnapshot snapshot)
+    {
+        if (!snapshot.HasHistory)
+        {
+            return IdleDetails;
+        }
+
+        if (!string.IsNullOrWhiteSpace(snapshot.TopTrackDisplay))
+        {
+            return $"Favorite: {snapshot.TopTrackDisplay}";
+        }
+
+        return !string.IsNullOrWhiteSpace(snapshot.TopArtist)
+            ? $"Top artist: {snapshot.TopArtist}"
+            : IdleDetails;
+    }
+
+    private static string BuildIdleState(ListeningActivitySnapshot snapshot)
+    {
+        if (!snapshot.HasHistory)
+        {
+            return "No local listens yet";
+        }
+
+        var hours = snapshot.TotalHours >= 10
+            ? snapshot.TotalHours.ToString("0")
+            : snapshot.TotalHours.ToString("0.#");
+        var topArtist = string.IsNullOrWhiteSpace(snapshot.TopArtist)
+            ? ""
+            : $" / top artist {snapshot.TopArtist}";
+        var streak = snapshot.CurrentStreakDays > 1
+            ? $" / {snapshot.CurrentStreakDays} day streak"
+            : "";
+        return $"{snapshot.TotalScrobbles:N0} scrobbles / {hours}h listened{topArtist}{streak}";
+    }
+
     private static Timestamps BuildTimestamps(TimeSpan position, TimeSpan length, DateTime nowUtc)
     {
         var start = nowUtc - position;
@@ -312,6 +389,19 @@ public sealed class DiscordRichPresenceService : IDisposable
             queuePosition,
             queueCount);
     }
+
+    private static string BuildIdlePresenceSignature(ListeningActivitySnapshot snapshot) =>
+        string.Join(
+            "|",
+            "idle",
+            snapshot.TotalScrobbles,
+            Math.Round(snapshot.TotalHours, 1),
+            snapshot.CurrentStreakDays,
+            snapshot.TopArtist,
+            snapshot.TopArtistPlays,
+            snapshot.TopTrackTitle,
+            snapshot.TopTrackArtist,
+            snapshot.TopTrackPlays);
 
     private static DiscordRPC.Button[] BuildButtons(string? sharedPlayJoinUrl)
     {

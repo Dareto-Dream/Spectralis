@@ -1,11 +1,14 @@
 namespace Spectralis.Core.SharedPlay;
 
-public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
+/// <summary>Parses a room code or join URL into a normalized 6-char alphanumeric room code.</summary>
+public sealed record SharedPlayJoinRequest(string RoomCode, string? CdnBaseUrl)
 {
-    private static readonly string[] SessionQueryKeys = ["session", "sessionId", "id"];
+    private static readonly string[] SessionQueryKeys = ["session", "code", "sessionId", "id"];
     private static readonly string[] CdnQueryKeys = ["cdn", "cdnBaseUrl", "baseUrl"];
 
-    public static bool TryParse(string? input, bool allowRawSessionId, out SharedPlayJoinRequest request)
+    public string DisplayCode => SharedPlayDefaults.DisplayRoomCode(RoomCode);
+
+    public static bool TryParse(string? input, bool allowRawCode, out SharedPlayJoinRequest request)
     {
         request = new SharedPlayJoinRequest("", null);
         var value = input?.Trim().Trim('"');
@@ -22,14 +25,15 @@ public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
             };
         }
 
-        if (!allowRawSessionId)
+        if (!allowRawCode)
             return false;
 
-        var sessionId = CleanSessionId(value);
-        if (string.IsNullOrWhiteSpace(sessionId))
+        // Accept plain room code with or without dash: "X7K29Q" or "X7K-29Q"
+        var roomCode = SharedPlayDefaults.NormalizeRoomCode(value);
+        if (string.IsNullOrWhiteSpace(roomCode))
             return false;
 
-        request = new SharedPlayJoinRequest(sessionId, null);
+        request = new SharedPlayJoinRequest(roomCode, null);
         return true;
     }
 
@@ -37,16 +41,20 @@ public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
     {
         request = new SharedPlayJoinRequest("", null);
         var query = ParseQuery(uri.Query);
-        var sessionId = FirstQueryValue(query, SessionQueryKeys);
-        if (string.IsNullOrWhiteSpace(sessionId))
-            sessionId = FindSessionIdInPath(uri);
 
-        sessionId = CleanSessionId(sessionId);
-        if (string.IsNullOrWhiteSpace(sessionId))
+        // Prefer explicit query param first
+        var rawCode = FirstQueryValue(query, SessionQueryKeys);
+
+        // Fall back to path segment
+        if (string.IsNullOrWhiteSpace(rawCode))
+            rawCode = FindCodeInPath(uri);
+
+        var roomCode = SharedPlayDefaults.NormalizeRoomCode(rawCode);
+        if (string.IsNullOrWhiteSpace(roomCode))
             return false;
 
         var cdnBaseUrl = NormalizeCdnBaseUrl(FirstQueryValue(query, CdnQueryKeys)) ?? fallbackCdnBaseUrl;
-        request = new SharedPlayJoinRequest(sessionId, cdnBaseUrl);
+        request = new SharedPlayJoinRequest(roomCode, cdnBaseUrl);
         return true;
     }
 
@@ -61,13 +69,9 @@ public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
         {
             var parts = pair.Split('=', 2);
             var key = Uri.UnescapeDataString(parts[0].Replace('+', ' '));
-            if (string.IsNullOrWhiteSpace(key))
-                continue;
-
-            var value = parts.Length > 1
-                ? Uri.UnescapeDataString(parts[1].Replace('+', ' '))
-                : "";
-            values[key] = value;
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            var val = parts.Length > 1 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')) : "";
+            values[key] = val;
         }
 
         return values;
@@ -80,22 +84,20 @@ public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
             if (query.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
                 return value.Trim();
         }
-
         return null;
     }
 
-    private static string? FindSessionIdInPath(Uri uri)
+    private static string? FindCodeInPath(Uri uri)
     {
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(uri.Host))
             parts.Add(uri.Host);
-
         parts.AddRange(uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries));
 
-        for (var index = 0; index < parts.Count; index++)
+        for (var i = 0; i < parts.Count; i++)
         {
-            if (IsSessionPrefix(parts[index]) && index + 1 < parts.Count)
-                return parts[index + 1];
+            if (IsSessionPrefix(parts[i]) && i + 1 < parts.Count)
+                return parts[i + 1];
         }
 
         return parts.Count == 1 ? parts[0] : null;
@@ -113,34 +115,6 @@ public sealed record SharedPlayJoinRequest(string SessionId, string? CdnBaseUrl)
         {
             return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         }
-
         return null;
     }
-
-    private static string CleanSessionId(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return "";
-
-        var decoded = Uri.UnescapeDataString(value.Trim());
-        var chars = decoded
-            .Where(static character =>
-                char.IsAsciiLetterOrDigit(character) ||
-                character is '.' or '_' or ':' or '-')
-            .ToArray();
-
-        var cleaned = new string(chars);
-        return IsReservedPathPart(cleaned) ? "" : cleaned;
-    }
-
-    private static bool IsReservedPathPart(string value) =>
-        string.IsNullOrWhiteSpace(value) ||
-        string.Equals(value, "shared-play", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "spectralis", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "web-share", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "join", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "open", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "sessions", StringComparison.OrdinalIgnoreCase) ||
-        value.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
-        value.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
 }

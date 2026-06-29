@@ -128,3 +128,46 @@ public sealed class ListeningStats
         return (current, Math.Max(longest, current));
     }
 }
+
+public sealed record ListeningActivitySnapshot(
+    int TotalScrobbles,
+    double TotalHours,
+    int CurrentStreakDays,
+    string TopArtist,
+    int TopArtistPlays,
+    string TopTrackTitle,
+    string TopTrackArtist,
+    int TopTrackPlays)
+{
+    public static ListeningActivitySnapshot Empty { get; } = new(0, 0, 0, "", 0, "", "", 0);
+
+    public bool HasHistory => TotalScrobbles > 0;
+
+    public string TopTrackDisplay =>
+        string.IsNullOrWhiteSpace(TopTrackTitle)
+            ? ""
+            : string.IsNullOrWhiteSpace(TopTrackArtist)
+                ? TopTrackTitle
+                : $"{TopTrackArtist} - {TopTrackTitle}";
+
+    public static ListeningActivitySnapshot FromHistory(IList<ScrobbleRecord> history)
+    {
+        if (history.Count == 0)
+        {
+            return Empty;
+        }
+
+        var stats = ListeningStats.Compute(history, DateTime.MinValue);
+        var topArtist = stats.TopArtists.FirstOrDefault();
+        var topTrack = stats.TopTracks.FirstOrDefault();
+        return new ListeningActivitySnapshot(
+            stats.TotalScrobbles,
+            stats.TotalHours,
+            stats.CurrentStreakDays,
+            topArtist?.Artist ?? "",
+            topArtist?.Plays ?? 0,
+            topTrack?.Title ?? "",
+            topTrack?.Artist ?? "",
+            topTrack?.Plays ?? 0);
+    }
+}

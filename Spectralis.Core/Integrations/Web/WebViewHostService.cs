@@ -38,16 +38,22 @@ public sealed class WebViewHostService : IDisposable
 
     private readonly IWebViewHost _host;
     private readonly string? _storeFilePath;
+    private readonly bool _isAlbumWorld;
     private Dictionary<string, JsonNode?>? _store;
 
     /// <param name="storeKey">
     /// Capsule identifier used for per-capsule persistent storage.
     /// Pass null to disable the store (album worlds, OBS overlays, etc.)
     /// </param>
-    public WebViewHostService(IWebViewHost host, string? storeKey = null)
+    /// <param name="isAlbumWorld">
+    /// True when hosting a .spectral album world map. Enables world-specific bridge
+    /// messages (playTrack, addToQueue) and the corresponding JS callbacks.
+    /// </param>
+    public WebViewHostService(IWebViewHost host, string? storeKey = null, bool isAlbumWorld = false)
     {
         _host = host;
         _host.MessageReceived += OnMessageReceived;
+        _isAlbumWorld = isAlbumWorld;
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
@@ -86,6 +92,8 @@ public sealed class WebViewHostService : IDisposable
             {
                 case "spectral.playTrack":
                 {
+                    // Album world only — ignored when hosting a regular HTML visualizer.
+                    if (!_isAlbumWorld) break;
                     if (!root.TryGetProperty("trackId", out var idProp) || idProp.ValueKind != JsonValueKind.String)
                         return;
 
@@ -105,7 +113,10 @@ public sealed class WebViewHostService : IDisposable
                 }
 
                 case "spectral.addToQueue":
-                    if (root.TryGetProperty("trackId", out var queueIdProp) && queueIdProp.ValueKind == JsonValueKind.String)
+                    // Album world only — ignored when hosting a regular HTML visualizer.
+                    if (_isAlbumWorld &&
+                        root.TryGetProperty("trackId", out var queueIdProp) &&
+                        queueIdProp.ValueKind == JsonValueKind.String)
                         AddToQueueRequested?.Invoke(this, queueIdProp.GetString() ?? string.Empty);
                     break;
 
@@ -176,7 +187,7 @@ public sealed class WebViewHostService : IDisposable
 
     // ===== host-bound pushes =====
 
-    public Task InjectBootstrapAsync() => _host.ExecuteScriptAsync(BuildBootstrapScript());
+    public Task InjectBootstrapAsync() => _host.ExecuteScriptAsync(BuildBootstrapScript(_isAlbumWorld));
 
     public Task SendReadyAsync(string worldStateJson) =>
         _host.ExecuteScriptAsync(
@@ -242,113 +253,133 @@ public sealed class WebViewHostService : IDisposable
     ///
     /// This script is intentionally framework-agnostic vanilla JS.
     /// </summary>
-    public static string BuildBootstrapScript() =>
-        """
-        (function() {
-          if (window.__spectralBootstrapped) return;
-          window.__spectralBootstrapped = true;
+    /// <summary>
+    /// Builds the window.spectral bootstrap for the given surface mode.
+    /// HTML visualizers get the frame/playback/store/meta API.
+    /// Album worlds additionally get track-navigation callbacks (onReady, onTrackChanged, etc.)
+    /// that don't belong in a regular per-track HTML visualizer context.
+    /// </summary>
+    public static string BuildBootstrapScript(bool isAlbumWorld = false)
+    {
+        const string core = """
+            (function() {
+              if (window.__spectralBootstrapped) return;
+              window.__spectralBootstrapped = true;
 
-          window.spectral = window.spectral || {};
+              window.spectral = window.spectral || {};
 
-          // ── Event system ──────────────────────────────────────────────────
-          var _h = {};
-          window.spectral.on = function(event, fn) {
-            (_h[event] = _h[event] || []).push(fn);
-            return window.spectral;
-          };
-          window.spectral.off = function(event, fn) {
-            var arr = _h[event];
-            if (arr) { var i = arr.indexOf(fn); if (i >= 0) arr.splice(i, 1); }
-            return window.spectral;
-          };
-          window.spectral._emit = function(event, data) {
-            var arr = _h[event] || [];
-            for (var i = 0; i < arr.length; i++) try { arr[i](data); } catch {}
-          };
+              // ── Event system ──────────────────────────────────────────────────
+              var _h = {};
+              window.spectral.on = function(event, fn) {
+                (_h[event] = _h[event] || []).push(fn);
+                return window.spectral;
+              };
+              window.spectral.off = function(event, fn) {
+                var arr = _h[event];
+                if (arr) { var i = arr.indexOf(fn); if (i >= 0) arr.splice(i, 1); }
+                return window.spectral;
+              };
+              window.spectral._emit = function(event, data) {
+                var arr = _h[event] || [];
+                for (var i = 0; i < arr.length; i++) try { arr[i](data); } catch {}
+              };
 
-          // ── Legacy callbacks (capsule can override or use spectral.on) ────
-          window.spectral.onReady = window.spectral.onReady ||
-            function(d) { window.spectral._emit('ready', d); };
-          window.spectral.onTrackChanged = window.spectral.onTrackChanged ||
-            function(d) { window.spectral._emit('trackChange', d); };
-          window.spectral.onPlaybackFrame = window.spectral.onPlaybackFrame ||
-            function(d) {
-              window.spectral._lastFrame = d;
-              window.spectral._emit('frame', d);
-            };
-          window.spectral.onTrackCompleted = window.spectral.onTrackCompleted ||
-            function(d) { window.spectral._emit('trackComplete', d); };
-          window.spectral.onSessionRestored = window.spectral.onSessionRestored ||
-            function(d) { window.spectral._emit('sessionRestored', d); };
+              // ── Frame callback (shared: HTML visualizers and album worlds both use this) ──
+              window.spectral.onPlaybackFrame = window.spectral.onPlaybackFrame ||
+                function(d) {
+                  window.spectral._lastFrame = d;
+                  window.spectral._emit('frame', d);
+                };
 
-          // ── Pull frame API ────────────────────────────────────────────────
-          // On CefGlue: spectralisBridge.getFrameJson() is a live C# call.
-          // On WebView2: returns '' — falls back to last pushed frame in _lastFrame.
-          window.spectral._lastFrame = null;
-          window.spectral.getFrame = function() {
-            try {
-              var raw = spectralisBridge.getFrameJson();
-              if (raw) return JSON.parse(raw);
-            } catch {}
-            return window.spectral._lastFrame || null;
-          };
+              // ── Pull frame API ────────────────────────────────────────────────
+              // On CefGlue: spectralisBridge.getFrameJson() is a live C# call.
+              // On WebView2: returns '' — falls back to last pushed frame in _lastFrame.
+              window.spectral._lastFrame = null;
+              window.spectral.getFrame = function() {
+                try {
+                  var raw = spectralisBridge.getFrameJson();
+                  if (raw) return JSON.parse(raw);
+                } catch {}
+                return window.spectral._lastFrame || null;
+              };
 
-          // ── Playback controls ─────────────────────────────────────────────
-          window.spectral.pause = function() {
-            spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.pause' }));
-          };
-          window.spectral.resume = function() {
-            spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.resume' }));
-          };
-          window.spectral.seek = function(sec) {
-            spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.seek', positionSeconds: Number(sec) || 0 }));
-          };
-          window.spectral.exit = function() {
-            spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.exitWorld' }));
-          };
+              // ── Playback controls ─────────────────────────────────────────────
+              window.spectral.pause = function() {
+                spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.pause' }));
+              };
+              window.spectral.resume = function() {
+                spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.resume' }));
+              };
+              window.spectral.seek = function(sec) {
+                spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.seek', positionSeconds: Number(sec) || 0 }));
+              };
+              window.spectral.exit = function() {
+                spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.exitWorld' }));
+              };
 
-          // ── Persistent store ──────────────────────────────────────────────
-          // set/remove/clear are fire-and-forget. get returns a Promise.
-          // The store is per-capsule; disabled when no storeKey was configured.
-          (function() {
-            var _pending = {};
-            window.spectral.store = {
-              get: function(key) {
-                return new Promise(function(resolve) {
-                  var id = String(Date.now()) + Math.random().toString(36).slice(2);
-                  _pending[id] = resolve;
-                  spectralisBridge.postMessage(JSON.stringify({
-                    type: 'spectral.store.get', key: String(key), requestId: id
-                  }));
-                });
-              },
-              set: function(key, value) {
-                spectralisBridge.postMessage(JSON.stringify({
-                  type: 'spectral.store.set',
-                  key: String(key),
-                  value: value === undefined ? null : value
-                }));
-              },
-              remove: function(key) {
-                spectralisBridge.postMessage(JSON.stringify({
-                  type: 'spectral.store.remove', key: String(key)
-                }));
-              },
-              clear: function() {
-                spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.store.clear' }));
-              }
-            };
-            // C# calls this to resolve pending get() promises.
-            window.spectral._storeResult = function(id, value) {
-              var cb = _pending[id];
-              if (cb) { delete _pending[id]; cb(value); }
-            };
-          })();
+              // ── Persistent store ──────────────────────────────────────────────
+              // set/remove/clear are fire-and-forget. get returns a Promise.
+              // The store is per-capsule; disabled when no storeKey was configured.
+              (function() {
+                var _pending = {};
+                window.spectral.store = {
+                  get: function(key) {
+                    return new Promise(function(resolve) {
+                      var id = String(Date.now()) + Math.random().toString(36).slice(2);
+                      _pending[id] = resolve;
+                      spectralisBridge.postMessage(JSON.stringify({
+                        type: 'spectral.store.get', key: String(key), requestId: id
+                      }));
+                    });
+                  },
+                  set: function(key, value) {
+                    spectralisBridge.postMessage(JSON.stringify({
+                      type: 'spectral.store.set',
+                      key: String(key),
+                      value: value === undefined ? null : value
+                    }));
+                  },
+                  remove: function(key) {
+                    spectralisBridge.postMessage(JSON.stringify({
+                      type: 'spectral.store.remove', key: String(key)
+                    }));
+                  },
+                  clear: function() {
+                    spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.store.clear' }));
+                  }
+                };
+                // C# calls this to resolve pending get() promises.
+                window.spectral._storeResult = function(id, value) {
+                  var cb = _pending[id];
+                  if (cb) { delete _pending[id]; cb(value); }
+                };
+              })();
 
-          // meta is populated by InjectTrackMeta at document-build time.
-          window.spectral.meta = window.spectral.meta || null;
-        })();
-        """;
+              // meta is populated by InjectTrackMeta at document-build time (HTML visualizers only).
+              window.spectral.meta = window.spectral.meta || null;
+            })();
+            """;
+
+        if (!isAlbumWorld) return core;
+
+        // Album world extensions: track-navigation callbacks not exposed to regular HTML visualizers.
+        const string worldExt = """
+            (function() {
+              window.spectral = window.spectral || {};
+              // ── Album world callbacks ─────────────────────────────────────────
+              window.spectral.onReady = window.spectral.onReady ||
+                function(d) { window.spectral._emit('ready', d); };
+              window.spectral.onTrackChanged = window.spectral.onTrackChanged ||
+                function(d) { window.spectral._emit('trackChange', d); };
+              window.spectral.onTrackCompleted = window.spectral.onTrackCompleted ||
+                function(d) { window.spectral._emit('trackComplete', d); };
+              window.spectral.onSessionRestored = window.spectral.onSessionRestored ||
+                function(d) { window.spectral._emit('sessionRestored', d); };
+            })();
+            """;
+
+        return core + "\n" + worldExt;
+    }
 
     // ===== CSP =====
 

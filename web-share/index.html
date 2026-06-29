@@ -4,106 +4,152 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta name="theme-color" content="#0f1724">
-  <meta property="og:title" content="Spectralis Listen Together">
-  <meta property="og:description" content="Join a synced Spectralis Shared Play room with a live browser visualizer.">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta property="og:title" content="Spectralis · Listen Together">
+  <meta property="og:description" content="Join a shared Spectralis room and listen in sync.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <title>Spectralis Shared Play</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%230b0b0a'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%23d8a13a'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%230b0b0a'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%230a0a0a'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%23d8a13a'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%230a0a0a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main class="player-shell">
-    <section class="now-card" aria-live="polite">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow" id="experienceKicker">Spectralis</p>
-          <h1 id="experienceTitle">Shared Play</h1>
-        </div>
-        <div class="room-status">
-          <div class="listener-count" id="listenerCount">0 listening</div>
-          <div class="network-mode" id="networkMode">Pure sync</div>
-          <div class="session-state" id="sessionState">Offline</div>
-        </div>
-      </header>
-      <div class="reaction-layer" id="reactionLayer" aria-hidden="true"></div>
 
-      <section class="channel-panel" id="channelPanel" hidden aria-label="Live Channel">
-        <div class="channel-identity">
-          <span>Live Channel</span>
-          <strong id="channelName">Channel</strong>
-        </div>
-        <div class="channel-stats" id="channelStats" hidden>
-          <span id="channelSharedHours">0h shared</span>
-          <span id="channelListenerHours">0 listener-hours</span>
-          <span id="channelPeakListeners">0 peak</span>
-          <span id="channelTopTrack">No top track yet</span>
-        </div>
-      </section>
-
-      <section class="stage" aria-label="Playback visualizer">
-        <div class="album-plate" id="albumPlate">
-          <div class="disc-core"></div>
-        </div>
-        <canvas id="meterCanvas" width="640" height="220"></canvas>
-      </section>
-
-      <section class="track-stack">
-        <p class="track-kicker" id="trackKicker">Private listening room</p>
-        <h2 id="trackTitle">Waiting for a Shared Play session</h2>
-        <p id="trackArtist">No room selected.</p>
-        <div class="lyrics-panel" id="lyricsPanel" aria-live="polite">
-          <p class="lyric-current" id="lyricCurrent">No synced lyrics in this room</p>
-          <p class="lyric-next" id="lyricNext"></p>
-        </div>
-      </section>
-
-      <form class="join-form" id="joinForm" autocomplete="off">
-        <label class="session-label" for="sessionInput">Session</label>
-        <div class="join-row">
-          <input id="sessionInput" name="session" inputmode="url" spellcheck="false" placeholder="Session ID or join link">
-          <button class="ghost-button" type="submit">Load</button>
-        </div>
+  <!-- Landing: shown when no room code is present in the URL -->
+  <section class="landing" id="landingScreen">
+    <div class="landing-inner">
+      <div class="landing-logo" aria-hidden="true">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+          <rect width="64" height="64" rx="8" fill="#0a0a0a"/>
+          <circle cx="32" cy="32" r="21" fill="#d8a13a"/>
+          <circle cx="32" cy="32" r="8" fill="#0a0a0a"/>
+        </svg>
+        <span>Spectralis</span>
+      </div>
+      <h1 class="landing-title">Listen Together</h1>
+      <p class="landing-hint">Enter your room code to join</p>
+      <form class="code-form" id="codeForm" autocomplete="off" novalidate>
+        <input id="codeInput" class="code-input" type="text" inputmode="text"
+               placeholder="X7K-29Q" maxlength="7" spellcheck="false" autocomplete="off"
+               aria-label="Room code" autofocus>
+        <button class="join-btn" type="submit">Join Room</button>
       </form>
+      <p class="landing-error" id="landingError" hidden></p>
+      <p class="landing-footer">Open Spectralis on desktop to host a room</p>
+    </div>
+  </section>
 
-      <section class="transport">
-        <button class="primary-button" id="joinButton" type="button">Join Playback</button>
-        <button class="ghost-button" id="openAppButton" type="button">Open App</button>
-        <button class="ghost-button" id="copyButton" type="button">Copy Link</button>
-        <div class="reaction-bar" aria-label="Room reactions">
-          <button class="reaction-button" type="button" data-reaction="love" data-label="Love">Love</button>
-          <button class="reaction-button" type="button" data-reaction="fire" data-label="Fire">Fire</button>
-          <button class="reaction-button" type="button" data-reaction="wow" data-label="Whoa">Whoa</button>
-          <button class="reaction-button" type="button" data-reaction="boost" data-label="Boost">Boost</button>
-          <button class="reaction-button" type="button" data-reaction="plus" data-label="+1">+1</button>
+  <!-- Full-screen blurred album art backdrop (player mode) -->
+  <div class="backdrop" id="backdrop" aria-hidden="true" hidden>
+    <div class="backdrop-img" id="backdropImg"></div>
+    <div class="backdrop-vignette"></div>
+  </div>
+
+  <!-- Player shell: shown after joining a room -->
+  <main class="player" id="playerShell" hidden>
+
+    <!-- Top bar: logo, room badge, listener count + status dot -->
+    <header class="player-topbar">
+      <div class="topbar-brand">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-hidden="true">
+          <rect width="64" height="64" rx="8" fill="#0a0a0a"/>
+          <circle cx="32" cy="32" r="21" fill="#d8a13a"/>
+          <circle cx="32" cy="32" r="8" fill="#0a0a0a"/>
+        </svg>
+        <span>Spectralis</span>
+      </div>
+      <div class="topbar-room">
+        <span class="room-badge" id="roomBadge">—</span>
+      </div>
+      <div class="topbar-status">
+        <span class="listener-pill" id="listenerCount" title="Listeners in this room">1</span>
+        <span class="status-dot" id="statusDot" aria-label="Connection status"></span>
+      </div>
+    </header>
+
+    <!-- Stage: spinning disc + spectrum meter canvas -->
+    <section class="stage" aria-label="Playback visualizer">
+      <div class="disc-wrap" id="discWrap">
+        <div class="disc" id="disc">
+          <img class="disc-art" id="discArt" src="" alt="" aria-hidden="true">
+          <div class="disc-core" aria-hidden="true"></div>
         </div>
-        <label class="volume-control" for="volumeSlider">
-          <span>Volume</span>
-          <input id="volumeSlider" type="range" min="0" max="100" value="90">
-        </label>
-      </section>
-
-      <section class="timeline" aria-label="Playback timeline">
-        <span id="currentTime">0:00</span>
-        <input id="seekSlider" type="range" min="0" max="1000" value="0">
-        <span id="durationTime">0:00</span>
-      </section>
-
-      <section class="queue-panel" aria-label="Shared queue">
-        <div class="queue-head">
-          <h3>Queue</h3>
-          <span id="queueCount">0 tracks</span>
-        </div>
-        <ol id="queueList" class="queue-list"></ol>
-        <form class="queue-add-form" id="queueAddForm" autocomplete="off">
-          <input id="queueUrlInput" name="queueUrl" inputmode="url" spellcheck="false" placeholder="Request Spotify, YouTube, SoundCloud, Suno, or audio link">
-          <button class="ghost-button" type="submit">Request</button>
-        </form>
-      </section>
-
-      <span class="status-spinner" id="statusSpinner" aria-hidden="true"></span><p class="status-line" id="statusLine">No session loaded.</p>
+      </div>
+      <canvas class="meter-canvas" id="meterCanvas" aria-hidden="true"></canvas>
     </section>
+
+    <!-- Track info + synced lyrics -->
+    <section class="track-info" aria-live="polite" aria-label="Now playing">
+      <p class="track-kicker" id="trackKicker">Now Playing</p>
+      <h2 class="track-title" id="trackTitle">Waiting for host…</h2>
+      <p class="track-artist" id="trackArtist"></p>
+      <div class="lyrics-panel" id="lyricsPanel" hidden aria-live="polite">
+        <p class="lyric-current" id="lyricCurrent"></p>
+        <p class="lyric-next" id="lyricNext"></p>
+      </div>
+    </section>
+
+    <!-- Playback timeline (display only — no seeking on listener side) -->
+    <section class="timeline" aria-label="Playback position">
+      <span class="time-label" id="currentTime">0:00</span>
+      <div class="seek-track" role="progressbar" aria-label="Playback progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+        <div class="seek-fill" id="seekFill"></div>
+      </div>
+      <span class="time-label" id="durationTime">0:00</span>
+    </section>
+
+    <!-- Reactions -->
+    <div class="reaction-bar" aria-label="Room reactions">
+      <button class="reaction-btn" type="button" data-reaction="love" title="Love">❤️</button>
+      <button class="reaction-btn" type="button" data-reaction="fire" title="Fire">🔥</button>
+      <button class="reaction-btn" type="button" data-reaction="wow" title="Whoa">😮</button>
+      <button class="reaction-btn" type="button" data-reaction="boost" title="Boost">⚡</button>
+      <button class="reaction-btn" type="button" data-reaction="plus" title="+1">+1</button>
+    </div>
+
+    <!-- Floating reactions layer -->
+    <div class="reaction-layer" id="reactionLayer" aria-hidden="true"></div>
+
+    <!-- Volume + action buttons -->
+    <div class="controls">
+      <label class="volume-wrap" for="volumeSlider" title="Volume">
+        <svg class="volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <input id="volumeSlider" type="range" min="0" max="100" value="90">
+      </label>
+      <button class="ghost-btn" id="copyButton" type="button">Copy Link</button>
+      <button class="ghost-btn" id="openAppButton" type="button">Open in App</button>
+    </div>
+
+    <!-- Queue (collapsible) -->
+    <details class="queue-panel" id="queuePanel">
+      <summary class="queue-toggle">
+        <span>Queue</span>
+        <span class="queue-count" id="queueCount"></span>
+      </summary>
+      <ol class="queue-list" id="queueList"></ol>
+      <form class="queue-add-form" id="queueAddForm" autocomplete="off">
+        <input id="queueUrlInput" type="text" inputmode="url" spellcheck="false"
+               placeholder="Request a Spotify, YouTube, or audio link">
+        <button class="ghost-btn" type="submit">Request</button>
+      </form>
+    </details>
+
+    <!-- Live channel info (channel mode only) -->
+    <section class="channel-panel" id="channelPanel" hidden aria-label="Live Channel">
+      <strong id="channelName"></strong>
+      <div class="channel-stats" id="channelStats" hidden>
+        <span id="channelSharedHours"></span>
+        <span id="channelListenerHours"></span>
+        <span id="channelPeakListeners"></span>
+        <span id="channelTopTrack"></span>
+      </div>
+    </section>
+
+    <p class="status-line" id="statusLine">Connecting…</p>
   </main>
 
   <audio id="sharedAudio" preload="metadata" crossorigin="anonymous"></audio>

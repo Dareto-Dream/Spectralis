@@ -6,8 +6,10 @@ public static class IconData
     public const string Library = "M4,5 H7 V19 H4 Z M9,5 H12 V19 H9 Z M14,5 H20 V8 H14 Z M14,10 H20 V13 H14 Z M14,15 H20 V19 H14 Z";
     public const string Playlists = "M4,5 H16 V7 H4 Z M4,10 H16 V12 H4 Z M4,15 H11 V17 H4 Z M14,14 L21,17.5 L14,21 Z";
     public const string SharedPlay = "M12,5 L20,12 H17 V20 H7 V12 H4 Z M10,20 V14 H14 V20";
+    public const string StreamerQueue = "M4,5 H20 V8 H4 Z M4,11 H15 V14 H4 Z M4,17 H11 V20 H4 Z M17,13 L22,17 L17,21 Z";
     public const string Capsules = "M12,3 L21,12 L12,21 L3,12 Z M12,7 L17,12 L12,17 L7,12 Z";
     public const string TimingStudio = "M5,19 L8,12 L17,3 L21,7 L12,16 Z M8,12 L12,16";
+    public const string Randomizer = "M5,5 H19 V19 H5 Z M8,8 H10 V10 H8 Z M11,11 H13 V13 H11 Z M14,14 H16 V16 H14 Z";
     public const string Settings = "M4,6 H13 V8 H4 Z M15,4 H19 V10 H15 Z M11,11 H20 V13 H11 Z M5,9 H9 V15 H5 Z M4,17 H13 V19 H4 Z M15,15 H19 V21 H15 Z";
     public const string Obs = "M3,5 H21 V19 H3 Z M13,11 H20 V17 H13 Z";
 

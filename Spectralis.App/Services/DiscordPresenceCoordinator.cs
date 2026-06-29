@@ -1,6 +1,7 @@
 using Avalonia.Threading;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Integrations;
+using Spectralis.Core.Scrobbling;
 
 namespace Spectralis.App.Services;
 
@@ -12,15 +13,17 @@ namespace Spectralis.App.Services;
 public sealed class DiscordPresenceCoordinator : IDisposable
 {
     private readonly AudioEngine _engine;
+    private readonly Func<ListeningActivitySnapshot> _getIdleActivity;
     private readonly DiscordRichPresenceService _service = new();
     private readonly DispatcherTimer _timer;
 
     /// <summary>Set by Shared Play hosting; appears as the Listen Together button.</summary>
     public string? SharedPlayJoinUrl { get; set; }
 
-    public DiscordPresenceCoordinator(AudioEngine engine)
+    public DiscordPresenceCoordinator(AudioEngine engine, Func<ListeningActivitySnapshot>? getIdleActivity = null)
     {
         _engine = engine;
+        _getIdleActivity = getIdleActivity ?? (() => ListeningActivitySnapshot.Empty);
         _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Push());
         _timer.Start();
     }
@@ -34,7 +37,8 @@ public sealed class DiscordPresenceCoordinator : IDisposable
             _engine.IsPlaying,
             TimeSpan.FromSeconds(_engine.GetPosition()),
             TimeSpan.FromSeconds(_engine.GetLength()),
-            SharedPlayJoinUrl);
+            SharedPlayJoinUrl,
+            idleActivity: _getIdleActivity());
     }
 
     public void Dispose()

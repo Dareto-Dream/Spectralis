@@ -98,6 +98,38 @@ public static class AlbumWorldCacheStore
             });
     }
 
+    /// <summary>
+    /// Returns the cached world directory for <paramref name="package"/>, extracting the payload
+    /// only when no valid cache entry exists or the payload SHA has changed.
+    /// </summary>
+    public static string GetOrExtract(AlbumCapsulePackage package)
+    {
+        var worldDir = WorldDir(package.Fingerprint);
+        var shaPath = Path.Combine(worldDir, "_payload_sha.txt");
+
+        if (Directory.Exists(worldDir) && File.Exists(shaPath))
+        {
+            try
+            {
+                var storedSha = File.ReadAllText(shaPath).Trim();
+                if (string.Equals(storedSha, package.PayloadSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    Touch(worldDir);
+                    return worldDir;
+                }
+            }
+            catch { }
+
+            TryEvict(worldDir);
+        }
+
+        Directory.CreateDirectory(worldDir);
+        package.ExtractAll(worldDir);
+        File.WriteAllText(shaPath, package.PayloadSha256);
+        Touch(worldDir);
+        return worldDir;
+    }
+
     private static string SanitizeFingerprint(string fingerprint) =>
         string.Concat(fingerprint.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
 }

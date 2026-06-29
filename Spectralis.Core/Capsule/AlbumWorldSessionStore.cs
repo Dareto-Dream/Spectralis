@@ -9,6 +9,12 @@ public sealed class AlbumTrackStats
     [JsonPropertyName("playCount")]
     public int PlayCount { get; set; }
 
+    [JsonPropertyName("playedSeconds")]
+    public double PlayedSeconds { get; set; }
+
+    [JsonPropertyName("completed")]
+    public bool Completed { get; set; }
+
     [JsonPropertyName("lastPlayedUtc")]
     public DateTime LastPlayedUtc { get; set; }
 }
@@ -20,6 +26,12 @@ public sealed class AlbumTrackStats
 /// </summary>
 public sealed class AlbumWorldSession
 {
+    [JsonPropertyName("currentTrackId")]
+    public string? CurrentTrackId { get; set; }
+
+    [JsonPropertyName("currentPositionSeconds")]
+    public double CurrentPositionSeconds { get; set; }
+
     [JsonPropertyName("trackStats")]
     public Dictionary<string, AlbumTrackStats> TrackStats { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -28,6 +40,9 @@ public sealed class AlbumWorldSession
 
     [JsonPropertyName("levelGateProgress")]
     public int LevelGateProgress { get; set; }
+
+    [JsonPropertyName("introCompleted")]
+    public bool IntroCompleted { get; set; }
 
     [JsonPropertyName("lastOpenedUtc")]
     public DateTime LastOpenedUtc { get; set; }

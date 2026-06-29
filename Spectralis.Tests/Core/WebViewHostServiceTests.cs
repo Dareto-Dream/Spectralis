@@ -15,6 +15,7 @@ public sealed class FakeWebViewHost : IWebViewHost
 
     public event EventHandler<string>? MessageReceived;
     public event EventHandler? NavigationCompleted;
+    public event EventHandler? NavigationFailed;
 
     public void MapVirtualHost(string hostname, string folderPath) => VirtualHosts.Add((hostname, folderPath));
     public void Navigate(Uri url) => LastNavigation = url;
@@ -28,6 +29,7 @@ public sealed class FakeWebViewHost : IWebViewHost
 
     public void SimulateMessage(string json) => MessageReceived?.Invoke(this, json);
     public void SimulateNavigationCompleted() => NavigationCompleted?.Invoke(this, EventArgs.Empty);
+    public void SimulateNavigationFailed() => NavigationFailed?.Invoke(this, EventArgs.Empty);
 
     public void Dispose() { }
 }
@@ -37,7 +39,7 @@ public sealed class WebViewHostServiceTests : IDisposable
     private readonly FakeWebViewHost _host = new();
     private readonly WebViewHostService _service;
 
-    public WebViewHostServiceTests() => _service = new WebViewHostService(_host);
+    public WebViewHostServiceTests() => _service = new WebViewHostService(_host, isAlbumWorld: true);
 
     public void Dispose() => _service.Dispose();
 

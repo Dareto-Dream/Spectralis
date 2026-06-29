@@ -12,10 +12,25 @@ public static class CapsuleStoryRenderer
 {
     public static EmbeddedHtmlContext? TryToHtmlContext(CapsuleStory story, Func<string, byte[]?> tryReadEntry)
     {
-        if (story.Pages.Count == 0) return null;
+        // pages[] preferred; chapters[] is the older alias
+        var rawPages = story.Pages.Count > 0 ? story.Pages
+                     : story.Chapters.Count > 0 ? story.Chapters
+                     : null;
 
-        var pages = BuildPages(story.Pages, tryReadEntry);
-        if (pages.Count == 0) return null;
+        List<StoryPage>? pages = null;
+        if (rawPages is not null)
+        {
+            pages = BuildPages(rawPages, tryReadEntry);
+        }
+
+        // Synthesize a single-page story from backstory when no structured pages exist
+        if ((pages is null || pages.Count == 0) && !string.IsNullOrWhiteSpace(story.Backstory))
+        {
+            var coverUri = TryReadStoryImage(story, tryReadEntry);
+            pages = [new StoryPage(story.Backstory.Trim(), coverUri, null)];
+        }
+
+        if (pages is null || pages.Count == 0) return null;
 
         var html = BuildHtmlPage(story, pages);
         return new EmbeddedHtmlContext(
@@ -35,12 +50,25 @@ public static class CapsuleStoryRenderer
         {
             var text = TryGetString(el, "text") ?? TryGetString(el, "content") ?? "";
             var imageUri = TryReadImageEntry(el, "image", tryReadEntry)
-                        ?? TryReadImageEntry(el, "characterImage", tryReadEntry);
+                        ?? TryReadImageEntry(el, "characterImage", tryReadEntry)
+                        ?? TryReadImageEntry(el, "explainerImage", tryReadEntry);
             var bgUri    = TryReadImageEntry(el, "background", tryReadEntry)
                         ?? TryReadImageEntry(el, "backgroundImage", tryReadEntry);
             result.Add(new StoryPage(text, imageUri, bgUri));
         }
         return result;
+    }
+
+    private static string? TryReadStoryImage(CapsuleStory story, Func<string, byte[]?> tryReadEntry)
+    {
+        foreach (var entry in new[] { story.ImageEntry, story.ExplainerImage, story.CharacterImage, story.Image })
+        {
+            if (string.IsNullOrWhiteSpace(entry)) continue;
+            var bytes = tryReadEntry(entry);
+            if (bytes is null || bytes.Length == 0) continue;
+            return $"data:{GuessMime(entry)};base64,{Convert.ToBase64String(bytes)}";
+        }
+        return null;
     }
 
     private static string? TryGetString(JsonElement el, string property)

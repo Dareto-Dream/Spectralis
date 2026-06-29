@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Text.RegularExpressions;
 using Avalonia;
@@ -7,12 +8,12 @@ using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Spectralis.App.Controls;
 using Spectralis.App.Services;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Capsule;
 using Spectralis.Core.Common;
 using Spectralis.Core.Integrations.Spotify;
+using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
 
@@ -33,6 +34,13 @@ public partial class MainWindow : Window
     private readonly OpenUrlService _clipboardUrlResolver = new();
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
+    private ITrayService? _trayService;
+    private bool _hiddenToTray;
+    private bool _forceClose;
+    private bool _closePromptOpen;
+    private bool _trayEventsAttached;
+    private bool _trayVmSubscribed;
+    private bool _trayNowPlayingSubscribed;
 
     public MainWindow()
     {
@@ -56,6 +64,7 @@ public partial class MainWindow : Window
                 vm.Capsules.TrustCreatorPrompt = PromptTrustCreatorAsync;
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 InitializeSpotifyPlaybackHost(vm);
+                InitializeTraySupport(vm);
             }
 
             if (IsVisible)
@@ -63,17 +72,32 @@ public partial class MainWindow : Window
                 ApplySavedWindowPlacement();
             }
         };
-        InitializeUiReveal();
         Opened += async (_, _) =>
         {
             ApplySavedWindowPlacement();
             _clipboardMonitorTimer.Start();
             InitializeMediaSession();
+            UpdateTrayState();
             await ShowConsentDialogIfNeededAsync();
         };
-        Closed += (_, _) => _clipboardMonitorTimer.Stop();
-        Closing += (_, _) =>
+        Closed += (_, _) =>
         {
+            _clipboardMonitorTimer.Stop();
+            _trayService?.Dispose();
+            _trayService = null;
+        };
+        Closing += (_, e) =>
+        {
+            if (!_forceClose &&
+                !_hiddenToTray &&
+                DataContext is MainWindowViewModel vm &&
+                vm.AppSettings.CloseToTray)
+            {
+                e.Cancel = true;
+                _ = HandleCloseButtonAsync();
+                return;
+            }
+
             SaveWindowPlacement();
             _mediaSession?.Dispose();
             _mediaSession = null;
@@ -81,6 +105,203 @@ public partial class MainWindow : Window
     }
 
     // ── OS media session (SMTC on Windows) ──────────────────────────────────
+
+    private void InitializeTraySupport(MainWindowViewModel vm)
+    {
+        _trayService ??= new AvaloniaTrayService();
+        if (!_trayEventsAttached)
+        {
+            _trayService.OpenRequested += (_, _) => Dispatcher.UIThread.Post(RestoreFromTray);
+            _trayService.PlayMostRecentRequested += (_, _) => Dispatcher.UIThread.Post(() => _ = PlayMostRecentFromTrayAsync());
+            _trayService.ExitRequested += (_, _) => Dispatcher.UIThread.Post(RequestAppExit);
+            _trayEventsAttached = true;
+        }
+
+        if (!_trayVmSubscribed)
+        {
+            vm.PropertyChanged += OnTrayViewModelChanged;
+            _trayVmSubscribed = true;
+        }
+
+        if (!_trayNowPlayingSubscribed)
+        {
+            vm.NowPlaying.PropertyChanged += OnTrayNowPlayingChanged;
+            _trayNowPlayingSubscribed = true;
+        }
+    }
+
+    private void HideToTray()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        InitializeTraySupport(vm);
+        SaveWindowPlacement();
+        _hiddenToTray = true;
+        ShowInTaskbar = false;
+        UpdateTrayState();
+        _trayService?.Show(BuildTrayTooltip(vm));
+        Hide();
+    }
+
+    private void RestoreFromTray()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        _hiddenToTray = false;
+        ShowInTaskbar = true;
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Show();
+        Activate();
+        UpdateTrayState();
+        _trayService?.Hide();
+    }
+
+    private async Task HandleCloseButtonAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            RequestAppExit();
+            return;
+        }
+
+        if (!vm.AppSettings.CloseToTray)
+        {
+            RequestAppExit();
+            return;
+        }
+
+        if (!vm.AppSettings.CloseToTrayPromptDismissed)
+        {
+            if (_closePromptOpen)
+            {
+                return;
+            }
+
+            _closePromptOpen = true;
+            var result = await CloseToTrayPromptWindow.ShowAsync(this, vm.AppSettings.CloseToTray);
+            _closePromptOpen = false;
+            if (!result.Accepted)
+            {
+                return;
+            }
+
+            vm.Settings.CloseToTray = result.CloseToTray;
+            vm.AppSettings.CloseToTrayPromptDismissed = true;
+            AppSettingsStore.Save(vm.AppSettings);
+
+            if (!result.CloseToTray)
+            {
+                RequestAppExit();
+                return;
+            }
+        }
+
+        HideToTray();
+    }
+
+    private async Task PlayMostRecentFromTrayAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        RestoreFromTray();
+        if (vm.NowPlaying.HasTrack)
+        {
+            if (!vm.NowPlaying.IsPlaying)
+            {
+                vm.NowPlaying.TogglePlayback();
+            }
+
+            return;
+        }
+
+        await vm.PlayMostRecentSongAsync();
+    }
+
+    private void RequestAppExit()
+    {
+        _forceClose = true;
+        _trayService?.Hide();
+        Close();
+    }
+
+    private void UpdateTrayState()
+    {
+        if (_trayService is null || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (vm.NowPlaying.HasTrack)
+        {
+            _trayService.UpdateNowPlaying(vm.NowPlaying.Title, vm.NowPlaying.Artist);
+        }
+        else
+        {
+            _trayService.UpdateNowPlaying("Spectralis", vm.IdleActivityText);
+        }
+
+        if (_hiddenToTray)
+        {
+            _trayService.Show(BuildTrayTooltip(vm));
+        }
+    }
+
+    private void OnTrayViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainWindowViewModel.IdleActivityText) or nameof(MainWindowViewModel.StatusText))
+        {
+            UpdateTrayState();
+        }
+    }
+
+    private void OnTrayNowPlayingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds)
+            or nameof(NowPlayingViewModel.LengthSeconds))
+        {
+            if (_hiddenToTray)
+            {
+                UpdateTrayState();
+            }
+
+            return;
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.HasTrack)
+            or nameof(NowPlayingViewModel.Title)
+            or nameof(NowPlayingViewModel.Artist)
+            or nameof(NowPlayingViewModel.IsPlaying))
+        {
+            UpdateTrayState();
+        }
+    }
+
+    private static string BuildTrayTooltip(MainWindowViewModel vm)
+    {
+        if (!vm.NowPlaying.HasTrack)
+        {
+            return $"Spectralis\n{vm.IdleActivityText}";
+        }
+
+        var state = vm.NowPlaying.IsPlaying ? "Playing" : "Paused";
+        var title = string.IsNullOrWhiteSpace(vm.NowPlaying.Artist)
+            ? vm.NowPlaying.Title
+            : $"{vm.NowPlaying.Artist} - {vm.NowPlaying.Title}";
+        return $"{state}: {title}\n{vm.NowPlaying.PositionText} / {vm.NowPlaying.LengthText}";
+    }
 
     private Spectralis.Core.Platform.IMediaSessionService? _mediaSession;
 
@@ -378,9 +599,9 @@ public partial class MainWindow : Window
             : WindowState.Maximized;
     }
 
-    private void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        Close();
+        await HandleCloseButtonAsync();
     }
 
     private void OnToggleSidebar(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -668,7 +889,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMenuExit(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close();
+    private void OnMenuExit(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => RequestAppExit();
 
     private void OnMenuNowPlaying(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -874,22 +1095,62 @@ public partial class MainWindow : Window
 
     private void OnMenuSongWars(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (DataContext is not MainWindowViewModel vm) return;
+
         if (_songWarsWindow is { IsVisible: true })
         {
             _songWarsWindow.Activate();
             return;
         }
 
-        if (DataContext is not MainWindowViewModel vm) return;
+        if (vm.NowPlaying.ShowSongWarsPanel)
+        {
+            // Already docked — undock to bring up the window
+            SongWarsUndock(vm);
+            return;
+        }
+
+        OpenSongWarsWindow(vm);
+    }
+
+    private void OpenSongWarsWindow(MainWindowViewModel vm)
+    {
         _songWarsWindow = new SongWarsWindow();
         _songWarsWindow.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
+        _songWarsWindow.RequestDock = () => SongWarsDock(vm);
         _songWarsWindow.Closed += (_, _) =>
         {
             _songWarsWindow = null;
             vm.ObsOverlay.GetActiveTournament = null;
+            vm.NowPlaying.SongWarsPopOutRequested = null;
         };
-        vm.ObsOverlay.GetActiveTournament = () => _songWarsWindow?.CurrentTournament;
+        vm.ObsOverlay.GetActiveTournament = () =>
+            _songWarsWindow?.CurrentTournament ?? vm.NowPlaying.SongWarsSession?.Tournament;
         _songWarsWindow.Show(this);
+    }
+
+    private void SongWarsDock(MainWindowViewModel vm)
+    {
+        if (_songWarsWindow is null) return;
+        vm.NowPlaying.SongWarsSession = _songWarsWindow.CurrentSession;
+        vm.NowPlaying.NotifySongWarsChanged();
+        vm.NowPlaying.ShowSongWarsPanel = vm.NowPlaying.SongWarsHasSession;
+        vm.NowPlaying.SongWarsPopOutRequested = () => SongWarsUndock(vm);
+        _songWarsWindow.Hide();
+    }
+
+    private void SongWarsUndock(MainWindowViewModel vm)
+    {
+        vm.NowPlaying.ShowSongWarsPanel = false;
+        vm.NowPlaying.SongWarsPopOutRequested = null;
+        if (_songWarsWindow is not null)
+        {
+            _songWarsWindow.Show(this);
+        }
+        else
+        {
+            OpenSongWarsWindow(vm);
+        }
     }
 
     private async void OnMenuScrobblingSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1040,9 +1301,6 @@ public partial class MainWindow : Window
                 $"Could not clear cached album state.\n\n{ex.Message}");
         }
     }
-
-    private void OnMenuUiReveal(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
-        StartUiReveal();
 
     private async void OnMenuAbout(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await new AboutWindow().ShowDialog(this);
