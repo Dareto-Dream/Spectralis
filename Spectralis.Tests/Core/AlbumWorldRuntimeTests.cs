@@ -7,6 +7,30 @@ namespace Spectralis.Tests.Core;
 public sealed class AlbumWorldRuntimeTests
 {
     [Fact]
+    public void WorldHtmlContext_CarriesSourceDirectoryForHostedNavigation()
+    {
+        var albumDir = Path.Combine(Path.GetTempPath(), $"spectralis-album-world-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(albumDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(albumDir, "world.html"), "<html><body>world</body></html>");
+            var manifest = BuildManifest();
+            manifest.World = new AlbumWorldSection { Entry = "world.html" };
+            var runtime = new AlbumWorldRuntime();
+            runtime.Load(manifest, albumDir, new AlbumWorldSession());
+
+            var context = runtime.BuildWorldHtmlContext();
+
+            Assert.NotNull(context);
+            Assert.Equal(albumDir, context!.SourceDirectory);
+        }
+        finally
+        {
+            try { Directory.Delete(albumDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void ReadyState_IncludesRestoredSessionFields()
     {
         var runtime = new AlbumWorldRuntime();

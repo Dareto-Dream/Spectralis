@@ -155,6 +155,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Capsules.AlbumWorldTrackCompleted = NowPlaying.NotifyAlbumWorldTrackCompleted;
         NowPlaying.AlbumPlayTrackDelegate = (trackId, positionSeconds) => _ = Capsules.LoadAlbumTrackAsync(trackId, positionSeconds);
         NowPlaying.AlbumWorldTick = (pos, playing) => Capsules.TickAlbumWorld(pos, playing);
+        NowPlaying.AlbumWorldExitDelegate = Capsules.Clear;
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine);
