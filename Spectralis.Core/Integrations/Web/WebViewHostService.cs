@@ -187,7 +187,7 @@ public sealed class WebViewHostService : IDisposable
 
     // ===== host-bound pushes =====
 
-    public Task InjectBootstrapAsync() => _host.ExecuteScriptAsync(BuildBootstrapScript());
+    public Task InjectBootstrapAsync() => _host.ExecuteScriptAsync(BuildBootstrapScript(_isAlbumWorld));
 
     public Task SendReadyAsync(string worldStateJson) =>
         _host.ExecuteScriptAsync(
