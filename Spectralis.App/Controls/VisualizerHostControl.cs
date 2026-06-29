@@ -140,19 +140,19 @@ public sealed class VisualizerHostControl : Control
 
     private void ApplyPaletteFromTokens()
     {
-        // Derive the visualizer palette from the design tokens so the accent
-        // does the work everywhere; fall back to the legacy warm palette.
+        // Read from Brush.* resources (mutated by AppThemeService on theme change)
+        // rather than Color.* (static defaults from Tokens.axaml, never updated).
         if (Application.Current is { } app &&
-            app.TryGetResource("Color.Bg.Base", null, out var bgBase) && bgBase is Color baseColor &&
-            app.TryGetResource("Color.Bg.Raised", null, out var bgRaised) && bgRaised is Color raisedColor &&
-            app.TryGetResource("Color.Signal", null, out var signal) && signal is Color signalColor &&
-            app.TryGetResource("Color.Ink.Primary", null, out var inkP) && inkP is Color inkPrimary &&
-            app.TryGetResource("Color.Ink.Secondary", null, out var inkS) && inkS is Color inkSecondary &&
-            app.TryGetResource("Color.Ink.Muted", null, out var inkM) && inkM is Color inkMuted)
+            app.TryGetResource("Brush.Bg.Base", null, out var b0) && b0 is SolidColorBrush baseBrush &&
+            app.TryGetResource("Brush.Bg.Raised", null, out var b1) && b1 is SolidColorBrush raisedBrush &&
+            app.TryGetResource("Brush.Signal", null, out var b2) && b2 is SolidColorBrush signalBrush &&
+            app.TryGetResource("Brush.Ink.Primary", null, out var b3) && b3 is SolidColorBrush inkPBrush &&
+            app.TryGetResource("Brush.Ink.Secondary", null, out var b4) && b4 is SolidColorBrush inkSBrush &&
+            app.TryGetResource("Brush.Ink.Muted", null, out var b5) && b5 is SolidColorBrush inkMBrush)
         {
             _sceneState.Palette = VisualizerPalette.FromAccent(
-                ToViz(baseColor), ToViz(raisedColor), ToViz(signalColor),
-                ToViz(inkPrimary), ToViz(inkSecondary), ToViz(inkMuted));
+                ToViz(baseBrush.Color), ToViz(raisedBrush.Color), ToViz(signalBrush.Color),
+                ToViz(inkPBrush.Color), ToViz(inkSBrush.Color), ToViz(inkMBrush.Color));
         }
     }
 

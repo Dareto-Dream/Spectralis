@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.StreamerQueueView"
+             x:DataType="vm:StreamerQueueViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- Top status bar -->
+    <Border Grid.Row="0" Background="{StaticResource Brush.Surface}" Padding="24,14">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <StackPanel Spacing="2">
+          <TextBlock Classes="heading" Text="Streamer Queue" />
+          <TextBlock Classes="secondary" Text="{Binding StatusText}" />
+        </StackPanel>
+
+        <!-- P2W badge -->
+        <Border Grid.Column="1" IsVisible="{Binding IsP2wActive}"
+                Background="{StaticResource Brush.Accent}"
+                CornerRadius="4" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center">
+          <TextBlock Classes="caption" Text="P2W" Foreground="White" FontWeight="Bold" />
+        </Border>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Content="Create Room" Command="{Binding CreateRoomCommand}"
+                  IsVisible="{Binding !HasRoom}" Classes="primary" />
+          <Button Content="Copy Submit URL" Command="{Binding CopySubmitUrlCommand}"
+                  IsVisible="{Binding HasRoom}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Main content split: queue left, settings right -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,320">
+
+      <!-- Left: queue panel -->
+      <Grid RowDefinitions="Auto,*,Auto" Margin="0">
+
+        <!-- Now playing -->
+        <StackPanel Grid.Row="0" Margin="16,12,16,4" IsVisible="{Binding NowPlayingItem, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Classes="secondary" Text="NOW PLAYING" FontWeight="SemiBold" />
+          <Border Background="{StaticResource Brush.Surface}" CornerRadius="6" Padding="12,8" Margin="0,4,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel>
+                <TextBlock Text="{Binding NowPlayingItem.Title}" FontWeight="SemiBold" />
+                <TextBlock Classes="secondary" Text="{Binding NowPlayingItem.Artist}" IsVisible="{Binding NowPlayingItem.Artist, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="secondary" Text="{Binding NowPlayingItem.DisplayName}" FontStyle="Italic" />
+              </StackPanel>
+              <Button Grid.Column="1" Content="Done" Command="{Binding ClearNowPlayingCommand}"
+                      Classes="secondary" VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+        </StackPanel>
+
+        <!-- Queue list header -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,*">
+          <TextBlock Margin="16,8,16,4" Classes="secondary" Text="UP NEXT" FontWeight="SemiBold" />
+          <ListBox Grid.Row="1" ItemsSource="{Binding QueueItems}" Margin="8,0,8,0"
+                   Background="Transparent" SelectionMode="Single">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SqItemVm">
+                <Border Padding="8,6" CornerRadius="4">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border IsVisible="{Binding HasTierBadge}"
+                                Background="{StaticResource Brush.Accent}"
+                                CornerRadius="3" Padding="5,2">
+                          <TextBlock Classes="caption" Text="{Binding TierLabel}" Foreground="White" />
+                        </Border>
+                        <TextBlock Text="{Binding Title}" FontWeight="Medium" />
+                      </StackPanel>
+                      <TextBlock Classes="secondary" Text="{Binding Artist}" IsVisible="{Binding Artist, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <TextBlock Classes="secondary" Text="{Binding DisplayName}" FontStyle="Italic" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Button Content="Play" Command="{Binding PlayCommand}" Classes="secondary" />
+                      <Button Content="Remove" Command="{Binding DeleteCommand}" Classes="destructive" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+
+        <!-- Pending approvals -->
+        <StackPanel Grid.Row="2" Margin="16,8,16,12"
+                    IsVisible="{Binding PendingItems.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <Border Height="1" Background="{StaticResource Brush.Border}" Margin="0,0,0,8" />
+          <TextBlock Classes="secondary" Text="PENDING APPROVAL" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ItemsControl ItemsSource="{Binding PendingItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SqItemVm">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3,0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Title}" />
+                    <TextBlock Classes="secondary" Text="{Binding DisplayName}" FontStyle="Italic" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Approve" Command="{Binding ApproveCommand}"
+                          Classes="primary" Margin="0,0,4,0" />
+                  <Button Grid.Column="2" Content="Reject" Command="{Binding RejectCommand}"
+                          Classes="destructive" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Grid>
+
+      <!-- Right: settings panel -->
+      <Border Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0">
+        <ScrollViewer>
+          <StackPanel Margin="16" Spacing="12">
+
+            <TextBlock Classes="heading" Text="Queue Settings" />
+
+            <TextBlock Classes="error" Text="{Binding LastError}"
+                       IsVisible="{Binding LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <StackPanel IsVisible="{Binding !HasRoom}" Spacing="6">
+              <TextBlock Classes="secondary" Text="Create a room to get started. Your room ID and owner token will be saved automatically." TextWrapping="Wrap" />
+              <Button Content="Create Room" Command="{Binding CreateRoomCommand}" Classes="primary" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding HasRoom}" Spacing="10">
+
+              <!-- Room ID (readonly) -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="secondary" Text="Room ID" />
+                <TextBox Text="{Binding RoomId}" IsReadOnly="True" />
+              </StackPanel>
+
+              <!-- Submit URL -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="secondary" Text="Submit URL" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                  <TextBox Text="{Binding SubmitUrl}" IsReadOnly="True" />
+                  <Button Grid.Column="1" Content="Copy" Command="{Binding CopySubmitUrlCommand}" />
+                </Grid>
+              </StackPanel>
+
+              <CheckBox Content="Queue enabled" IsChecked="{Binding SqEnabled}" />
+
+              <StackPanel IsVisible="{Binding SqEnabled}" Spacing="10">
+
+                <CheckBox Content="Require manual approval before queuing" IsChecked="{Binding RequireApproval}" />
+                <CheckBox Content="Allow duplicate tracks" IsChecked="{Binding AllowDuplicates}" />
+                <CheckBox Content="Allow link submissions" IsChecked="{Binding AllowLinkSubmissions}" />
+                <CheckBox Content="Skip/super-skip bypasses per-person limit" IsChecked="{Binding SkipBypassesLimit}" />
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="secondary" Text="Max queue length" />
+                    <TextBox Text="{Binding MaxQueueLength}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Classes="secondary" Text="Max per person" />
+                    <TextBox Text="{Binding MaxPerPerson}" />
+                  </StackPanel>
+                </Grid>
+
+                <!-- Fee settings -->
+                <Border Height="1" Background="{StaticResource Brush.Border}" />
+                <TextBlock Classes="secondary" Text="Fees (USD)" />
+
+                <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                    <CheckBox Content="Queue entry fee" IsChecked="{Binding QueueFeeEnabled}" />
+                    <TextBox Grid.Column="1" Text="{Binding QueueFeeAmount}"
+                             IsEnabled="{Binding QueueFeeEnabled}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                    <CheckBox Content="Skip fee" IsChecked="{Binding SkipFeeEnabled}" />
+                    <TextBox Grid.Column="1" Text="{Binding SkipFeeAmount}"
+                             IsEnabled="{Binding SkipFeeEnabled}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                    <CheckBox Content="Super Skip fee" IsChecked="{Binding SuperSkipFeeEnabled}" />
+                    <TextBox Grid.Column="1" Text="{Binding SuperSkipFeeAmount}"
+                             IsEnabled="{Binding SuperSkipFeeEnabled}" />
+                  </Grid>
+                </StackPanel>
+
+                <!-- Stripe -->
+                <StackPanel IsVisible="{Binding AnyFeeEnabled}" Spacing="6">
+                  <Border Height="1" Background="{StaticResource Brush.Border}" />
+                  <TextBlock Classes="secondary" Text="Stripe Connect" />
+                  <TextBlock Text="{Binding StripeStatus}" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="Connect Stripe" Command="{Binding ConnectStripeCommand}"
+                            IsVisible="{Binding !StripeConnected}" Classes="primary" />
+                    <Button Content="Disconnect" Command="{Binding DisconnectStripeCommand}"
+                            IsVisible="{Binding StripeConnected}" Classes="destructive" />
+                  </StackPanel>
+                </StackPanel>
+
+              </StackPanel>
+
+              <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Classes="primary" />
+
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

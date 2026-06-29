@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Spectralis.Core.SongWars;
 
@@ -17,6 +19,9 @@ public partial class SongWarsWindow : Window
     private readonly List<JudgeVoteRow> _judgeVoteRows = [];
 
     public Action<string>? RequestPlay { get; set; }
+    public Action? RequestDock { get; set; }
+
+    public SongWarsSessionController? CurrentSession => _session;
 
     /// <summary>The active tournament, if a session is in progress. Consumed by OBS overlay push.</summary>
     public SongWarsTournament? CurrentTournament => _session?.Tournament;
@@ -29,6 +34,20 @@ public partial class SongWarsWindow : Window
         ShowPanel(BrowserPanel);
         MarkTab(TabBrowser);
     }
+
+    // ─── Title bar ───────────────────────────────────────────────────────────
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            BeginMoveDrag(e);
+    }
+
+    private void OnMinimize(object? sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnDock(object? sender, RoutedEventArgs e) =>
+        RequestDock?.Invoke();
 
     // ─── Tab navigation ───────────────────────────────────────────────────────
 
@@ -58,9 +77,9 @@ public partial class SongWarsWindow : Window
         TabHost   .Classes.Set("accent", TabHost     == active);
     }
 
-    private void OnKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Avalonia.Input.Key.Escape) Close();
+        if (e.Key == Key.Escape) Close();
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
@@ -221,7 +240,7 @@ public partial class SongWarsWindow : Window
 
         foreach (var judge in _session.Tournament.Judges)
         {
-            var row = new JudgeVoteRow(judge, OnJudgeVote);
+            var row = new JudgeVoteRow(judge, OnJudgeVote, OnJudgeElimVote);
             _judgeVoteRows.Add(row);
             JudgeVoteRows.Children.Add(row.Root);
         }
@@ -242,11 +261,26 @@ public partial class SongWarsWindow : Window
         }
     }
 
+    private void OnJudgeElimVote(SongWarsJudge judge, SongWarsMatchSlot eliminatedSlot)
+    {
+        if (_session is null) return;
+        try
+        {
+            _session.SubmitEliminationVote(judge.JudgeId, eliminatedSlot);
+            RefreshTallyLabel();
+            AutoSave();
+        }
+        catch (InvalidOperationException ex)
+        {
+            MatchStatusLabel.Text = ex.Message;
+        }
+    }
+
     private void RefreshTallyLabel()
     {
         if (_session is null) return;
         var tally = _session.TallyCurrentLive();
-        TallyLabel.Text = $"Live tally — Pass: {tally.PassCount}  Fail: {tally.FailCount}  Eliminated: {tally.EliminatedCount}  ({tally.SubmittedJudgeCount}/{_session.Tournament.Judges.Count} submitted)";
+        TallyLabel.Text = $"Live tally — Pass: {tally.PassCount}  Fail: {tally.FailCount}  Elim: {tally.EliminatedCount}  ({tally.SubmittedJudgeCount}/{_session.Tournament.Judges.Count} submitted)";
     }
 
     private void RefreshHostPanel()
@@ -264,6 +298,7 @@ public partial class SongWarsWindow : Window
             TrackATitle.Text = TrackAArtist.Text = TrackBTitle.Text = TrackBArtist.Text = "—";
             ResultSection.IsVisible = false;
             MatchStatusLabel.Text = "";
+            RefreshBracketView();
             return;
         }
 
@@ -297,16 +332,18 @@ public partial class SongWarsWindow : Window
 
         PauseResumeButton.Content = match.Phase == SongWarsMatchPhase.Paused ? "Resume" : "Pause";
 
-        RefreshMatchLog();
+        RefreshBracketView();
         MatchStatusLabel.Text = "";
     }
 
     private void SetPhaseButtonStates(SongWarsMatchPhase? phase)
     {
-        BeginAButton.IsEnabled     = phase is SongWarsMatchPhase.Pending or SongWarsMatchPhase.Ready;
-        BeginBButton.IsEnabled     = phase is SongWarsMatchPhase.TrackAPlaying or SongWarsMatchPhase.Paused;
-        OpenVotingButton.IsEnabled = phase is SongWarsMatchPhase.TrackBPlaying or SongWarsMatchPhase.Paused;
-        RevealButton.IsEnabled     = phase is SongWarsMatchPhase.PrimaryVoting or SongWarsMatchPhase.EliminationVoting or SongWarsMatchPhase.Paused;
+        var paused = phase == SongWarsMatchPhase.Paused;
+
+        BeginAButton.IsEnabled     = !paused && phase is SongWarsMatchPhase.Pending or SongWarsMatchPhase.Ready;
+        BeginBButton.IsEnabled     = !paused && phase is SongWarsMatchPhase.TrackAPlaying;
+        OpenVotingButton.IsEnabled = !paused && phase is SongWarsMatchPhase.TrackBPlaying;
+        RevealButton.IsEnabled     = !paused && phase is SongWarsMatchPhase.PrimaryVoting or SongWarsMatchPhase.EliminationVoting;
         NextMatchButton.IsEnabled  = phase is SongWarsMatchPhase.Reveal or SongWarsMatchPhase.Complete or SongWarsMatchPhase.Skipped;
         SkipButton.IsEnabled       = phase is not null && phase != SongWarsMatchPhase.Complete && phase != SongWarsMatchPhase.Skipped && phase != SongWarsMatchPhase.Reveal;
         PauseResumeButton.IsEnabled = phase is not null && phase != SongWarsMatchPhase.Complete && phase != SongWarsMatchPhase.Skipped && phase != SongWarsMatchPhase.Reveal;
@@ -320,16 +357,156 @@ public partial class SongWarsWindow : Window
             row.SetEnabled(voting, inWinners);
     }
 
-    private void RefreshMatchLog()
+    // ─── Bracket view ─────────────────────────────────────────────────────────
+
+    private void RefreshBracketView()
     {
+        BracketPanel.Children.Clear();
         if (_session is null) return;
-        var entries = _session.Tournament.AuditLog
-            .OrderByDescending(a => a.AtUtc)
-            .Take(50)
-            .Select(a => $"[{a.AtUtc:HH:mm:ss}] {a.Message}")
-            .ToList();
-        MatchLog.ItemsSource = entries;
+
+        var t = _session.Tournament;
+        var currentId = t.CurrentMatchId;
+
+        foreach (var bracket in new[] { SongWarsBracket.Winners, SongWarsBracket.Losers, SongWarsBracket.GrandFinals })
+        {
+            var matchesInBracket = t.Matches.Where(m => m.Bracket == bracket).ToList();
+            if (matchesInBracket.Count == 0) continue;
+
+            var sectionLabel = bracket switch
+            {
+                SongWarsBracket.Winners => "Winners Bracket",
+                SongWarsBracket.Losers  => "Losers Bracket",
+                _                       => "Grand Finals"
+            };
+
+            var sectionHeader = new TextBlock
+            {
+                Text = sectionLabel,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            sectionHeader.Classes.Add("heading");
+            BracketPanel.Children.Add(sectionHeader);
+
+            var roundsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+
+            var roundGroups = matchesInBracket
+                .GroupBy(m => m.RoundId)
+                .OrderBy(g => matchesInBracket.First(m => m.RoundId == g.Key).RoundIndex);
+
+            foreach (var roundGroup in roundGroups)
+            {
+                var col = new StackPanel { Spacing = 6, Width = 175 };
+
+                var roundLabel = new TextBlock
+                {
+                    Text = roundGroup.Key,
+                    Margin = new Thickness(0, 0, 0, 2),
+                    FontSize = 10
+                };
+                roundLabel.Classes.Add("secondary");
+                col.Children.Add(roundLabel);
+
+                foreach (var match in roundGroup)
+                    col.Children.Add(BuildMatchCard(match, t, currentId));
+
+                roundsRow.Children.Add(col);
+            }
+
+            BracketPanel.Children.Add(roundsRow);
+
+            var divider = new Border
+            {
+                Height = 1,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            divider.Classes.Add("separator");
+            BracketPanel.Children.Add(divider);
+        }
     }
+
+    private Border BuildMatchCard(SongWarsMatch match, SongWarsTournament t, string? currentId)
+    {
+        var isActive   = match.MatchId == currentId;
+        var isComplete = match.Result != SongWarsOutcome.Pending && match.Result != SongWarsOutcome.Skip;
+        var isSkipped  = match.Phase == SongWarsMatchPhase.Skipped || match.Result == SongWarsOutcome.Skip;
+
+        var slotA = t.Submissions.FirstOrDefault(s => s.SubmissionId == match.SlotASubmissionId);
+        var slotB = t.Submissions.FirstOrDefault(s => s.SubmissionId == match.SlotBSubmissionId);
+
+        var nameA = slotA?.DisplayTitle ?? "?";
+        var nameB = slotB?.DisplayTitle ?? "?";
+
+        var aIsLoser = isComplete && match.LoserSubmissionId == match.SlotASubmissionId;
+        var bIsLoser = isComplete && match.LoserSubmissionId == match.SlotBSubmissionId;
+
+        var card = new Border
+        {
+            Padding = new Thickness(8, 6),
+            Margin  = new Thickness(0, 0, 0, 4),
+            CornerRadius = new CornerRadius(3)
+        };
+
+        if (isActive)
+            card.Classes.Add("accent");
+
+        var content = new StackPanel { Spacing = 3 };
+
+        // Badge row
+        if (isActive || isSkipped || isComplete)
+        {
+            var badge = new TextBlock { FontSize = 9 };
+            badge.Classes.Add("secondary");
+            if (isActive)   { badge.Text = "● Live"; }
+            else if (isSkipped) { badge.Text = "↺ Replay"; }
+            else
+            {
+                badge.Text = match.Result switch
+                {
+                    SongWarsOutcome.Pass      => "Pass ✓",
+                    SongWarsOutcome.Fail      => "Fail ✓",
+                    SongWarsOutcome.Eliminated => "Elim ✓",
+                    _                          => "Done"
+                };
+            }
+            content.Children.Add(badge);
+        }
+
+        // Track A name
+        var labelA = new TextBlock { Text = nameA, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
+        if (aIsLoser)
+        {
+            labelA.Classes.Add("muted");
+            labelA.TextDecorations = TextDecorations.Strikethrough;
+        }
+        else if (isComplete)
+        {
+            labelA.FontWeight = FontWeight.SemiBold;
+        }
+        content.Children.Add(labelA);
+
+        // vs
+        var vs = new TextBlock { Text = "vs", FontSize = 9, HorizontalAlignment = HorizontalAlignment.Center };
+        vs.Classes.Add("muted");
+        content.Children.Add(vs);
+
+        // Track B name
+        var labelB = new TextBlock { Text = nameB, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
+        if (bIsLoser)
+        {
+            labelB.Classes.Add("muted");
+            labelB.TextDecorations = TextDecorations.Strikethrough;
+        }
+        else if (isComplete)
+        {
+            labelB.FontWeight = FontWeight.SemiBold;
+        }
+        content.Children.Add(labelB);
+
+        card.Child = content;
+        return card;
+    }
+
+    // ─── Phase transitions ────────────────────────────────────────────────────
 
     private void OnPlayA(object? sender, RoutedEventArgs e)
     {
@@ -343,8 +520,22 @@ public partial class SongWarsWindow : Window
         if (!string.IsNullOrWhiteSpace(path)) RequestPlay?.Invoke(path);
     }
 
-    private void OnBeginA(object? sender, RoutedEventArgs e) => TryTransition(() => _session!.BeginTrackA(), "Begin A");
-    private void OnBeginB(object? sender, RoutedEventArgs e) => TryTransition(() => _session!.BeginTrackB(), "Begin B");
+    private void OnBeginA(object? sender, RoutedEventArgs e)
+    {
+        TryTransition(() => _session!.BeginTrackA(), "Begin A");
+        InvokePlay(_session?.CurrentTrackA?.LocalFilePath);
+    }
+
+    private void OnBeginB(object? sender, RoutedEventArgs e)
+    {
+        TryTransition(() => _session!.BeginTrackB(), "Begin B");
+        InvokePlay(_session?.CurrentTrackB?.LocalFilePath);
+    }
+
+    private void InvokePlay(string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path)) RequestPlay?.Invoke(path);
+    }
 
     private void OnOpenVoting(object? sender, RoutedEventArgs e)
     {
@@ -380,11 +571,10 @@ public partial class SongWarsWindow : Window
 
     private void OnSkip(object? sender, RoutedEventArgs e)
     {
-        if (_session?.CurrentMatch is not { } match) return;
+        if (_session is null) return;
         try
         {
-            match.Phase = SongWarsMatchPhase.Skipped;
-            _session.Tournament.AuditLog.Add(new SongWarsAuditEntry { Kind = "skipped", Message = "Match skipped by host.", MatchId = match.MatchId, AtUtc = DateTimeOffset.UtcNow });
+            _session.Skip();
             AutoSave();
             RefreshHostPanel();
         }
@@ -428,20 +618,35 @@ public partial class SongWarsWindow : Window
     {
         private readonly SongWarsJudge _judge;
         private readonly Action<SongWarsJudge, SongWarsVoteChoice> _onVote;
-        private readonly Button _passBtn;
-        private readonly Button _failBtn;
-        private readonly Button _elimBtn;
+        private readonly Action<SongWarsJudge, SongWarsMatchSlot> _onElim;
+        private readonly Button _bWinsBtn;
+        private readonly Button _aWinsBtn;
+        private readonly Button _elimABtn;
+        private readonly Button _elimBBtn;
 
         public Panel Root { get; }
 
-        public JudgeVoteRow(SongWarsJudge judge, Action<SongWarsJudge, SongWarsVoteChoice> onVote)
+        public JudgeVoteRow(
+            SongWarsJudge judge,
+            Action<SongWarsJudge, SongWarsVoteChoice> onVote,
+            Action<SongWarsJudge, SongWarsMatchSlot> onElim)
         {
             _judge  = judge;
             _onVote = onVote;
+            _onElim = onElim;
 
-            _passBtn = MakeVoteBtn("Pass", SongWarsVoteChoice.Pass);
-            _failBtn = MakeVoteBtn("Fail", SongWarsVoteChoice.Fail);
-            _elimBtn = MakeVoteBtn("Elim", SongWarsVoteChoice.Eliminated);
+            var bWins = MakeVoteBtn("B Wins");
+            var aWins = MakeVoteBtn("A Wins");
+            var elimA = MakeVoteBtn("Elim A");
+            var elimB = MakeVoteBtn("Elim B");
+            bWins.Click += (_, _) => { ClearSelection(); bWins.Classes.Add("accent"); _onVote(_judge, SongWarsVoteChoice.Pass); };
+            aWins.Click += (_, _) => { ClearSelection(); aWins.Classes.Add("accent"); _onVote(_judge, SongWarsVoteChoice.Fail); };
+            elimA.Click += (_, _) => { ClearSelection(); elimA.Classes.Add("accent"); _onElim(_judge, SongWarsMatchSlot.A); };
+            elimB.Click += (_, _) => { ClearSelection(); elimB.Classes.Add("accent"); _onElim(_judge, SongWarsMatchSlot.B); };
+            _bWinsBtn = bWins;
+            _aWinsBtn = aWins;
+            _elimABtn = elimA;
+            _elimBBtn = elimB;
 
             Root = new StackPanel
             {
@@ -450,37 +655,28 @@ public partial class SongWarsWindow : Window
                 Children =
                 {
                     new TextBlock { Text = judge.DisplayName, Width = 90, VerticalAlignment = VerticalAlignment.Center },
-                    _passBtn, _failBtn, _elimBtn
+                    _bWinsBtn, _aWinsBtn, _elimABtn, _elimBBtn
                 }
             };
         }
 
-        private Button MakeVoteBtn(string label, SongWarsVoteChoice choice)
-        {
-            var btn = new Button { Content = label, IsEnabled = false };
-            btn.Click += (_, _) =>
-            {
-                _passBtn.Classes.Remove("accent");
-                _failBtn.Classes.Remove("accent");
-                _elimBtn.Classes.Remove("accent");
-                btn.Classes.Add("accent");
-                _onVote(_judge, choice);
-            };
-            return btn;
-        }
+        private static Button MakeVoteBtn(string label) =>
+            new() { Content = label, IsEnabled = false };
 
         public void SetEnabled(bool votingOpen, bool inWinners)
         {
-            _passBtn.IsEnabled = votingOpen;
-            _failBtn.IsEnabled = votingOpen;
-            _elimBtn.IsEnabled = votingOpen && inWinners;
+            _bWinsBtn.IsEnabled = votingOpen;
+            _aWinsBtn.IsEnabled = votingOpen;
+            _elimABtn.IsEnabled = votingOpen && inWinners;
+            _elimBBtn.IsEnabled = votingOpen && inWinners;
         }
 
         public void ClearSelection()
         {
-            _passBtn.Classes.Remove("accent");
-            _failBtn.Classes.Remove("accent");
-            _elimBtn.Classes.Remove("accent");
+            _bWinsBtn.Classes.Remove("accent");
+            _aWinsBtn.Classes.Remove("accent");
+            _elimABtn.Classes.Remove("accent");
+            _elimBBtn.Classes.Remove("accent");
         }
     }
 }
