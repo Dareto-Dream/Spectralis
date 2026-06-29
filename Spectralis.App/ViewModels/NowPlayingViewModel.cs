@@ -238,6 +238,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private EmbeddedHtmlContext? _pickedInstalledHtml;
     // Album world HTML pinned across track changes so the interactive map stays live.
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
+    private string _albumWorldCurrentTrackId = string.Empty;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
     private EmbeddedMarkdownContext? _embeddedMarkdown;
     private EmbeddedVideoContext? _embeddedVideo;
@@ -1712,8 +1713,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
     internal string? AlbumWorldReadyJson { get; set; }
-    public Action<string>? AlbumPlayTrackDelegate { get; set; }
+    internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
+    public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
     public Action<double, bool>? AlbumWorldTick { get; set; }
+    public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
+    public event Action<string, double>? AlbumWorldTrackCompleted;
 
     public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson)
     {
@@ -1728,6 +1732,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         _pinnedAlbumWorldHtml = null;
         AlbumWorldReadyJson = null;
+        _albumWorldCurrentTrackId = string.Empty;
         if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
         {
             EmbeddedHtml = _pickedInstalledHtml;
@@ -1739,6 +1744,20 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             EmbeddedHtml = null;
         }
         RaiseSurfaceModeChanged();
+    }
+
+    public void NotifyAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
+    {
+        _albumWorldCurrentTrackId = state.TrackId;
+        AlbumWorldTrackChanged?.Invoke(state);
+    }
+
+    public void NotifyAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    {
+        if (string.Equals(_albumWorldCurrentTrackId, trackId, StringComparison.OrdinalIgnoreCase))
+            _albumWorldCurrentTrackId = string.Empty;
+
+        AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
     }
 
     public void UseYouTubeSurface()

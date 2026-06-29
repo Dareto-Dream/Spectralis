@@ -51,7 +51,9 @@ public sealed class AlbumWorldRuntime : IDisposable
         _manifest = manifest;
         _albumDir = albumDir;
         _session = session;
-        _currentTrack = null;
+        _currentTrack = !string.IsNullOrWhiteSpace(session.CurrentTrackId)
+            ? manifest.Tracks.FirstOrDefault(t => string.Equals(t.Id, session.CurrentTrackId, StringComparison.OrdinalIgnoreCase))
+            : null;
         _isPlaying = false;
         _lastTickMs = 0;
     }
@@ -81,6 +83,8 @@ public sealed class AlbumWorldRuntime : IDisposable
 
         stats.PlayCount++;
         stats.LastPlayedUtc = DateTime.UtcNow;
+        _session.CurrentTrackId = trackId;
+        _session.CurrentPositionSeconds = Math.Max(0, positionSeconds);
         _session.LastOpenedUtc = DateTime.UtcNow;
     }
 
@@ -91,8 +95,18 @@ public sealed class AlbumWorldRuntime : IDisposable
 
     public void NotifyTrackCompleted(string trackId)
     {
-        if (_session is not null && _session.TrackStats.TryGetValue(trackId, out var stats))
+        if (_session is not null)
+        {
+            if (!_session.TrackStats.TryGetValue(trackId, out var stats))
+            {
+                stats = new AlbumTrackStats();
+                _session.TrackStats[trackId] = stats;
+            }
+
             stats.Completed = true;
+            _session.CurrentPositionSeconds = 0;
+        }
+
         _currentTrack = null;
         _isPlaying = false;
     }
@@ -118,6 +132,7 @@ public sealed class AlbumWorldRuntime : IDisposable
 
         _isPlaying = engineIsPlaying;
         _lastTickMs = nowMs;
+        _session.CurrentPositionSeconds = Math.Max(0, enginePosition);
     }
 
     public void HandleWorldMessage(string messageJson)
@@ -377,7 +392,15 @@ public sealed class AlbumWorldRuntime : IDisposable
             title = _manifest.Title,
             artist = _manifest.Artist,
             tracks,
-            session = new { trackStats },
+            session = new
+            {
+                currentTrackId = _session.CurrentTrackId,
+                currentPositionSeconds = _session.CurrentPositionSeconds,
+                introCompleted = _session.IntroCompleted,
+                trackStats,
+                unlockedAchievements = _session.UnlockedAchievements,
+                levelGateProgress = _session.LevelGateProgress,
+            },
         };
 
         return JsonSerializer.Serialize(state, _jsonOpts);

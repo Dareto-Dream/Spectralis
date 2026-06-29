@@ -64,12 +64,16 @@ public NowPlayingView()
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+                _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
+                _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+                _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
+                _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
             }
@@ -510,9 +514,9 @@ public NowPlayingView()
 
         _loadedEmbeddedHtmlId = context.Id;
 
+#if WINDOWS
         if (OperatingSystem.IsWindows())
         {
-#if WINDOWS
             // GPU-accelerated path: WebView2 renders via DirectComposition — no OSR bitmap roundtrip.
             // The host is created once and reused across capsule track changes so the HWND
             // stays alive and WebView2 never has to re-initialize (~400ms overhead).
@@ -524,9 +528,9 @@ public NowPlayingView()
             };
             _embeddedControl = _persistentWv2;
             _embeddedHost = _persistentWv2;
-#endif
         }
         else
+#endif
         {
             var cefWebView = new WebViewControl.WebView
             {
@@ -567,7 +571,8 @@ public NowPlayingView()
             AppLogPaths.AppendTimestamped(_webviewPerfLog,
                 $"[EMBEDDED] navigate failed id={context.Id}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
             StopEmbeddedHtmlMode();
-            _viewModel.ShowEmbeddedHtml = false;
+            if (_viewModel is not null)
+                _viewModel.ShowEmbeddedHtml = false;
         }
     }
 
@@ -597,7 +602,27 @@ public NowPlayingView()
 
     private void OnEmbeddedPlayTrackRequested(object? sender, Spectralis.Core.Integrations.Web.AlbumTrackPlayRequest req)
     {
-        _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId);
+        _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId, req.PositionSeconds);
+    }
+
+    private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
+    {
+        if (_viewModel?.IsAlbumWorldActive != true || _embeddedService is null)
+            return;
+
+        _ = _embeddedService.SendTrackChangedAsync(
+            state.TrackId,
+            state.Title,
+            state.Artist,
+            state.DurationSeconds);
+    }
+
+    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    {
+        if (_viewModel?.IsAlbumWorldActive != true || _embeddedService is null)
+            return;
+
+        _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
     }
 
     private void OnEmbeddedExitRequested(object? sender, EventArgs e)
@@ -678,6 +703,9 @@ public NowPlayingView()
         // push is needed on that path. The timer only exists here to keep the cache fresh.
         var json = BuildEmbeddedFrameJson();
         _latestFrameJson = json;
+        var active = _viewModel.IsPlaying;
+        var time = _viewModel.PositionSeconds;
+        _viewModel.AlbumWorldTick?.Invoke(time, active);
 
         // WebView2 uses a push model: ExecuteScript queues the frame in JS so the rAF
         // pump can pick it up without a C#→renderer IPC pull. _embeddedExecPending
@@ -690,11 +718,6 @@ public NowPlayingView()
             FlushStatsIfDue();
             return;
         }
-
-        var active = _viewModel.IsPlaying;
-        var time = _viewModel.PositionSeconds;
-
-        _viewModel.AlbumWorldTick?.Invoke(time, active);
 
         if (!active && !_lastPushedActive && Math.Abs(time - _lastPushedTime) < 0.05)
         {
@@ -761,6 +784,7 @@ public NowPlayingView()
             rms = Math.Clamp(frame.RmsLevel, 0f, 1.25f),
             active = _viewModel.IsPlaying,
             time = _viewModel.PositionSeconds,
+            trackId = _viewModel.IsAlbumWorldActive ? _viewModel.AlbumWorldCurrentTrackId : string.Empty,
         });
     }
 

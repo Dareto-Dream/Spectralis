@@ -39,7 +39,7 @@ public sealed class WebViewHostServiceTests : IDisposable
     private readonly FakeWebViewHost _host = new();
     private readonly WebViewHostService _service;
 
-    public WebViewHostServiceTests() => _service = new WebViewHostService(_host);
+    public WebViewHostServiceTests() => _service = new WebViewHostService(_host, isAlbumWorld: true);
 
     public void Dispose() => _service.Dispose();
 
