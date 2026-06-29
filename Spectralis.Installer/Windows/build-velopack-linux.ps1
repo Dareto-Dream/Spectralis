@@ -32,6 +32,7 @@ $scriptWsl = "$repoWsl/Spectralis.Installer/Linux/build-velopack.sh"
 $env:WSLENV = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u"
 
 Write-Host "[linux] Building Velopack linux-x64 v$Version via WSL ($WslDistro)..."
+wsl -d $WslDistro -- sed -i 's/\r$//' "$scriptWsl"
 wsl -d $WslDistro -- bash "$scriptWsl" $Version
 Assert-LastExitCode "build-velopack.sh"
 

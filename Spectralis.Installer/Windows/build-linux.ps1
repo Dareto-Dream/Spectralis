@@ -35,6 +35,7 @@ $scriptWsl = "$repoWsl/Spectralis.Installer/Linux/build-appimage.sh"
 $env:WSLENV = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u"
 
 Write-Host "[linux] Building AppImage v$Version via WSL ($WslDistro)..."
+wsl -d $WslDistro -- sed -i 's/\r$//' "$scriptWsl"
 wsl -d $WslDistro -- bash "$scriptWsl" $Version
 Assert-LastExitCode "build-appimage.sh"
 
