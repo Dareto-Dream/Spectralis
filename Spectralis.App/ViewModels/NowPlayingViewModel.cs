@@ -238,6 +238,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private EmbeddedHtmlContext? _pickedInstalledHtml;
     // Album world HTML pinned across track changes so the interactive map stays live.
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
+    private bool _albumWorldShowingWorld;
     private string _albumWorldCurrentTrackId = string.Empty;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
     private EmbeddedMarkdownContext? _embeddedMarkdown;
@@ -875,6 +876,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private void RaiseSurfaceModeChanged()
     {
         this.RaisePropertyChanged(nameof(IsAlbumWorldActive));
+        this.RaisePropertyChanged(nameof(IsAlbumWorldShowingWorld));
         this.RaisePropertyChanged(nameof(IsNilState));
         this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
         this.RaisePropertyChanged(nameof(IsSurfaceVisualizer));
@@ -1712,6 +1714,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
+    public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
     internal string? AlbumWorldReadyJson { get; set; }
     internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
     public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
@@ -1723,15 +1726,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson)
     {
         _pinnedAlbumWorldHtml = worldHtml;
+        _albumWorldShowingWorld = true;
         AlbumWorldReadyJson = readyJson;
         EmbeddedHtml = worldHtml;
         if (_settings.EnableEmbeddedContent)
             UseEmbeddedHtmlSurface();
+        RaiseSurfaceModeChanged();
     }
 
     public void DetachAlbumWorld()
     {
         _pinnedAlbumWorldHtml = null;
+        _albumWorldShowingWorld = false;
         AlbumWorldReadyJson = null;
         _albumWorldCurrentTrackId = string.Empty;
         if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
@@ -1744,6 +1750,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             ShowEmbeddedHtml = false;
             EmbeddedHtml = null;
         }
+        RaiseSurfaceModeChanged();
+    }
+
+    public void BeginAlbumWorldTrackPlayback()
+    {
+        if (_pinnedAlbumWorldHtml is null)
+            return;
+
+        _albumWorldShowingWorld = false;
         RaiseSurfaceModeChanged();
     }
 
@@ -2152,6 +2167,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged(nameof(PositionText));
         }
 
+        if (IsAlbumWorldActive)
+        {
+            AlbumWorldTick?.Invoke(position, IsPlaying);
+        }
+
         if (_engine.CurrentTrack is null && HasTrack && _spotifyState is null)
         {
             ApplyTrack(null);
@@ -2332,7 +2352,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private void ApplyEmbeddedModules(TrackInfo track)
     {
         // When a world map is pinned, keep it live — only update the non-HTML modules.
-        if (_pinnedAlbumWorldHtml is not null)
+        if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld)
         {
             this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
             this.RaisePropertyChanged(nameof(HasEmbeddedVisualizer));
@@ -2382,7 +2402,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ClearEmbeddedModules()
     {
-        if (_pinnedAlbumWorldHtml is not null && _settings.EnableEmbeddedContent)
+        if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld && _settings.EnableEmbeddedContent)
         {
             // Album world stays live across track changes.
             EmbeddedHtml = _pinnedAlbumWorldHtml;

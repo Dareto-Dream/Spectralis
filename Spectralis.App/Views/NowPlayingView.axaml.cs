@@ -548,7 +548,7 @@ public NowPlayingView()
 
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
-        var isAlbumWorld = _viewModel?.IsAlbumWorldActive ?? false;
+        var isAlbumWorld = _viewModel?.IsAlbumWorldShowingWorld ?? false;
         _embeddedService = new WebViewHostService(_embeddedHost, storeKey: isAlbumWorld ? null : context.Id, isAlbumWorld: isAlbumWorld);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
@@ -636,7 +636,7 @@ public NowPlayingView()
 
     private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
     {
-        if (_viewModel?.IsAlbumWorldActive != true || _embeddedService is null)
+        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
             return;
 
         _ = _embeddedService.SendTrackChangedAsync(
@@ -648,7 +648,7 @@ public NowPlayingView()
 
     private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds)
     {
-        if (_viewModel?.IsAlbumWorldActive != true || _embeddedService is null)
+        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
             return;
 
         _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
@@ -656,7 +656,7 @@ public NowPlayingView()
 
     private void OnEmbeddedExitRequested(object? sender, EventArgs e)
     {
-        if (_viewModel?.IsAlbumWorldActive == true)
+        if (_viewModel?.IsAlbumWorldShowingWorld == true)
             _viewModel.AlbumWorldExitDelegate?.Invoke();
         else
             _viewModel?.UseArtworkSurface();
@@ -707,7 +707,7 @@ public NowPlayingView()
         _embeddedFramePushTimer.Start();
 
         // If this is an album world HTML, send the initial state so the map can populate.
-        if (_viewModel is { IsAlbumWorldActive: true, AlbumWorldReadyJson: { } readyJson } && _embeddedService is not null)
+        if (_viewModel is { IsAlbumWorldShowingWorld: true, AlbumWorldReadyJson: { } readyJson } && _embeddedService is not null)
             _ = _embeddedService.SendReadyAsync(readyJson);
     }
 
@@ -734,7 +734,6 @@ public NowPlayingView()
         _latestFrameJson = json;
         var active = _viewModel.IsPlaying;
         var time = _viewModel.PositionSeconds;
-        _viewModel.AlbumWorldTick?.Invoke(time, active);
 
         // WebView2 uses a push model: ExecuteScript queues the frame in JS so the rAF
         // pump can pick it up without a C#→renderer IPC pull. _embeddedExecPending
@@ -883,12 +882,15 @@ public NowPlayingView()
             $"binaryBytes={context.BinaryAssets.Values.Sum(static bytes => bytes.Length):n0} " +
             $"textAssets={context.TextAssets.Count} textChars={context.TextAssets.Values.Sum(static text => text.Length):n0}");
 
-        var isAlbumWorld = vm?.IsAlbumWorldActive ?? false;
+        var isAlbumWorld = vm?.IsAlbumWorldShowingWorld ?? false;
 
         var html = Encoding.UTF8.GetString(context.HtmlBytes);
         LogDocumentStage(context.Id, "decoded", html);
-        html = StripInlineEventHandlers(html);
-        LogDocumentStage(context.Id, "stripped-inline-handlers", html);
+        if (!isAlbumWorld)
+        {
+            html = StripInlineEventHandlers(html);
+            LogDocumentStage(context.Id, "stripped-inline-handlers", html);
+        }
         html = ResolveEmbeddedAssetReferences(context.Id, html, context.BinaryAssets, context.TextAssets);
         LogDocumentStage(context.Id, "assets-resolved", html);
         html = InjectEmbeddedPerformancePrelude(html);

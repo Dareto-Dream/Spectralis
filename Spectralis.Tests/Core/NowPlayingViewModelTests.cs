@@ -1,6 +1,7 @@
 using Spectralis.App.Design;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Audio;
+using Spectralis.Core.Embedded;
 using Xunit;
 
 namespace Spectralis.Tests.Core;
@@ -159,6 +160,32 @@ public sealed class NowPlayingViewModelTests : IDisposable
         Assert.False(_vm.ShowVisualizer);
         Assert.False(_vm.ShowYouTubeVideo);
         Assert.True(_vm.IsSurfaceOff);
+    }
+
+    [Fact]
+    public void AlbumWorldTrackPlayback_KeepsRuntimeActiveButShowsPlaybackUi()
+    {
+        var worldHtml = new EmbeddedHtmlContext(
+            "world",
+            "<!doctype html><html><body></body></html>"u8.ToArray(),
+            new Dictionary<string, byte[]>(),
+            null,
+            null);
+
+        _vm.AttachAlbumWorld(worldHtml, "{}");
+
+        Assert.True(_vm.IsAlbumWorldActive);
+        Assert.True(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.BeginAlbumWorldTrackPlayback();
+
+        Assert.True(_vm.IsAlbumWorldActive);
+        Assert.False(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.DetachAlbumWorld();
+
+        Assert.False(_vm.IsAlbumWorldActive);
+        Assert.False(_vm.IsAlbumWorldShowingWorld);
     }
 
     [Fact]

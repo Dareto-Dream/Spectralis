@@ -187,6 +187,7 @@ public sealed class CapsulesViewModel : ViewModelBase
     public Action<EmbeddedHtmlContext, string>? AlbumWorldAttach { get; set; }
     public Action? AlbumWorldNavigate { get; set; }
     public Action? AlbumWorldDetach { get; set; }
+    public Action? AlbumWorldTrackPlaybackStarting { get; set; }
     public Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged { get; set; }
     public Action<string, double>? AlbumWorldTrackCompleted { get; set; }
 
@@ -288,8 +289,7 @@ public sealed class CapsulesViewModel : ViewModelBase
         if (_activeRuntime is null) return;
         var trackInfo = _activeRuntime.BuildTrackInfo(trackId);
         if (trackInfo is null) return;
-        // World HTML stays pinned in NowPlayingViewModel — don't pass per-track HTML here.
-        trackInfo = trackInfo with { EmbeddedHtml = null };
+        AlbumWorldTrackPlaybackStarting?.Invoke();
         _activeRuntime.NotifyTrackStarted(trackId, positionSeconds);
         await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, true);
         _activeRuntime.SaveSession();
