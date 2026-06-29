@@ -236,6 +236,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private double _volumeBeforeMute = 85;
     private EmbeddedHtmlContext? _embeddedHtml;
     private EmbeddedHtmlContext? _pickedInstalledHtml;
+    // Album world HTML pinned across track changes so the interactive map stays live.
+    private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
     private EmbeddedMarkdownContext? _embeddedMarkdown;
     private EmbeddedVideoContext? _embeddedVideo;
@@ -1701,6 +1703,37 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         RaiseSurfaceModeChanged();
     }
 
+    public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
+    internal string? AlbumWorldReadyJson { get; set; }
+    public Action<string>? AlbumPlayTrackDelegate { get; set; }
+    public Action<double, bool>? AlbumWorldTick { get; set; }
+
+    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson)
+    {
+        _pinnedAlbumWorldHtml = worldHtml;
+        AlbumWorldReadyJson = readyJson;
+        EmbeddedHtml = worldHtml;
+        if (_settings.EnableEmbeddedContent)
+            UseEmbeddedHtmlSurface();
+    }
+
+    public void DetachAlbumWorld()
+    {
+        _pinnedAlbumWorldHtml = null;
+        AlbumWorldReadyJson = null;
+        if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
+        {
+            EmbeddedHtml = _pickedInstalledHtml;
+            ShowEmbeddedHtml = true;
+        }
+        else
+        {
+            ShowEmbeddedHtml = false;
+            EmbeddedHtml = null;
+        }
+        RaiseSurfaceModeChanged();
+    }
+
     public void UseYouTubeSurface()
     {
         if (!HasYouTubeVideo)
@@ -2271,6 +2304,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ApplyEmbeddedModules(TrackInfo track)
     {
+        // When a world map is pinned, keep it live — only update the non-HTML modules.
+        if (_pinnedAlbumWorldHtml is not null)
+        {
+            this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
+            this.RaisePropertyChanged(nameof(HasEmbeddedVisualizer));
+            this.RaisePropertyChanged(nameof(HasEmbeddedModules));
+            return;
+        }
+
         this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
         this.RaiseAndSetIfChanged(ref _embeddedMarkdown, track.EmbeddedMarkdown);
         this.RaiseAndSetIfChanged(ref _embeddedVideo, track.EmbeddedVideo);
@@ -2313,7 +2355,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ClearEmbeddedModules()
     {
-        if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
+        if (_pinnedAlbumWorldHtml is not null && _settings.EnableEmbeddedContent)
+        {
+            // Album world stays live across track changes.
+            EmbeddedHtml = _pinnedAlbumWorldHtml;
+            ShowEmbeddedHtml = true;
+        }
+        else if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
         {
             // A user-picked installed HTML visualizer survives track changes.
             EmbeddedHtml = _pickedInstalledHtml;
