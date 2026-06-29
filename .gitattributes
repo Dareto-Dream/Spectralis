@@ -1,0 +1,5 @@
+# Shell scripts must have LF line endings or bash on WSL chokes on \r in set -euo pipefail
+*.sh text eol=lf
+
+# Everything else: let git decide
+* text=auto
