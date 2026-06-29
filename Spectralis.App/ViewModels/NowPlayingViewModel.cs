@@ -1027,26 +1027,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         get
         {
+            if (_pinnedAlbumWorldHtml is not null)
+                return "Album world";
+
             var parts = new List<string>();
             if (_embeddedHtml is not null)
-            {
                 parts.Add("HTML");
-            }
-
             if (_embeddedVisualizer is not null)
-            {
                 parts.Add("WASM");
-            }
-
             if (_embeddedMarkdown is not null)
-            {
                 parts.Add("Markdown");
-            }
-
             if (_embeddedVideo is not null)
-            {
                 parts.Add("video");
-            }
 
             return parts.Count == 0
                 ? string.Empty
