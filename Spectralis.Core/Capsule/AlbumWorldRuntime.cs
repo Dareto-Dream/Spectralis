@@ -332,7 +332,13 @@ public sealed class AlbumWorldRuntime : IDisposable
                 textAssets[key] = File.ReadAllText(p, Encoding.UTF8);
         }
 
-        return new EmbeddedHtmlContext("album-world", htmlBytes, binaryAssets, textAssets, null);
+        return new EmbeddedHtmlContext(
+            "album-world",
+            htmlBytes,
+            binaryAssets,
+            textAssets,
+            null,
+            Path.GetDirectoryName(htmlPath) ?? _albumDir);
     }
 
     /// <summary>Builds the story EmbeddedHtmlContext from the album manifest, if applicable.</summary>
