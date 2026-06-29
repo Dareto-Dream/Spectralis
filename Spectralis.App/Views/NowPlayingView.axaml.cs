@@ -564,7 +564,7 @@ public NowPlayingView()
             AppLogPaths.AppendTimestamped(_webviewPerfLog,
                 $"[EMBEDDED] navigate id={context.Id} chars={document.Length:n0} " +
                 $"utf8={Encoding.UTF8.GetByteCount(document):n0} hash={HashShort(document)}");
-            _embeddedHost.NavigateToString(document);
+            NavigateEmbeddedHtmlDocument(context, document, isAlbumWorld);
         }
         catch (Exception ex)
         {
@@ -574,6 +574,35 @@ public NowPlayingView()
             if (_viewModel is not null)
                 _viewModel.ShowEmbeddedHtml = false;
         }
+    }
+
+    private void NavigateEmbeddedHtmlDocument(EmbeddedHtmlContext context, string document, bool isAlbumWorld)
+    {
+        if (_embeddedHost is null)
+        {
+            return;
+        }
+
+        if (!isAlbumWorld ||
+            string.IsNullOrWhiteSpace(context.SourceDirectory) ||
+            !Directory.Exists(context.SourceDirectory))
+        {
+            _embeddedHost.NavigateToString(document);
+            return;
+        }
+
+        var hostName = BuildAlbumWorldHostName(context.SourceDirectory);
+        var fileName = "__spectralis_album_world.html";
+        var hostedPath = Path.Combine(context.SourceDirectory, fileName);
+        File.WriteAllText(hostedPath, document, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        _embeddedHost.MapVirtualHost(hostName, context.SourceDirectory);
+        _embeddedHost.Navigate(new Uri($"https://{hostName}/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"));
+    }
+
+    private static string BuildAlbumWorldHostName(string sourceDirectory)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(sourceDirectory)));
+        return $"album-{Convert.ToHexString(hash, 0, 8).ToLowerInvariant()}.spectralis.local";
     }
 
     private void OnEmbeddedPauseRequested(object? sender, EventArgs e)
@@ -628,7 +657,7 @@ public NowPlayingView()
     private void OnEmbeddedExitRequested(object? sender, EventArgs e)
     {
         if (_viewModel?.IsAlbumWorldActive == true)
-            _viewModel.DetachAlbumWorld();
+            _viewModel.AlbumWorldExitDelegate?.Invoke();
         else
             _viewModel?.UseArtworkSurface();
     }

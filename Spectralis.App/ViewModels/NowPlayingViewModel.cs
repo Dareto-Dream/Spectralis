@@ -1716,6 +1716,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
     public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
     public Action<double, bool>? AlbumWorldTick { get; set; }
+    public Action? AlbumWorldExitDelegate { get; set; }
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
     public event Action<string, double>? AlbumWorldTrackCompleted;
 
