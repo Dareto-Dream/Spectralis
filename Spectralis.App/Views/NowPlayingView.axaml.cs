@@ -545,6 +545,7 @@ public NowPlayingView()
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
         _embeddedService = new WebViewHostService(_embeddedHost, storeKey: context.Id);
+        _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
         _embeddedService.SeekRequested += OnEmbeddedSeekRequested;
@@ -593,8 +594,18 @@ public NowPlayingView()
         }
     }
 
-    private void OnEmbeddedExitRequested(object? sender, EventArgs e) =>
-        _viewModel?.UseArtworkSurface();
+    private void OnEmbeddedPlayTrackRequested(object? sender, Spectralis.Core.Integrations.Web.AlbumTrackPlayRequest req)
+    {
+        _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId);
+    }
+
+    private void OnEmbeddedExitRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel?.IsAlbumWorldActive == true)
+            _viewModel.DetachAlbumWorld();
+        else
+            _viewModel?.UseArtworkSurface();
+    }
 
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
     {
@@ -639,6 +650,10 @@ public NowPlayingView()
             DispatcherPriority.Normal,
             OnEmbeddedFramePushTick);
         _embeddedFramePushTimer.Start();
+
+        // If this is an album world HTML, send the initial state so the map can populate.
+        if (_viewModel is { IsAlbumWorldActive: true, AlbumWorldReadyJson: { } readyJson } && _embeddedService is not null)
+            _ = _embeddedService.SendReadyAsync(readyJson);
     }
 
     private void OnEmbeddedFramePushTick(object? sender, EventArgs e)
@@ -677,6 +692,8 @@ public NowPlayingView()
 
         var active = _viewModel.IsPlaying;
         var time = _viewModel.PositionSeconds;
+
+        _viewModel.AlbumWorldTick?.Invoke(time, active);
 
         if (!active && !_lastPushedActive && Math.Abs(time - _lastPushedTime) < 0.05)
         {
@@ -761,6 +778,7 @@ public NowPlayingView()
 
         if (_embeddedService is not null)
         {
+            _embeddedService.PlayTrackRequested -= OnEmbeddedPlayTrackRequested;
             _embeddedService.PauseRequested -= OnEmbeddedPauseRequested;
             _embeddedService.ResumeRequested -= OnEmbeddedResumeRequested;
             _embeddedService.SeekRequested -= OnEmbeddedSeekRequested;
