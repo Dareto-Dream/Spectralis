@@ -19,7 +19,7 @@
   </Grid.Styles>
 
   <!-- ============ Empty state ============ -->
-  <Panel IsVisible="{Binding !HasTrack}">
+  <Panel IsVisible="{Binding IsNilState}">
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
 
       <!-- Identity -->
@@ -74,8 +74,8 @@
     </StackPanel>
   </Panel>
 
-  <!-- ============ Playing state ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto" IsVisible="{Binding HasTrack}">
+  <!-- ============ Playing state (track or album world) ============ -->
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -147,8 +147,8 @@
         <PathIcon Data="{x:Static design:IconData.Close}" Width="16" Height="16" />
       </Button>
 
-      <!-- Controls bar -->
-      <StackPanel Grid.Row="1">
+      <!-- Controls bar — hidden when an album world is the conductor -->
+      <StackPanel Grid.Row="1" IsVisible="{Binding !IsAlbumWorldActive}">
 
         <!-- Track identity + viz controls -->
         <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,4">
