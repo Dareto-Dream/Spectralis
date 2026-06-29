@@ -152,9 +152,16 @@ public sealed class CapsuleTrackViewModel
     public string DurationText { get; }
 }
 
+public sealed record AlbumWorldTrackBridgeState(
+    string TrackId,
+    string Title,
+    string Artist,
+    double DurationSeconds);
+
 public sealed class CapsulesViewModel : ViewModelBase
 {
     private readonly Func<string, TrackInfo, bool, Task> _loadPreparedTrack;
+    private bool _lastAlbumWorldEnginePlaying;
     private bool _hasPackage;
     private string _title = "No capsules opened";
     private string _subtitle = "Open a signed .spectralis capsule or .spectral album world to see it here.";
@@ -180,6 +187,8 @@ public sealed class CapsulesViewModel : ViewModelBase
     public Action<EmbeddedHtmlContext, string>? AlbumWorldAttach { get; set; }
     public Action? AlbumWorldNavigate { get; set; }
     public Action? AlbumWorldDetach { get; set; }
+    public Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged { get; set; }
+    public Action<string, double>? AlbumWorldTrackCompleted { get; set; }
 
     public ObservableCollection<CapsuleTrackViewModel> Tracks { get; } = [];
 
@@ -259,6 +268,7 @@ public sealed class CapsulesViewModel : ViewModelBase
     {
         _activeRuntime?.Dispose();
         _activeRuntime = null;
+        _lastAlbumWorldEnginePlaying = false;
         AlbumWorldDetach?.Invoke();
         HasPackage = false;
         Title = "No capsules opened";
@@ -273,20 +283,57 @@ public sealed class CapsulesViewModel : ViewModelBase
         Tracks.Clear();
     }
 
-    public async Task LoadAlbumTrackAsync(string trackId)
+    public async Task LoadAlbumTrackAsync(string trackId, double positionSeconds = 0)
     {
         if (_activeRuntime is null) return;
         var trackInfo = _activeRuntime.BuildTrackInfo(trackId);
         if (trackInfo is null) return;
         // World HTML stays pinned in NowPlayingViewModel — don't pass per-track HTML here.
         trackInfo = trackInfo with { EmbeddedHtml = null };
-        _activeRuntime.NotifyTrackStarted(trackId, 0);
+        _activeRuntime.NotifyTrackStarted(trackId, positionSeconds);
         await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, true);
         _activeRuntime.SaveSession();
+
+        var track = _activeRuntime.Manifest?.Tracks.FirstOrDefault(t => string.Equals(t.Id, trackId, StringComparison.OrdinalIgnoreCase));
+        AlbumWorldTrackChanged?.Invoke(new AlbumWorldTrackBridgeState(
+            trackId,
+            FirstNonEmpty(track?.Title, trackInfo.Title, trackId),
+            FirstNonEmpty(track?.Artist, trackInfo.Artist),
+            track?.Audio.DurationSeconds > 0 ? track.Audio.DurationSeconds : trackInfo.Duration.TotalSeconds));
     }
 
-    public void TickAlbumWorld(double enginePosition, bool engineIsPlaying) =>
-        _activeRuntime?.Tick(enginePosition, engineIsPlaying);
+    public void TickAlbumWorld(double enginePosition, bool engineIsPlaying)
+    {
+        var runtime = _activeRuntime;
+        if (runtime is null)
+        {
+            _lastAlbumWorldEnginePlaying = false;
+            return;
+        }
+
+        var wasPlaying = _lastAlbumWorldEnginePlaying;
+        runtime.Tick(enginePosition, engineIsPlaying);
+
+        var trackId = runtime.CurrentTrackId;
+        var track = trackId is null
+            ? null
+            : runtime.Manifest?.Tracks.FirstOrDefault(t => string.Equals(t.Id, trackId, StringComparison.OrdinalIgnoreCase));
+        var duration = track?.Audio.DurationSeconds ?? 0;
+        var reachedEnd = duration > 0 && enginePosition >= Math.Max(0, duration - 0.25);
+
+        if (wasPlaying && !engineIsPlaying && reachedEnd && trackId is not null)
+        {
+            runtime.NotifyTrackCompleted(trackId);
+            runtime.SaveSession();
+
+            var playedSeconds = runtime.Session?.TrackStats.TryGetValue(trackId, out var stats) == true
+                ? stats.PlayedSeconds
+                : enginePosition;
+            AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
+        }
+
+        _lastAlbumWorldEnginePlaying = engineIsPlaying;
+    }
 
     public async Task OpenFilesAsync(IReadOnlyList<string> paths, bool startPlayback)
     {
@@ -394,6 +441,7 @@ public sealed class CapsulesViewModel : ViewModelBase
         // Dispose any previously active album world.
         _activeRuntime?.Dispose();
         _activeRuntime = null;
+        _lastAlbumWorldEnginePlaying = false;
         AlbumWorldDetach?.Invoke();
 
         try
