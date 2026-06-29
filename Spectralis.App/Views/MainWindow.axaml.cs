@@ -8,7 +8,6 @@ using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Spectralis.App.Controls;
 using Spectralis.App.Services;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Capsule;
@@ -73,7 +72,6 @@ public partial class MainWindow : Window
                 ApplySavedWindowPlacement();
             }
         };
-        InitializeUiReveal();
         Opened += async (_, _) =>
         {
             ApplySavedWindowPlacement();
@@ -1303,9 +1301,6 @@ public partial class MainWindow : Window
                 $"Could not clear cached album state.\n\n{ex.Message}");
         }
     }
-
-    private void OnMenuUiReveal(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
-        StartUiReveal();
 
     private async void OnMenuAbout(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await new AboutWindow().ShowDialog(this);
