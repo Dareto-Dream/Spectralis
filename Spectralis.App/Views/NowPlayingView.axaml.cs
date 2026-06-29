@@ -544,7 +544,8 @@ public NowPlayingView()
 
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
-        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: context.Id);
+        var isAlbumWorld = _viewModel?.IsAlbumWorldActive ?? false;
+        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: isAlbumWorld ? null : context.Id, isAlbumWorld: isAlbumWorld);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
@@ -829,6 +830,8 @@ public NowPlayingView()
             $"binaryBytes={context.BinaryAssets.Values.Sum(static bytes => bytes.Length):n0} " +
             $"textAssets={context.TextAssets.Count} textChars={context.TextAssets.Values.Sum(static text => text.Length):n0}");
 
+        var isAlbumWorld = vm?.IsAlbumWorldActive ?? false;
+
         var html = Encoding.UTF8.GetString(context.HtmlBytes);
         LogDocumentStage(context.Id, "decoded", html);
         html = StripInlineEventHandlers(html);
@@ -837,9 +840,13 @@ public NowPlayingView()
         LogDocumentStage(context.Id, "assets-resolved", html);
         html = InjectEmbeddedPerformancePrelude(html);
         LogDocumentStage(context.Id, "performance-prelude", html);
-        html = InjectTrackMeta(html, vm);
-        LogDocumentStage(context.Id, "track-meta", html);
-        html = InjectBridgeBootstrap(html);
+        // Album worlds don't have a current track at document-build time; skip spectral.meta injection.
+        if (!isAlbumWorld)
+        {
+            html = InjectTrackMeta(html, vm);
+            LogDocumentStage(context.Id, "track-meta", html);
+        }
+        html = InjectBridgeBootstrap(html, isAlbumWorld);
         LogDocumentStage(context.Id, "bridge-bootstrap", html);
         html = WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
         LogDocumentStage(context.Id, "csp-final", html);
@@ -945,9 +952,9 @@ public NowPlayingView()
         return script + html;
     }
 
-    private static string InjectBridgeBootstrap(string html)
+    private static string InjectBridgeBootstrap(string html, bool isAlbumWorld = false)
     {
-        var script = "<script>" + WebViewHostService.BuildBootstrapScript() + BuildEmbeddedFrameBridgeScript() + "</script>";
+        var script = "<script>" + WebViewHostService.BuildBootstrapScript(isAlbumWorld) + BuildEmbeddedFrameBridgeScript() + "</script>";
         var bodyIndex = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         if (bodyIndex >= 0)
         {
