@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Spectralis.App.Controls;
 using Spectralis.App.Services;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Capsule;
@@ -739,12 +740,7 @@ public partial class MainWindow : Window
 
             case Key.Escape:
                 e.Handled = true;
-                if (_revealActive)
-                {
-                    EndRevealEarly();
-                    vm.NowPlaying.ResetPlaybackSession();
-                }
-                else if (!ReferenceEquals(vm.SelectedSection.Content, vm.NowPlaying))
+                if (!ReferenceEquals(vm.SelectedSection.Content, vm.NowPlaying))
                 {
                     SelectSection(vm, vm.NowPlaying);
                 }
