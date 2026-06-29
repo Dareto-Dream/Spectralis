@@ -3,7 +3,7 @@
 set -euo pipefail
 
 VERSION="${1:?usage: build-appimage.sh <version>}"
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 APP_PROJECT="$REPO_ROOT/Spectralis.App/Spectralis.App.csproj"
 APPDIR="$REPO_ROOT/publish-linux/Spectralis.AppDir"
 RELEASE_DIR="$REPO_ROOT/releases"
