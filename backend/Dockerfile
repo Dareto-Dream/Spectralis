@@ -1,7 +1,8 @@
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.86-bookworm AS builder
 
 WORKDIR /app/backend
 COPY backend/Cargo.toml ./
+COPY backend/Cargo.lock ./
 COPY backend/src ./src
 RUN cargo build --release
 
