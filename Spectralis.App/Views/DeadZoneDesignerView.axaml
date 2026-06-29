@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Views.DeadZoneDesignerView">
+
+  <Border x:Name="DesignerBorder"
+          Background="{StaticResource Brush.Bg.Raised}" ClipToBounds="True"
+          SizeChanged="OnDesignerBorderSizeChanged">
+    <Canvas x:Name="DesignerCanvas"
+            Background="{StaticResource Brush.Bg.Base}"
+            HorizontalAlignment="Left" VerticalAlignment="Top"
+            PointerPressed="OnCanvasPointerPressed"
+            PointerMoved="OnCanvasPointerMoved"
+            PointerReleased="OnCanvasPointerReleased" />
+  </Border>
+
+</UserControl>

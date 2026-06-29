@@ -17,11 +17,6 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <GeneratedApplicationIcon>$(BaseIntermediateOutputPath)generated\icon.ico</GeneratedApplicationIcon>
     <ApplicationIcon>$(GeneratedApplicationIcon)</ApplicationIcon>
-    <!-- Squirrel.Windows pulls in DeltaCompressionDotNet, which only ships a
-         net20 build (NU1701). Accepted tradeoff for delta-update support
-         during the migration window; same suppression as legacy\Startup\Startup.csproj.
-         TODO 5.1.0: drop this once Squirrel.Windows is removed below. -->
-    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
   <!-- Bake client IDs/secrets from the build environment into the assembly so
@@ -53,8 +48,6 @@
     <!-- Exact pin (not a floating minimum) so restores are reproducible; keep
          in lockstep with the vpk CLI version in .config/dotnet-tools.json. -->
     <PackageReference Include="Velopack" Version="[0.0.915]" />
-    <!-- TODO 5.1.0: Remove Squirrel.Windows once all users have migrated to Velopack-packaged builds -->
-    <PackageReference Include="Squirrel.Windows" Version="2.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -65,22 +58,6 @@
     <!-- Shared runtime assets from the repo root: SoundFont for MIDI/KAR
          playback, helper executables for stream resolution. -->
     <AvaloniaResource Include="..\Assets\icon.png" Link="Assets\icon.png" />
-    <!-- TODO 5.1.0: Remove reveal assets -->
-    <Content Include="..\Assets\audio\reveal.mp3" Link="assets\audio\reveal.mp3">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\reveal.lrc" Link="assets\audio\reveal.lrc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\delta.png" Link="assets\audio\delta.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\old_logo.png" Link="assets\audio\old_logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\logo.png" Link="assets\audio\logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

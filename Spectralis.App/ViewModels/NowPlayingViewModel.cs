@@ -19,6 +19,7 @@ using Spectralis.Core.Integrations.Spotify;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Installed;
 using Spectralis.Core.Visualizers.Scripting;
+using Spectralis.Core.SongWars;
 
 namespace Spectralis.App.ViewModels;
 
@@ -209,6 +210,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     private bool _showLyrics;
+    private bool _showSongWarsPanel;
+    private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
     private bool _isReactiveActive;
@@ -233,6 +236,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private double _volumeBeforeMute = 85;
     private EmbeddedHtmlContext? _embeddedHtml;
     private EmbeddedHtmlContext? _pickedInstalledHtml;
+    // Album world HTML pinned across track changes so the interactive map stays live.
+    private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
+    private string? _albumWorldDir;
+    private bool _albumWorldShowingWorld;
+    private string _albumWorldCurrentTrackId = string.Empty;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
     private EmbeddedMarkdownContext? _embeddedMarkdown;
     private EmbeddedVideoContext? _embeddedVideo;
@@ -300,7 +308,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // TrackEnded arrives on the audio device callback thread; auto-advance on the UI thread.
         _engine.TrackEnded += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = AutoAdvanceAsync());
-        _engine.StateMachine.StateChanged += (_, _) => RefreshFromEngine();
+        _engine.StateMachine.StateChanged += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(RefreshFromEngine);
 
         PlayPauseCommand = ReactiveCommand.Create(TogglePlayback);
         StopCommand = ReactiveCommand.Create(StopPlayback);
@@ -395,6 +404,117 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasQueueItems => Queue.Count > 0;
+
+    public bool ShowSongWarsPanel
+    {
+        get => _showSongWarsPanel;
+        set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+    }
+
+    public SongWarsSessionController? SongWarsSession
+    {
+        get => _songWarsSession;
+        set { _songWarsSession = value; NotifySongWarsChanged(); }
+    }
+
+    public Action? SongWarsPopOutRequested { get; set; }
+
+    public bool SongWarsHasSession => _songWarsSession is not null;
+    public string SongWarsTournamentName => _songWarsSession?.Tournament.Name ?? "";
+    public string SongWarsTrackAName => _songWarsSession?.CurrentTrackA?.DisplayTitle ?? "—";
+    public string SongWarsTrackAArtist => _songWarsSession?.CurrentTrackA?.ArtistDisplayName ?? "";
+    public string SongWarsTrackBName => _songWarsSession?.CurrentTrackB?.DisplayTitle ?? "—";
+    public string SongWarsTrackBArtist => _songWarsSession?.CurrentTrackB?.ArtistDisplayName ?? "";
+
+    public string SongWarsMatchStatusText
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match is null) return _songWarsSession is null ? "" : "Tournament complete";
+            return $"{match.Bracket}  ·  {match.RoundId}  ·  {match.Phase}";
+        }
+    }
+
+    public string SongWarsPhaseText
+    {
+        get
+        {
+            var phase = _songWarsSession?.CurrentMatch?.Phase;
+            return phase switch
+            {
+                SongWarsMatchPhase.TrackAPlaying => "● Track A Playing",
+                SongWarsMatchPhase.TrackBPlaying => "● Track B Playing",
+                SongWarsMatchPhase.PrimaryVoting => "● Voting",
+                SongWarsMatchPhase.EliminationVoting => "● Elimination Vote",
+                SongWarsMatchPhase.Reveal => "Revealed",
+                SongWarsMatchPhase.Paused => "⏸ Paused",
+                SongWarsMatchPhase.Complete => "Complete",
+                SongWarsMatchPhase.Skipped => "Skipped",
+                _ => ""
+            };
+        }
+    }
+
+    public string SongWarsTallyText
+    {
+        get
+        {
+            if (_songWarsSession?.CurrentMatch is null) return "";
+            try
+            {
+                var t = _songWarsSession.TallyCurrentLive();
+                return $"Pass: {t.PassCount}  Fail: {t.FailCount}  Elim: {t.EliminatedCount}  ({t.SubmittedJudgeCount}/{_songWarsSession.Tournament.Judges.Count} submitted)";
+            }
+            catch { return ""; }
+        }
+    }
+
+    public bool SongWarsHasOutcome
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            return match?.Phase == SongWarsMatchPhase.Reveal && match.VoteSnapshots.LastOrDefault() is not null;
+        }
+    }
+
+    public string SongWarsOutcomeText
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match?.Phase != SongWarsMatchPhase.Reveal) return "";
+            var snap = match.VoteSnapshots.LastOrDefault();
+            return snap is null ? "" : $"Result: {snap.Outcome}";
+        }
+    }
+
+    public string SongWarsOutcomeDetail
+    {
+        get
+        {
+            var match = _songWarsSession?.CurrentMatch;
+            if (match?.Phase != SongWarsMatchPhase.Reveal) return "";
+            return match.VoteSnapshots.LastOrDefault()?.Explanation ?? "";
+        }
+    }
+
+    public void NotifySongWarsChanged()
+    {
+        this.RaisePropertyChanged(nameof(SongWarsHasSession));
+        this.RaisePropertyChanged(nameof(SongWarsTournamentName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackAName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackAArtist));
+        this.RaisePropertyChanged(nameof(SongWarsTrackBName));
+        this.RaisePropertyChanged(nameof(SongWarsTrackBArtist));
+        this.RaisePropertyChanged(nameof(SongWarsMatchStatusText));
+        this.RaisePropertyChanged(nameof(SongWarsPhaseText));
+        this.RaisePropertyChanged(nameof(SongWarsTallyText));
+        this.RaisePropertyChanged(nameof(SongWarsHasOutcome));
+        this.RaisePropertyChanged(nameof(SongWarsOutcomeText));
+        this.RaisePropertyChanged(nameof(SongWarsOutcomeDetail));
+    }
 
     public string QueueHeaderText => Queue.Count == 1
         ? "Queue - 1 track"
@@ -756,6 +876,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void RaiseSurfaceModeChanged()
     {
+        this.RaisePropertyChanged(nameof(IsAlbumWorldActive));
+        this.RaisePropertyChanged(nameof(IsAlbumWorldShowingWorld));
+        this.RaisePropertyChanged(nameof(IsNilState));
+        this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
         this.RaisePropertyChanged(nameof(IsSurfaceVisualizer));
         this.RaisePropertyChanged(nameof(IsSurfacePeak));
         this.RaisePropertyChanged(nameof(IsSurfaceEmbedded));
@@ -764,6 +888,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(SurfaceModeLabel));
         this.RaisePropertyChanged(nameof(ShowSurfaceExitButton));
         this.RaisePropertyChanged(nameof(ShowVisualizerControls));
+        this.RaisePropertyChanged(nameof(EmbeddedStatusText));
     }
 
     public IReadOnlyList<VisualizerOption> VisualizerOptions
@@ -910,26 +1035,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         get
         {
+            if (_pinnedAlbumWorldHtml is not null)
+                return "Album world";
+
             var parts = new List<string>();
             if (_embeddedHtml is not null)
-            {
                 parts.Add("HTML");
-            }
-
             if (_embeddedVisualizer is not null)
-            {
                 parts.Add("WASM");
-            }
-
             if (_embeddedMarkdown is not null)
-            {
                 parts.Add("Markdown");
-            }
-
             if (_embeddedVideo is not null)
-            {
                 parts.Add("video");
-            }
 
             return parts.Count == 0
                 ? string.Empty
@@ -1212,8 +1329,19 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool HasTrack
     {
         get => _hasTrack;
-        private set => this.RaiseAndSetIfChanged(ref _hasTrack, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _hasTrack, value);
+            this.RaisePropertyChanged(nameof(IsNilState));
+            this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
+        }
     }
+
+    /// <summary>True when there is nothing to show — no track and no album world map.</summary>
+    public bool IsNilState => !HasTrack && !IsAlbumWorldActive;
+
+    /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
+    public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive;
 
     public string Title
     {
@@ -1586,6 +1714,72 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         RaiseSurfaceModeChanged();
     }
 
+    public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
+    public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
+    internal string? AlbumWorldReadyJson { get; set; }
+    internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
+    internal string? AlbumWorldDir => _albumWorldDir;
+    public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
+    public Action<double, bool>? AlbumWorldTick { get; set; }
+    public Action? AlbumWorldExitDelegate { get; set; }
+    public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
+    public event Action<string, double>? AlbumWorldTrackCompleted;
+
+    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir)
+    {
+        _pinnedAlbumWorldHtml = worldHtml;
+        _albumWorldDir = worldDir;
+        _albumWorldShowingWorld = true;
+        AlbumWorldReadyJson = readyJson;
+        EmbeddedHtml = worldHtml;
+        if (_settings.EnableEmbeddedContent)
+            UseEmbeddedHtmlSurface();
+        RaiseSurfaceModeChanged();
+    }
+
+    public void DetachAlbumWorld()
+    {
+        _pinnedAlbumWorldHtml = null;
+        _albumWorldDir = null;
+        _albumWorldShowingWorld = false;
+        AlbumWorldReadyJson = null;
+        _albumWorldCurrentTrackId = string.Empty;
+        if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
+        {
+            EmbeddedHtml = _pickedInstalledHtml;
+            ShowEmbeddedHtml = true;
+        }
+        else
+        {
+            ShowEmbeddedHtml = false;
+            EmbeddedHtml = null;
+        }
+        RaiseSurfaceModeChanged();
+    }
+
+    public void BeginAlbumWorldTrackPlayback()
+    {
+        if (_pinnedAlbumWorldHtml is null)
+            return;
+
+        _albumWorldShowingWorld = false;
+        RaiseSurfaceModeChanged();
+    }
+
+    public void NotifyAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
+    {
+        _albumWorldCurrentTrackId = state.TrackId;
+        AlbumWorldTrackChanged?.Invoke(state);
+    }
+
+    public void NotifyAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    {
+        if (string.Equals(_albumWorldCurrentTrackId, trackId, StringComparison.OrdinalIgnoreCase))
+            _albumWorldCurrentTrackId = string.Empty;
+
+        AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
+    }
+
     public void UseYouTubeSurface()
     {
         if (!HasYouTubeVideo)
@@ -1912,13 +2106,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 reactive = ReactiveTimelineLoader.LoadSidecar(path);
             });
 
-            if (!seamless && startPlayback && await ShouldPlayWithContentWarningAsync(path))
+            if (startPlayback && !_engine.IsPlaying && await ShouldPlayWithContentWarningAsync(path))
             {
                 _engine.Play();
-            }
-            else if (seamless && startPlayback)
-            {
-                // TrySeamlessAdvance preserves the playing state; no extra Play() needed.
             }
             RemoteAudioCache.TryDelete(oldRemotePath);
             ApplyTrack(_engine.CurrentTrack);
@@ -1979,6 +2169,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             _positionSeconds = Math.Min(position, length);
             this.RaisePropertyChanged(nameof(PositionSeconds));
             this.RaisePropertyChanged(nameof(PositionText));
+        }
+
+        if (IsAlbumWorldActive)
+        {
+            AlbumWorldTick?.Invoke(position, IsPlaying);
         }
 
         if (_engine.CurrentTrack is null && HasTrack && _spotifyState is null)
@@ -2160,6 +2355,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ApplyEmbeddedModules(TrackInfo track)
     {
+        // When a world map is pinned, keep it live — only update the non-HTML modules.
+        if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld)
+        {
+            this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
+            this.RaisePropertyChanged(nameof(HasEmbeddedVisualizer));
+            this.RaisePropertyChanged(nameof(HasEmbeddedModules));
+            return;
+        }
+
         this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
         this.RaiseAndSetIfChanged(ref _embeddedMarkdown, track.EmbeddedMarkdown);
         this.RaiseAndSetIfChanged(ref _embeddedVideo, track.EmbeddedVideo);
@@ -2202,7 +2406,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ClearEmbeddedModules()
     {
-        if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
+        if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld && _settings.EnableEmbeddedContent)
+        {
+            // Album world stays live across track changes.
+            EmbeddedHtml = _pinnedAlbumWorldHtml;
+            ShowEmbeddedHtml = true;
+        }
+        else if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
         {
             // A user-picked installed HTML visualizer survives track changes.
             EmbeddedHtml = _pickedInstalledHtml;

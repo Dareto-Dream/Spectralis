@@ -1,4 +1,4 @@
-﻿namespace Spectralis.Core.SharedPlay;
+namespace Spectralis.Core.SharedPlay;
 
 public sealed record SharedPlayTrackDescriptor(
     string DisplayName,
@@ -42,16 +42,26 @@ public sealed record SharedPlayPlaybackSnapshot(
 public sealed record SharedPlaySessionSnapshot(
     bool IsEnabled,
     bool IsUploading,
-    string? SessionId,
+    string? RoomCode,
+    string? DisplayCode,
     string? JoinUrl,
     string? TrackId,
     string? ChannelUrl,
     string? LastError);
 
-public sealed record SharedPlayUploadRequest(
+public sealed record SharedPlayRoomSession(
+    string RoomCode,
+    string DisplayCode,
+    string JoinUrl,
+    string TrackId,
+    Uri StateUrl,
+    Uri QueueUrl,
+    DateTimeOffset? ExpiresAtUtc,
+    string SessionKey = "");
+
+public sealed record SharedPlayCreateSessionRequest(
     string ProtocolVersion,
     string ClientName,
-    string PackageKind,
     SharedPlayTrackDescriptor Track,
     SharedPlayPackageDescriptor Package,
     SharedPlayPlaybackSnapshot Playback,
@@ -73,9 +83,11 @@ public sealed record SharedPlayCapabilityDescriptor(
     bool PreservesEmbeddedVisualizer,
     bool BrowserFallbackIncluded);
 
-public sealed class SharedPlayUploadResponse
+public sealed class SharedPlayCreateSessionResponse
 {
-    public string? SessionId { get; init; }
+    public string? RoomCode { get; init; }
+    public string? DisplayCode { get; init; }
+    public string? SessionKey { get; init; }
     public string? TrackId { get; init; }
     public string? JoinUrl { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
@@ -93,30 +105,12 @@ public sealed class SharedPlayUploadTarget
     public Dictionary<string, string>? Headers { get; init; }
 }
 
-public sealed class SharedPlaySession
-{
-    public required string SessionId { get; init; }
-    public required string JoinUrl { get; init; }
-    public required string TrackId { get; init; }
-    public required Uri StateUrl { get; init; }
-    public required Uri QueueUrl { get; init; }
-    public DateTimeOffset? ExpiresAtUtc { get; init; }
-}
-
 public sealed record SharedPlayPreparedTrack(
     string FileKey,
     string TrackId,
     Uri PackageUrl,
     SharedPlayTrackDescriptor Track,
     DateTimeOffset PreparedAtUtc);
-
-public sealed record SharedPlayRemoteSession(
-    string SessionId,
-    string? TrackId,
-    Uri StateUrl,
-    Uri QueueUrl,
-    Uri PackageUrl,
-    DateTimeOffset? ExpiresAtUtc);
 
 public sealed record SharedPlayQueueSnapshot(
     int Version,
@@ -143,7 +137,7 @@ public sealed record SharedPlayChannelPublishRequest(
     string OwnerToken,
     string DisplayName,
     bool IsLive,
-    string? SessionId,
+    string? RoomCode,
     string? JoinUrl,
     string? TrackId,
     SharedPlayTrackDescriptor? Track,
@@ -154,6 +148,81 @@ public sealed class SharedPlayChannelResponse
     public string? ChannelId { get; init; }
     public string? ChannelUrl { get; init; }
     public bool IsLive { get; init; }
-    public string? SessionId { get; init; }
+    public string? RoomCode { get; init; }
     public string? JoinUrl { get; init; }
+}
+
+// ─── Streamer Queue ────────────────────────────────────────────────────────────
+
+public sealed class StreamerQueueState
+{
+    public string RoomCode { get; init; } = string.Empty;
+    public bool Enabled { get; init; }
+    public string? ChannelId { get; init; }
+    public StreamerQueueSettings Settings { get; init; } = new();
+    public List<StreamerQueueSubmission> Submissions { get; init; } = [];
+    public List<StreamerQueueSkipRequest> SkipRequests { get; init; } = [];
+    public List<StreamerQueueSkipRequest> SuperSkipRequests { get; init; } = [];
+    public string? StripePublishableKey { get; init; }
+    public bool StripeConnected { get; init; }
+}
+
+public sealed class StreamerQueueSettings
+{
+    public bool RequireApproval { get; init; }
+    public int MaxQueueLength { get; init; } = 50;
+    public bool AllowDuplicates { get; init; }
+    public StreamerQueueFeeSettings QueueEntryFee { get; init; } = new();
+    public StreamerQueueSkipFeeSettings SkipRequests { get; init; } = new();
+    public StreamerQueueFeeSettings SuperSkips { get; init; } = new();
+}
+
+public sealed class StreamerQueueFeeSettings
+{
+    public bool Enabled { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = "USD";
+}
+
+public sealed class StreamerQueueSkipFeeSettings
+{
+    public bool Enabled { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = "USD";
+    public int VotesRequired { get; init; } = 3;
+}
+
+public sealed class StreamerQueueSubmission
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string ClientId { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public string? Title { get; init; }
+    public string? Artist { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public string PaymentStatus { get; init; } = string.Empty;
+    public DateTimeOffset SubmittedAtUtc { get; init; }
+}
+
+public sealed class StreamerQueueSkipRequest
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string ClientId { get; init; } = string.Empty;
+    public string PaymentStatus { get; init; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; init; }
+}
+
+public sealed class StreamerQueuePutRequest
+{
+    public string? SessionKey { get; init; }
+    public bool Enabled { get; init; }
+    public StreamerQueueSettings? Settings { get; init; }
+}
+
+public sealed class StreamerQueueStripeConnectResponse
+{
+    [System.Text.Json.Serialization.JsonPropertyName("connectUrl")]
+    public string? ConnectUrl { get; init; }
 }

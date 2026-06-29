@@ -24,24 +24,24 @@ public class SharedPlayDefaultsTests
     }
 
     [Fact]
-    public void BuildWebShareJoinUrl_EncodesSessionId()
+    public void BuildWebShareJoinUrl_EncodesRoomCode()
     {
-        var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "abc 123");
+        var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "X7K29Q");
 
-        Assert.StartsWith("https://cdn.example.com/spectralis/web-share/index.html", url.ToString());
-        Assert.Contains("session=abc%20123", url.Query);
+        Assert.StartsWith("https://cdn.example.com/spectralis/web-share", url.ToString());
+        Assert.Contains("session=X7K29Q", url.Query);
     }
 
     [Fact]
     public void ConvertToDiscordActivityJoinUrl_AddsSourceAndMode()
     {
         var joinUrl = SharedPlayDefaults
-            .BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "xyz")
+            .BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "AB12CD")
             .ToString();
 
         var activityUrl = SharedPlayDefaults.ConvertToDiscordActivityJoinUrl(joinUrl);
 
-        Assert.Contains("session=xyz", activityUrl);
+        Assert.Contains("session=AB12CD", activityUrl);
         Assert.Contains("source=discord", activityUrl);
         Assert.Contains("mode=activity", activityUrl);
     }

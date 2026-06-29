@@ -111,7 +111,8 @@ public static class AlbumCapsuleReader
         ValidateMagic(header);
 
         var version = BitConverter.ToInt32(header, 4);
-        if (version != AlbumCapsuleFormat.FormatVersion)
+        // Accept v0 (pre-release) and v1+ up to the current format; same Ed25519 layout throughout.
+        if (version < 0 || version > AlbumCapsuleFormat.FormatVersion)
         {
             throw new InvalidDataException($"Unsupported album capsule version {version}.");
         }
@@ -198,12 +199,15 @@ public static class AlbumCapsuleReader
             throw new InvalidDataException($"Unexpected capsule format '{manifest.Format}'.");
         }
 
-        if (manifest.FormatVersion != AlbumCapsuleFormat.FormatVersion)
+        // Reject future format versions; legacy v0 manifests are read as-is.
+        if (manifest.FormatVersion > AlbumCapsuleFormat.FormatVersion)
         {
             throw new InvalidDataException($"Unsupported album format version {manifest.FormatVersion}.");
         }
 
-        if (!string.Equals(manifest.Signature.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+        // Fingerprint check: skip if manifest doesn't carry it (legacy v0 capsules).
+        if (!string.IsNullOrWhiteSpace(manifest.Signature.Fingerprint) &&
+            !string.Equals(manifest.Signature.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("manifest.json fingerprint does not match the embedded public key.");
         }
