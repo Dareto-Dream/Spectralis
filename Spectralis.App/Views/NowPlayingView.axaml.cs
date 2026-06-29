@@ -664,14 +664,9 @@ public NowPlayingView()
 
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
     {
-        if (_viewModel?.CurrentTrackPath is { } path && !string.IsNullOrEmpty(path))
-        {
-            var worldDir = Spectralis.Core.Capsule.AlbumWorldCacheStore.WorldDir(
-                System.Convert.ToHexString(
-                    System.Security.Cryptography.SHA1.HashData(
-                        System.Text.Encoding.UTF8.GetBytes(path))));
-            Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
-        }
+        var worldDir = _viewModel?.AlbumWorldDir;
+        if (worldDir is null) return;
+        Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
     }
 
     private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
