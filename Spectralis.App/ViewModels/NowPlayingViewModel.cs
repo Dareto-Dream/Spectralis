@@ -873,6 +873,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void RaiseSurfaceModeChanged()
     {
+        this.RaisePropertyChanged(nameof(IsAlbumWorldActive));
+        this.RaisePropertyChanged(nameof(IsNilState));
+        this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
         this.RaisePropertyChanged(nameof(IsSurfaceVisualizer));
         this.RaisePropertyChanged(nameof(IsSurfacePeak));
         this.RaisePropertyChanged(nameof(IsSurfaceEmbedded));
@@ -881,6 +884,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(SurfaceModeLabel));
         this.RaisePropertyChanged(nameof(ShowSurfaceExitButton));
         this.RaisePropertyChanged(nameof(ShowVisualizerControls));
+        this.RaisePropertyChanged(nameof(EmbeddedStatusText));
     }
 
     public IReadOnlyList<VisualizerOption> VisualizerOptions
@@ -1321,8 +1325,19 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool HasTrack
     {
         get => _hasTrack;
-        private set => this.RaiseAndSetIfChanged(ref _hasTrack, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _hasTrack, value);
+            this.RaisePropertyChanged(nameof(IsNilState));
+            this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
+        }
     }
+
+    /// <summary>True when there is nothing to show — no track and no album world map.</summary>
+    public bool IsNilState => !HasTrack && !IsAlbumWorldActive;
+
+    /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
+    public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive;
 
     public string Title
     {
