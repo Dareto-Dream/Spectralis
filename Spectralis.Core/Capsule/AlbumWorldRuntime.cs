@@ -91,8 +91,33 @@ public sealed class AlbumWorldRuntime : IDisposable
 
     public void NotifyTrackCompleted(string trackId)
     {
+        if (_session is not null && _session.TrackStats.TryGetValue(trackId, out var stats))
+            stats.Completed = true;
         _currentTrack = null;
         _isPlaying = false;
+    }
+
+    public void Tick(double enginePosition, bool engineIsPlaying)
+    {
+        if (_currentTrack is null || _session is null) return;
+
+        var nowMs = Environment.TickCount64;
+        if (_isPlaying && _lastTickMs > 0)
+        {
+            var elapsedSeconds = (nowMs - _lastTickMs) / 1000.0;
+            if (elapsedSeconds > 0 && elapsedSeconds < 2.0)
+            {
+                if (!_session.TrackStats.TryGetValue(_currentTrack.Id, out var tickStats))
+                {
+                    tickStats = new AlbumTrackStats();
+                    _session.TrackStats[_currentTrack.Id] = tickStats;
+                }
+                tickStats.PlayedSeconds += elapsedSeconds;
+            }
+        }
+
+        _isPlaying = engineIsPlaying;
+        _lastTickMs = nowMs;
     }
 
     public void HandleWorldMessage(string messageJson)
@@ -321,7 +346,11 @@ public sealed class AlbumWorldRuntime : IDisposable
 
     // ── internal helpers ─────────────────────────────────────────────────────
 
-    private string BuildWorldStateJson()
+    /// <summary>
+    /// Serialized album state passed to <c>window.spectral.onReady()</c> after the
+    /// world HTML navigates.  Public so the app layer can inject it via the webview service.
+    /// </summary>
+    public string BuildWorldStateJson()
     {
         if (_manifest is null || _session is null) return "{}";
 
@@ -335,7 +364,12 @@ public sealed class AlbumWorldRuntime : IDisposable
 
         var trackStats = _session.TrackStats.ToDictionary(
             kvp => kvp.Key,
-            kvp => (object)new { playCount = kvp.Value.PlayCount });
+            kvp => (object)new
+            {
+                playCount = kvp.Value.PlayCount,
+                playedSeconds = kvp.Value.PlayedSeconds,
+                completed = kvp.Value.Completed,
+            });
 
         var state = new
         {
