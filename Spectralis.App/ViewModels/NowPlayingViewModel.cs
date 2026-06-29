@@ -238,6 +238,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private EmbeddedHtmlContext? _pickedInstalledHtml;
     // Album world HTML pinned across track changes so the interactive map stays live.
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
+    private string? _albumWorldDir;
     private bool _albumWorldShowingWorld;
     private string _albumWorldCurrentTrackId = string.Empty;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
@@ -1717,15 +1718,17 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
     internal string? AlbumWorldReadyJson { get; set; }
     internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
+    internal string? AlbumWorldDir => _albumWorldDir;
     public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
     public Action<double, bool>? AlbumWorldTick { get; set; }
     public Action? AlbumWorldExitDelegate { get; set; }
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
     public event Action<string, double>? AlbumWorldTrackCompleted;
 
-    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson)
+    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir)
     {
         _pinnedAlbumWorldHtml = worldHtml;
+        _albumWorldDir = worldDir;
         _albumWorldShowingWorld = true;
         AlbumWorldReadyJson = readyJson;
         EmbeddedHtml = worldHtml;
@@ -1737,6 +1740,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public void DetachAlbumWorld()
     {
         _pinnedAlbumWorldHtml = null;
+        _albumWorldDir = null;
         _albumWorldShowingWorld = false;
         AlbumWorldReadyJson = null;
         _albumWorldCurrentTrackId = string.Empty;

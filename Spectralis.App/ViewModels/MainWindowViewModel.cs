@@ -148,7 +148,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 track,
                 startPlayback,
                 ownsTemporaryFile: true));
-        Capsules.AlbumWorldAttach  = (html, readyJson) => NowPlaying.AttachAlbumWorld(html, readyJson);
+        Capsules.AlbumWorldAttach  = (html, readyJson, dir) => NowPlaying.AttachAlbumWorld(html, readyJson, dir);
         Capsules.AlbumWorldNavigate = () => SelectSection(NowPlaying);
         Capsules.AlbumWorldDetach  = () => NowPlaying.DetachAlbumWorld();
         Capsules.AlbumWorldTrackPlaybackStarting = NowPlaying.BeginAlbumWorldTrackPlayback;

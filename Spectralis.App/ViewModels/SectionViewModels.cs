@@ -1,4 +1,4 @@
-using System.Reactive;
+﻿using System.Reactive;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Diagnostics;
@@ -184,7 +184,7 @@ public sealed class CapsulesViewModel : ViewModelBase
         _ => Task.FromResult(false);
 
     /// <summary>Wired by MainWindowViewModel to attach/navigate/detach the album world in NowPlaying.</summary>
-    public Action<EmbeddedHtmlContext, string>? AlbumWorldAttach { get; set; }
+    public Action<EmbeddedHtmlContext, string, string>? AlbumWorldAttach { get; set; }
     public Action? AlbumWorldNavigate { get; set; }
     public Action? AlbumWorldDetach { get; set; }
     public Action? AlbumWorldTrackPlaybackStarting { get; set; }
@@ -487,15 +487,15 @@ public sealed class CapsulesViewModel : ViewModelBase
             var worldHtml = runtime.BuildWorldHtmlContext();
             if (worldHtml is not null)
             {
-                // Show the interactive world map — the user picks tracks from it.
+                // Show the interactive world map â€” the user picks tracks from it.
                 var readyJson = runtime.BuildWorldStateJson();
-                AlbumWorldAttach?.Invoke(worldHtml, readyJson);
+                AlbumWorldAttach?.Invoke(worldHtml, readyJson, worldDir);
                 AlbumWorldNavigate?.Invoke();
-                Status = $"Album world ready · {manifest.Tracks.Count} track(s). Select a track from the world map.";
+                Status = $"Album world ready Â· {manifest.Tracks.Count} track(s). Select a track from the world map.";
                 return;
             }
 
-            // No world HTML — fall back to loading the first track directly.
+            // No world HTML â€” fall back to loading the first track directly.
             var firstId = manifest.Tracks[0].Id;
             var trackInfo = runtime.BuildTrackInfo(firstId);
             if (trackInfo is null)
@@ -517,8 +517,8 @@ public sealed class CapsulesViewModel : ViewModelBase
 
             var embeddedSummary = CreateEmbeddedSummary(trackInfo);
             Status = startPlayback
-                ? $"Playing album world · {manifest.Tracks.Count} track(s){embeddedSummary}."
-                : $"Loaded album world · {manifest.Tracks.Count} track(s){embeddedSummary}.";
+                ? $"Playing album world Â· {manifest.Tracks.Count} track(s){embeddedSummary}."
+                : $"Loaded album world Â· {manifest.Tracks.Count} track(s){embeddedSummary}.";
         }
         catch (Exception ex)
         {
@@ -732,7 +732,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         RefreshUserPresets();
     }
 
-    // ─── Overlay management ───────────────────────────────────────────────────
+    // â”€â”€â”€ Overlay management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public ObservableCollection<ObsOverlayOption> OverlayOptions { get; } = [];
 
     public ObsOverlayOption? SelectedOverlay
@@ -826,7 +826,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = $"Overlay \"{overlay.DisplayName}\" removed.";
     }
 
-    // ─── Layout read / apply ─────────────────────────────────────────────────
+    // â”€â”€â”€ Layout read / apply â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public Spectralis.Core.Integrations.Obs.ObsLayout GetCurrentLayout() =>
         Spectralis.Core.Integrations.Obs.ObsLayout.FromJson(GetLayoutJson(_selectedOverlay?.Id))
             ?? Spectralis.Core.Integrations.Obs.ObsLayout.CreateDefault();
@@ -855,7 +855,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(CustomObsJson));
     }
 
-    // ─── Preset management ────────────────────────────────────────────────────
+    // â”€â”€â”€ Preset management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public Spectralis.Core.Integrations.Obs.ObsPreset[] BuiltInPresets { get; } =
         [.. Spectralis.Core.Integrations.Obs.BuiltInObsPresets.All];
 
@@ -951,7 +951,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = $"Preset \"{preset.Name}\" deleted.";
     }
 
-    // ─── JSON editor ─────────────────────────────────────────────────────────
+    // â”€â”€â”€ JSON editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public string CustomObsJson
     {
         get => _customObsJson;
@@ -970,7 +970,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = "Custom layout applied. Reload the browser source.";
     }
 
-    // ─── Connection / enable / token ─────────────────────────────────────────
+    // â”€â”€â”€ Connection / enable / token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public bool EnableObsOverlay
     {
         get => _settings.EnableObsOverlay;
@@ -1070,7 +1070,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _obsStatus, value);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private void RefreshOverlayOptions()
     {
         var currentId = _selectedOverlay?.Id;
@@ -1845,7 +1845,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     private async Task LinkSpotifyAsync()
     {
-        SpotifyStatus = "Opening Spotify authorization…";
+        SpotifyStatus = "Opening Spotify authorizationâ€¦";
         try
         {
             var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
