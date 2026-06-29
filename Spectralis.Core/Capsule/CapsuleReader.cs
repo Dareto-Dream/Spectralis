@@ -100,7 +100,8 @@ public static class CapsuleReader
         ValidateMagic(header);
 
         var version = BitConverter.ToInt32(header, 4);
-        if (version != CapsuleHeader.CurrentVersion)
+        // Accept v1–current: older capsules share the same binary layout and Ed25519 trust model.
+        if (version < 1 || version > CapsuleHeader.CurrentVersion)
         {
             throw new InvalidDataException($"Unsupported capsule version {version}.");
         }
@@ -116,7 +117,7 @@ public static class CapsuleReader
         var fingerprintBytes = SHA256.HashData(publicKey);
         var fingerprint = Convert.ToHexString(fingerprintBytes).ToLowerInvariant();
 
-        var manifest = ReadManifest(payloadBytes, fingerprint);
+        var manifest = ReadManifest(payloadBytes, fingerprint, version);
 
         return new CapsulePackage(path, manifest, publicKey, fingerprint, payloadBytes);
     }
@@ -154,7 +155,7 @@ public static class CapsuleReader
         }
     }
 
-    private static CapsuleManifest ReadManifest(byte[] payloadBytes, string fingerprint)
+    private static CapsuleManifest ReadManifest(byte[] payloadBytes, string fingerprint, int binaryVersion)
     {
         using var zip = new ZipArchive(new MemoryStream(payloadBytes), ZipArchiveMode.Read);
         var entry = zip.GetEntry("manifest.json")
@@ -188,12 +189,19 @@ public static class CapsuleReader
             throw new InvalidDataException($"Unexpected capsule format '{manifest.Format}'.");
         }
 
-        if (manifest.FormatVersion != CapsuleFormat.FormatVersion)
+        // Future-major versions are always rejected. Older manifest versions (from
+        // legacy capsules produced before format v3) are accepted — the Ed25519
+        // signature is the real trust boundary, not the format version field.
+        if (manifest.FormatVersion > CapsuleFormat.FormatVersion)
         {
             throw new InvalidDataException($"Unsupported capsule format version {manifest.FormatVersion}.");
         }
 
-        if (!string.Equals(manifest.Signature.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+        // Fingerprint cross-check introduced in binary v3; skip on older capsules where
+        // the manifest may not carry it.
+        if (binaryVersion >= 3 &&
+            !string.IsNullOrWhiteSpace(manifest.Signature.Fingerprint) &&
+            !string.Equals(manifest.Signature.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("manifest.json fingerprint does not match the embedded public key.");
         }

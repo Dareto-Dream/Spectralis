@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.CloseToTrayPromptWindow"
+        Title="Keep Spectralis Running?"
+        Icon="/Assets/icon.png"
+        Width="460" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock Classes="heading" Text="Spectralis will keep running" />
+    <TextBlock Classes="secondary"
+               TextWrapping="Wrap"
+               Text="Clicking X will minimize Spectralis to the taskbar so playback, Discord presence, and idle stats can keep running. You can change this behavior in Settings." />
+
+    <CheckBox x:Name="TaskbarBehaviorCheck"
+              Content="Close button keeps app running"
+              IsChecked="True" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Cancel"
+              Click="OnCancel"
+              IsCancel="True" />
+      <Button Content="OK, don't remind me"
+              Click="OnOkDontRemind"
+              Classes="primary"
+              IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

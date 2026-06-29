@@ -119,7 +119,7 @@ public sealed class CapsuleTrustRuntimeTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 
-    private static Func<CreatorKeyMetadata, Task<bool>> Prompt(bool answer, Action? onPrompt = null) =>
+    private static Func<CapsuleTrustContext, Task<bool>> Prompt(bool answer, Action? onPrompt = null) =>
         _ =>
         {
             onPrompt?.Invoke();

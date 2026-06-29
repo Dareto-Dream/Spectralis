@@ -64,12 +64,16 @@ public NowPlayingView()
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+                _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
+                _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+                _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
+                _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
             }
@@ -133,6 +137,12 @@ public NowPlayingView()
         {
             QueueList.ScrollIntoView(current);
         }
+    }
+
+    private void OnSongWarsPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm)
+            vm.SongWarsPopOutRequested?.Invoke();
     }
 
     private void OnInspectLyrics(object? sender, RoutedEventArgs e)
@@ -504,9 +514,9 @@ public NowPlayingView()
 
         _loadedEmbeddedHtmlId = context.Id;
 
+#if WINDOWS
         if (OperatingSystem.IsWindows())
         {
-#if WINDOWS
             // GPU-accelerated path: WebView2 renders via DirectComposition — no OSR bitmap roundtrip.
             // The host is created once and reused across capsule track changes so the HWND
             // stays alive and WebView2 never has to re-initialize (~400ms overhead).
@@ -518,9 +528,9 @@ public NowPlayingView()
             };
             _embeddedControl = _persistentWv2;
             _embeddedHost = _persistentWv2;
-#endif
         }
         else
+#endif
         {
             var cefWebView = new WebViewControl.WebView
             {
@@ -538,7 +548,9 @@ public NowPlayingView()
 
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
-        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: context.Id);
+        var isAlbumWorld = _viewModel?.IsAlbumWorldShowingWorld ?? false;
+        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: isAlbumWorld ? null : context.Id, isAlbumWorld: isAlbumWorld);
+        _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
         _embeddedService.SeekRequested += OnEmbeddedSeekRequested;
@@ -552,15 +564,45 @@ public NowPlayingView()
             AppLogPaths.AppendTimestamped(_webviewPerfLog,
                 $"[EMBEDDED] navigate id={context.Id} chars={document.Length:n0} " +
                 $"utf8={Encoding.UTF8.GetByteCount(document):n0} hash={HashShort(document)}");
-            _embeddedHost.NavigateToString(document);
+            NavigateEmbeddedHtmlDocument(context, document, isAlbumWorld);
         }
         catch (Exception ex)
         {
             AppLogPaths.AppendTimestamped(_webviewPerfLog,
                 $"[EMBEDDED] navigate failed id={context.Id}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
             StopEmbeddedHtmlMode();
-            _viewModel.ShowEmbeddedHtml = false;
+            if (_viewModel is not null)
+                _viewModel.ShowEmbeddedHtml = false;
         }
+    }
+
+    private void NavigateEmbeddedHtmlDocument(EmbeddedHtmlContext context, string document, bool isAlbumWorld)
+    {
+        if (_embeddedHost is null)
+        {
+            return;
+        }
+
+        if (!isAlbumWorld ||
+            string.IsNullOrWhiteSpace(context.SourceDirectory) ||
+            !Directory.Exists(context.SourceDirectory))
+        {
+            _embeddedHost.NavigateToString(document);
+            return;
+        }
+
+        var hostName = BuildAlbumWorldHostName(context.SourceDirectory);
+        var fileName = "__spectralis_album_world.html";
+        var hostedPath = Path.Combine(context.SourceDirectory, fileName);
+        File.WriteAllText(hostedPath, document, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        _embeddedHost.MapVirtualHost(hostName, context.SourceDirectory);
+        _embeddedHost.Navigate(new Uri($"https://{hostName}/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"));
+    }
+
+    private static string BuildAlbumWorldHostName(string sourceDirectory)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(sourceDirectory)));
+        return $"album-{Convert.ToHexString(hash, 0, 8).ToLowerInvariant()}.spectralis.local";
     }
 
     private void OnEmbeddedPauseRequested(object? sender, EventArgs e)
@@ -587,19 +629,44 @@ public NowPlayingView()
         }
     }
 
-    private void OnEmbeddedExitRequested(object? sender, EventArgs e) =>
-        _viewModel?.UseArtworkSurface();
+    private void OnEmbeddedPlayTrackRequested(object? sender, Spectralis.Core.Integrations.Web.AlbumTrackPlayRequest req)
+    {
+        _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId, req.PositionSeconds);
+    }
+
+    private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
+    {
+        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
+            return;
+
+        _ = _embeddedService.SendTrackChangedAsync(
+            state.TrackId,
+            state.Title,
+            state.Artist,
+            state.DurationSeconds);
+    }
+
+    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    {
+        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
+            return;
+
+        _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
+    }
+
+    private void OnEmbeddedExitRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel?.IsAlbumWorldShowingWorld == true)
+            _viewModel.AlbumWorldExitDelegate?.Invoke();
+        else
+            _viewModel?.UseArtworkSurface();
+    }
 
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
     {
-        if (_viewModel?.CurrentTrackPath is { } path && !string.IsNullOrEmpty(path))
-        {
-            var worldDir = Spectralis.Core.Capsule.AlbumWorldCacheStore.WorldDir(
-                System.Convert.ToHexString(
-                    System.Security.Cryptography.SHA1.HashData(
-                        System.Text.Encoding.UTF8.GetBytes(path))));
-            Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
-        }
+        var worldDir = _viewModel?.AlbumWorldDir;
+        if (worldDir is null) return;
+        Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
     }
 
     private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
@@ -633,6 +700,10 @@ public NowPlayingView()
             DispatcherPriority.Normal,
             OnEmbeddedFramePushTick);
         _embeddedFramePushTimer.Start();
+
+        // If this is an album world HTML, send the initial state so the map can populate.
+        if (_viewModel is { IsAlbumWorldShowingWorld: true, AlbumWorldReadyJson: { } readyJson } && _embeddedService is not null)
+            _ = _embeddedService.SendReadyAsync(readyJson);
     }
 
     private void OnEmbeddedFramePushTick(object? sender, EventArgs e)
@@ -656,6 +727,8 @@ public NowPlayingView()
         // push is needed on that path. The timer only exists here to keep the cache fresh.
         var json = BuildEmbeddedFrameJson();
         _latestFrameJson = json;
+        var active = _viewModel.IsPlaying;
+        var time = _viewModel.PositionSeconds;
 
         // WebView2 uses a push model: ExecuteScript queues the frame in JS so the rAF
         // pump can pick it up without a C#→renderer IPC pull. _embeddedExecPending
@@ -668,9 +741,6 @@ public NowPlayingView()
             FlushStatsIfDue();
             return;
         }
-
-        var active = _viewModel.IsPlaying;
-        var time = _viewModel.PositionSeconds;
 
         if (!active && !_lastPushedActive && Math.Abs(time - _lastPushedTime) < 0.05)
         {
@@ -737,6 +807,7 @@ public NowPlayingView()
             rms = Math.Clamp(frame.RmsLevel, 0f, 1.25f),
             active = _viewModel.IsPlaying,
             time = _viewModel.PositionSeconds,
+            trackId = _viewModel.IsAlbumWorldActive ? _viewModel.AlbumWorldCurrentTrackId : string.Empty,
         });
     }
 
@@ -755,6 +826,7 @@ public NowPlayingView()
 
         if (_embeddedService is not null)
         {
+            _embeddedService.PlayTrackRequested -= OnEmbeddedPlayTrackRequested;
             _embeddedService.PauseRequested -= OnEmbeddedPauseRequested;
             _embeddedService.ResumeRequested -= OnEmbeddedResumeRequested;
             _embeddedService.SeekRequested -= OnEmbeddedSeekRequested;
@@ -805,17 +877,26 @@ public NowPlayingView()
             $"binaryBytes={context.BinaryAssets.Values.Sum(static bytes => bytes.Length):n0} " +
             $"textAssets={context.TextAssets.Count} textChars={context.TextAssets.Values.Sum(static text => text.Length):n0}");
 
+        var isAlbumWorld = vm?.IsAlbumWorldShowingWorld ?? false;
+
         var html = Encoding.UTF8.GetString(context.HtmlBytes);
         LogDocumentStage(context.Id, "decoded", html);
-        html = StripInlineEventHandlers(html);
-        LogDocumentStage(context.Id, "stripped-inline-handlers", html);
+        if (!isAlbumWorld)
+        {
+            html = StripInlineEventHandlers(html);
+            LogDocumentStage(context.Id, "stripped-inline-handlers", html);
+        }
         html = ResolveEmbeddedAssetReferences(context.Id, html, context.BinaryAssets, context.TextAssets);
         LogDocumentStage(context.Id, "assets-resolved", html);
         html = InjectEmbeddedPerformancePrelude(html);
         LogDocumentStage(context.Id, "performance-prelude", html);
-        html = InjectTrackMeta(html, vm);
-        LogDocumentStage(context.Id, "track-meta", html);
-        html = InjectBridgeBootstrap(html);
+        // Album worlds don't have a current track at document-build time; skip spectral.meta injection.
+        if (!isAlbumWorld)
+        {
+            html = InjectTrackMeta(html, vm);
+            LogDocumentStage(context.Id, "track-meta", html);
+        }
+        html = InjectBridgeBootstrap(html, isAlbumWorld);
         LogDocumentStage(context.Id, "bridge-bootstrap", html);
         html = WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
         LogDocumentStage(context.Id, "csp-final", html);
@@ -921,9 +1002,9 @@ public NowPlayingView()
         return script + html;
     }
 
-    private static string InjectBridgeBootstrap(string html)
+    private static string InjectBridgeBootstrap(string html, bool isAlbumWorld = false)
     {
-        var script = "<script>" + WebViewHostService.BuildBootstrapScript() + BuildEmbeddedFrameBridgeScript() + "</script>";
+        var script = "<script>" + WebViewHostService.BuildBootstrapScript(isAlbumWorld) + BuildEmbeddedFrameBridgeScript() + "</script>";
         var bodyIndex = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         if (bodyIndex >= 0)
         {

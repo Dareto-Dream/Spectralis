@@ -1,4 +1,4 @@
-using System.Reactive;
+﻿using System.Reactive;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Diagnostics;
@@ -24,15 +24,15 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private readonly SharedPlaySessionController _controller = new();
     private string _statusText = "No active room";
     private string _joinUrl = string.Empty;
-    private string _sessionId = string.Empty;
+    private string _roomCode = string.Empty;
     private bool _isHosting;
     private string _lastError = string.Empty;
 
     public SharedPlayViewModel()
     {
         _controller.StatusChanged += OnStatusChanged;
-        HostCommand  = ReactiveCommand.CreateFromTask(HostAsync);
-        StopCommand  = ReactiveCommand.Create(Stop);
+        HostCommand     = ReactiveCommand.CreateFromTask(HostAsync);
+        StopCommand     = ReactiveCommand.Create(Stop);
         CopyLinkCommand = ReactiveCommand.Create(CopyLink, this.WhenAnyValue(x => x.IsHosting));
     }
 
@@ -60,6 +60,12 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _joinUrl, value);
     }
 
+    public string RoomCode
+    {
+        get => _roomCode;
+        private set => this.RaiseAndSetIfChanged(ref _roomCode, value);
+    }
+
     public string LastError
     {
         get => _lastError;
@@ -85,8 +91,6 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private Task HostAsync()
     {
-        // Hosting starts automatically when enabled and a track is playing.
-        // Toggle the enabled state; the NowPlaying tick drives the first upload.
         _controller.ApplySettings(
             enableSharedPlay: true,
             cdnBaseUrl: null,
@@ -114,8 +118,9 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private void OnStatusChanged(object? sender, EventArgs _)
     {
         var snap = _controller.Snapshot;
-        IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.SessionId);
+        IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.RoomCode);
         JoinUrl = snap.JoinUrl ?? string.Empty;
+        RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
     }
@@ -125,14 +130,12 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         if (!snap.IsEnabled) return "Shared Play is disabled.";
         if (!string.IsNullOrEmpty(snap.LastError)) return $"Error: {snap.LastError}";
         if (snap.IsUploading) return "Uploading track...";
-        if (!string.IsNullOrEmpty(snap.SessionId)) return $"Hosting room {snap.SessionId}";
+        if (!string.IsNullOrEmpty(snap.DisplayCode)) return $"Room: {snap.DisplayCode}";
+        if (!string.IsNullOrEmpty(snap.RoomCode)) return $"Room: {SharedPlayDefaults.DisplayRoomCode(snap.RoomCode)}";
         return "Ready to host.";
     }
 
-    public void Dispose()
-    {
-        _controller.Dispose();
-    }
+    public void Dispose() => _controller.Dispose();
 }
 
 public sealed class CapsuleTrackViewModel
@@ -149,9 +152,16 @@ public sealed class CapsuleTrackViewModel
     public string DurationText { get; }
 }
 
+public sealed record AlbumWorldTrackBridgeState(
+    string TrackId,
+    string Title,
+    string Artist,
+    double DurationSeconds);
+
 public sealed class CapsulesViewModel : ViewModelBase
 {
     private readonly Func<string, TrackInfo, bool, Task> _loadPreparedTrack;
+    private bool _lastAlbumWorldEnginePlaying;
     private bool _hasPackage;
     private string _title = "No capsules opened";
     private string _subtitle = "Open a signed .spectralis capsule or .spectral album world to see it here.";
@@ -168,8 +178,18 @@ public sealed class CapsulesViewModel : ViewModelBase
         _loadPreparedTrack = loadPreparedTrack;
     }
 
+    private AlbumWorldRuntime? _activeRuntime;
+
     public Func<CapsuleTrustContext, Task<bool>> TrustCreatorPrompt { get; set; } =
         _ => Task.FromResult(false);
+
+    /// <summary>Wired by MainWindowViewModel to attach/navigate/detach the album world in NowPlaying.</summary>
+    public Action<EmbeddedHtmlContext, string, string>? AlbumWorldAttach { get; set; }
+    public Action? AlbumWorldNavigate { get; set; }
+    public Action? AlbumWorldDetach { get; set; }
+    public Action? AlbumWorldTrackPlaybackStarting { get; set; }
+    public Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged { get; set; }
+    public Action<string, double>? AlbumWorldTrackCompleted { get; set; }
 
     public ObservableCollection<CapsuleTrackViewModel> Tracks { get; } = [];
 
@@ -247,6 +267,10 @@ public sealed class CapsulesViewModel : ViewModelBase
 
     public void Clear()
     {
+        _activeRuntime?.Dispose();
+        _activeRuntime = null;
+        _lastAlbumWorldEnginePlaying = false;
+        AlbumWorldDetach?.Invoke();
         HasPackage = false;
         Title = "No capsules opened";
         Subtitle = "Open a signed .spectralis capsule or .spectral album world to see it here.";
@@ -258,6 +282,57 @@ public sealed class CapsulesViewModel : ViewModelBase
         CapabilitiesText = string.Empty;
         EntryCountText = string.Empty;
         Tracks.Clear();
+    }
+
+    public async Task LoadAlbumTrackAsync(string trackId, double positionSeconds = 0)
+    {
+        if (_activeRuntime is null) return;
+        var trackInfo = _activeRuntime.BuildTrackInfo(trackId);
+        if (trackInfo is null) return;
+        AlbumWorldTrackPlaybackStarting?.Invoke();
+        _activeRuntime.NotifyTrackStarted(trackId, positionSeconds);
+        await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, true);
+        _activeRuntime.SaveSession();
+
+        var track = _activeRuntime.Manifest?.Tracks.FirstOrDefault(t => string.Equals(t.Id, trackId, StringComparison.OrdinalIgnoreCase));
+        AlbumWorldTrackChanged?.Invoke(new AlbumWorldTrackBridgeState(
+            trackId,
+            FirstNonEmpty(track?.Title, trackInfo.Title, trackId),
+            FirstNonEmpty(track?.Artist, trackInfo.Artist),
+            track?.Audio.DurationSeconds > 0 ? track.Audio.DurationSeconds : trackInfo.Duration.TotalSeconds));
+    }
+
+    public void TickAlbumWorld(double enginePosition, bool engineIsPlaying)
+    {
+        var runtime = _activeRuntime;
+        if (runtime is null)
+        {
+            _lastAlbumWorldEnginePlaying = false;
+            return;
+        }
+
+        var wasPlaying = _lastAlbumWorldEnginePlaying;
+        runtime.Tick(enginePosition, engineIsPlaying);
+
+        var trackId = runtime.CurrentTrackId;
+        var track = trackId is null
+            ? null
+            : runtime.Manifest?.Tracks.FirstOrDefault(t => string.Equals(t.Id, trackId, StringComparison.OrdinalIgnoreCase));
+        var duration = track?.Audio.DurationSeconds ?? 0;
+        var reachedEnd = duration > 0 && enginePosition >= Math.Max(0, duration - 0.25);
+
+        if (wasPlaying && !engineIsPlaying && reachedEnd && trackId is not null)
+        {
+            runtime.NotifyTrackCompleted(trackId);
+            runtime.SaveSession();
+
+            var playedSeconds = runtime.Session?.TrackStats.TryGetValue(trackId, out var stats) == true
+                ? stats.PlayedSeconds
+                : enginePosition;
+            AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
+        }
+
+        _lastAlbumWorldEnginePlaying = engineIsPlaying;
     }
 
     public async Task OpenFilesAsync(IReadOnlyList<string> paths, bool startPlayback)
@@ -272,7 +347,7 @@ public sealed class CapsulesViewModel : ViewModelBase
 
             if (IsSpectralAlbum(path))
             {
-                OpenSpectralAlbum(path);
+                await OpenSpectralAlbumAsync(path, startPlayback);
             }
         }
     }
@@ -358,18 +433,25 @@ public sealed class CapsulesViewModel : ViewModelBase
         }
     }
 
-    private void OpenSpectralAlbum(string path)
+    private async Task OpenSpectralAlbumAsync(string path, bool startPlayback)
     {
         Status = "Opening signed album world...";
         Tracks.Clear();
+
+        // Dispose any previously active album world.
+        _activeRuntime?.Dispose();
+        _activeRuntime = null;
+        _lastAlbumWorldEnginePlaying = false;
+        AlbumWorldDetach?.Invoke();
 
         try
         {
             using var package = AlbumCapsuleReader.Read(path);
             var manifest = package.Manifest;
+
             Title = FirstNonEmpty(manifest.Title, Path.GetFileNameWithoutExtension(path));
             Subtitle = FirstNonEmpty(manifest.Artist, manifest.Release.Album, "Spectral album world");
-            Summary = manifest.Story.Summary;
+            Summary = FirstNonEmpty(manifest.Story.Summary, manifest.Story.Backstory);
             FormatLabel = ".spectral album world";
             CreatorText = string.IsNullOrWhiteSpace(manifest.Artist) ? "Unknown artist" : manifest.Artist;
             FingerprintText = package.Fingerprint;
@@ -378,17 +460,8 @@ public sealed class CapsulesViewModel : ViewModelBase
                 : string.Join(", ", manifest.Capabilities);
             EntryCountText = $"{package.EntryNames().Count} package entries";
 
-            var embeddedTrackCount = 0;
             foreach (var track in manifest.Tracks)
             {
-                var modules = EmbeddedModuleReader.ReadFromPackageVisualizers(
-                    track.Visualizers,
-                    package.TryReadEntry);
-                if (modules.HasAny)
-                {
-                    embeddedTrackCount++;
-                }
-
                 Tracks.Add(new CapsuleTrackViewModel(
                     FirstNonEmpty(track.Title, track.Id, "Untitled track"),
                     FirstNonEmpty(track.Artist, manifest.Artist),
@@ -396,9 +469,56 @@ public sealed class CapsulesViewModel : ViewModelBase
             }
 
             HasPackage = true;
-            Status = embeddedTrackCount > 0
-                ? $"Opened album world metadata with embedded visualizers on {embeddedTrackCount} track(s). Album-world playback migration is still pending."
-                : "Opened album world metadata. Album-world playback migration is still pending.";
+
+            if (manifest.Tracks.Count == 0)
+            {
+                Status = "Album world opened. No tracks declared in manifest.";
+                return;
+            }
+
+            Status = "Extracting album world to cache...";
+            var worldDir = await Task.Run(() => AlbumWorldCacheStore.GetOrExtract(package));
+
+            var session = AlbumWorldSessionStore.GetSession(worldDir);
+            var runtime = new AlbumWorldRuntime();
+            runtime.Load(manifest, worldDir, session);
+            _activeRuntime = runtime;
+
+            var worldHtml = runtime.BuildWorldHtmlContext();
+            if (worldHtml is not null)
+            {
+                // Show the interactive world map â€” the user picks tracks from it.
+                var readyJson = runtime.BuildWorldStateJson();
+                AlbumWorldAttach?.Invoke(worldHtml, readyJson, worldDir);
+                AlbumWorldNavigate?.Invoke();
+                Status = $"Album world ready Â· {manifest.Tracks.Count} track(s). Select a track from the world map.";
+                return;
+            }
+
+            // No world HTML â€” fall back to loading the first track directly.
+            var firstId = manifest.Tracks[0].Id;
+            var trackInfo = runtime.BuildTrackInfo(firstId);
+            if (trackInfo is null)
+            {
+                Status = "Album world extracted but the first track audio file is missing.";
+                _activeRuntime = null;
+                runtime.Dispose();
+                return;
+            }
+
+            // Try to synthesize a story page if available.
+            var storyHtml = runtime.BuildStoryHtmlContext();
+            if (storyHtml is not null)
+                trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
+
+            runtime.NotifyTrackStarted(firstId, 0);
+            await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, startPlayback);
+            AlbumWorldNavigate?.Invoke();
+
+            var embeddedSummary = CreateEmbeddedSummary(trackInfo);
+            Status = startPlayback
+                ? $"Playing album world Â· {manifest.Tracks.Count} track(s){embeddedSummary}."
+                : $"Loaded album world Â· {manifest.Tracks.Count} track(s){embeddedSummary}.";
         }
         catch (Exception ex)
         {
@@ -612,7 +732,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         RefreshUserPresets();
     }
 
-    // ─── Overlay management ───────────────────────────────────────────────────
+    // â”€â”€â”€ Overlay management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public ObservableCollection<ObsOverlayOption> OverlayOptions { get; } = [];
 
     public ObsOverlayOption? SelectedOverlay
@@ -706,7 +826,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = $"Overlay \"{overlay.DisplayName}\" removed.";
     }
 
-    // ─── Layout read / apply ─────────────────────────────────────────────────
+    // â”€â”€â”€ Layout read / apply â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public Spectralis.Core.Integrations.Obs.ObsLayout GetCurrentLayout() =>
         Spectralis.Core.Integrations.Obs.ObsLayout.FromJson(GetLayoutJson(_selectedOverlay?.Id))
             ?? Spectralis.Core.Integrations.Obs.ObsLayout.CreateDefault();
@@ -735,7 +855,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(CustomObsJson));
     }
 
-    // ─── Preset management ────────────────────────────────────────────────────
+    // â”€â”€â”€ Preset management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public Spectralis.Core.Integrations.Obs.ObsPreset[] BuiltInPresets { get; } =
         [.. Spectralis.Core.Integrations.Obs.BuiltInObsPresets.All];
 
@@ -831,7 +951,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = $"Preset \"{preset.Name}\" deleted.";
     }
 
-    // ─── JSON editor ─────────────────────────────────────────────────────────
+    // â”€â”€â”€ JSON editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public string CustomObsJson
     {
         get => _customObsJson;
@@ -850,7 +970,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         ObsStatus = "Custom layout applied. Reload the browser source.";
     }
 
-    // ─── Connection / enable / token ─────────────────────────────────────────
+    // â”€â”€â”€ Connection / enable / token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public bool EnableObsOverlay
     {
         get => _settings.EnableObsOverlay;
@@ -950,7 +1070,7 @@ public sealed class ObsEditorViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _obsStatus, value);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private void RefreshOverlayOptions()
     {
         var currentId = _selectedOverlay?.Id;
@@ -993,6 +1113,73 @@ public sealed class ObsEditorViewModel : ViewModelBase
     }
 }
 
+public sealed class StreamerSettingsViewModel : ViewModelBase
+{
+    private readonly AppSettings _settings;
+    private readonly ObsEditorViewModel? _obsEditor;
+    private string _status = string.Empty;
+
+    public StreamerSettingsViewModel(AppSettings settings, ObsEditorViewModel? obsEditor = null)
+    {
+        _settings = settings;
+        _obsEditor = obsEditor;
+    }
+
+    public string Status
+    {
+        get => _status;
+        private set => this.RaiseAndSetIfChanged(ref _status, value);
+    }
+
+    public double CanvasAspectRatio =>
+        _settings.ObsCanvasWidth > 0 && _settings.ObsCanvasHeight > 0
+            ? (double)_settings.ObsCanvasWidth / _settings.ObsCanvasHeight
+            : 16.0 / 9.0;
+
+    public string DeadZoneCountText =>
+        _settings.DeadZones.Count == 0
+            ? "No dead zones defined"
+            : _settings.DeadZones.Count == 1
+                ? "1 dead zone defined"
+                : $"{_settings.DeadZones.Count} dead zones defined";
+
+    public IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> GetDeadZones() =>
+        _settings.DeadZones;
+
+    public void SaveDeadZones(IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> zones)
+    {
+        _settings.DeadZones = zones.ToList();
+        AppSettingsStore.Save(_settings);
+        this.RaisePropertyChanged(nameof(DeadZoneCountText));
+    }
+
+    public void ClearAll()
+    {
+        _settings.DeadZones.Clear();
+        AppSettingsStore.Save(_settings);
+        this.RaisePropertyChanged(nameof(DeadZoneCountText));
+        Status = "Dead zones cleared.";
+    }
+
+    public void ApplyToCurrentLayout()
+    {
+        if (_obsEditor is null)
+        {
+            Status = "OBS editor not connected.";
+            return;
+        }
+        if (_settings.DeadZones.Count == 0)
+        {
+            Status = "No dead zones to apply.";
+            return;
+        }
+        var layout = _obsEditor.GetCurrentLayout();
+        var adjusted = Spectralis.Core.Integrations.Obs.DeadZoneHelper.ApplyDeadZones(layout, _settings.DeadZones);
+        _obsEditor.ApplyDesignerLayout(adjusted);
+        Status = "Layout adjusted around dead zones. Reload the browser source.";
+    }
+}
+
 public enum SettingsCategory
 {
     Appearance,
@@ -1001,6 +1188,7 @@ public enum SettingsCategory
     Library,
     Integrations,
     SharedPlay,
+    Streamer,
     Updates,
     About,
     Developer,
@@ -1030,13 +1218,15 @@ public sealed class SettingsViewModel : ViewModelBase
         NowPlayingViewModel nowPlaying,
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
-        LibraryViewModel? library = null)
+        LibraryViewModel? library = null,
+        StreamerSettingsViewModel? streamerSettings = null)
     {
         _settings = settings;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
         ObsEditor = obsEditor ?? new ObsEditorViewModel(settings);
         Library = library;
+        StreamerSettings = streamerSettings;
         ThemeModeOptions = Enum.GetValues<AppThemeMode>()
             .Select(mode => new SelectionOption<AppThemeMode>(ThemeModeLabel(mode), mode))
             .ToArray();
@@ -1195,6 +1385,7 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     public ObsEditorViewModel ObsEditor { get; }
+    public StreamerSettingsViewModel? StreamerSettings { get; }
 
     public IReadOnlyList<SelectionOption<AppThemeMode>> ThemeModeOptions { get; }
     public IReadOnlyList<SelectionOption<AppThemeAccent>> ThemeAccentOptions { get; }
@@ -1484,6 +1675,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool CloseToTray
+    {
+        get => _settings.CloseToTray;
+        set
+        {
+            if (_settings.CloseToTray == value)
+            {
+                return;
+            }
+
+            _settings.CloseToTray = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool EnableDiscordRichPresence
     {
         get => _settings.EnableDiscordRichPresence;
@@ -1581,6 +1788,7 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsLibraryVisible));
             this.RaisePropertyChanged(nameof(IsIntegrationsVisible));
             this.RaisePropertyChanged(nameof(IsSharedPlayVisible));
+            this.RaisePropertyChanged(nameof(IsStreamerVisible));
             this.RaisePropertyChanged(nameof(IsUpdatesVisible));
             this.RaisePropertyChanged(nameof(IsAboutVisible));
             this.RaisePropertyChanged(nameof(IsDeveloperVisible));
@@ -1593,6 +1801,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool IsLibraryVisible => _selectedCategory == SettingsCategory.Library;
     public bool IsIntegrationsVisible => _selectedCategory == SettingsCategory.Integrations;
     public bool IsSharedPlayVisible => _selectedCategory == SettingsCategory.SharedPlay;
+    public bool IsStreamerVisible => _selectedCategory == SettingsCategory.Streamer;
     public bool IsUpdatesVisible => _selectedCategory == SettingsCategory.Updates;
     public bool IsAboutVisible => _selectedCategory == SettingsCategory.About;
     public bool IsDeveloperVisible => _selectedCategory == SettingsCategory.Developer;
@@ -1612,6 +1821,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private static string CategoryLabel(SettingsCategory category) => category switch
     {
         SettingsCategory.SharedPlay => "Shared Play",
+        SettingsCategory.Streamer => "Streamer",
         _ => category.ToString(),
     };
 
@@ -1635,7 +1845,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     private async Task LinkSpotifyAsync()
     {
-        SpotifyStatus = "Opening Spotify authorization…";
+        SpotifyStatus = "Opening Spotify authorizationâ€¦";
         try
         {
             var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
