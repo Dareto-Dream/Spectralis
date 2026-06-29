@@ -148,7 +148,7 @@
       </Button>
 
       <!-- Controls bar — hidden when an album world is the conductor -->
-      <StackPanel Grid.Row="1" IsVisible="{Binding !IsAlbumWorldActive}">
+      <StackPanel Grid.Row="1" IsVisible="{Binding !IsAlbumWorldShowingWorld}">
 
         <!-- Track identity + viz controls -->
         <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,4">
