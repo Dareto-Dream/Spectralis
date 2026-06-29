@@ -171,13 +171,15 @@ public sealed class CapsulesViewModel : ViewModelBase
         _loadPreparedTrack = loadPreparedTrack;
     }
 
+    private AlbumWorldRuntime? _activeRuntime;
+
     public Func<CapsuleTrustContext, Task<bool>> TrustCreatorPrompt { get; set; } =
         _ => Task.FromResult(false);
 
-    /// <summary>Wired by MainWindowViewModel to forward pause/resume/seek from the album world JS bridge.</summary>
-    public Action? AlbumPlaybackPause { get; set; }
-    public Action? AlbumPlaybackResume { get; set; }
-    public Action<double>? AlbumPlaybackSeek { get; set; }
+    /// <summary>Wired by MainWindowViewModel to attach/navigate/detach the album world in NowPlaying.</summary>
+    public Action<EmbeddedHtmlContext, string>? AlbumWorldAttach { get; set; }
+    public Action? AlbumWorldNavigate { get; set; }
+    public Action? AlbumWorldDetach { get; set; }
 
     public ObservableCollection<CapsuleTrackViewModel> Tracks { get; } = [];
 
@@ -255,6 +257,9 @@ public sealed class CapsulesViewModel : ViewModelBase
 
     public void Clear()
     {
+        _activeRuntime?.Dispose();
+        _activeRuntime = null;
+        AlbumWorldDetach?.Invoke();
         HasPackage = false;
         Title = "No capsules opened";
         Subtitle = "Open a signed .spectralis capsule or .spectral album world to see it here.";
@@ -267,6 +272,21 @@ public sealed class CapsulesViewModel : ViewModelBase
         EntryCountText = string.Empty;
         Tracks.Clear();
     }
+
+    public async Task LoadAlbumTrackAsync(string trackId)
+    {
+        if (_activeRuntime is null) return;
+        var trackInfo = _activeRuntime.BuildTrackInfo(trackId);
+        if (trackInfo is null) return;
+        // World HTML stays pinned in NowPlayingViewModel — don't pass per-track HTML here.
+        trackInfo = trackInfo with { EmbeddedHtml = null };
+        _activeRuntime.NotifyTrackStarted(trackId, 0);
+        await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, true);
+        _activeRuntime.SaveSession();
+    }
+
+    public void TickAlbumWorld(double enginePosition, bool engineIsPlaying) =>
+        _activeRuntime?.Tick(enginePosition, engineIsPlaying);
 
     public async Task OpenFilesAsync(IReadOnlyList<string> paths, bool startPlayback)
     {
@@ -371,6 +391,11 @@ public sealed class CapsulesViewModel : ViewModelBase
         Status = "Opening signed album world...";
         Tracks.Clear();
 
+        // Dispose any previously active album world.
+        _activeRuntime?.Dispose();
+        _activeRuntime = null;
+        AlbumWorldDetach?.Invoke();
+
         try
         {
             using var package = AlbumCapsuleReader.Read(path);
@@ -403,44 +428,44 @@ public sealed class CapsulesViewModel : ViewModelBase
                 return;
             }
 
-            // Extract to the on-disk cache (skipped when payload SHA matches a prior extraction).
             Status = "Extracting album world to cache...";
             var worldDir = await Task.Run(() => AlbumWorldCacheStore.GetOrExtract(package));
 
             var session = AlbumWorldSessionStore.GetSession(worldDir);
             var runtime = new AlbumWorldRuntime();
             runtime.Load(manifest, worldDir, session);
+            _activeRuntime = runtime;
 
-            // Wire JS bridge events to app engine actions.
-            runtime.PauseRequested  += (_, _) => AlbumPlaybackPause?.Invoke();
-            runtime.ResumeRequested += (_, _) => AlbumPlaybackResume?.Invoke();
-            runtime.SeekRequested   += (_, pos) => AlbumPlaybackSeek?.Invoke(pos);
+            var worldHtml = runtime.BuildWorldHtmlContext();
+            if (worldHtml is not null)
+            {
+                // Show the interactive world map — the user picks tracks from it.
+                var readyJson = runtime.BuildWorldStateJson();
+                AlbumWorldAttach?.Invoke(worldHtml, readyJson);
+                AlbumWorldNavigate?.Invoke();
+                Status = $"Album world ready · {manifest.Tracks.Count} track(s). Select a track from the world map.";
+                return;
+            }
 
-            // Load the first track to start playback immediately.
+            // No world HTML — fall back to loading the first track directly.
             var firstId = manifest.Tracks[0].Id;
             var trackInfo = runtime.BuildTrackInfo(firstId);
             if (trackInfo is null)
             {
                 Status = "Album world extracted but the first track audio file is missing.";
+                _activeRuntime = null;
                 runtime.Dispose();
                 return;
             }
 
-            // Attach world HTML as the embedded HTML surface if the manifest declares one.
-            var worldHtml = runtime.BuildWorldHtmlContext();
-            if (worldHtml is not null && trackInfo.EmbeddedHtml is null)
-                trackInfo = trackInfo with { EmbeddedHtml = worldHtml };
-
-            // Synthesize a story page from the album's narrative content when no other HTML is present.
-            if (trackInfo.EmbeddedHtml is null)
-            {
-                var storyHtml = runtime.BuildStoryHtmlContext();
-                if (storyHtml is not null)
-                    trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
-            }
+            // Try to synthesize a story page if available.
+            var storyHtml = runtime.BuildStoryHtmlContext();
+            if (storyHtml is not null)
+                trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
 
             runtime.NotifyTrackStarted(firstId, 0);
             await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, startPlayback);
+            AlbumWorldNavigate?.Invoke();
 
             var embeddedSummary = CreateEmbeddedSummary(trackInfo);
             Status = startPlayback

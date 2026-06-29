@@ -148,9 +148,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                 track,
                 startPlayback,
                 ownsTemporaryFile: true));
-        Capsules.AlbumPlaybackPause  = () => Engine.Pause();
-        Capsules.AlbumPlaybackResume = () => Engine.Play();
-        Capsules.AlbumPlaybackSeek   = pos => Engine.Seek((float)pos);
+        Capsules.AlbumWorldAttach  = (html, readyJson) => NowPlaying.AttachAlbumWorld(html, readyJson);
+        Capsules.AlbumWorldNavigate = () => SelectSection(NowPlaying);
+        Capsules.AlbumWorldDetach  = () => NowPlaying.DetachAlbumWorld();
+        NowPlaying.AlbumPlayTrackDelegate = trackId => _ = Capsules.LoadAlbumTrackAsync(trackId);
+        NowPlaying.AlbumWorldTick = (pos, playing) => Capsules.TickAlbumWorld(pos, playing);
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine);
@@ -522,14 +524,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             var hasAlbumWorld = capsuleFiles.Any(p =>
                 Path.GetExtension(p).Equals(".spectral", StringComparison.OrdinalIgnoreCase));
             if (!hasAlbumWorld)
-            {
                 SelectSection(NowPlaying);
-            }
+            // Album world navigation is handled by AlbumWorldNavigate callback inside OpenFilesAsync.
             await Capsules.OpenFilesAsync(capsuleFiles, AppSettings.AutoPlayOnOpen);
-            if (hasAlbumWorld)
-            {
-                SelectSection(Capsules);
-            }
         }
 
         if (files.Count > 0)
