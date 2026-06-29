@@ -120,7 +120,8 @@ public sealed class EmbeddedHtmlContext
         byte[] htmlBytes,
         IReadOnlyDictionary<string, byte[]> binaryAssets,
         IReadOnlyDictionary<string, string>? textAssets,
-        string? version)
+        string? version,
+        string? sourceDirectory = null)
     {
         Id = id;
         HtmlBytes = htmlBytes.ToArray();
@@ -131,6 +132,7 @@ public sealed class EmbeddedHtmlContext
         TextAssets = (textAssets ?? new Dictionary<string, string>())
             .ToDictionary(static item => item.Key, static item => item.Value, StringComparer.OrdinalIgnoreCase);
         Version = version;
+        SourceDirectory = sourceDirectory;
     }
 
     public string Id { get; }
@@ -138,6 +140,7 @@ public sealed class EmbeddedHtmlContext
     public IReadOnlyDictionary<string, byte[]> BinaryAssets { get; }
     public IReadOnlyDictionary<string, string> TextAssets { get; }
     public string? Version { get; }
+    public string? SourceDirectory { get; }
     public string DisplayName => EmbeddedVisualizerContext.CreateDisplayLabel(Id, "HTML Content");
 }
 
