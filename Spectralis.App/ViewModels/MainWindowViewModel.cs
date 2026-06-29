@@ -151,7 +151,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         Capsules.AlbumWorldAttach  = (html, readyJson) => NowPlaying.AttachAlbumWorld(html, readyJson);
         Capsules.AlbumWorldNavigate = () => SelectSection(NowPlaying);
         Capsules.AlbumWorldDetach  = () => NowPlaying.DetachAlbumWorld();
-        NowPlaying.AlbumPlayTrackDelegate = trackId => _ = Capsules.LoadAlbumTrackAsync(trackId);
+        Capsules.AlbumWorldTrackChanged = NowPlaying.NotifyAlbumWorldTrackChanged;
+        Capsules.AlbumWorldTrackCompleted = NowPlaying.NotifyAlbumWorldTrackCompleted;
+        NowPlaying.AlbumPlayTrackDelegate = (trackId, positionSeconds) => _ = Capsules.LoadAlbumTrackAsync(trackId, positionSeconds);
         NowPlaying.AlbumWorldTick = (pos, playing) => Capsules.TickAlbumWorld(pos, playing);
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
