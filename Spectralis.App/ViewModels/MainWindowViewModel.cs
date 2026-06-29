@@ -148,6 +148,9 @@ public sealed class MainWindowViewModel : ViewModelBase
                 track,
                 startPlayback,
                 ownsTemporaryFile: true));
+        Capsules.AlbumPlaybackPause  = () => Engine.Pause();
+        Capsules.AlbumPlaybackResume = () => Engine.Play();
+        Capsules.AlbumPlaybackSeek   = pos => Engine.Seek((float)pos);
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine);

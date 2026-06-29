@@ -174,6 +174,11 @@ public sealed class CapsulesViewModel : ViewModelBase
     public Func<CapsuleTrustContext, Task<bool>> TrustCreatorPrompt { get; set; } =
         _ => Task.FromResult(false);
 
+    /// <summary>Wired by MainWindowViewModel to forward pause/resume/seek from the album world JS bridge.</summary>
+    public Action? AlbumPlaybackPause { get; set; }
+    public Action? AlbumPlaybackResume { get; set; }
+    public Action<double>? AlbumPlaybackSeek { get; set; }
+
     public ObservableCollection<CapsuleTrackViewModel> Tracks { get; } = [];
 
     public bool HasPackage
@@ -275,7 +280,7 @@ public sealed class CapsulesViewModel : ViewModelBase
 
             if (IsSpectralAlbum(path))
             {
-                OpenSpectralAlbum(path);
+                await OpenSpectralAlbumAsync(path, startPlayback);
             }
         }
     }
@@ -361,7 +366,7 @@ public sealed class CapsulesViewModel : ViewModelBase
         }
     }
 
-    private void OpenSpectralAlbum(string path)
+    private async Task OpenSpectralAlbumAsync(string path, bool startPlayback)
     {
         Status = "Opening signed album world...";
         Tracks.Clear();
@@ -370,9 +375,10 @@ public sealed class CapsulesViewModel : ViewModelBase
         {
             using var package = AlbumCapsuleReader.Read(path);
             var manifest = package.Manifest;
+
             Title = FirstNonEmpty(manifest.Title, Path.GetFileNameWithoutExtension(path));
             Subtitle = FirstNonEmpty(manifest.Artist, manifest.Release.Album, "Spectral album world");
-            Summary = manifest.Story.Summary;
+            Summary = FirstNonEmpty(manifest.Story.Summary, manifest.Story.Backstory);
             FormatLabel = ".spectral album world";
             CreatorText = string.IsNullOrWhiteSpace(manifest.Artist) ? "Unknown artist" : manifest.Artist;
             FingerprintText = package.Fingerprint;
@@ -381,17 +387,8 @@ public sealed class CapsulesViewModel : ViewModelBase
                 : string.Join(", ", manifest.Capabilities);
             EntryCountText = $"{package.EntryNames().Count} package entries";
 
-            var embeddedTrackCount = 0;
             foreach (var track in manifest.Tracks)
             {
-                var modules = EmbeddedModuleReader.ReadFromPackageVisualizers(
-                    track.Visualizers,
-                    package.TryReadEntry);
-                if (modules.HasAny)
-                {
-                    embeddedTrackCount++;
-                }
-
                 Tracks.Add(new CapsuleTrackViewModel(
                     FirstNonEmpty(track.Title, track.Id, "Untitled track"),
                     FirstNonEmpty(track.Artist, manifest.Artist),
@@ -399,9 +396,56 @@ public sealed class CapsulesViewModel : ViewModelBase
             }
 
             HasPackage = true;
-            Status = embeddedTrackCount > 0
-                ? $"Opened album world metadata with embedded visualizers on {embeddedTrackCount} track(s). Album-world playback migration is still pending."
-                : "Opened album world metadata. Album-world playback migration is still pending.";
+
+            if (manifest.Tracks.Count == 0)
+            {
+                Status = "Album world opened. No tracks declared in manifest.";
+                return;
+            }
+
+            // Extract to the on-disk cache (skipped when payload SHA matches a prior extraction).
+            Status = "Extracting album world to cache...";
+            var worldDir = await Task.Run(() => AlbumWorldCacheStore.GetOrExtract(package));
+
+            var session = AlbumWorldSessionStore.GetSession(worldDir);
+            var runtime = new AlbumWorldRuntime();
+            runtime.Load(manifest, worldDir, session);
+
+            // Wire JS bridge events to app engine actions.
+            runtime.PauseRequested  += (_, _) => AlbumPlaybackPause?.Invoke();
+            runtime.ResumeRequested += (_, _) => AlbumPlaybackResume?.Invoke();
+            runtime.SeekRequested   += (_, pos) => AlbumPlaybackSeek?.Invoke(pos);
+
+            // Load the first track to start playback immediately.
+            var firstId = manifest.Tracks[0].Id;
+            var trackInfo = runtime.BuildTrackInfo(firstId);
+            if (trackInfo is null)
+            {
+                Status = "Album world extracted but the first track audio file is missing.";
+                runtime.Dispose();
+                return;
+            }
+
+            // Attach world HTML as the embedded HTML surface if the manifest declares one.
+            var worldHtml = runtime.BuildWorldHtmlContext();
+            if (worldHtml is not null && trackInfo.EmbeddedHtml is null)
+                trackInfo = trackInfo with { EmbeddedHtml = worldHtml };
+
+            // Synthesize a story page from the album's narrative content when no other HTML is present.
+            if (trackInfo.EmbeddedHtml is null)
+            {
+                var storyHtml = runtime.BuildStoryHtmlContext();
+                if (storyHtml is not null)
+                    trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
+            }
+
+            runtime.NotifyTrackStarted(firstId, 0);
+            await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, startPlayback);
+
+            var embeddedSummary = CreateEmbeddedSummary(trackInfo);
+            Status = startPlayback
+                ? $"Playing album world · {manifest.Tracks.Count} track(s){embeddedSummary}."
+                : $"Loaded album world · {manifest.Tracks.Count} track(s){embeddedSummary}.";
         }
         catch (Exception ex)
         {
