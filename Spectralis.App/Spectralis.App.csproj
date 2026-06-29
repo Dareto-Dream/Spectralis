@@ -58,22 +58,6 @@
     <!-- Shared runtime assets from the repo root: SoundFont for MIDI/KAR
          playback, helper executables for stream resolution. -->
     <AvaloniaResource Include="..\Assets\icon.png" Link="Assets\icon.png" />
-    <!-- TODO 5.1.0: Remove reveal assets -->
-    <Content Include="..\Assets\audio\reveal.mp3" Link="assets\audio\reveal.mp3">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\reveal.lrc" Link="assets\audio\reveal.lrc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\delta.png" Link="assets\audio\delta.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\old_logo.png" Link="assets\audio\old_logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Assets\audio\logo.png" Link="assets\audio\logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
