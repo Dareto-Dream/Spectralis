@@ -37,10 +37,12 @@
           <TextBlock Classes="data" Text="{Binding Status}" TextWrapping="Wrap" />
         </StackPanel>
 
-        <TextBlock Classes="secondary"
-                   Text="{Binding Summary}"
-                   TextWrapping="Wrap"
-                   IsVisible="{Binding HasSummary}" />
+        <StackPanel Spacing="6" IsVisible="{Binding HasSummary}">
+          <TextBlock Classes="heading" Text="About" />
+          <TextBlock Classes="secondary"
+                     Text="{Binding Summary}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
 
         <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Format" />
