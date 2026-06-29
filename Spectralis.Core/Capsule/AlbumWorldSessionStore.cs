@@ -9,6 +9,12 @@ public sealed class AlbumTrackStats
     [JsonPropertyName("playCount")]
     public int PlayCount { get; set; }
 
+    [JsonPropertyName("playedSeconds")]
+    public double PlayedSeconds { get; set; }
+
+    [JsonPropertyName("completed")]
+    public bool Completed { get; set; }
+
     [JsonPropertyName("lastPlayedUtc")]
     public DateTime LastPlayedUtc { get; set; }
 }
