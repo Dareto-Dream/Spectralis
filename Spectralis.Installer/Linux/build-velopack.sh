@@ -4,7 +4,7 @@
 set -euo pipefail
 
 VERSION="${1:?usage: build-velopack.sh <version>}"
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 APP_PROJECT="$REPO_ROOT/Spectralis.App/Spectralis.App.csproj"
 PUBLISH_DIR="$REPO_ROOT/publish-velopack-linux"
 RELEASE_DIR="$REPO_ROOT/releases-velopack"

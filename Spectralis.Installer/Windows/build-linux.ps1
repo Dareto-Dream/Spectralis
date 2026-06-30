@@ -35,8 +35,8 @@ $scriptWsl = "$repoWsl/Spectralis.Installer/Linux/build-appimage.sh"
 $env:WSLENV = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u"
 
 Write-Host "[linux] Building AppImage v$Version via WSL ($WslDistro)..."
-wsl -d $WslDistro -- sed -i 's/\r$//' "$scriptWsl"
-wsl -d $WslDistro -- bash "$scriptWsl" $Version
+$bashCmd = 'tmp=$(mktemp) && sed "s/\r//" "' + $scriptWsl + '" > "$tmp" && chmod +x "$tmp" && REPO_ROOT="' + $repoWsl + '" bash "$tmp" ' + $Version + '; ec=$?; rm -f "$tmp"; exit $ec'
+wsl -d $WslDistro -- bash -c $bashCmd
 Assert-LastExitCode "build-appimage.sh"
 
 $artifact = Join-Path $repoRoot "releases\Spectralis-$Version-x86_64.AppImage"
