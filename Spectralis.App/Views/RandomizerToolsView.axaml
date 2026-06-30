@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:conv="using:Spectralis.App.Converters"
              x:Class="Spectralis.App.Views.RandomizerToolsView"
              x:DataType="vm:RandomizerToolsViewModel">
 
@@ -32,11 +33,11 @@
       </Grid>
 
       <!-- Sidebar: coin toss + entries -->
-      <Border Grid.Column="1" Width="260"
+      <Border Grid.Column="1" Width="280"
               Background="{StaticResource Brush.Bg.Raised}"
               BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
               Padding="16">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <Grid RowDefinitions="Auto,Auto,Auto,*">
 
           <!-- Coin toss -->
           <TextBlock Grid.Row="0" Classes="heading" Text="Coin Toss" Margin="0,0,0,12" />
@@ -58,42 +59,82 @@
 
           <Separator Grid.Row="2" Margin="0,0,0,12" />
 
-          <!-- Entries header -->
-          <TextBlock Grid.Row="3" Classes="secondary"
-                     Text="WHEEL ENTRIES" FontWeight="SemiBold"
-                     Margin="0,0,0,8" />
+          <ScrollViewer Grid.Row="3">
+            <StackPanel Spacing="10">
 
-          <!-- Entries list -->
-          <ListBox Grid.Row="4"
-                   ItemsSource="{Binding WheelEntries}"
-                   Background="Transparent"
-                   SelectionMode="Single">
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <Grid ColumnDefinitions="*,Auto" Margin="0,1,0,1">
-                  <TextBlock Grid.Column="0" Text="{Binding}"
-                             VerticalAlignment="Center"
-                             TextTrimming="CharacterEllipsis" />
-                  <Button Grid.Column="1" Content="×"
-                          Click="OnRemoveEntryClick"
-                          Classes="ghost"
-                          Padding="6,2" FontSize="14"
-                          ToolTip.Tip="Remove" />
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+              <!-- Entries notepad -->
+              <TextBlock Classes="secondary" Text="WHEEL ENTRIES" FontWeight="SemiBold" />
+              <TextBlock Classes="secondary" FontStyle="Italic" FontSize="11"
+                         Text="One entry per line." TextWrapping="Wrap" />
+              <TextBox Text="{Binding NotepadText, Mode=TwoWay}"
+                       AcceptsReturn="True"
+                       TextWrapping="Wrap"
+                       Height="120"
+                       VerticalContentAlignment="Top"
+                       Watermark="Option 1&#10;Option 2&#10;Option 3" />
 
-          <!-- Add entry -->
-          <Grid Grid.Row="5" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
-            <TextBox Grid.Column="0"
-                     Text="{Binding NewEntryText}"
-                     Watermark="New entry..."
-                     Margin="0,0,6,0"
-                     KeyDown="OnNewEntryKeyDown" />
-            <Button Grid.Column="1" Content="Add"
-                    Command="{Binding AddEntryCommand}" />
-          </Grid>
+              <!-- Parsed entries: color/font/weight settings live behind the gear flyout -->
+              <ItemsControl ItemsSource="{Binding WheelEntries}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WheelEntry">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3,0,3">
+                      <Border Grid.Column="0" Width="10" Height="10" CornerRadius="5"
+                              Background="{Binding ColorHex, Converter={x:Static conv:HexColorToBrushConverter.Instance}}"
+                              VerticalAlignment="Center" Margin="0,0,8,0" />
+                      <TextBlock Grid.Column="1" Text="{Binding Text}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="2" Content="⚙" Classes="ghost"
+                              Padding="6,2" FontSize="12"
+                              ToolTip.Tip="Entry settings (color, font, weight)">
+                        <Button.Flyout>
+                          <Flyout Placement="Left">
+                            <StackPanel Spacing="8" Width="200" Margin="4">
+                              <TextBlock Classes="secondary" Text="Color (hex, blank = default)" />
+                              <TextBox Text="{Binding ColorHex}" Watermark="#3B82F6" />
+                              <TextBlock Classes="secondary" Text="Font (blank = default)" />
+                              <TextBox Text="{Binding FontFamily}" Watermark="Inter" />
+                              <TextBlock Classes="secondary" Text="Weight (spin odds / slice size)" />
+                              <NumericUpDown Value="{Binding Weight}"
+                                             Minimum="0.1" Maximum="100"
+                                             Increment="0.5" FormatString="0.#" />
+                            </StackPanel>
+                          </Flyout>
+                        </Button.Flyout>
+                      </Button>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Separator Margin="0,4,0,4" />
+
+              <!-- Saved wheels -->
+              <TextBlock Classes="secondary" Text="SAVED WHEELS" FontWeight="SemiBold" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Grid.Column="0" Text="{Binding NewWheelName}"
+                         Watermark="Wheel name..." Margin="0,0,6,0" />
+                <Button Grid.Column="1" Content="Save" Command="{Binding SaveWheelCommand}" />
+              </Grid>
+
+              <ItemsControl ItemsSource="{Binding SavedWheels}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SavedWheel">
+                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,2">
+                      <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="1" Content="Load" Classes="ghost"
+                              Click="OnLoadWheelClick" ToolTip.Tip="Load this wheel" />
+                      <Button Grid.Column="2" Content="×" Classes="ghost"
+                              Click="OnDeleteWheelClick" ToolTip.Tip="Delete this wheel" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+            </StackPanel>
+          </ScrollViewer>
 
         </Grid>
       </Border>
