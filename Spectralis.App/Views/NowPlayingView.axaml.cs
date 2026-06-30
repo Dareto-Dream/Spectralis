@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -15,6 +16,7 @@ using Spectralis.App.ViewModels;
 using Spectralis.Core.Common;
 using Spectralis.Core.Embedded;
 using Spectralis.Core.Integrations.Web;
+using Spectralis.Core.Layout;
 using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
@@ -76,6 +78,7 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
+                ApplyVisualizerLabelDeadZoneAvoidance();
             }
         };
         DetachedFromVisualTree += (_, _) =>
@@ -87,6 +90,33 @@ public NowPlayingView()
             _persistentWv2 = null;
 #endif
         };
+        VisualizerSurfacePanel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
+        VisualizerNameLabel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
+    }
+
+    // ── Dead zones (app-wide) ────────────────────────────────────────────────
+
+    private void ApplyVisualizerLabelDeadZoneAvoidance()
+    {
+        if (_viewModel is null) return;
+        double panelW = VisualizerSurfacePanel.Bounds.Width, panelH = VisualizerSurfacePanel.Bounds.Height;
+        double labelW = VisualizerNameLabel.Bounds.Width, labelH = VisualizerNameLabel.Bounds.Height;
+        const double baseLeft = 8, baseBottom = 6;
+
+        var zones = _viewModel.DeadZones;
+        if (panelW <= 0 || panelH <= 0 || labelW <= 0 || labelH <= 0 || zones.Count == 0)
+        {
+            VisualizerNameLabel.Margin = new Thickness(baseLeft, 0, 0, baseBottom);
+            return;
+        }
+
+        double x0 = Math.Clamp(baseLeft / panelW, 0, 1);
+        double y0 = Math.Clamp((panelH - baseBottom - labelH) / panelH, 0, 1);
+        var (x, y) = DeadZoneHelper.Resolve(x0, y0, labelW / panelW, labelH / panelH, zones);
+
+        double marginLeft = Math.Max(0, x * panelW);
+        double marginBottom = Math.Max(0, panelH - (y * panelH + labelH));
+        VisualizerNameLabel.Margin = new Thickness(marginLeft, 0, 0, marginBottom);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -122,6 +152,12 @@ public NowPlayingView()
             nameof(NowPlayingViewModel.ShowQueue))
         {
             ScrollQueueToCurrent();
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.ShowVisualizerSurface) or
+            nameof(NowPlayingViewModel.SelectedVisualizer))
+        {
+            ApplyVisualizerLabelDeadZoneAvoidance();
         }
     }
 

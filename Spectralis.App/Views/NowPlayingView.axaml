@@ -98,14 +98,15 @@
                  IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNull}}" />
         </Panel>
 
-        <Panel IsVisible="{Binding ShowVisualizerSurface}">
+        <Panel x:Name="VisualizerSurfacePanel" IsVisible="{Binding ShowVisualizerSurface}">
           <controls:VisualizerHostControl Engine="{Binding Engine}"
                                           Mode="{Binding SelectedVisualizerMode}"
                                           AlbumArtBytes="{Binding CoverArtBytes}"
                                           ShowPeaks="{Binding PeakHold}"
                                           Sensitivity="{Binding VisualizerSensitivity}"
                                           ScriptedRenderer="{Binding ScriptedVisualizerOverride}" />
-          <TextBlock Text="{Binding SelectedVisualizer.Label}"
+          <TextBlock x:Name="VisualizerNameLabel"
+                     Text="{Binding SelectedVisualizer.Label}"
                      HorizontalAlignment="Left" VerticalAlignment="Bottom"
                      Margin="8,0,0,6" FontSize="10" LetterSpacing="0.5"
                      Opacity="0.30" Foreground="{StaticResource Brush.Ink.Secondary}"

@@ -172,6 +172,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>The synced lyrics document for the currently loaded track.</summary>
     public LyricsDocument? CurrentLyrics => _lyricsDocument;
 
+    /// <summary>App-wide dead zones (Settings → Streamer) that positioned HUD overlays avoid.</summary>
+    public IReadOnlyList<Spectralis.Core.Layout.DeadZone> DeadZones => _settings.DeadZones;
+
     /// <summary>When set, overrides the catalog-based visualizer with a scripted renderer.</summary>
     public IVisualizerRenderer? ScriptedVisualizerOverride
     {
