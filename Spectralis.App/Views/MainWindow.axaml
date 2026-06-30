@@ -347,8 +347,9 @@
       </Grid>
     </Border>
 
-    <!-- P2W Mode overlay: yellow banner top-right -->
-    <Border Grid.Row="1"
+    <!-- P2W Mode overlay: yellow banner top-right (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
+    <Border x:Name="P2wBanner"
+            Grid.Row="1"
             IsVisible="{Binding IsP2wModeActive}"
             HorizontalAlignment="Right"
             VerticalAlignment="Top"
@@ -375,7 +376,9 @@
       </Viewbox>
     </Border>
 
-    <Border Grid.Row="1"
+    <!-- Clipboard URL toast (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
+    <Border x:Name="ClipboardToastBorder"
+            Grid.Row="1"
             Grid.RowSpan="2"
             IsVisible="{Binding ClipboardToastVisible}"
             HorizontalAlignment="Right"
