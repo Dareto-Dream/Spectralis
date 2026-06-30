@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Integrations.Obs;
+using Spectralis.Core.Layout;
 using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Services;
@@ -85,7 +86,7 @@ public sealed class AppSettings
     public List<string> DismissedWarningIds { get; set; } = [];
 
     /// <summary>Streamer dead zones — areas hidden by camera or UI overlays. Widgets avoid these when applied.</summary>
-    public List<Spectralis.Core.Integrations.Obs.DeadZone> DeadZones { get; set; } = [];
+    public List<DeadZone> DeadZones { get; set; } = [];
 
     public AppSettings Clone() =>
         new()

@@ -307,9 +307,9 @@
 
       <!-- Streamer dead zones -->
       <StackPanel Spacing="8" IsVisible="{Binding IsStreamerVisible}">
-        <TextBlock Classes="heading" Text="Streamer Dead Zones" />
+        <TextBlock Classes="heading" Text="Dead Zones" />
         <TextBlock Classes="secondary" TextWrapping="Wrap"
-                   Text="Draw zones where your camera or scene overlays appear. Click Apply to automatically reposition OBS widgets around them." />
+                   Text="Draw zones where your camera or scene overlays appear. These are app-wide: in-app floating overlays (P2W banner, clipboard toast) and the visualizer HUD label reposition around them automatically. Click Apply to also bake them into the current OBS layout's widget positions." />
 
         <!-- Designer canvas -->
         <Border Height="220" CornerRadius="6" ClipToBounds="True">
