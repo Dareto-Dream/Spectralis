@@ -3,7 +3,8 @@ import {
   Waves, Radio, Zap, Shield, Download, GitFork,
   ArrowRight, ArrowUpRight, FileCode2, Package, MonitorPlay,
   BarChart3, Activity, Layers, Sparkles, Music, Mic2,
-  Terminal, RefreshCw,
+  Terminal, RefreshCw, ListMusic, Globe, Crosshair, Dices,
+  Trophy, Minimize2, Palette, Users,
 } from 'lucide-react'
 import { VisualizerDemo } from './VisualizerDemo'
 import './App.css'
@@ -26,9 +27,87 @@ const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','A
 
 const CHANGELOG_RELEASES = [
   {
+    version: '5.1.5',
+    label: 'Streamer toolkit',
+    date: 'Latest',
+    summary: 'A streamer-focused release: a standalone Streamer Queue with paid skips, OBS dead zones that keep overlays off your face cam, spin-the-wheel and coin-toss randomizer tools, a Song Wars overhaul, and a rewritten Shared Play with short room codes.',
+    metrics: ['Streamer Queue', 'OBS dead zones', 'Song Wars overhaul'],
+    groups: [
+      {
+        icon: ListMusic,
+        title: 'Streamer Queue',
+        bullets: [
+          'New standalone Streamer Queue nav section, decoupled from Shared Play — its own room IDs and owner tokens.',
+          'Viewers submit requests by link or file upload from a browser page; approve, reject, edit, or reorder from the desktop app.',
+          'Priority tiers for skip and super-skip requests, with optional Stripe pay-to-skip.',
+          'Fingerprint-based duplicate/spam scoring never leaves the server — API responses never expose it.',
+        ],
+      },
+      {
+        icon: Globe,
+        title: 'Album Worlds (.spectral)',
+        bullets: [
+          'Album worlds now open into a full world map instead of the old capsule page, with per-track JS-bridge navigation.',
+          'Session tracking for played seconds and completion per world visit.',
+          'Story renderer supports chapters plus a backstory fallback; capsule view shows a labeled backstory section.',
+          'Legacy v1/v2 spectralis and v0 spectral capsules keep working.',
+        ],
+      },
+      {
+        icon: Crosshair,
+        title: 'OBS Dead Zones',
+        bullets: [
+          'Draw dead zones over your webcam, alerts, or chat box in a new dead-zone designer.',
+          'Overlay widgets automatically push away from dead zones instead of overlapping them.',
+        ],
+      },
+      {
+        icon: Dices,
+        title: 'Randomizer Tools',
+        bullets: [
+          'New Randomizer Tools page with a coin flip and an animated spin wheel, side by side.',
+          'Wheel canvas is fully responsive and fills the available view.',
+        ],
+      },
+      {
+        icon: Trophy,
+        title: 'Song Wars',
+        bullets: [
+          'Song Wars panel can dock into the Now Playing sidebar or pop out into its own window.',
+          'Bracket UI overhaul — clearer title bar, bracket view, and fixed action buttons.',
+          'Skip now actually calls into the bracket engine instead of getting silently dropped.',
+        ],
+      },
+      {
+        icon: Minimize2,
+        title: 'Minimize to Tray',
+        bullets: [
+          'Closing the window minimizes to the system tray instead of quitting.',
+          'Discord Rich Presence now reports an idle state, with idle-time stats tracked alongside listening history.',
+        ],
+      },
+      {
+        icon: Palette,
+        title: 'Visualizer Color',
+        bullets: [
+          'Visualizer colors now follow the active app theme instead of a fixed palette.',
+        ],
+      },
+      {
+        icon: Users,
+        title: 'Shared Play v2',
+        bullets: [
+          'Shared Play sessions rewritten around short, SHA-256-derived 6-character room codes.',
+          'New channels/packages model for session state, presence, and reactions.',
+          'Redesigned web player with an immersive dark layout for browser listeners.',
+        ],
+      },
+    ],
+  },
+  {
     version: '5.0.4',
     label: 'Cross-platform',
-    date: 'Latest',
+    date: 'Previous',
     summary: 'Spectralis goes cross-platform. Linux ships as a native x86_64 AppImage. Velopack replaces Squirrel for in-process auto-updates with delta patching, and Avalonia UI powers a shared rendering layer on Windows and Linux.',
     metrics: ['Linux AppImage', 'Velopack updater', 'Delta patches'],
     groups: [
@@ -847,7 +926,7 @@ function DownloadsPage({ navigate }) {
         <div className="dl-hero__inner">
           <div className="dl-hero__head">
             <div className="dl-hero__version-row">
-              <span className="dl-hero__v">v5.0.4</span>
+              <span className="dl-hero__v">v5.1.5</span>
               <span className="dl-hero__v-badge">Latest</span>
             </div>
             <h1 className="dl-hero__title">Get Spectralis</h1>
@@ -933,12 +1012,12 @@ function DownloadsPage({ navigate }) {
           </div>
 
           <div className="dl-card__file">
-            <span className="dl-card__filename">Spectralis-x86_64.AppImage</span>
+            <span className="dl-card__filename">Spectralis-linux-x64.AppImage</span>
             <span className="dl-card__filetype">Self-contained · No install required</span>
           </div>
 
           <a
-            href="https://cdn.deltavdevs.com/spectralis/Spectralis-x86_64.AppImage"
+            href="https://cdn.deltavdevs.com/spectralis/Spectralis-linux-x64.AppImage"
             className="btn btn--primary btn--lg dl-card__btn"
           >
             <Download size={16} />
@@ -959,7 +1038,7 @@ function DownloadsPage({ navigate }) {
           <div className="dl-card__steps">
             <p className="dl-steps__label">To run</p>
             <ol className="dl-steps">
-              <li><code>chmod +x Spectralis-x86_64.AppImage</code></li>
+              <li><code>chmod +x Spectralis-linux-x64.AppImage</code></li>
               <li>Double-click or run from terminal</li>
               <li>Optional: use AppImageLauncher for system integration</li>
             </ol>
