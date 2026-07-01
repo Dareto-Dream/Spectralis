@@ -14,6 +14,7 @@ bld/
 [Oo]bj/
 publish/
 publish-velopack/
+publish-velopack-linux/
 publish-linux/
 releases-velopack/
 output/
@@ -68,8 +69,6 @@ Thumbs.db
 /ss_*.png
 *.tmp.png
 
-# dotnet tool config
-/.config/
 
 # Python
 __pycache__/
