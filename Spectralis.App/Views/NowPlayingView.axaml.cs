@@ -68,6 +68,7 @@ public NowPlayingView()
                 _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
+                _viewModel.Notepads.PopOutRequested -= OnNotepadPopOutRequested;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
@@ -76,6 +77,7 @@ public NowPlayingView()
                 _viewModel.PropertyChanged += OnViewModelPropertyChanged;
                 _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
+                _viewModel.Notepads.PopOutRequested += OnNotepadPopOutRequested;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
                 ApplyVisualizerLabelDeadZoneAvoidance();
@@ -179,6 +181,57 @@ public NowPlayingView()
     {
         if (DataContext is NowPlayingViewModel vm)
             vm.SongWarsPopOutRequested?.Invoke();
+    }
+
+    // ── Notepads ─────────────────────────────────────────────────────────────
+
+    private void OnNotepadTabClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: NotepadViewModel notepad } && _viewModel is not null)
+            _viewModel.Notepads.SelectedNotepad = notepad;
+    }
+
+    private void OnNotepadPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Notepads.SelectedNotepad is { } notepad)
+            _viewModel.Notepads.RequestPopOut(notepad);
+    }
+
+    private void OnNotepadClose(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Notepads.SelectedNotepad is { } notepad)
+            _viewModel.Notepads.CloseNotepad(notepad);
+    }
+
+    private void OnNotepadSaveToTrack(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { Notepads.SelectedNotepad: { } notepad }) return;
+
+        var trackPath = _viewModel.CurrentTrackPath;
+        if (trackPath is null)
+        {
+            _viewModel.Notepads.StatusMessage = "No local track playing — nothing to embed into.";
+            return;
+        }
+
+        try
+        {
+            _viewModel.Notepads.SaveToTrack(notepad, trackPath);
+            _viewModel.Notepads.StatusMessage = $"Saved to {Path.GetFileName(trackPath)}.";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Notepads.StatusMessage = $"Couldn't save: {ex.Message}";
+        }
+    }
+
+    private void OnNotepadPopOutRequested(NotepadViewModel notepad)
+    {
+        var window = new NotepadWindow { DataContext = notepad };
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            window.Show(owner);
+        else
+            window.Show();
     }
 
     private void OnInspectLyrics(object? sender, RoutedEventArgs e)
