@@ -312,12 +312,14 @@
                    Text="Draw zones where your camera or scene overlays appear. These are app-wide: in-app floating overlays (P2W banner, clipboard toast) and the visualizer HUD label reposition around them automatically. Click Apply to also bake them into the current OBS layout's widget positions." />
 
         <!-- Designer canvas -->
-        <Border Height="220" CornerRadius="6" ClipToBounds="True">
+        <Border Height="220" CornerRadius="6"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                ClipToBounds="True">
           <views:DeadZoneDesignerView x:Name="DeadZoneDesigner" />
         </Border>
 
         <TextBlock Classes="secondary" FontStyle="Italic"
-                   Text="Click and drag to draw a zone. Click a zone to select it. Drag corners to resize." />
+                   Text="Click and drag to draw a zone. Click a zone to select it. Drag corners to resize. The outlined edge is the canvas boundary." />
 
         <TextBlock Classes="data" Text="{Binding StreamerSettings.DeadZoneCountText}"
                    IsVisible="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
@@ -327,6 +329,8 @@
                   IsEnabled="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
           <Button Content="Remove selected" Click="OnRemoveSelectedDeadZone" />
           <Button Content="Clear all" Click="OnClearDeadZones" Classes="destructive" />
+          <ToggleButton Content="Preview" Click="OnToggleDeadZonePreview"
+                        ToolTip.Tip="Show current OBS widget positions and where dead zones would push them" />
         </StackPanel>
 
         <TextBlock Classes="data" Text="{Binding StreamerSettings.Status}"

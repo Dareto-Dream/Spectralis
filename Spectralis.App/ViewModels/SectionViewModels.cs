@@ -1162,6 +1162,10 @@ public sealed class StreamerSettingsViewModel : ViewModelBase
         Status = "Dead zones cleared.";
     }
 
+    /// <summary>Current OBS layout widgets, for the dead zone designer's preview mode. Null if no OBS editor is connected.</summary>
+    public IReadOnlyList<Spectralis.Core.Integrations.Obs.ObsLayoutWidget>? GetPreviewWidgets() =>
+        _obsEditor?.GetCurrentLayout().Widgets;
+
     public void ApplyToCurrentLayout()
     {
         if (_obsEditor is null)
