@@ -1975,6 +1975,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadResolvedAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
     {
         string? cachedPath = null;
+        ResetPositionDisplay();
         try
         {
             // WebView widget fallback: embed the platform player directly (SoundCloud, Suno, Spotify).
@@ -2093,6 +2094,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _remoteLoadCts?.Cancel();
         var oldRemotePath = _remoteAudioTempPath;
         _remoteAudioTempPath = null;
+        ResetPositionDisplay();
         try
         {
             LyricsDocument? lyrics = null;
@@ -2199,6 +2201,21 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         this.RaisePropertyChanged(nameof(OutputRateText));
         CycleVisualizerIfDue();
+    }
+
+    /// <summary>
+    /// Zeroes the displayed position/length immediately when a new load begins, before the engine
+    /// actually has a stream open. Without this, the slider keeps showing the previous track's
+    /// end-of-song position for the whole async window (metadata read, or a full remote download
+    /// for SoundCloud/YouTube/etc.) until the first post-load <see cref="RefreshFromEngine"/> tick.
+    /// </summary>
+    private void ResetPositionDisplay()
+    {
+        _positionSeconds = 0;
+        this.RaisePropertyChanged(nameof(PositionSeconds));
+        this.RaisePropertyChanged(nameof(PositionText));
+        LengthSeconds = 0;
+        this.RaisePropertyChanged(nameof(LengthText));
     }
 
     private void OnReactiveParamsChanged(object? sender, ReactiveParamsChangedEventArgs e)
