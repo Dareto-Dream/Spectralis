@@ -214,6 +214,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private bool _showLyrics;
     private bool _showSongWarsPanel;
+    private bool _showNotepadPanel;
     private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
@@ -306,6 +307,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _engine.SetMidiPlaybackInstrument(_settings.MidiInstrument);
         ResetVisualizerCycleDeadline();
         _reactiveRuntime.ParamsChanged += OnReactiveParamsChanged;
+        Notepads.NotepadsAvailableForCurrentTrack += () => ShowNotepadPanel = true;
         PlaySpotifyCommand = ReactiveCommand.CreateFromTask(PlaySpotifyAsync);
 
         // TrackEnded arrives on the audio device callback thread; auto-advance on the UI thread.
@@ -412,6 +414,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         get => _showSongWarsPanel;
         set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+    }
+
+    public NotepadsViewModel Notepads { get; } = new();
+
+    public bool ShowNotepadPanel
+    {
+        get => _showNotepadPanel;
+        set => this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
     }
 
     public SongWarsSessionController? SongWarsSession
@@ -2343,6 +2353,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         Album = track.Album;
         CoverArtBytes = track.CoverArt;
         ApplyEmbeddedModules(track);
+        Notepads.LoadEmbeddedNotepadsForTrack(track.SourcePath);
 
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(track.FormatName))
