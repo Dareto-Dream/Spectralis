@@ -29,15 +29,22 @@ foreach ($required in @("SPECTRALIS_SPOTIFY_CLIENT_ID", "SPECTRALIS_DISCORD_CLIE
 
 # Convert Windows path to WSL mount path  (C:\foo\bar → /mnt/c/foo/bar).
 $repoWsl = "/mnt/" + $repoRoot.ToString()[0].ToString().ToLower() + ($repoRoot.ToString().Substring(2).Replace('\', '/'))
-$scriptWsl = "$repoWsl/Spectralis.Installer/Linux/build-appimage.sh"
 
-# Forward credentials to the WSL environment.
-$env:WSLENV = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u"
+$scriptWin = Join-Path $repoRoot "Spectralis.Installer\Linux\build-appimage.sh"
+$tmpWin    = Join-Path $env:TEMP "spectralis-build-appimage.sh"
+[System.IO.File]::WriteAllText(
+    $tmpWin,
+    [System.IO.File]::ReadAllText($scriptWin).Replace("`r`n", "`n").Replace("`r", "`n"),
+    [System.Text.Encoding]::UTF8)
+$tmpWsl = "/mnt/" + $tmpWin[0].ToString().ToLower() + ($tmpWin.Substring(2).Replace('\', '/'))
+
+$env:WSLENV   = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u:REPO_ROOT"
+$env:REPO_ROOT = $repoWsl
 
 Write-Host "[linux] Building AppImage v$Version via WSL ($WslDistro)..."
-$bashCmd = 'tmp=$(mktemp) && sed "s/\r//" "' + $scriptWsl + '" > "$tmp" && chmod +x "$tmp" && REPO_ROOT="' + $repoWsl + '" bash "$tmp" ' + $Version + '; ec=$?; rm -f "$tmp"; exit $ec'
-wsl -d $WslDistro -- bash -c $bashCmd
+wsl -d $WslDistro -- bash "$tmpWsl" $Version
 Assert-LastExitCode "build-appimage.sh"
+Remove-Item $tmpWin -Force -ErrorAction SilentlyContinue
 
 $artifact = Join-Path $repoRoot "releases\Spectralis-$Version-x86_64.AppImage"
 if (-not (Test-Path $artifact)) {
