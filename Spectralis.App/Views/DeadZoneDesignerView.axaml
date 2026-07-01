@@ -3,7 +3,9 @@
              x:Class="Spectralis.App.Views.DeadZoneDesignerView">
 
   <Border x:Name="DesignerBorder"
-          Background="{StaticResource Brush.Bg.Raised}" ClipToBounds="True"
+          Background="{StaticResource Brush.Bg.Raised}"
+          BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+          ClipToBounds="True"
           SizeChanged="OnDesignerBorderSizeChanged">
     <Canvas x:Name="DesignerCanvas"
             Background="{StaticResource Brush.Bg.Base}"
