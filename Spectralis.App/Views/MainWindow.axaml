@@ -345,7 +345,7 @@
     <!-- P2W Mode overlay: yellow banner top-right (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
     <Border x:Name="P2wBanner"
             Grid.Row="1"
-            IsVisible="{Binding IsP2wModeActive}"
+            IsVisible="{Binding ShowP2wYellowBanner}"
             HorizontalAlignment="Right"
             VerticalAlignment="Top"
             Margin="0,18,18,0"
@@ -369,6 +369,26 @@
                    FontSize="44"
                    LetterSpacing="3" />
       </Viewbox>
+    </Border>
+
+    <!-- P2W Mode overlay: small badge variant top-right (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
+    <Border x:Name="P2wBadge"
+            Grid.Row="1"
+            IsVisible="{Binding ShowP2wBadge}"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,18,18,0"
+            CornerRadius="4"
+            Background="{StaticResource Brush.Bg.Overlay}"
+            BorderBrush="#FFC000"
+            BorderThickness="1"
+            Padding="10,5"
+            IsHitTestVisible="False">
+      <TextBlock Text="PAID SKIP"
+                 Foreground="#FFC000"
+                 FontWeight="SemiBold"
+                 FontSize="11"
+                 LetterSpacing="1" />
     </Border>
 
     <!-- Clipboard URL toast (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
