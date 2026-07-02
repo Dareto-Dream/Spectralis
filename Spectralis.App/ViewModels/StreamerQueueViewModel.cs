@@ -99,7 +99,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private bool _stripeConnected;
     private string _stripeStatus = "Not connected";
 
-    private Uri _cdnBaseUri = new("https://cdn.spectralis.app");
+    private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
     private AppSettings? _settings;
 
     public StreamerQueueViewModel()
@@ -333,7 +333,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         {
             LastError = string.Empty;
             var settings = BuildSqSettings();
-            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, _settings?.SharedPlayLiveChannelId, ct);
+            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, ct);
             ApplyRoomSnapshot(room);
             StatusText = "Settings saved";
         }
