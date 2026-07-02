@@ -172,6 +172,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>The synced lyrics document for the currently loaded track.</summary>
     public LyricsDocument? CurrentLyrics => _lyricsDocument;
 
+    /// <summary>App-wide dead zones (Settings → Streamer) that positioned HUD overlays avoid.</summary>
+    public IReadOnlyList<Spectralis.Core.Layout.DeadZone> DeadZones => _settings.DeadZones;
+
     /// <summary>When set, overrides the catalog-based visualizer with a scripted renderer.</summary>
     public IVisualizerRenderer? ScriptedVisualizerOverride
     {
@@ -211,6 +214,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private bool _showLyrics;
     private bool _showSongWarsPanel;
+    private bool _showNotepadPanel;
     private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
@@ -303,6 +307,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _engine.SetMidiPlaybackInstrument(_settings.MidiInstrument);
         ResetVisualizerCycleDeadline();
         _reactiveRuntime.ParamsChanged += OnReactiveParamsChanged;
+        Notepads.NotepadsAvailableForCurrentTrack += () => ShowNotepadPanel = true;
         PlaySpotifyCommand = ReactiveCommand.CreateFromTask(PlaySpotifyAsync);
 
         // TrackEnded arrives on the audio device callback thread; auto-advance on the UI thread.
@@ -409,6 +414,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         get => _showSongWarsPanel;
         set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+    }
+
+    public NotepadsViewModel Notepads { get; } = new();
+
+    public bool ShowNotepadPanel
+    {
+        get => _showNotepadPanel;
+        set => this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
     }
 
     public SongWarsSessionController? SongWarsSession
@@ -1972,6 +1985,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadResolvedAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
     {
         string? cachedPath = null;
+        ResetPositionDisplay();
         try
         {
             // WebView widget fallback: embed the platform player directly (SoundCloud, Suno, Spotify).
@@ -2090,6 +2104,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _remoteLoadCts?.Cancel();
         var oldRemotePath = _remoteAudioTempPath;
         _remoteAudioTempPath = null;
+        ResetPositionDisplay();
         try
         {
             LyricsDocument? lyrics = null;
@@ -2196,6 +2211,21 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         this.RaisePropertyChanged(nameof(OutputRateText));
         CycleVisualizerIfDue();
+    }
+
+    /// <summary>
+    /// Zeroes the displayed position/length immediately when a new load begins, before the engine
+    /// actually has a stream open. Without this, the slider keeps showing the previous track's
+    /// end-of-song position for the whole async window (metadata read, or a full remote download
+    /// for SoundCloud/YouTube/etc.) until the first post-load <see cref="RefreshFromEngine"/> tick.
+    /// </summary>
+    private void ResetPositionDisplay()
+    {
+        _positionSeconds = 0;
+        this.RaisePropertyChanged(nameof(PositionSeconds));
+        this.RaisePropertyChanged(nameof(PositionText));
+        LengthSeconds = 0;
+        this.RaisePropertyChanged(nameof(LengthText));
     }
 
     private void OnReactiveParamsChanged(object? sender, ReactiveParamsChangedEventArgs e)
@@ -2323,6 +2353,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         Album = track.Album;
         CoverArtBytes = track.CoverArt;
         ApplyEmbeddedModules(track);
+        Notepads.LoadEmbeddedNotepadsForTrack(track.SourcePath);
 
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(track.FormatName))

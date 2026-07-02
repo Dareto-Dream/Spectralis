@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -15,6 +16,7 @@ using Spectralis.App.ViewModels;
 using Spectralis.Core.Common;
 using Spectralis.Core.Embedded;
 using Spectralis.Core.Integrations.Web;
+using Spectralis.Core.Layout;
 using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
@@ -66,6 +68,7 @@ public NowPlayingView()
                 _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
+                _viewModel.Notepads.PopOutRequested -= OnNotepadPopOutRequested;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
@@ -74,8 +77,10 @@ public NowPlayingView()
                 _viewModel.PropertyChanged += OnViewModelPropertyChanged;
                 _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
+                _viewModel.Notepads.PopOutRequested += OnNotepadPopOutRequested;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
+                ApplyDeadZoneLayout();
             }
         };
         DetachedFromVisualTree += (_, _) =>
@@ -87,6 +92,136 @@ public NowPlayingView()
             _persistentWv2 = null;
 #endif
         };
+        SizeChanged += (_, _) => ApplyDeadZoneLayout();
+        VisualizerNameLabel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
+        LyricsSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
+        QueueSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
+        SongWarsSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
+        NotepadSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
+    }
+
+    // ── Dead zones (app-wide) ────────────────────────────────────────────────
+
+    /// <summary>Recomputes every dead-zone-aware layout adjustment in this view (visualizer panel,
+    /// its name label, and the docked sidebars). Panel-level shift runs before the label so the
+    /// label repositions relative to the visualizer's already-adjusted area.</summary>
+    private void ApplyDeadZoneLayout()
+    {
+        ApplyVisualizerPanelDeadZoneAvoidance();
+        ApplyVisualizerLabelDeadZoneAvoidance();
+        ApplySidebarDeadZoneAvoidance();
+    }
+
+    /// <summary>
+    /// Shifts/shrinks the visualizer surface away from any dead zone overlapping it, by insetting
+    /// from whichever single edge most cheaply clears each zone (same "cheapest direction" idea as
+    /// <see cref="DeadZoneHelper"/>'s widget push-away, adapted for a panel that fills its container
+    /// rather than a small movable widget).
+    /// </summary>
+    private void ApplyVisualizerPanelDeadZoneAvoidance()
+    {
+        if (_viewModel is null) return;
+        if (VisualizerSurfacePanel.Parent is not Control parent) return;
+        double w = parent.Bounds.Width, h = parent.Bounds.Height;
+        var zones = _viewModel.DeadZones;
+
+        if (w <= 0 || h <= 0 || zones.Count == 0)
+        {
+            VisualizerSurfacePanel.Margin = default;
+            return;
+        }
+
+        double left = 0, top = 0, right = 0, bottom = 0;
+        foreach (var dz in zones)
+        {
+            double needLeft = dz.X + dz.W;
+            double needRight = 1 - dz.X;
+            double needTop = dz.Y + dz.H;
+            double needBottom = 1 - dz.Y;
+            double min = Math.Min(Math.Min(needLeft, needRight), Math.Min(needTop, needBottom));
+
+            if (min == needLeft) left = Math.Max(left, needLeft);
+            else if (min == needRight) right = Math.Max(right, needRight);
+            else if (min == needTop) top = Math.Max(top, needTop);
+            else bottom = Math.Max(bottom, needBottom);
+        }
+
+        VisualizerSurfacePanel.Margin = new Thickness(left * w, top * h, right * w, bottom * h);
+    }
+
+    /// <summary>
+    /// Docked sidebars (Lyrics/Queue/Song Wars/Notepad) can't move off their edge without a much
+    /// bigger docking rework, so instead they lose height — top and/or bottom margin — wherever a
+    /// dead zone overlaps their horizontal band, biased toward whichever half (upper/lower) the
+    /// zone mostly sits in. Width is never touched (a narrower sidebar wraps its content badly).
+    /// </summary>
+    private void ApplySidebarDeadZoneAvoidance()
+    {
+        if (_viewModel is null) return;
+        double rootW = Bounds.Width, rootH = Bounds.Height;
+        if (rootW <= 0 || rootH <= 0) return;
+
+        var zones = _viewModel.DeadZones;
+        ApplySidebarInset(LyricsSidebarBorder, zones, rootW, rootH);
+        ApplySidebarInset(QueueSidebarBorder, zones, rootW, rootH);
+        ApplySidebarInset(SongWarsSidebarBorder, zones, rootW, rootH);
+        ApplySidebarInset(NotepadSidebarBorder, zones, rootW, rootH);
+    }
+
+    private void ApplySidebarInset(Border sidebar, IReadOnlyList<DeadZone> zones, double rootW, double rootH)
+    {
+        if (!sidebar.IsVisible || sidebar.Bounds.Width <= 0 || sidebar.Bounds.Height <= 0 || zones.Count == 0)
+        {
+            sidebar.Margin = default;
+            return;
+        }
+
+        var topLeft = sidebar.TranslatePoint(new Point(0, 0), this) ?? default;
+        double x0 = Math.Clamp(topLeft.X / rootW, 0, 1);
+        double x1 = Math.Clamp((topLeft.X + sidebar.Bounds.Width) / rootW, 0, 1);
+
+        double marginTop = 0, marginBottom = 0;
+        foreach (var dz in zones)
+        {
+            if (dz.X >= x1 || dz.X + dz.W <= x0) continue; // doesn't overlap this sidebar's column
+
+            var zoneCenterY = dz.Y + dz.H / 2;
+            if (zoneCenterY < 0.5)
+            {
+                var need = Math.Clamp(dz.Y + dz.H, 0, 1) * rootH - topLeft.Y;
+                marginTop = Math.Max(marginTop, Math.Clamp(need, 0, sidebar.Bounds.Height));
+            }
+            else
+            {
+                var need = (topLeft.Y + sidebar.Bounds.Height) - Math.Clamp(dz.Y, 0, 1) * rootH;
+                marginBottom = Math.Max(marginBottom, Math.Clamp(need, 0, sidebar.Bounds.Height));
+            }
+        }
+
+        sidebar.Margin = new Thickness(0, marginTop, 0, marginBottom);
+    }
+
+    private void ApplyVisualizerLabelDeadZoneAvoidance()
+    {
+        if (_viewModel is null) return;
+        double panelW = VisualizerSurfacePanel.Bounds.Width, panelH = VisualizerSurfacePanel.Bounds.Height;
+        double labelW = VisualizerNameLabel.Bounds.Width, labelH = VisualizerNameLabel.Bounds.Height;
+        const double baseLeft = 8, baseBottom = 6;
+
+        var zones = _viewModel.DeadZones;
+        if (panelW <= 0 || panelH <= 0 || labelW <= 0 || labelH <= 0 || zones.Count == 0)
+        {
+            VisualizerNameLabel.Margin = new Thickness(baseLeft, 0, 0, baseBottom);
+            return;
+        }
+
+        double x0 = Math.Clamp(baseLeft / panelW, 0, 1);
+        double y0 = Math.Clamp((panelH - baseBottom - labelH) / panelH, 0, 1);
+        var (x, y) = DeadZoneHelper.Resolve(x0, y0, labelW / panelW, labelH / panelH, zones);
+
+        double marginLeft = Math.Max(0, x * panelW);
+        double marginBottom = Math.Max(0, panelH - (y * panelH + labelH));
+        VisualizerNameLabel.Margin = new Thickness(marginLeft, 0, 0, marginBottom);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -123,6 +258,21 @@ public NowPlayingView()
         {
             ScrollQueueToCurrent();
         }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.ShowVisualizerSurface) or
+            nameof(NowPlayingViewModel.SelectedVisualizer))
+        {
+            ApplyVisualizerPanelDeadZoneAvoidance();
+            ApplyVisualizerLabelDeadZoneAvoidance();
+        }
+
+        if (e.PropertyName is nameof(NowPlayingViewModel.ShowLyrics) or
+            nameof(NowPlayingViewModel.ShowQueue) or
+            nameof(NowPlayingViewModel.ShowSongWarsPanel) or
+            nameof(NowPlayingViewModel.ShowNotepadPanel))
+        {
+            ApplySidebarDeadZoneAvoidance();
+        }
     }
 
     private void ScrollQueueToCurrent()
@@ -143,6 +293,69 @@ public NowPlayingView()
     {
         if (DataContext is NowPlayingViewModel vm)
             vm.SongWarsPopOutRequested?.Invoke();
+    }
+
+    // ── Notepads ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Nil state (nothing playing) has no docked notepad panel to open — the docked panel only
+    /// exists inside the "playing" layout — so this creates a notepad and pops it straight into
+    /// its own window instead.
+    /// </summary>
+    private void OnNilStateOpenNotepad(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var notepad = _viewModel.Notepads.NewNotepad();
+        _viewModel.Notepads.RequestPopOut(notepad);
+    }
+
+    private void OnNotepadTabClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: NotepadViewModel notepad } && _viewModel is not null)
+            _viewModel.Notepads.SelectedNotepad = notepad;
+    }
+
+    private void OnNotepadPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Notepads.SelectedNotepad is { } notepad)
+            _viewModel.Notepads.RequestPopOut(notepad);
+    }
+
+    private void OnNotepadClose(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Notepads.SelectedNotepad is { } notepad)
+            _viewModel.Notepads.CloseNotepad(notepad);
+    }
+
+    private void OnNotepadSaveToTrack(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { Notepads.SelectedNotepad: { } notepad }) return;
+
+        var trackPath = _viewModel.CurrentTrackPath;
+        if (trackPath is null)
+        {
+            _viewModel.Notepads.StatusMessage = "No local track playing — nothing to embed into.";
+            return;
+        }
+
+        try
+        {
+            _viewModel.Notepads.SaveToTrack(notepad, trackPath);
+            _viewModel.Notepads.StatusMessage = $"Saved to {Path.GetFileName(trackPath)}.";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Notepads.StatusMessage = $"Couldn't save: {ex.Message}";
+        }
+    }
+
+    private void OnNotepadPopOutRequested(NotepadViewModel notepad)
+    {
+        var window = new NotepadWindow { DataContext = notepad };
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            window.Show(owner);
+        else
+            window.Show();
     }
 
     private void OnInspectLyrics(object? sender, RoutedEventArgs e)
