@@ -343,7 +343,7 @@
     <!-- ─── END Player column ─────────────────────────────────────── -->
 
     <!-- ─── Lyrics sidebar ────────────────────────────────────────── -->
-    <Border Grid.Column="1" Width="300"
+    <Border x:Name="LyricsSidebarBorder" Grid.Column="1" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowLyrics}">
@@ -482,7 +482,7 @@
     </Border>
 
     <!-- ─── Queue sidebar ─────────────────────────────────────────── -->
-    <Border Grid.Column="2" Width="300"
+    <Border x:Name="QueueSidebarBorder" Grid.Column="2" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowQueue}">
@@ -576,7 +576,7 @@
     </Border>
 
     <!-- ─── Song Wars docked sidebar ───────────────────────────── -->
-    <Border Grid.Column="3" Width="300"
+    <Border x:Name="SongWarsSidebarBorder" Grid.Column="3" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowSongWarsPanel}">
