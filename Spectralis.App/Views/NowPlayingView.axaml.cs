@@ -297,6 +297,18 @@ public NowPlayingView()
 
     // ── Notepads ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Nil state (nothing playing) has no docked notepad panel to open — the docked panel only
+    /// exists inside the "playing" layout — so this creates a notepad and pops it straight into
+    /// its own window instead.
+    /// </summary>
+    private void OnNilStateOpenNotepad(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var notepad = _viewModel.Notepads.NewNotepad();
+        _viewModel.Notepads.RequestPopOut(notepad);
+    }
+
     private void OnNotepadTabClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { DataContext: NotepadViewModel notepad } && _viewModel is not null)
