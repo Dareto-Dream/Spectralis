@@ -97,11 +97,7 @@
                       IsEnabled="{Binding NowPlaying.HasNext}" />
           </MenuItem>
           <MenuItem Header="_Tools">
-            <MenuItem Header="Audio">
-              <MenuItem Header="Effects Chain..." Click="OnMenuEffectsChain" />
-              <MenuItem Header="Metronome..." Click="OnMenuMetronome" />
-              <MenuItem Header="Karaoke Mode..." Click="OnMenuKaraokeMode" />
-            </MenuItem>
+            <MenuItem Header="Karaoke Mode..." Click="OnMenuKaraokeMode" />
             <MenuItem Header="Creator">
               <MenuItem Header="Lyrics Timing Studio" InputGesture="Ctrl+Shift+L" Click="OnMenuTimingStudio" />
             </MenuItem>
