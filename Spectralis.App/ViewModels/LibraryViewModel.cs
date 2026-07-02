@@ -105,10 +105,21 @@ public sealed class LibraryViewModel : ViewModelBase, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilter());
 
-        ReloadFromDatabase();
+        // Loaded off the UI thread and applied when ready — a synchronous full-table
+        // load here used to block the main window from appearing until the whole
+        // library (potentially thousands of tracks) had been fetched and mapped.
+        _ = LoadInitialAsync();
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        _allRows = await Task.Run(() => _database.GetAllEntries().Select(TrackRow.From).ToList());
+        ApplyFilter();
+        this.RaisePropertyChanged(nameof(HasTracks));
+        this.RaisePropertyChanged(nameof(CountText));
 
         // One-time migration offer: legacy index present, new index empty, not dismissed.
-        _offerLegacyImport = !HasTracks &&
+        OfferLegacyImport = !HasTracks &&
             LegacyLibraryImporter.LegacyDatabaseExists(_legacyDbPath) &&
             !File.Exists(_legacyDismissFlagPath);
     }
