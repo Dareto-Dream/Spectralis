@@ -47,7 +47,7 @@
       <!-- Appearance and brand surface -->
       <StackPanel Spacing="8" IsVisible="{Binding IsAppearanceVisible}">
         <TextBlock Classes="heading" Text="Appearance" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Theme mode" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding ThemeModeOptions}"
@@ -76,6 +76,13 @@
           <CheckBox Grid.Row="4" Grid.Column="1"
                     IsChecked="{Binding ShowMoreInfo}"
                     HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="P2W indicator" VerticalAlignment="Center"
+                     ToolTip.Tip="How the pay-to-skip state is shown while File &gt; P2W Mode is on" />
+          <ComboBox Grid.Row="5" Grid.Column="1"
+                    ItemsSource="{Binding P2wBannerStyleOptions}"
+                    SelectedItem="{Binding SelectedP2wBannerStyle}"
+                    MaxWidth="180" HorizontalAlignment="Left" />
         </Grid>
       </StackPanel>
 

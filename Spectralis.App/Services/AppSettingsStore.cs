@@ -7,6 +7,17 @@ using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Services;
 
+/// <summary>How the P2W (pay-to-skip) indicator renders while active.</summary>
+public enum P2wBannerStyle
+{
+    /// <summary>Full-width yellow overlay banner — the original, loudest treatment.</summary>
+    YellowBanner,
+    /// <summary>Small badge next to the app's floating overlays, matching other status pills.</summary>
+    Badge,
+    /// <summary>No visual indicator at all.</summary>
+    None,
+}
+
 public sealed class AppSettings
 {
     public AppThemeMode ThemeMode { get; set; } = AppThemeMode.Dark;
@@ -14,6 +25,7 @@ public sealed class AppSettings
     public bool UseEmbeddedTrackThemes { get; set; } = true;
     public bool EnableEmbeddedContent { get; set; } = true;
     public bool ShowMoreInfo { get; set; } = true;
+    public P2wBannerStyle P2wBannerStyle { get; set; } = P2wBannerStyle.YellowBanner;
     public VisualizerMode CurrentVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
     public VisualizerMode DefaultVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
     public bool ShowVisualizer { get; set; } = true;
@@ -92,6 +104,7 @@ public sealed class AppSettings
             UseEmbeddedTrackThemes = UseEmbeddedTrackThemes,
             EnableEmbeddedContent = EnableEmbeddedContent,
             ShowMoreInfo = ShowMoreInfo,
+            P2wBannerStyle = P2wBannerStyle,
             CurrentVisualizer = CurrentVisualizer,
             DefaultVisualizer = DefaultVisualizer,
             ShowVisualizer = ShowVisualizer,
@@ -210,6 +223,7 @@ public static class AppSettingsStore
     {
         settings.ThemeMode = Enum.IsDefined(settings.ThemeMode) ? settings.ThemeMode : AppThemeMode.Dark;
         settings.ThemeAccent = Enum.IsDefined(settings.ThemeAccent) ? settings.ThemeAccent : AppThemeAccent.Amber;
+        settings.P2wBannerStyle = Enum.IsDefined(settings.P2wBannerStyle) ? settings.P2wBannerStyle : P2wBannerStyle.YellowBanner;
         settings.CurrentVisualizer = NormalizeVisualizer(settings.CurrentVisualizer);
         settings.DefaultVisualizer = NormalizeVisualizer(settings.DefaultVisualizer);
         settings.VisualizerSensitivity = Math.Clamp(settings.VisualizerSensitivity, 50, 200);

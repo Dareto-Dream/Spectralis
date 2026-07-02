@@ -1204,6 +1204,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly AppSettings _settings;
     private readonly NowPlayingViewModel _nowPlaying;
     private readonly Action<bool>? _setDiscordPresenceEnabled;
+    private readonly Action? _onP2wBannerStyleChanged;
     private string _registrationStatus = string.Empty;
     private string _diagnosticsStatus = string.Empty;
     private string _updateStatus = string.Empty;
@@ -1212,6 +1213,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly SpotifyService _spotify = new();
     private SelectionOption<AppThemeMode> _selectedThemeMode;
     private SelectionOption<AppThemeAccent> _selectedThemeAccent;
+    private SelectionOption<P2wBannerStyle> _selectedP2wBannerStyle;
     private VisualizerOption _selectedDefaultVisualizer;
     private SelectionOption<MidiPlaybackInstrument> _selectedMidiInstrument;
     private SettingsCategory _selectedCategory = SettingsCategory.Appearance;
@@ -1222,11 +1224,13 @@ public sealed class SettingsViewModel : ViewModelBase
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
         LibraryViewModel? library = null,
-        StreamerSettingsViewModel? streamerSettings = null)
+        StreamerSettingsViewModel? streamerSettings = null,
+        Action? onP2wBannerStyleChanged = null)
     {
         _settings = settings;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
+        _onP2wBannerStyleChanged = onP2wBannerStyleChanged;
         ObsEditor = obsEditor ?? new ObsEditorViewModel(settings);
         Library = library;
         StreamerSettings = streamerSettings;
@@ -1238,6 +1242,10 @@ public sealed class SettingsViewModel : ViewModelBase
             .ToArray();
         _selectedThemeMode = ThemeModeOptions.First(option => option.Value == _settings.ThemeMode);
         _selectedThemeAccent = ThemeAccentOptions.First(option => option.Value == _settings.ThemeAccent);
+        P2wBannerStyleOptions = Enum.GetValues<P2wBannerStyle>()
+            .Select(style => new SelectionOption<P2wBannerStyle>(P2wBannerStyleLabel(style), style))
+            .ToArray();
+        _selectedP2wBannerStyle = P2wBannerStyleOptions.First(option => option.Value == _settings.P2wBannerStyle);
         _selectedDefaultVisualizer = VisualizerOptions.FirstOrDefault(option => option.Mode == _settings.DefaultVisualizer)
             ?? VisualizerOptions.First(option => option.Mode == VisualizerMode.MirrorSpectrum);
         MidiInstrumentOptions = MidiPlaybackInstrumentCatalog.GetOptions()
@@ -1416,6 +1424,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public IReadOnlyList<SelectionOption<AppThemeMode>> ThemeModeOptions { get; }
     public IReadOnlyList<SelectionOption<AppThemeAccent>> ThemeAccentOptions { get; }
+    public IReadOnlyList<SelectionOption<P2wBannerStyle>> P2wBannerStyleOptions { get; }
     public IReadOnlyList<VisualizerOption> VisualizerOptions => _nowPlaying.VisualizerOptions;
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions => _nowPlaying.SampleRateOptions;
     public IReadOnlyList<SelectionOption<int>> CycleDurationOptions => _nowPlaying.CycleDurationOptions;
@@ -1452,6 +1461,23 @@ public sealed class SettingsViewModel : ViewModelBase
             _settings.ThemeAccent = value.Value;
             AppSettingsStore.Save(_settings);
             AppThemeService.Apply(_settings);
+        }
+    }
+
+    public SelectionOption<P2wBannerStyle> SelectedP2wBannerStyle
+    {
+        get => _selectedP2wBannerStyle;
+        set
+        {
+            if (value is null || _selectedP2wBannerStyle == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _selectedP2wBannerStyle, value);
+            _settings.P2wBannerStyle = value.Value;
+            AppSettingsStore.Save(_settings);
+            _onP2wBannerStyleChanged?.Invoke();
         }
     }
 
@@ -1929,6 +1955,15 @@ public sealed class SettingsViewModel : ViewModelBase
         };
 
     private static string ThemeAccentLabel(AppThemeAccent accent) => accent.ToString();
+
+    private static string P2wBannerStyleLabel(P2wBannerStyle style) =>
+        style switch
+        {
+            P2wBannerStyle.YellowBanner => "Yellow banner",
+            P2wBannerStyle.Badge => "Small badge",
+            P2wBannerStyle.None => "None",
+            _ => style.ToString(),
+        };
 
     public string BuildDiagnosticsText() => DiagnosticsSnapshot.Build();
 

@@ -69,6 +69,7 @@ public partial class MainWindow : Window
         };
         SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         Opened += async (_, _) =>
         {
@@ -94,7 +95,10 @@ public partial class MainWindow : Window
 
     private void OnMainVmPropertyChangedForDeadZones(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.IsP2wModeActive) or nameof(MainWindowViewModel.ClipboardToastVisible))
+        if (e.PropertyName is nameof(MainWindowViewModel.IsP2wModeActive)
+            or nameof(MainWindowViewModel.ShowP2wYellowBanner)
+            or nameof(MainWindowViewModel.ShowP2wBadge)
+            or nameof(MainWindowViewModel.ClipboardToastVisible))
             ApplyDeadZoneAvoidance();
     }
 
@@ -106,6 +110,7 @@ public partial class MainWindow : Window
 
         var zones = vm.AppSettings.DeadZones;
         PositionTopRight(P2wBanner, zones, winW, winH, baseRight: 18, baseTop: 18);
+        PositionTopRight(P2wBadge, zones, winW, winH, baseRight: 18, baseTop: 18);
         PositionBottomRight(ClipboardToastBorder, zones, winW, winH, baseRight: 20, baseBottom: 30);
     }
 

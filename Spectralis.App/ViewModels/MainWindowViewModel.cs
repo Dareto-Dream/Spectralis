@@ -183,7 +183,12 @@ public sealed class MainWindowViewModel : ViewModelBase
             enabled => DiscordPresence.SetEnabled(enabled),
             ObsEditor,
             Library,
-            StreamerSettings);
+            StreamerSettings,
+            onP2wBannerStyleChanged: () =>
+            {
+                this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
+                this.RaisePropertyChanged(nameof(ShowP2wBadge));
+            });
 
         Sections = new ObservableCollection<NavSection>
         {
@@ -363,8 +368,19 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsP2wModeActive
     {
         get => _isP2wModeActive;
-        set => this.RaiseAndSetIfChanged(ref _isP2wModeActive, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isP2wModeActive, value);
+            this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
+            this.RaisePropertyChanged(nameof(ShowP2wBadge));
+        }
     }
+
+    /// <summary>P2W indicator: full yellow banner variant — the loud, original treatment.</summary>
+    public bool ShowP2wYellowBanner => IsP2wModeActive && AppSettings.P2wBannerStyle == P2wBannerStyle.YellowBanner;
+
+    /// <summary>P2W indicator: small badge variant, matched to the app's other status pills.</summary>
+    public bool ShowP2wBadge => IsP2wModeActive && AppSettings.P2wBannerStyle == P2wBannerStyle.Badge;
 
     public bool IsSidebarCollapsed
     {
