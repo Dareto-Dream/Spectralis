@@ -418,10 +418,12 @@ public partial class MainWindow : Window
         SpotifyHostSlot.Content = webView;
 
         var spotify = new SpotifyService();
-        vm.NowPlaying.SpotifyHost = new SpotifyPlaybackHostService(
+        var spotifyPlaybackHost = new SpotifyPlaybackHostService(
             webView,
             spotify,
             () => SpotifyClientIdProvider.ResolveClientId(vm.AppSettings.SpotifyCustomClientId));
+        vm.NowPlaying.SpotifyHost = spotifyPlaybackHost;
+        vm.DiscordPresence.SetSpotifyHost(spotifyPlaybackHost);
 #endif
     }
 

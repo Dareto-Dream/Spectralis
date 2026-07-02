@@ -868,6 +868,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task AutoAdvanceAsync()
     {
+        if (_spotifyState is not null)
+        {
+            RefreshFromEngine();
+            return;
+        }
+
         if (Queue.HasNext || Queue.Repeat != RepeatMode.None)
         {
             await PlayNextAsync();
