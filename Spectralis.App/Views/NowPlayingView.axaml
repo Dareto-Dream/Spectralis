@@ -290,29 +290,40 @@
           <!-- Right: panels + volume + mini -->
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
                       VerticalAlignment="Center">
-            <ToggleButton Classes="ghost" Content="LYRICS"
-                          IsChecked="{Binding ShowLyrics}"
-                          IsVisible="{Binding HasLyrics}"
-                          FontSize="{StaticResource FontSize.UI.Small}"
-                          ToolTip.Tip="Toggle lyrics panel" />
-            <Button Classes="ghost" Content="INSPECT"
-                    Click="OnInspectLyrics"
-                    IsVisible="{Binding HasLyrics}"
+            <Button Classes="ghost" Classes.accent="{Binding AnyPanelOpen}"
+                    Content="PANELS"
                     FontSize="{StaticResource FontSize.UI.Small}"
-                    ToolTip.Tip="Inspect lyrics" />
-            <ToggleButton Classes="ghost" Content="QUEUE"
-                          IsChecked="{Binding ShowQueue}"
-                          FontSize="{StaticResource FontSize.UI.Small}"
-                          ToolTip.Tip="Toggle queue (Ctrl+Q)" />
-            <ToggleButton Classes="ghost" Content="NOTES"
-                          IsChecked="{Binding ShowNotepadPanel}"
-                          FontSize="{StaticResource FontSize.UI.Small}"
-                          ToolTip.Tip="Toggle notepads" />
-            <ToggleButton Classes="ghost" Content="WARS"
-                          IsChecked="{Binding ShowSongWarsPanel}"
-                          FontSize="{StaticResource FontSize.UI.Small}"
-                          ToolTip.Tip="Toggle Song Wars panel"
-                          IsVisible="{Binding SongWarsHasSession}" />
+                    ToolTip.Tip="Lyrics, queue, notes, song wars">
+              <Button.Flyout>
+                <Flyout Placement="Top">
+                  <StackPanel Spacing="4" MinWidth="150">
+                    <ToggleButton Classes="ghost" Content="Lyrics"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowLyrics}"
+                                  IsVisible="{Binding HasLyrics}"
+                                  ToolTip.Tip="Toggle lyrics panel" />
+                    <Button Classes="ghost" Content="Inspect Lyrics"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Click="OnInspectLyrics"
+                            IsVisible="{Binding HasLyrics}"
+                            ToolTip.Tip="Inspect lyrics" />
+                    <ToggleButton Classes="ghost" Content="Queue"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowQueue}"
+                                  ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+                    <ToggleButton Classes="ghost" Content="Notes"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowNotepadPanel}"
+                                  ToolTip.Tip="Toggle notepads" />
+                    <ToggleButton Classes="ghost" Content="Song Wars"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowSongWarsPanel}"
+                                  ToolTip.Tip="Toggle Song Wars panel"
+                                  IsVisible="{Binding SongWarsHasSession}" />
+                  </StackPanel>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
             <Rectangle Width="1" Height="16" Fill="{StaticResource Brush.Border}"
                        VerticalAlignment="Center" Margin="2,0" />
             <Button Classes="ghost" Width="26" Height="26" Padding="0"
