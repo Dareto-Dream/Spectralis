@@ -1704,22 +1704,6 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
-    public bool CloseToTray
-    {
-        get => _settings.CloseToTray;
-        set
-        {
-            if (_settings.CloseToTray == value)
-            {
-                return;
-            }
-
-            _settings.CloseToTray = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
     public bool EnableDiscordRichPresence
     {
         get => _settings.EnableDiscordRichPresence;

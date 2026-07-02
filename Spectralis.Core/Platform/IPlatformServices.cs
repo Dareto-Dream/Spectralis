@@ -9,17 +9,6 @@ public interface IProtocolRegistrar
     void RegisterFileAssociations(IReadOnlyList<string> extensions);
 }
 
-/// <summary>System tray / status item with media controls.</summary>
-public interface ITrayService : IDisposable
-{
-    void Show(string tooltip);
-    void UpdateNowPlaying(string title, string artist);
-    void Hide();
-    event EventHandler? PlayMostRecentRequested;
-    event EventHandler? OpenRequested;
-    event EventHandler? ExitRequested;
-}
-
 /// <summary>
 /// OS media session integration: SMTC on Windows, MPRIS on Linux, Now Playing on macOS.
 /// </summary>
