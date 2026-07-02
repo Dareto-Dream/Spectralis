@@ -1341,6 +1341,30 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Dev Tools toggle: points Shared Play and Streamer Queue at the staging backend instead of production.</summary>
+    public bool UseStagingBackend
+    {
+        get => string.Equals(_settings.SharedPlayCdnBaseUrl, SharedPlayDefaults.StagingCdnBaseUrl, StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (UseStagingBackend == value) return;
+            var target = value ? SharedPlayDefaults.StagingCdnBaseUrl : string.Empty;
+            _settings.SharedPlayCdnBaseUrl = target;
+            _settings.SqCdnBaseUrl = target;
+            // A room ID/token pair only exists on the backend it was created against.
+            _settings.SqRoomId = string.Empty;
+            _settings.SqOwnerToken = string.Empty;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(SharedPlayCdnBaseUrl));
+            this.RaisePropertyChanged(nameof(BackendStatusText));
+        }
+    }
+
+    public string BackendStatusText => UseStagingBackend
+        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Restart Spectralis to apply."
+        : "Backend: production. Restart Spectralis to apply.";
+
     public bool SharedPlayLiveChannelEnabled
     {
         get => _settings.SharedPlayLiveChannelEnabled;

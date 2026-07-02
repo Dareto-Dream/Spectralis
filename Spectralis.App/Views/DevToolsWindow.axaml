@@ -31,6 +31,15 @@
         </StackPanel>
       </StackPanel>
 
+      <!-- Backend -->
+      <StackPanel Spacing="8">
+        <TextBlock Classes="heading" Text="Backend" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Points Shared Play and Streamer Queue at the staging server instead of production. Clears any saved SQ room so it isn't reused across backends." />
+        <CheckBox Content="Use staging backend" IsChecked="{Binding UseStagingBackend}" />
+        <TextBlock Classes="data" Text="{Binding BackendStatusText}" TextWrapping="Wrap" />
+      </StackPanel>
+
       <!-- OBS manual layout JSON -->
       <StackPanel Spacing="8">
         <TextBlock Classes="heading" Text="OBS layout JSON" />

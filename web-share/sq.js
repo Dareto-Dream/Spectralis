@@ -59,8 +59,13 @@ async function bootstrap() {
 
   if (!roomData.enabled) {
     show('disabledState');
+    // The streamer may flip the queue on after this tab was opened — keep
+    // checking so it recovers on its own instead of needing a refresh.
+    setTimeout(bootstrap, 5000);
     return;
   }
+
+  hide('disabledState');
 
   const badge = $('roomBadge');
   if (badge) {
