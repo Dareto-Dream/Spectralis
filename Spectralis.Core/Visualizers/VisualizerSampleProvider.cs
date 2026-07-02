@@ -7,6 +7,10 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 {
     private const int FftLength = 8192;
     private const int FftBins = FftLength / 2;
+    // 75% overlap: the analysis window is still 8192 samples (needed for low-frequency
+    // resolution) but it now advances every 2048 samples instead of every 8192, so
+    // spectrum/spectrogram/loudness refresh ~4x more often (~46ms vs ~186ms at 44.1kHz).
+    private const int FftHop = FftLength / 4;
     private const int SpectrumBarCount = 64;
     private const int WaveformPointCount = 256;
     private const int MinimumDecibels = -72;
@@ -17,11 +21,17 @@ public sealed class VisualizerSampleProvider : ISampleProvider
     private readonly int channels;
     private readonly object syncRoot = new();
 
-    // Mono FFT (existing) + stereo FFT infrastructure
+    // Mono FFT (existing) + stereo FFT infrastructure. fftBuffer/L/R hold the windowed
+    // frequency-domain result of the most recent analysis; fftRing*/fftRingPos are the
+    // raw time-domain circular history each analysis window is cut from.
     private readonly Complex[] fftBuffer = new Complex[FftLength];
     private readonly Complex[] fftBufferL = new Complex[FftLength];
     private readonly Complex[] fftBufferR = new Complex[FftLength];
-    private int fftPosition;
+    private readonly float[] fftRingMono = new float[FftLength];
+    private readonly float[] fftRingL = new float[FftLength];
+    private readonly float[] fftRingR = new float[FftLength];
+    private int fftRingPos;
+    private int samplesSinceHop;
 
     private readonly float[] spectrumBars = new float[SpectrumBarCount];
     private readonly float[] rawFftBins = new float[FftBins];
@@ -246,11 +256,15 @@ public sealed class VisualizerSampleProvider : ISampleProvider
             Array.Clear(fftBuffer);
             Array.Clear(fftBufferL);
             Array.Clear(fftBufferR);
+            Array.Clear(fftRingMono);
+            Array.Clear(fftRingL);
+            Array.Clear(fftRingR);
             Array.Clear(spectrumBars);
             Array.Clear(rawFftBins);
             Array.Clear(waveformRingL);
             Array.Clear(waveformRingR);
-            fftPosition = 0;
+            fftRingPos = 0;
+            samplesSinceHop = 0;
             waveformPosition = 0;
             peakLevel = 0;
             rmsLevel = 0;
@@ -351,30 +365,53 @@ public sealed class VisualizerSampleProvider : ISampleProvider
                 corrCount = 0;
             }
 
-            // FFT accumulation
-            var win = (float)FastFourierTransform.HammingWindow(fftPosition, FftLength);
-            fftBuffer[fftPosition].X = mono * win;
-            fftBuffer[fftPosition].Y = 0;
-            fftBufferL[fftPosition].X = left * win;
-            fftBufferL[fftPosition].Y = 0;
-            fftBufferR[fftPosition].X = right * win;
-            fftBufferR[fftPosition].Y = 0;
-            fftPosition++;
+            // FFT ring accumulation — raw samples only; windowing happens once per hop
+            // in RunFftCycle, over whatever the most recent FftLength samples are.
+            fftRingMono[fftRingPos] = mono;
+            fftRingL[fftRingPos] = left;
+            fftRingR[fftRingPos] = right;
+            fftRingPos = (fftRingPos + 1) % FftLength;
 
-            if (fftPosition < FftLength)
+            if (++samplesSinceHop < FftHop)
                 return;
 
-            var log2N = (int)Math.Log2(FftLength);
-            FastFourierTransform.FFT(true, log2N, fftBuffer);
-            FastFourierTransform.FFT(true, log2N, fftBufferL);
-            FastFourierTransform.FFT(true, log2N, fftBufferR);
-
-            UpdateSpectrumBars();
-            UpdateRawFftBins();
-            UpdateSpectrogramRow();
-            UpdateMetrics();
-            fftPosition = 0;
+            samplesSinceHop = 0;
+            RunFftCycle();
         }
+    }
+
+    /// <summary>
+    /// Windows and transforms the most recent FftLength samples out of the ring, then
+    /// refreshes everything derived from that transform. Runs once per FftHop samples
+    /// (a sliding/overlapping window, not a fresh non-overlapping block each time) so
+    /// spectrum-driven visuals update far more often than the 8192-sample window alone
+    /// would allow.
+    /// </summary>
+    private void RunFftCycle()
+    {
+        // fftRingPos is the slot about to be overwritten next, i.e. the oldest sample
+        // still in the window — start reading from there.
+        for (var i = 0; i < FftLength; i++)
+        {
+            var ringIndex = (fftRingPos + i) % FftLength;
+            var win = (float)FastFourierTransform.HammingWindow(i, FftLength);
+            fftBuffer[i].X = fftRingMono[ringIndex] * win;
+            fftBuffer[i].Y = 0;
+            fftBufferL[i].X = fftRingL[ringIndex] * win;
+            fftBufferL[i].Y = 0;
+            fftBufferR[i].X = fftRingR[ringIndex] * win;
+            fftBufferR[i].Y = 0;
+        }
+
+        var log2N = (int)Math.Log2(FftLength);
+        FastFourierTransform.FFT(true, log2N, fftBuffer);
+        FastFourierTransform.FFT(true, log2N, fftBufferL);
+        FastFourierTransform.FFT(true, log2N, fftBufferR);
+
+        UpdateSpectrumBars();
+        UpdateRawFftBins();
+        UpdateSpectrogramRow();
+        UpdateMetrics();
     }
 
     private void UpdateSpectrumBars()
