@@ -65,7 +65,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         EffectChain = new EffectChain();
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
-        NowPlaying = new NowPlayingViewModel(Engine, AppSettings);
+        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain);
 
         var databasePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
