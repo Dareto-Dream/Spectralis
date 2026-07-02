@@ -3109,7 +3109,7 @@ async fn post_sq_create_room(
             "skip": { "enabled": false, "amount": 2.0, "currency": "USD" },
             "superSkip": { "enabled": false, "amount": 10.0, "currency": "USD" }
         },
-        "channelId": null,
+        "channelId": &room_id,
         "nowPlayingId": null,
         "nowPlayingTier": null,
         "manualOrderIds": null,
@@ -3776,7 +3776,7 @@ async fn get_sq_stripe_connect(
     }
     let channel_id = room.get("channelId").and_then(Value::as_str)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| AppError::bad_request("No channel configured for this room."))?;
+        .unwrap_or(id.as_str());
 
     let client_id = state.stripe_connect_client_id.as_deref()
         .ok_or_else(|| AppError::internal("Stripe Connect not configured on this server."))?;
@@ -3803,7 +3803,7 @@ async fn post_sq_stripe_disconnect(
     }
     let channel_id = room.get("channelId").and_then(Value::as_str)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| AppError::bad_request("No channel configured for this room."))?
+        .unwrap_or(id.as_str())
         .to_string();
 
     let path = channel_path(&state, &channel_id)?;
