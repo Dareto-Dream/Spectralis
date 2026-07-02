@@ -104,7 +104,6 @@
             </MenuItem>
             <MenuItem Header="Creator">
               <MenuItem Header="Lyrics Timing Studio" InputGesture="Ctrl+Shift+L" Click="OnMenuTimingStudio" />
-              <MenuItem Header="Scripted Visualizers..." Click="OnMenuScriptedVisualizers" />
             </MenuItem>
             <MenuItem Header="Live">
               <MenuItem Header="Song Wars..." Click="OnMenuSongWars" />
@@ -113,8 +112,7 @@
           <MenuItem Header="_Help">
             <MenuItem Header="Check for Updates" Click="OnMenuCheckUpdates" />
             <Separator />
-            <MenuItem Header="Redeem Visualizer..." Click="OnMenuRedeemVisualizer" />
-            <MenuItem Header="Clear Redeemed Visualizers..." Click="OnMenuClearRedeemedVisualizers" />
+            <MenuItem Header="Manage Visualizers..." Click="OnMenuRedeemVisualizer" />
             <Separator />
             <MenuItem Header="Terms of Service" Click="OnMenuTermsOfService" />
             <MenuItem Header="Privacy Policy" Click="OnMenuPrivacyPolicy" />
