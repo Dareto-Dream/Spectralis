@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Spectralis.Core.Visualizers.Installed;
 
@@ -87,8 +88,21 @@ public sealed class InstalledVisualizerStore
                     static kv => kv.Key,
                     static kv => Convert.FromBase64String(kv.Value),
                     StringComparer.OrdinalIgnoreCase);
-            var textAssets = (IReadOnlyDictionary<string, string>)(record.DataBlocks
-                ?? new Dictionary<string, string>());
+            var textAssets = new Dictionary<string, string>(record.DataBlocks
+                ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+
+            // The HTML references assets by the binding name declared in the module's dataRefs
+            // (e.g. delta-asset:bgImage), not necessarily by the CDN manifest's literal asset key
+            // (e.g. "bg_v2.png"). Without this, delta-asset:/delta-bin: tokens whose binding name
+            // differs from the manifest key are left unresolved and images silently fail to load —
+            // same dataRefs indirection the ID3-embedded-module path already applies.
+            foreach (var (bindingName, assetId) in ParseDataRefs(record.ModuleJson))
+            {
+                if (binaryAssets.TryGetValue(assetId, out var bytes))
+                    binaryAssets.TryAdd(bindingName, bytes);
+                if (textAssets.TryGetValue(assetId, out var text))
+                    textAssets.TryAdd(bindingName, text);
+            }
 
             return new InstalledVisualizerContent(
                 record.Id,
@@ -138,6 +152,36 @@ public sealed class InstalledVisualizerStore
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>Reads the bindingName → assetId map from a module's "dataRefs" JSON object, if present.</summary>
+    private static IReadOnlyDictionary<string, string> ParseDataRefs(string? moduleJson)
+    {
+        if (string.IsNullOrWhiteSpace(moduleJson)) return new Dictionary<string, string>();
+
+        try
+        {
+            if (JsonNode.Parse(moduleJson) is not JsonObject obj || obj["dataRefs"] is not JsonObject dataRefs)
+                return new Dictionary<string, string>();
+
+            var refs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in dataRefs)
+            {
+                if (property.Value is JsonValue value &&
+                    value.TryGetValue<string>(out var id) &&
+                    !string.IsNullOrWhiteSpace(property.Key) &&
+                    !string.IsNullOrWhiteSpace(id))
+                {
+                    refs[property.Key] = id.Trim();
+                }
+            }
+
+            return refs;
+        }
+        catch
+        {
+            return new Dictionary<string, string>();
         }
     }
 
