@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Spectralis.App.Services;
@@ -43,6 +44,13 @@ public partial class SettingsView : UserControl
         if (DataContext is not SettingsViewModel { StreamerSettings: { } ss }) return;
         ss.ClearAll();
         DeadZoneDesigner.LoadZones([]);
+    }
+
+    private void OnToggleDeadZonePreview(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel { StreamerSettings: { } ss }) return;
+        var enabled = sender is ToggleButton { IsChecked: true };
+        DeadZoneDesigner.SetPreviewMode(enabled, enabled ? ss.GetPreviewWidgets() : null);
     }
 
     private async void OnLibraryAddFolder(object? sender, RoutedEventArgs e)

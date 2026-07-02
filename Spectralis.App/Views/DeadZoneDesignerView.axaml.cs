@@ -3,6 +3,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 using Spectralis.Core.Integrations.Obs;
+using Spectralis.Core.Layout;
 
 namespace Spectralis.App.Views;
 
@@ -42,6 +43,22 @@ public partial class DeadZoneDesignerView : UserControl
     private static readonly IBrush ZoneFill           = new SolidColorBrush(Color.FromArgb(80,  239, 68,  68));
     private static readonly IBrush ZoneStroke         = new SolidColorBrush(Color.FromArgb(180, 239, 68,  68));
     private static readonly IBrush ZoneSelectedStroke = new SolidColorBrush(Color.FromArgb(255, 248, 113, 113));
+    private static readonly IBrush BoundaryStroke     = new SolidColorBrush(Color.FromArgb(220, 235, 232, 240));
+    private static readonly IBrush PreviewOriginalStroke = new SolidColorBrush(Color.FromArgb(150, 235, 232, 240));
+    private static readonly IBrush PreviewAdjustedStroke = new SolidColorBrush(Color.FromArgb(255, 96, 165, 250));
+    private static readonly IBrush PreviewAdjustedFill   = new SolidColorBrush(Color.FromArgb(40,  96, 165, 250));
+
+    private readonly Rectangle _boundaryRect = new()
+    {
+        Fill = Brushes.Transparent,
+        Stroke = BoundaryStroke,
+        StrokeThickness = 2,
+        IsHitTestVisible = false,
+    };
+
+    private bool _previewMode;
+    private IReadOnlyList<ObsLayoutWidget>? _previewWidgets;
+    private readonly List<Control> _previewVisuals = [];
 
     public event EventHandler? ZonesChanged;
     public event EventHandler<DeadZoneItem?>? SelectedItemChanged;
@@ -68,6 +85,8 @@ public partial class DeadZoneDesignerView : UserControl
         _items.Clear();
         _rects.Clear();
         DesignerCanvas.Children.Clear();
+        DesignerCanvas.Children.Add(_boundaryRect);
+        PlaceBoundaryRect();
         SetSelected(null);
 
         foreach (var z in zones)
@@ -76,6 +95,8 @@ public partial class DeadZoneDesignerView : UserControl
             _items.Add(item);
             AddRect(item);
         }
+
+        RenderPreviewOverlay();
     }
 
     public IReadOnlyList<DeadZone> CollectZones() =>
@@ -89,7 +110,30 @@ public partial class DeadZoneDesignerView : UserControl
         _rects.Remove(_selected);
         _items.Remove(_selected);
         SetSelected(null);
+        RenderPreviewOverlay();
         ZonesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Toggles preview mode: editing is disabled and, when <paramref name="widgets"/> is supplied,
+    /// each widget's current position (faint, dashed) and its dead-zone-adjusted position
+    /// (solid, accent) are overlaid so users can see the effect before applying.
+    /// </summary>
+    public void SetPreviewMode(bool enabled, IReadOnlyList<ObsLayoutWidget>? widgets = null)
+    {
+        _previewMode = enabled;
+        _previewWidgets = enabled ? widgets : null;
+
+        if (enabled)
+        {
+            _isDrawing = false;
+            _isDragging = false;
+            _isResizing = false;
+            _dragItem = null;
+            _drawingZone = null;
+        }
+
+        RenderPreviewOverlay();
     }
 
     // ─── Canvas sizing ────────────────────────────────────────────────────────
@@ -120,8 +164,79 @@ public partial class DeadZoneDesignerView : UserControl
         DesignerCanvas.Width  = _canvasW;
         DesignerCanvas.Height = _canvasH;
 
+        PlaceBoundaryRect();
         foreach (var item in _items)
             PlaceRect(item);
+        RenderPreviewOverlay();
+    }
+
+    private void PlaceBoundaryRect()
+    {
+        _boundaryRect.Width = Math.Max(1, _canvasW);
+        _boundaryRect.Height = Math.Max(1, _canvasH);
+        Canvas.SetLeft(_boundaryRect, 0);
+        Canvas.SetTop(_boundaryRect, 0);
+    }
+
+    // ─── Preview mode ─────────────────────────────────────────────────────────
+
+    private void RenderPreviewOverlay()
+    {
+        foreach (var visual in _previewVisuals)
+            DesignerCanvas.Children.Remove(visual);
+        _previewVisuals.Clear();
+
+        if (!_previewMode || _previewWidgets is null || _previewWidgets.Count == 0)
+            return;
+
+        var zones = CollectZones();
+
+        foreach (var widget in _previewWidgets)
+        {
+            // Original position — faint dashed outline.
+            var original = new Rectangle
+            {
+                Width = Math.Max(1, widget.W * _canvasW),
+                Height = Math.Max(1, widget.H * _canvasH),
+                Stroke = PreviewOriginalStroke,
+                StrokeThickness = 1.5,
+                StrokeDashArray = [4, 3],
+                Fill = Brushes.Transparent,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(original, widget.X * _canvasW);
+            Canvas.SetTop(original, widget.Y * _canvasH);
+            DesignerCanvas.Children.Add(original);
+            _previewVisuals.Add(original);
+
+            // Dead-zone-adjusted position — solid accent outline, using the zones as currently drawn.
+            var (adjX, adjY) = DeadZoneHelper.Resolve(widget.X, widget.Y, widget.W, widget.H, zones);
+            var adjusted = new Rectangle
+            {
+                Width = Math.Max(1, widget.W * _canvasW),
+                Height = Math.Max(1, widget.H * _canvasH),
+                Stroke = PreviewAdjustedStroke,
+                StrokeThickness = 2,
+                Fill = PreviewAdjustedFill,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(adjusted, adjX * _canvasW);
+            Canvas.SetTop(adjusted, adjY * _canvasH);
+            DesignerCanvas.Children.Add(adjusted);
+            _previewVisuals.Add(adjusted);
+
+            var label = new TextBlock
+            {
+                Text = widget.Type,
+                FontSize = 10,
+                Foreground = Brushes.White,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(label, adjX * _canvasW + 4);
+            Canvas.SetTop(label, adjY * _canvasH + 2);
+            DesignerCanvas.Children.Add(label);
+            _previewVisuals.Add(label);
+        }
     }
 
     // ─── Rect management ─────────────────────────────────────────────────────
@@ -170,6 +285,8 @@ public partial class DeadZoneDesignerView : UserControl
 
     private void OnCanvasPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (_previewMode) return;
+
         var pos = e.GetPosition(DesignerCanvas);
         _dragStart = pos;
 
@@ -223,6 +340,8 @@ public partial class DeadZoneDesignerView : UserControl
 
     private void OnCanvasPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_previewMode) return;
+
         var pos = e.GetPosition(DesignerCanvas);
 
         if (_isDrawing && _drawingZone is not null)
@@ -263,6 +382,8 @@ public partial class DeadZoneDesignerView : UserControl
 
     private void OnCanvasPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_previewMode) return;
+
         e.Pointer.Capture(null);
 
         if (_isDrawing && _drawingZone is not null)

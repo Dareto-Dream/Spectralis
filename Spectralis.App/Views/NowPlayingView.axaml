@@ -58,6 +58,7 @@
         <Button Content="Open URL…" Click="OnOpenUrlClick" />
         <Button Content="Play Spotify" Command="{Binding PlaySpotifyCommand}"
                 IsVisible="{Binding IsSpotifyLinked}" />
+        <Button Content="Open Notepad" Click="OnNilStateOpenNotepad" />
       </StackPanel>
 
       <!-- Status / error feedback -->
@@ -75,7 +76,7 @@
   </Panel>
 
   <!-- ============ Playing state (track or album world) ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -98,14 +99,15 @@
                  IsVisible="{Binding CoverArtBytes, Converter={x:Static ObjectConverters.IsNull}}" />
         </Panel>
 
-        <Panel IsVisible="{Binding ShowVisualizerSurface}">
+        <Panel x:Name="VisualizerSurfacePanel" IsVisible="{Binding ShowVisualizerSurface}">
           <controls:VisualizerHostControl Engine="{Binding Engine}"
                                           Mode="{Binding SelectedVisualizerMode}"
                                           AlbumArtBytes="{Binding CoverArtBytes}"
                                           ShowPeaks="{Binding PeakHold}"
                                           Sensitivity="{Binding VisualizerSensitivity}"
                                           ScriptedRenderer="{Binding ScriptedVisualizerOverride}" />
-          <TextBlock Text="{Binding SelectedVisualizer.Label}"
+          <TextBlock x:Name="VisualizerNameLabel"
+                     Text="{Binding SelectedVisualizer.Label}"
                      HorizontalAlignment="Left" VerticalAlignment="Bottom"
                      Margin="8,0,0,6" FontSize="10" LetterSpacing="0.5"
                      Opacity="0.30" Foreground="{StaticResource Brush.Ink.Secondary}"
@@ -302,6 +304,10 @@
                           IsChecked="{Binding ShowQueue}"
                           FontSize="{StaticResource FontSize.UI.Small}"
                           ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+            <ToggleButton Classes="ghost" Content="NOTES"
+                          IsChecked="{Binding ShowNotepadPanel}"
+                          FontSize="{StaticResource FontSize.UI.Small}"
+                          ToolTip.Tip="Toggle notepads" />
             <ToggleButton Classes="ghost" Content="WARS"
                           IsChecked="{Binding ShowSongWarsPanel}"
                           FontSize="{StaticResource FontSize.UI.Small}"
@@ -338,7 +344,7 @@
     <!-- ─── END Player column ─────────────────────────────────────── -->
 
     <!-- ─── Lyrics sidebar ────────────────────────────────────────── -->
-    <Border Grid.Column="1" Width="300"
+    <Border x:Name="LyricsSidebarBorder" Grid.Column="1" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowLyrics}">
@@ -477,7 +483,7 @@
     </Border>
 
     <!-- ─── Queue sidebar ─────────────────────────────────────────── -->
-    <Border Grid.Column="2" Width="300"
+    <Border x:Name="QueueSidebarBorder" Grid.Column="2" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowQueue}">
@@ -571,7 +577,7 @@
     </Border>
 
     <!-- ─── Song Wars docked sidebar ───────────────────────────── -->
-    <Border Grid.Column="3" Width="300"
+    <Border x:Name="SongWarsSidebarBorder" Grid.Column="3" Width="300"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowSongWarsPanel}">
@@ -639,6 +645,74 @@
 
           </StackPanel>
         </ScrollViewer>
+
+      </Grid>
+    </Border>
+
+    <!-- ─── Notepads docked sidebar ───────────────────────────────── -->
+    <Border x:Name="NotepadSidebarBorder" Grid.Column="4" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowNotepadPanel}">
+      <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,10,8">
+          <TextBlock Grid.Column="0" Classes="heading" Text="Notepads" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="ghost" Content="+ New"
+                  FontSize="{StaticResource FontSize.UI.Small}"
+                  Command="{Binding Notepads.NewNotepadCommand}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" Margin="10,0,10,6" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Notepads.Notepads}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="4" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:NotepadViewModel">
+                <Button Classes="ghost" Content="{Binding Title}" Click="OnNotepadTabClick"
+                        FontSize="{StaticResource FontSize.UI.Small}"
+                        MaxWidth="110" HorizontalContentAlignment="Left" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <Border Grid.Row="2"
+                IsVisible="{Binding Notepads.SelectedNotepad, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14,0,14,14"
+                DataContext="{Binding Notepads.SelectedNotepad}">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,6" x:DataType="vm:NotepadViewModel">
+              <TextBox Grid.Column="0" Text="{Binding Title}" FontWeight="SemiBold" Margin="0,0,6,0" />
+              <Button Grid.Column="1" Classes="ghost" Content="⊡" Padding="6,4"
+                      ToolTip.Tip="Pop out to window"
+                      Click="OnNotepadPopOut" />
+              <Button Grid.Column="2" Classes="ghost" Content="×" Padding="6,4"
+                      ToolTip.Tip="Close notepad"
+                      Click="OnNotepadClose" />
+            </Grid>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="0,0,0,6"
+                        IsVisible="{Binding IsFromTrack}" x:DataType="vm:NotepadViewModel">
+              <TextBlock Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" Text="From:" />
+              <TextBlock Classes="muted" FontSize="{StaticResource FontSize.UI.Small}"
+                         Text="{Binding SourceTrackPath}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <TextBox Grid.Row="2" Text="{Binding Content}" x:DataType="vm:NotepadViewModel"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalContentAlignment="Top"
+                     Watermark="Track your queue, jot improvement notes, leave a message for whoever this gets shared with..." />
+            <Button Grid.Row="3" Classes="primary" Content="Save to Track" Margin="0,8,0,0"
+                    Click="OnNotepadSaveToTrack"
+                    ToolTip.Tip="Embed this notepad's text into the currently playing local file's tags" />
+          </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="3" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}"
+                   Margin="14,0,14,10"
+                   Text="{Binding Notepads.StatusMessage}"
+                   IsVisible="{Binding Notepads.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
       </Grid>
     </Border>
