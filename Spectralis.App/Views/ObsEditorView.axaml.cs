@@ -18,9 +18,43 @@ public partial class ObsEditorView : UserControl
         Designer.SelectedItemChanged += OnDesignerSelectedItemChanged;
         Designer.StatusChanged += OnDesignerStatusChanged;
         AutoApplyToggle.IsCheckedChanged += (_, _) => Designer.AutoApply = AutoApplyToggle.IsChecked == true;
+        DataContextChanged += OnDataContextChanged;
     }
 
     private ObsEditorViewModel? Vm => DataContext as ObsEditorViewModel;
+
+    // ─── Dead zones ──────────────────────────────────────────────────────────
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (Vm?.StreamerSettings is not { } ss) return;
+        DeadZoneDesigner.SetAspectRatio(ss.CanvasAspectRatio);
+        DeadZoneDesigner.LoadZones(ss.GetDeadZones());
+        DeadZoneDesigner.ZonesChanged -= OnDeadZonesChanged;
+        DeadZoneDesigner.ZonesChanged += OnDeadZonesChanged;
+    }
+
+    private void OnDeadZonesChanged(object? sender, EventArgs e) =>
+        Vm?.StreamerSettings?.SaveDeadZones(DeadZoneDesigner.CollectZones());
+
+    private void OnApplyDeadZones(object? sender, RoutedEventArgs e) =>
+        Vm?.StreamerSettings?.ApplyToCurrentLayout();
+
+    private void OnRemoveSelectedDeadZone(object? sender, RoutedEventArgs e) =>
+        DeadZoneDesigner.RemoveSelected();
+
+    private void OnClearDeadZones(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.StreamerSettings is not { } ss) return;
+        ss.ClearAll();
+        DeadZoneDesigner.LoadZones([]);
+    }
+
+    private void OnToggleDeadZonePreview(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.StreamerSettings is not { } ss) return;
+        var enabled = sender is ToggleButton { IsChecked: true };
+        DeadZoneDesigner.SetPreviewMode(enabled, enabled ? ss.GetPreviewWidgets() : null);
+    }
 
     // ─── Designer events ──────────────────────────────────────────────────────
     private void OnDesignerSelectedItemChanged(object? sender, ObsDesignerItem? item)

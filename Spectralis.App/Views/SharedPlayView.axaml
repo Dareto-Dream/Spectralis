@@ -27,6 +27,24 @@
       <TextBlock Classes="error" Text="{Binding LastError}"
                  IsVisible="{Binding LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+      <Separator Margin="0,8" />
+
+      <TextBlock Classes="heading" Text="Connection" />
+      <CheckBox Content="Enable Shared Play" IsChecked="{Binding SharedPlayEnabled}" />
+      <TextBlock Classes="secondary" Text="CDN base URL (optional)" />
+      <TextBox Text="{Binding CdnBaseUrl}" Watermark="Leave blank for default CDN" />
+
+      <Separator Margin="0,8" />
+
+      <TextBlock Classes="heading" Text="Live Channel" />
+      <CheckBox Content="Enable Live Channel" IsChecked="{Binding LiveChannelEnabled}" />
+      <TextBlock Classes="secondary" Text="Channel ID" />
+      <TextBox Text="{Binding LiveChannelId}" />
+      <TextBlock Classes="secondary" Text="Owner token" />
+      <TextBox Text="{Binding LiveChannelOwnerToken}" PasswordChar="•" />
+      <TextBlock Classes="secondary" Text="Display name" />
+      <TextBox Text="{Binding LiveChannelDisplayName}" Watermark="Spectralis Listener" />
+
     </StackPanel>
   </ScrollViewer>
 
