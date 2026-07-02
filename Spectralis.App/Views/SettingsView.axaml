@@ -250,9 +250,7 @@
         <TextBlock Classes="heading" Text="Updates" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Installed version" VerticalAlignment="Center" />
-          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding VersionText}" VerticalAlignment="Center"
-                     PointerPressed="OnVersionTextPressed"
-                     ToolTip.Tip="Click 5 times to unlock Developer Tools" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding VersionText}" VerticalAlignment="Center" />
 
           <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Automatic updates" VerticalAlignment="Center" />
           <CheckBox Grid.Row="1" Grid.Column="1"

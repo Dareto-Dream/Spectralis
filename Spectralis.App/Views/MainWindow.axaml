@@ -43,8 +43,6 @@
             <Separator />
             <MenuItem Header="Settings..." InputGesture="Ctrl+OemComma" Click="OnMenuSettings" />
             <Separator />
-            <MenuItem Header="Set as Default App..." Click="OnMenuSetAsDefault" />
-            <Separator />
             <MenuItem Header="P2W Mode"
                     ToggleType="CheckBox"
                     IsChecked="{Binding IsP2wModeActive, Mode=TwoWay}" />
@@ -109,7 +107,6 @@
               <MenuItem Header="Scripted Visualizers..." Click="OnMenuScriptedVisualizers" />
             </MenuItem>
             <MenuItem Header="Live">
-              <MenuItem Header="OBS Overlay Settings" Click="OnMenuSettings" />
               <MenuItem Header="Song Wars..." Click="OnMenuSongWars" />
             </MenuItem>
           </MenuItem>
