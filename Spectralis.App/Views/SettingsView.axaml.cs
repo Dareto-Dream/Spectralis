@@ -98,9 +98,6 @@ public partial class SettingsView : UserControl
         }
     }
 
-    private void OnVersionTextPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) =>
-        (DataContext as SettingsViewModel)?.RegisterVersionClick();
-
     private void OnOpenDevTools(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SettingsViewModel vm) return;
