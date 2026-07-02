@@ -17,12 +17,19 @@ namespace Spectralis.Core.Audio;
 /// </summary>
 public sealed class AudioEngine : IDisposable
 {
+    // Short gain ramp applied on every device start/stop boundary (track transitions, device
+    // recovery after another app grabs the shared audio device, manual play/pause) so playback
+    // never begins or ends on a hard, arbitrary-phase sample — which is what produces an audible
+    // click/pop through a shared-mode Windows audio device.
+    private const int FadeMs = 25;
+
     private readonly IAudioDeviceEnumerator _deviceEnumerator;
     private readonly int _latencyMs;
 
     private WaveStream? _playbackStream;
     private IAudioDevice? _device;
     private VisualizerSampleProvider? _visualizer;
+    private FadeInOutSampleProvider? _fade;
     private int _preferredSampleRate;
     private string? _preferredDeviceId;
     private MidiPlaybackInstrument _midiInstrument = MidiPlaybackInstrument.AcousticGrandPiano;
@@ -164,6 +171,16 @@ public sealed class AudioEngine : IDisposable
         try
         {
             var wasPlaying = _device.IsPlaying;
+
+            if (wasPlaying && _fade is not null)
+            {
+                // Ramp the outgoing track to silence and give the device a moment to actually
+                // play those faded samples before Stop() cuts the stream — otherwise Stop() can
+                // land mid-waveform on an arbitrary sample, which is audible as a click.
+                _fade.BeginFadeOut(FadeMs);
+                Thread.Sleep(FadeMs + 10);
+            }
+
             _suppressStopEvents = true;
             _device.Stop();
             _suppressStopEvents = false;
@@ -179,10 +196,12 @@ public sealed class AudioEngine : IDisposable
             if (_effectChain is not null)
                 src = _effectChain.BuildChain(src);
             _visualizer = new VisualizerSampleProvider(src);
+            _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
 
-            _device.Init(new SampleProviderSource(_visualizer));
+            _device.Init(new SampleProviderSource(_fade));
             if (wasPlaying)
             {
+                _fade.BeginFadeIn(FadeMs);
                 _device.Play();
                 StateMachine.TryTransitionTo(PlaybackState.Playing);
             }
@@ -230,7 +249,9 @@ public sealed class AudioEngine : IDisposable
             return;
         }
 
-        if (!_device.IsPlaying &&
+        var wasPlaying = _device.IsPlaying;
+
+        if (!wasPlaying &&
             _playbackStream.TotalTime > TimeSpan.Zero &&
             _playbackStream.CurrentTime >= _playbackStream.TotalTime)
         {
@@ -239,6 +260,10 @@ public sealed class AudioEngine : IDisposable
 
         try
         {
+            // Only (re)trigger the ramp when actually starting from a stopped/paused state —
+            // calling BeginFadeIn while already playing would restart the ramp and dip the volume.
+            if (!wasPlaying)
+                _fade?.BeginFadeIn(FadeMs);
             _device.Play();
             StateMachine.TryTransitionTo(PlaybackState.Playing);
         }
@@ -451,13 +476,18 @@ public sealed class AudioEngine : IDisposable
         }
 
         _visualizer = new VisualizerSampleProvider(sampleProvider);
+        _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
         _device = _deviceEnumerator.CreateDevice(_preferredDeviceId, _latencyMs);
         _device.Volume = _volume;
         _device.PlaybackStopped += OnDevicePlaybackStopped;
-        _device.Init(new SampleProviderSource(_visualizer));
+        _device.Init(new SampleProviderSource(_fade));
 
         if (resumePlayback)
         {
+            // Also covers device-recovery after another app grabs the shared audio device
+            // (TryRecoverAudioDevice resumes through here) — a fresh device negotiating with
+            // another app's playback is exactly when a hard-start click is most audible.
+            _fade.BeginFadeIn(FadeMs);
             _device.Play();
             StateMachine.TryTransitionTo(PlaybackState.Playing);
         }
