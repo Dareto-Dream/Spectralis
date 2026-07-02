@@ -79,6 +79,7 @@ backend/data/
 
 # Else
 *.ignore
+commit/
 
 # Local creator signing material
 *.private.json
