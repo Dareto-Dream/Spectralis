@@ -75,6 +75,36 @@ public sealed class LyricsTimingSession
         }
     }
 
+    /// <summary>Directly stamps a line by index, regardless of the tap cursor. Used by word-mode tapping.</summary>
+    public void StampLine(int index, double seconds)
+    {
+        if (index < 0 || index >= _lines.Count)
+        {
+            return;
+        }
+
+        _lines[index].Timestamp = Math.Max(0, seconds);
+        if (index >= CurrentIndex)
+        {
+            CurrentIndex = index + 1;
+        }
+    }
+
+    /// <summary>Clears a single line's stamp by index. Used when undoing a word-mode tap.</summary>
+    public void ClearLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count)
+        {
+            return;
+        }
+
+        _lines[index].Timestamp = null;
+        if (CurrentIndex > index)
+        {
+            CurrentIndex = index;
+        }
+    }
+
     public void Reset()
     {
         foreach (var line in _lines)

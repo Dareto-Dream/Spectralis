@@ -12,14 +12,16 @@ public sealed class TimingChip : ViewModelBase
     private bool _isTimed;
     private bool _isSelected;
 
-    public TimingChip(string text, int globalIndex)
+    public TimingChip(string text, int globalIndex, int lineIndex)
     {
         Text = text;
         GlobalIndex = globalIndex;
+        LineIndex = lineIndex;
     }
 
     public string Text { get; }
     public int GlobalIndex { get; }
+    public int LineIndex { get; }
 
     public bool IsTimed
     {
@@ -202,13 +204,14 @@ public sealed class TimingStudioViewModel : ViewModelBase
         _allChips.Clear();
         _chipCurrentIndex = 0;
 
-        foreach (var line in _session.Lines)
+        for (var lineIndex = 0; lineIndex < _session.Lines.Count; lineIndex++)
         {
+            var line = _session.Lines[lineIndex];
             var words = line.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var lineChips = new ObservableCollection<TimingChip>();
             foreach (var word in words)
             {
-                var chip = new TimingChip(word, _allChips.Count);
+                var chip = new TimingChip(word, _allChips.Count, lineIndex);
                 chip.IsTimed = line.Timestamp.HasValue;
                 _allChips.Add(chip);
                 lineChips.Add(chip);
@@ -258,9 +261,20 @@ public sealed class TimingStudioViewModel : ViewModelBase
             return;
         }
 
-        var pos = _engine.GetPosition();
-        _allChips[_chipCurrentIndex].IsTimed = true;
-        _allChips[_chipCurrentIndex].IsSelected = false;
+        var chip = _allChips[_chipCurrentIndex];
+
+        // The LRC format we export is line-based, so the first word tapped in a
+        // line is what actually stamps that line in the session.
+        if (_session.Lines[chip.LineIndex].Timestamp is null)
+        {
+            var pos = _engine.GetPosition();
+            _session.StampLine(chip.LineIndex, pos);
+            Rows[chip.LineIndex].TimestampText = LyricsTimingSession.FormatTimestamp(pos);
+            UpdateCursor();
+        }
+
+        chip.IsTimed = true;
+        chip.IsSelected = false;
         _chipCurrentIndex++;
         if (_chipCurrentIndex < _allChips.Count)
             _allChips[_chipCurrentIndex].IsSelected = true;
@@ -286,8 +300,17 @@ public sealed class TimingStudioViewModel : ViewModelBase
                 if (_chipCurrentIndex < _allChips.Count)
                     _allChips[_chipCurrentIndex].IsSelected = false;
                 _chipCurrentIndex--;
-                _allChips[_chipCurrentIndex].IsTimed = false;
-                _allChips[_chipCurrentIndex].IsSelected = true;
+                var chip = _allChips[_chipCurrentIndex];
+                chip.IsTimed = false;
+                chip.IsSelected = true;
+
+                var isFirstWordOfLine = _chipCurrentIndex == 0 || _allChips[_chipCurrentIndex - 1].LineIndex != chip.LineIndex;
+                if (isFirstWordOfLine)
+                {
+                    _session.ClearLine(chip.LineIndex);
+                    Rows[chip.LineIndex].TimestampText = "--:--.--";
+                    UpdateCursor();
+                }
             }
             return;
         }
