@@ -5,12 +5,12 @@ namespace Spectralis.Core.Visualizers;
 
 public sealed class VisualizerSampleProvider : ISampleProvider
 {
-    private const int FftLength = 4096;
+    private const int FftLength = 8192;
     private const int FftBins = FftLength / 2;
     private const int SpectrumBarCount = 64;
     private const int WaveformPointCount = 256;
     private const int MinimumDecibels = -72;
-    private const int SpectrogramHistoryLength = 512;
+    private const int SpectrogramHistoryLength = 768;
     private const int CorrelationBlockSize = 512;
 
     private readonly ISampleProvider source;
