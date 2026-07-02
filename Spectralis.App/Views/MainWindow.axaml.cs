@@ -1041,43 +1041,6 @@ public partial class MainWindow : Window
             .Show(this);
     }
 
-    private async void OnMenuSetAsDefault(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            await MessageWindow.ShowAsync(this, "Set as Default App",
-                "Default app registration is only supported on Windows.");
-            return;
-        }
-
-        try
-        {
-            var registrar = new Spectralis.App.Platform.Windows.WindowsProtocolRegistrar();
-            registrar.RegisterProtocol();
-            registrar.RegisterFileAssociations(
-                Spectralis.Core.Common.SupportedAudioFormats.Extensions
-                    .Concat([".spectralis", ".spectral"]).ToArray());
-        }
-        catch (Exception ex)
-        {
-            await MessageWindow.ShowAsync(this, "Set as Default App",
-                $"Registration failed: {ex.Message}");
-            return;
-        }
-
-#if WINDOWS10_0_19041_0_OR_GREATER
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "ms-settings:defaultapps?registeredAppUser=Spectralis",
-                UseShellExecute = true,
-            });
-        }
-        catch { }
-#endif
-    }
-
     private void OnMenuRedeemVisualizer(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;

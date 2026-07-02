@@ -70,8 +70,6 @@ public sealed class AppSettings
     public string SharedPlayLiveChannelOwnerToken { get; set; } = string.Empty;
     public string SharedPlayLiveChannelDisplayName { get; set; } = string.Empty;
     public bool SidebarCollapsed { get; set; } = true;
-    /// <summary>Unlocked by clicking the version number 5 times in Settings; reveals the Developer Tools section.</summary>
-    public bool DeveloperModeUnlocked { get; set; }
 
     public string SqCdnBaseUrl { get; set; } = string.Empty;
     public string SqRoomId { get; set; } = string.Empty;
@@ -146,7 +144,6 @@ public sealed class AppSettings
             SharedPlayLiveChannelOwnerToken = SharedPlayLiveChannelOwnerToken,
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
             SidebarCollapsed = SidebarCollapsed,
-            DeveloperModeUnlocked = DeveloperModeUnlocked,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
             SqCdnBaseUrl = SqCdnBaseUrl,

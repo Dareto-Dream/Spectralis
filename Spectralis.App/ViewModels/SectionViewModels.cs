@@ -1215,8 +1215,6 @@ public sealed class SettingsViewModel : ViewModelBase
     private VisualizerOption _selectedDefaultVisualizer;
     private SelectionOption<MidiPlaybackInstrument> _selectedMidiInstrument;
     private SettingsCategory _selectedCategory = SettingsCategory.Appearance;
-    private int _versionClickCount;
-    private DateTimeOffset _lastVersionClickAtUtc;
 
     public SettingsViewModel(
         AppSettings settings,
@@ -1759,32 +1757,6 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Non-null when a Squirrel/Velopack update notice was consumed on startup this session.</summary>
     public string? ConsumedUpdateVersion { get; private set; }
 
-    public bool DeveloperModeUnlocked => _settings.DeveloperModeUnlocked;
-
-    /// <summary>Click the version number 5 times within 3 seconds to reveal the Developer category.</summary>
-    public void RegisterVersionClick()
-    {
-        var now = DateTimeOffset.UtcNow;
-        if (now - _lastVersionClickAtUtc > TimeSpan.FromSeconds(3))
-        {
-            _versionClickCount = 0;
-        }
-        _lastVersionClickAtUtc = now;
-        _versionClickCount++;
-
-        if (_settings.DeveloperModeUnlocked || _versionClickCount < 5)
-        {
-            return;
-        }
-
-        _versionClickCount = 0;
-        _settings.DeveloperModeUnlocked = true;
-        AppSettingsStore.Save(_settings);
-        this.RaisePropertyChanged(nameof(DeveloperModeUnlocked));
-        RefreshCategoryOptions();
-        DiagnosticsStatus = "Developer tools unlocked.";
-    }
-
     public IReadOnlyList<SelectionOption<SettingsCategory>> CategoryOptions { get; private set; } = [];
 
     public SelectionOption<SettingsCategory> SelectedCategoryOption
@@ -1824,7 +1796,6 @@ public sealed class SettingsViewModel : ViewModelBase
     private void RefreshCategoryOptions()
     {
         CategoryOptions = AllCategories
-            .Where(category => category != SettingsCategory.Developer || _settings.DeveloperModeUnlocked)
             .Select(category => new SelectionOption<SettingsCategory>(CategoryLabel(category), category))
             .ToArray();
         this.RaisePropertyChanged(nameof(CategoryOptions));
@@ -1914,7 +1885,20 @@ public sealed class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             RegistrationStatus = $"Registration failed: {ex.Message}";
+            return;
         }
+
+#if WINDOWS10_0_19041_0_OR_GREATER
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "ms-settings:defaultapps?registeredAppUser=Spectralis",
+                UseShellExecute = true,
+            });
+        }
+        catch { }
+#endif
     }
 
     private void RefreshRegistrationStatus()
