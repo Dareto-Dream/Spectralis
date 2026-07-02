@@ -439,13 +439,17 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     {
         var room = await _controller.PollAsync(CancellationToken.None);
         if (room is not null)
-            ApplyRoomSnapshot(room);
+            ApplyQueueSnapshot(room);
         else if (_controller.LastError is not null)
             LastError = _controller.LastError;
     }
 
     // ── Snapshot application ──────────────────────────────────────────────────
 
+    // Full snapshot: settings + queue. Only safe to call right after a load or
+    // an explicit save — the periodic poll must not clobber in-progress edits
+    // to the settings form (e.g. "Queue enabled" getting flipped back off
+    // before the user has a chance to click Save).
     private void ApplyRoomSnapshot(SqRoom room)
     {
         SqEnabled = room.Enabled;
@@ -466,6 +470,13 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             SuperSkipFeeAmount = s.SuperSkip.Amount.ToString("F2");
         }
 
+        ApplyQueueSnapshot(room);
+    }
+
+    // Live queue state only: submissions, now-playing, wait estimates. Safe to
+    // call on every poll tick without disturbing an unsaved settings edit.
+    private void ApplyQueueSnapshot(SqRoom room)
+    {
         var nowTier = room.NowPlayingTier;
         IsP2wActive = nowTier is "skip" or "super_skip";
 
@@ -503,6 +514,6 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
         var base_ = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
-        SubmitUrl = $"{base_}/sq?room={Uri.EscapeDataString(RoomId)}";
+        SubmitUrl = $"{base_}/spectralis/web-share/sq.html?room={Uri.EscapeDataString(RoomId)}";
     }
 }
