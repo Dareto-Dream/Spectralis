@@ -4,7 +4,7 @@ import {
   ArrowRight, ArrowUpRight, FileCode2, Package, MonitorPlay,
   BarChart3, Activity, Layers, Sparkles, Music, Mic2,
   Terminal, RefreshCw, ListMusic, Globe, Crosshair, Dices,
-  Trophy, Minimize2, Palette, Users,
+  Trophy, Minimize2, Palette, Users, NotebookPen, Bug,
 } from 'lucide-react'
 import { VisualizerDemo } from './VisualizerDemo'
 import './App.css'
@@ -27,9 +27,54 @@ const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','A
 
 const CHANGELOG_RELEASES = [
   {
+    version: '5.2.0',
+    label: 'Dead zones & notepads',
+    date: 'Latest',
+    summary: 'Dead zones now protect the app itself, not just your OBS layout — the visualizer and docked sidebars shift out of the way of your webcam or alerts. A new Notepads panel lets you jot notes while audio plays and embed them straight into the file. Plus a reworked spin wheel editor, a SoundCloud playback fix, and a fix for broken redeemable visualizer images.',
+    metrics: ['App-wide dead zones', 'Notepads', 'Weighted spin wheel'],
+    groups: [
+      {
+        icon: Crosshair,
+        title: 'Dead Zones Go App-Wide',
+        bullets: [
+          "Dead zones aren't OBS-only anymore — they reposition the app's own layout too, so a webcam or alert box doesn't cover something you're actually using.",
+          'The visualizer panel shifts away from any overlapping dead zone; docked sidebars (Queue, Lyrics, Song Wars, Notepads) lose height instead of width, so nothing wraps awkwardly.',
+          'The dead-zone designer finally shows where its canvas edges actually are, plus a Preview toggle that overlays your current OBS widget positions next to where dead zones would push them.',
+        ],
+      },
+      {
+        icon: NotebookPen,
+        title: 'Notepads',
+        bullets: [
+          'New Notepads panel in Now Playing — write notes while audio plays, keep several open as tabs, and pop any of them out into their own window.',
+          "Save a notepad straight into the currently playing local file's tags; the note travels with the file and reopens automatically next time that track plays.",
+          'Useful for tracking a manual queue without Streamer Queue, leaving improvement notes on a mix, or writing a description for whoever the file gets shared with.',
+          'An Open Notepad button on the empty "nothing playing" screen too, since taking notes shouldn\'t require a track to be loaded.',
+        ],
+      },
+      {
+        icon: Dices,
+        title: 'Randomizer Tools, Reworked',
+        bullets: [
+          'Wheel entries are now edited as plain text, one per line, instead of adding them one at a time.',
+          'Each entry gets a settings flyout for color, font, and spin weighting — heavier entries get bigger slices and better odds.',
+          'Save and reload named wheels for later use.',
+        ],
+      },
+      {
+        icon: Bug,
+        title: 'Fixes',
+        bullets: [
+          "SoundCloud (and other remote sources) could leave the seek bar stuck on the previous track's end position while the next one loaded — position now resets immediately.",
+          "Redeemable visualizer images that referenced assets by their module's binding name instead of the CDN manifest's literal asset key now resolve correctly.",
+        ],
+      },
+    ],
+  },
+  {
     version: '5.1.5',
     label: 'Streamer toolkit',
-    date: 'Latest',
+    date: 'Previous',
     summary: 'A streamer-focused release: a standalone Streamer Queue with paid skips, OBS dead zones that keep overlays off your face cam, spin-the-wheel and coin-toss randomizer tools, a Song Wars overhaul, and a rewritten Shared Play with short room codes.',
     metrics: ['Streamer Queue', 'OBS dead zones', 'Song Wars overhaul'],
     groups: [
@@ -926,7 +971,7 @@ function DownloadsPage({ navigate }) {
         <div className="dl-hero__inner">
           <div className="dl-hero__head">
             <div className="dl-hero__version-row">
-              <span className="dl-hero__v">v5.1.5</span>
+              <span className="dl-hero__v">v5.2.0</span>
               <span className="dl-hero__v-badge">Latest</span>
             </div>
             <h1 className="dl-hero__title">Get Spectralis</h1>
