@@ -58,6 +58,7 @@
         <Button Content="Open URL…" Click="OnOpenUrlClick" />
         <Button Content="Play Spotify" Command="{Binding PlaySpotifyCommand}"
                 IsVisible="{Binding IsSpotifyLinked}" />
+        <Button Content="Open Notepad" Click="OnNilStateOpenNotepad" />
       </StackPanel>
 
       <!-- Status / error feedback -->
