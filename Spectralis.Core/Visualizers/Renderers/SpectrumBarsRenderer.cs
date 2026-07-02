@@ -4,6 +4,13 @@ namespace Spectralis.Core.Visualizers.Renderers;
 
 public sealed class SpectrumBarsRenderer(bool mirrored) : VisualizerRendererBase
 {
+    // The FFT that feeds SpectrumLevels only completes every ~185ms, but this renders
+    // at 60fps — without easing, every bar holds still for ~11 frames then hard-snaps
+    // to the next value, which reads as choppy/stuttery. Ease the displayed height
+    // toward the latest target each frame instead of drawing the target directly.
+    private const float SmoothingPerFrame = 0.3f;
+    private float[]? _displayLevels;
+
     public override void Draw(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
     {
         DrawBackground(canvas, bounds, scene);
@@ -28,9 +35,20 @@ public sealed class SpectrumBarsRenderer(bool mirrored) : VisualizerRendererBase
         var glowColor = scene.Theme.BarGlowColor.WithAlpha(22);
         var peakColor = scene.Theme.PeakColor.WithAlpha(210);
 
+        if (_displayLevels is null || _displayLevels.Length != displayBars)
+        {
+            // (Re)seed at the current target on first draw or bar-count change (window
+            // resize) so it doesn't visibly animate up from zero.
+            _displayLevels = new float[displayBars];
+            for (var seedIndex = 0; seedIndex < displayBars; seedIndex++)
+                _displayLevels[seedIndex] = SampleRange(scene.SpectrumLevels, seedIndex, displayBars);
+        }
+
         for (var index = 0; index < displayBars; index++)
         {
-            var level = SampleRange(scene.SpectrumLevels, index, displayBars);
+            var target = SampleRange(scene.SpectrumLevels, index, displayBars);
+            _displayLevels[index] += (target - _displayLevels[index]) * SmoothingPerFrame;
+            var level = _displayLevels[index];
             var barHeight = Math.Max(6, (int)((mirrored ? contentBounds.Height / 2f : contentBounds.Height) * level));
             var x = contentBounds.Left + (index * (barWidth + gap));
 
