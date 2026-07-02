@@ -21,11 +21,25 @@ public sealed class NavSection : ViewModelBase
         Content = content;
     }
 
+    /// <summary>Section group header (e.g. "CREATE &amp; STREAM") — not a routable destination.</summary>
+    private NavSection(string label)
+    {
+        Label = label;
+        IconData = string.Empty;
+        Content = null!;
+        IsSeparator = true;
+    }
+
+    public static NavSection Separator(string label) => new(label);
+
     public string Label { get; }
 
     public string IconData { get; }
 
     public ViewModelBase Content { get; }
+
+    /// <summary>True for group-header rows: never selectable, Content is not valid to read.</summary>
+    public bool IsSeparator { get; }
 }
 
 public sealed class MainWindowViewModel : ViewModelBase
@@ -196,9 +210,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Library", IconData.Library, Library),
             new("Playlists", IconData.Playlists, Playlists),
             new("Capsules", IconData.Capsules, Capsules),
+            new("Randomizer", IconData.Randomizer, RandomizerTools),
+            NavSection.Separator("CREATE & STREAM"),
             new("Shared Play", IconData.SharedPlay, SharedPlay),
             new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
-            new("Randomizer", IconData.Randomizer, RandomizerTools),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
