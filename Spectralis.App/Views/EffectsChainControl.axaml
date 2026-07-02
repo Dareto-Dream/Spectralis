@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.EffectsChainControl"
+             x:DataType="vm:EffectsChainViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="14" RowSpacing="10">
+
+    <!-- Top bar: master enable + add effect -->
+    <StackPanel Grid.Row="0" Spacing="6">
+      <CheckBox Content="Effects enabled" IsChecked="{Binding ChainEnabled}" />
+      <Grid ColumnDefinitions="*,Auto">
+        <ComboBox Grid.Column="0"
+                  ItemsSource="{Binding AvailableEffects}"
+                  SelectedItem="{Binding SelectedNewEffect}"
+                  HorizontalAlignment="Stretch"
+                  Margin="0,0,6,0" />
+        <Button Grid.Column="1" Content="Add" Click="OnAddEffect" Classes="primary" />
+      </Grid>
+    </StackPanel>
+
+    <!-- Rack list -->
+    <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="6">
+      <ListBox Grid.Row="0"
+               ItemsSource="{Binding EffectItems}"
+               SelectedItem="{Binding SelectedEffect}"
+               MaxHeight="140">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:EffectItemViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <CheckBox IsChecked="{Binding Enabled}" Padding="0" />
+              <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
+        <Button Content="Up" Click="OnMoveUp" FontSize="{StaticResource FontSize.UI.Small}" />
+        <Button Content="Down" Click="OnMoveDown" FontSize="{StaticResource FontSize.UI.Small}" />
+        <Button Content="Remove" Click="OnRemove" Classes="destructive" FontSize="{StaticResource FontSize.UI.Small}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Parameters for the selected effect -->
+    <Border Grid.Row="2"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="1"
+            Padding="12">
+      <ScrollViewer>
+        <StackPanel Spacing="4" DataContext="{Binding SelectedEffect}">
+          <TextBlock Classes="heading"
+                     FontSize="{StaticResource FontSize.UI}"
+                     Text="{Binding Name, FallbackValue='No effect selected'}" />
+          <ItemsControl ItemsSource="{Binding Sliders}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EffectParamViewModel">
+                <StackPanel Margin="0,4,0,0" Spacing="2">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Classes="secondary"
+                               Text="{Binding Label}"
+                               FontSize="{StaticResource FontSize.UI.Small}" />
+                    <TextBlock Grid.Column="1"
+                               Classes="data"
+                               Text="{Binding ValueText}"
+                               TextAlignment="Right" />
+                  </Grid>
+                  <Slider Minimum="{Binding Minimum}"
+                          Maximum="{Binding Maximum}"
+                          Value="{Binding Value, Mode=TwoWay}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+</UserControl>

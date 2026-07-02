@@ -7,6 +7,7 @@ using Spectralis.App.Design;
 using Spectralis.App.Services;
 using NAudio.Wave.SampleProviders;
 using Spectralis.Core.Audio;
+using Spectralis.Core.Audio.Effects;
 using Spectralis.Core.Audio.Loopback;
 using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Common;
@@ -215,6 +216,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private bool _showLyrics;
     private bool _showSongWarsPanel;
     private bool _showNotepadPanel;
+    private bool _showMetronomePanel;
+    private bool _showEffectsChainPanel;
     private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
@@ -272,9 +275,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public NowPlayingViewModel(
         AudioEngine engine,
         AppSettings? settings = null,
-        bool enablePositionPolling = true)
+        bool enablePositionPolling = true,
+        EffectChain? effectChain = null)
     {
         _engine = engine;
+        EffectsChain = new EffectsChainViewModel(effectChain ?? new EffectChain());
         _settings = settings is null
             ? new AppSettings()
             : AppSettingsStore.Normalize(settings);
@@ -436,8 +441,31 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>True when any of the docked side panels (lyrics/queue/notes/song wars) is open — drives the collapsed panel-rail button's active state.</summary>
-    public bool AnyPanelOpen => ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel;
+    /// <summary>True when any of the docked side panels (lyrics/queue/notes/song wars/metronome/effects) is open — drives the collapsed panel-rail button's active state.</summary>
+    public bool AnyPanelOpen =>
+        ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel || ShowMetronomePanel || ShowEffectsChainPanel;
+
+    public EffectsChainViewModel EffectsChain { get; }
+
+    public bool ShowMetronomePanel
+    {
+        get => _showMetronomePanel;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showMetronomePanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
+    }
+
+    public bool ShowEffectsChainPanel
+    {
+        get => _showEffectsChainPanel;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showEffectsChainPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
+    }
 
     public SongWarsSessionController? SongWarsSession
     {
