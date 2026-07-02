@@ -9,6 +9,7 @@ using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Capsule;
 using Spectralis.Core.Common;
 using Spectralis.Core.Embedded;
+using Spectralis.Core.Layout;
 using Spectralis.Core.Metadata;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Integrations.Spotify;
@@ -1143,10 +1144,10 @@ public sealed class StreamerSettingsViewModel : ViewModelBase
                 ? "1 dead zone defined"
                 : $"{_settings.DeadZones.Count} dead zones defined";
 
-    public IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> GetDeadZones() =>
+    public IReadOnlyList<DeadZone> GetDeadZones() =>
         _settings.DeadZones;
 
-    public void SaveDeadZones(IReadOnlyList<Spectralis.Core.Integrations.Obs.DeadZone> zones)
+    public void SaveDeadZones(IReadOnlyList<DeadZone> zones)
     {
         _settings.DeadZones = zones.ToList();
         AppSettingsStore.Save(_settings);
@@ -1161,6 +1162,10 @@ public sealed class StreamerSettingsViewModel : ViewModelBase
         Status = "Dead zones cleared.";
     }
 
+    /// <summary>Current OBS layout widgets, for the dead zone designer's preview mode. Null if no OBS editor is connected.</summary>
+    public IReadOnlyList<Spectralis.Core.Integrations.Obs.ObsLayoutWidget>? GetPreviewWidgets() =>
+        _obsEditor?.GetCurrentLayout().Widgets;
+
     public void ApplyToCurrentLayout()
     {
         if (_obsEditor is null)
@@ -1174,7 +1179,7 @@ public sealed class StreamerSettingsViewModel : ViewModelBase
             return;
         }
         var layout = _obsEditor.GetCurrentLayout();
-        var adjusted = Spectralis.Core.Integrations.Obs.DeadZoneHelper.ApplyDeadZones(layout, _settings.DeadZones);
+        var adjusted = DeadZoneHelper.ApplyDeadZones(layout, _settings.DeadZones);
         _obsEditor.ApplyDesignerLayout(adjusted);
         Status = "Layout adjusted around dead zones. Reload the browser source.";
     }
