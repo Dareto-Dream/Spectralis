@@ -5,7 +5,7 @@ public sealed class StreamerQueueRoomController : IDisposable
     private readonly StreamerQueueClient client;
     private readonly SemaphoreSlim gate = new(1, 1);
 
-    private Uri cdnBaseUri = new("https://cdn.spectralis.app");
+    private Uri cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
     private string? roomId;
     private string? ownerToken;
 
