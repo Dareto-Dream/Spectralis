@@ -839,29 +839,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private EffectsChainWindow? _effectsWindow;
-
-    private void OnMenuEffectsChain(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        if (_effectsWindow is { IsVisible: true })
-        {
-            _effectsWindow.Activate();
-            return;
-        }
-
-        _effectsWindow = new EffectsChainWindow
-        {
-            DataContext = new EffectsChainViewModel(vm.EffectChain),
-        };
-        _effectsWindow.Closed += (_, _) => _effectsWindow = null;
-        _effectsWindow.Show(this);
-    }
-
     private ScriptedVisualizerManagerWindow? _scriptedVizWindow;
 
     private void OnMenuScriptedVisualizers(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -903,25 +880,6 @@ public partial class MainWindow : Window
             () => vm.NowPlaying.CurrentLyrics);
         _karaokeWindow.Closed += (_, _) => _karaokeWindow = null;
         _karaokeWindow.Show(this);
-    }
-
-    private MetronomeWindow? _metronomeWindow;
-
-    private void OnMenuMetronome(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_metronomeWindow is { IsVisible: true })
-        {
-            _metronomeWindow.Activate();
-            return;
-        }
-
-        // Seed the metronome with the current track's analyzed BPM when known.
-        var initialBpm = DataContext is MainWindowViewModel vm && vm.NowPlaying.HasBeatGrid
-            ? (float)vm.NowPlaying.BeatGridBpm
-            : 120f;
-        _metronomeWindow = new MetronomeWindow(initialBpm);
-        _metronomeWindow.Closed += (_, _) => _metronomeWindow = null;
-        _metronomeWindow.Show(this);
     }
 
     private void OnMenuAnalyzeLibrary(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
