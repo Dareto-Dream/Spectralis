@@ -4,6 +4,7 @@
       xmlns:conv="using:Spectralis.App.Converters"
       xmlns:controls="using:Spectralis.App.Controls"
       xmlns:design="using:Spectralis.App.Design"
+      xmlns:views="using:Spectralis.App.Views"
       x:Class="Spectralis.App.Views.NowPlayingView"
       x:DataType="vm:NowPlayingViewModel">
 
@@ -76,7 +77,7 @@
   </Panel>
 
   <!-- ============ Playing state (track or album world) ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -320,6 +321,15 @@
                                   IsChecked="{Binding ShowSongWarsPanel}"
                                   ToolTip.Tip="Toggle Song Wars panel"
                                   IsVisible="{Binding SongWarsHasSession}" />
+                    <Separator />
+                    <ToggleButton Classes="ghost" Content="Metronome"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowMetronomePanel}"
+                                  ToolTip.Tip="Toggle metronome panel" />
+                    <ToggleButton Classes="ghost" Content="Effects Chain"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowEffectsChainPanel}"
+                                  ToolTip.Tip="Toggle effects chain panel" />
                   </StackPanel>
                 </Flyout>
               </Button.Flyout>
@@ -726,6 +736,28 @@
                    IsVisible="{Binding Notepads.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
       </Grid>
+    </Border>
+
+    <!-- ─── Metronome docked sidebar ──────────────────────────────── -->
+    <Border x:Name="MetronomeSidebarBorder" Grid.Column="5" Width="260"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowMetronomePanel}">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Metronome" Margin="14,12,10,4" />
+        <views:MetronomeControl DockPanel.Dock="Top" />
+      </DockPanel>
+    </Border>
+
+    <!-- ─── Effects Chain docked sidebar ──────────────────────────── -->
+    <Border x:Name="EffectsChainSidebarBorder" Grid.Column="6" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowEffectsChainPanel}">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Effects Chain" Margin="14,12,10,0" />
+        <views:EffectsChainControl DockPanel.Dock="Top" DataContext="{Binding EffectsChain}" />
+      </DockPanel>
     </Border>
 
   </Grid>

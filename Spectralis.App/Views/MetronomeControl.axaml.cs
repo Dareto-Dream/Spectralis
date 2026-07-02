@@ -6,8 +6,8 @@ using NAudio.Wave;
 
 namespace Spectralis.App.Views;
 
-/// <summary>Topmost metronome: BPM spinner, audio click, beat flash, tap tempo.</summary>
-public partial class MetronomeWindow : Window
+/// <summary>Docked metronome panel: BPM spinner, audio click, beat flash, tap tempo.</summary>
+public partial class MetronomeControl : UserControl
 {
     private DispatcherTimer? _timer;
     private DispatcherTimer? _flashTimer;
@@ -16,16 +16,17 @@ public partial class MetronomeWindow : Window
     private readonly List<double> _tapIntervals = [];
     private static readonly byte[] ClickBytes = BuildClickBytes();
 
-    public MetronomeWindow()
-        : this(120f)
-    {
-    }
-
-    public MetronomeWindow(float initialBpm)
+    public MetronomeControl()
     {
         InitializeComponent();
-        BpmBox.Value = (decimal)Math.Clamp(initialBpm, 40f, 240f);
-        Closing += (_, _) => Stop();
+        BpmBox.Value = 120m;
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && !IsVisible)
+            {
+                Stop();
+            }
+        };
     }
 
     private double Bpm => (double)(BpmBox.Value ?? 120);
