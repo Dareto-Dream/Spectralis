@@ -405,7 +405,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowQueue
     {
         get => _showQueue;
-        set => this.RaiseAndSetIfChanged(ref _showQueue, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showQueue, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     public bool HasQueueItems => Queue.Count > 0;
@@ -413,7 +417,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowSongWarsPanel
     {
         get => _showSongWarsPanel;
-        set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     public NotepadsViewModel Notepads { get; } = new();
@@ -421,8 +429,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowNotepadPanel
     {
         get => _showNotepadPanel;
-        set => this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
+
+    /// <summary>True when any of the docked side panels (lyrics/queue/notes/song wars) is open — drives the collapsed panel-rail button's active state.</summary>
+    public bool AnyPanelOpen => ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel;
 
     public SongWarsSessionController? SongWarsSession
     {
@@ -1305,7 +1320,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowLyrics
     {
         get => _showLyrics;
-        set => this.RaiseAndSetIfChanged(ref _showLyrics, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showLyrics, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     /// <summary>Index of the active synced line; -1 before the first line.</summary>
