@@ -27,8 +27,6 @@ public sealed class AppSettings
     public bool AutoPlayOnOpen { get; set; } = true;
     public bool QueueByDefault { get; set; }
     public bool RememberWindowPlacement { get; set; } = true;
-    public bool CloseToTray { get; set; } = true;
-    public bool CloseToTrayPromptDismissed { get; set; }
     public bool PreserveSession { get; set; } = true;
     public bool ExternalApiConsentAccepted { get; set; }
     public int WindowX { get; set; }
@@ -109,8 +107,6 @@ public sealed class AppSettings
             AutoPlayOnOpen = AutoPlayOnOpen,
             QueueByDefault = QueueByDefault,
             RememberWindowPlacement = RememberWindowPlacement,
-            CloseToTray = CloseToTray,
-            CloseToTrayPromptDismissed = CloseToTrayPromptDismissed,
             PreserveSession = PreserveSession,
             ExternalApiConsentAccepted = ExternalApiConsentAccepted,
             WindowX = WindowX,
