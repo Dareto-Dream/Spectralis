@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
-             xmlns:views="using:Spectralis.App.Views"
              x:Class="Spectralis.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -285,54 +284,6 @@
           <Button Content="Terms" Click="OnOpenTerms" Margin="0,0,8,8" />
           <Button Content="Privacy" Click="OnOpenPrivacy" Margin="0,0,8,8" />
         </WrapPanel>
-      </StackPanel>
-
-      <!-- Shared Play -->
-      <StackPanel Spacing="4" IsVisible="{Binding IsSharedPlayVisible}">
-        <TextBlock Classes="heading" Text="Shared Play" />
-        <CheckBox Content="Enable Shared Play" IsChecked="{Binding SharedPlayEnabled}" />
-        <TextBlock Classes="secondary" Text="CDN base URL (optional)" />
-        <TextBox Text="{Binding SharedPlayCdnBaseUrl}" Watermark="Leave blank for default CDN" />
-        <Separator />
-        <CheckBox Content="Enable Live Channel" IsChecked="{Binding SharedPlayLiveChannelEnabled}" />
-        <TextBlock Classes="secondary" Text="Channel ID" />
-        <TextBox Text="{Binding SharedPlayLiveChannelId}" />
-        <TextBlock Classes="secondary" Text="Owner token" />
-        <TextBox Text="{Binding SharedPlayLiveChannelOwnerToken}" PasswordChar="•" />
-        <TextBlock Classes="secondary" Text="Display name" />
-        <TextBox Text="{Binding SharedPlayLiveChannelDisplayName}" Watermark="Spectralis Listener" />
-      </StackPanel>
-
-      <!-- Streamer dead zones -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsStreamerVisible}">
-        <TextBlock Classes="heading" Text="Dead Zones" />
-        <TextBlock Classes="secondary" TextWrapping="Wrap"
-                   Text="Draw zones where your camera or scene overlays appear. These are app-wide: in-app floating overlays (P2W banner, clipboard toast) and the visualizer HUD label reposition around them automatically. Click Apply to also bake them into the current OBS layout's widget positions." />
-
-        <!-- Designer canvas -->
-        <Border Height="220" CornerRadius="6"
-                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
-                ClipToBounds="True">
-          <views:DeadZoneDesignerView x:Name="DeadZoneDesigner" />
-        </Border>
-
-        <TextBlock Classes="secondary" FontStyle="Italic"
-                   Text="Click and drag to draw a zone. Click a zone to select it. Drag corners to resize. The outlined edge is the canvas boundary." />
-
-        <TextBlock Classes="data" Text="{Binding StreamerSettings.DeadZoneCountText}"
-                   IsVisible="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
-
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Apply to OBS layout" Click="OnApplyDeadZones" Classes="primary"
-                  IsEnabled="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
-          <Button Content="Remove selected" Click="OnRemoveSelectedDeadZone" />
-          <Button Content="Clear all" Click="OnClearDeadZones" Classes="destructive" />
-          <ToggleButton Content="Preview" Click="OnToggleDeadZonePreview"
-                        ToolTip.Tip="Show current OBS widget positions and where dead zones would push them" />
-        </StackPanel>
-
-        <TextBlock Classes="data" Text="{Binding StreamerSettings.Status}"
-                   IsVisible="{Binding StreamerSettings.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
       <!-- Developer -->

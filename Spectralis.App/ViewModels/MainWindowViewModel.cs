@@ -177,13 +177,13 @@ public sealed class MainWindowViewModel : ViewModelBase
             (id, layout) => ObsOverlay.SetNamedLayout(id, layout),
             id => ObsOverlay.RemoveNamedLayout(id));
         StreamerSettings = new StreamerSettingsViewModel(AppSettings, ObsEditor);
+        ObsEditor.StreamerSettings = StreamerSettings;
         Settings = new SettingsViewModel(
             AppSettings,
             NowPlaying,
             enabled => DiscordPresence.SetEnabled(enabled),
             ObsEditor,
             Library,
-            StreamerSettings,
             onP2wBannerStyleChanged: () =>
             {
                 this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
