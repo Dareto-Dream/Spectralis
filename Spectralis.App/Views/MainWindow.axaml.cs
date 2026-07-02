@@ -1044,41 +1044,12 @@ public partial class MainWindow : Window
     private void OnMenuRedeemVisualizer(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
-        var win = new RedeemVisualizerWindow();
+        var win = new RedeemVisualizerWindow
+        {
+            OpenScriptedVisualizersRequested = () => OnMenuScriptedVisualizers(null, null!),
+        };
         win.Closed += (_, _) => vm.NowPlaying.RefreshVisualizerOptions();
         win.Show(this);
-    }
-
-    private async void OnMenuClearRedeemedVisualizers(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var store = new Spectralis.Core.Visualizers.Installed.InstalledVisualizerStore();
-        var count = store.Count();
-        if (count == 0)
-        {
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                "No redeemed visualizers are installed on this device.");
-            return;
-        }
-
-        var confirmed = await ConfirmWindow.ShowAsync(this,
-            "Clear Redeemed Visualizers",
-            $"Remove all {count} installed visualizer{(count == 1 ? "" : "s")} from this device?",
-            "Clear", "Cancel");
-        if (!confirmed) return;
-
-        try
-        {
-            store.ClearAll();
-            if (DataContext is MainWindowViewModel vm)
-                vm.NowPlaying.RefreshVisualizerOptions();
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                "All redeemed visualizers have been removed.");
-        }
-        catch (Exception ex)
-        {
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                $"Could not clear redeemed visualizers.\n\n{ex.Message}");
-        }
     }
 
     private async void OnMenuClearCachedAlbumState(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

@@ -11,6 +11,9 @@ public partial class RedeemVisualizerWindow : Window
     private readonly RedeemableVisualizerClient _client = new();
     private CancellationTokenSource? _cts;
 
+    /// <summary>Set by the caller to open the Scripted Visualizers editor from this window.</summary>
+    public Action? OpenScriptedVisualizersRequested { get; set; }
+
     public RedeemVisualizerWindow()
     {
         InitializeComponent();
@@ -85,6 +88,38 @@ public partial class RedeemVisualizerWindow : Window
             OnRedeem(sender, new RoutedEventArgs());
         }
     }
+
+    private async void OnClearAll(object? sender, RoutedEventArgs e)
+    {
+        var count = _store.Count();
+        if (count == 0)
+        {
+            return;
+        }
+
+        var confirmed = await ConfirmWindow.ShowAsync(this,
+            "Clear Redeemed Visualizers",
+            $"Remove all {count} installed visualizer{(count == 1 ? "" : "s")} from this device?",
+            "Clear", "Cancel");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            _store.ClearAll();
+            RefreshInstalled();
+            SetStatus("All redeemed visualizers have been removed.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not clear redeemed visualizers: {ex.Message}", isError: true);
+        }
+    }
+
+    private void OnOpenScriptedVisualizers(object? sender, RoutedEventArgs e) =>
+        OpenScriptedVisualizersRequested?.Invoke();
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
