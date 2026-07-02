@@ -14,6 +14,7 @@ using Spectralis.App.ViewModels;
 using Spectralis.Core.Capsule;
 using Spectralis.Core.Common;
 using Spectralis.Core.Integrations.Spotify;
+using Spectralis.Core.Layout;
 using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 InitializeSpotifyPlaybackHost(vm);
                 InitializeTraySupport(vm);
+                vm.PropertyChanged += OnMainVmPropertyChangedForDeadZones;
             }
 
             if (IsVisible)
@@ -73,12 +75,16 @@ public partial class MainWindow : Window
                 ApplySavedWindowPlacement();
             }
         };
+        SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         Opened += async (_, _) =>
         {
             ApplySavedWindowPlacement();
             _clipboardMonitorTimer.Start();
             InitializeMediaSession();
             UpdateTrayState();
+            ApplyDeadZoneAvoidance();
             await ShowConsentDialogIfNeededAsync();
         };
         Closed += (_, _) =>
@@ -103,6 +109,61 @@ public partial class MainWindow : Window
             _mediaSession?.Dispose();
             _mediaSession = null;
         };
+    }
+
+    // ── Dead zones (app-wide) ────────────────────────────────────────────────
+
+    private void OnMainVmPropertyChangedForDeadZones(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainWindowViewModel.IsP2wModeActive) or nameof(MainWindowViewModel.ClipboardToastVisible))
+            ApplyDeadZoneAvoidance();
+    }
+
+    private void ApplyDeadZoneAvoidance()
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        double winW = Bounds.Width, winH = Bounds.Height;
+        if (winW <= 0 || winH <= 0) return;
+
+        var zones = vm.AppSettings.DeadZones;
+        PositionTopRight(P2wBanner, zones, winW, winH, baseRight: 18, baseTop: 18);
+        PositionBottomRight(ClipboardToastBorder, zones, winW, winH, baseRight: 20, baseBottom: 30);
+    }
+
+    private static void PositionTopRight(Control el, IReadOnlyList<DeadZone> zones, double winW, double winH, double baseRight, double baseTop)
+    {
+        double w = el.Bounds.Width, h = el.Bounds.Height;
+        if (w <= 0 || h <= 0 || zones.Count == 0)
+        {
+            el.Margin = new Thickness(0, baseTop, baseRight, 0);
+            return;
+        }
+
+        double x0 = Math.Clamp((winW - baseRight - w) / winW, 0, 1);
+        double y0 = Math.Clamp(baseTop / winH, 0, 1);
+        var (x, y) = DeadZoneHelper.Resolve(x0, y0, w / winW, h / winH, zones);
+
+        double marginRight = Math.Max(0, winW - (x * winW + w));
+        double marginTop = Math.Max(0, y * winH);
+        el.Margin = new Thickness(0, marginTop, marginRight, 0);
+    }
+
+    private static void PositionBottomRight(Control el, IReadOnlyList<DeadZone> zones, double winW, double winH, double baseRight, double baseBottom)
+    {
+        double w = el.Bounds.Width, h = el.Bounds.Height;
+        if (w <= 0 || h <= 0 || zones.Count == 0)
+        {
+            el.Margin = new Thickness(0, 0, baseRight, baseBottom);
+            return;
+        }
+
+        double x0 = Math.Clamp((winW - baseRight - w) / winW, 0, 1);
+        double y0 = Math.Clamp((winH - baseBottom - h) / winH, 0, 1);
+        var (x, y) = DeadZoneHelper.Resolve(x0, y0, w / winW, h / winH, zones);
+
+        double marginRight = Math.Max(0, winW - (x * winW + w));
+        double marginBottom = Math.Max(0, winH - (y * winH + h));
+        el.Margin = new Thickness(0, 0, marginRight, marginBottom);
     }
 
     // ── OS media session (SMTC on Windows) ──────────────────────────────────
