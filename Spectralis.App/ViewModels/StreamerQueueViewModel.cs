@@ -16,7 +16,7 @@ public sealed class SqItemVm : ViewModelBase
         Action<string> onApprove,
         Action<string> onReject,
         Action<string> onDelete,
-        Action<string> onMarkPlaying)
+        Action<SqItemVm> onMarkPlaying)
     {
         Id = sub.Id;
         DisplayName = sub.DisplayName;
@@ -27,12 +27,14 @@ public sealed class SqItemVm : ViewModelBase
         DurationSeconds = sub.DurationSeconds;
         SourceKind = sub.SourceKind;
         Url = sub.Url;
+        FileId = sub.FileId;
+        FileName = sub.FileName;
         _isPending = sub.Status == SqStatus.Pending;
 
         ApproveCommand  = ReactiveCommand.Create(() => onApprove(Id), this.WhenAnyValue(x => x.IsPending));
         RejectCommand   = ReactiveCommand.Create(() => onReject(Id));
         DeleteCommand   = ReactiveCommand.Create(() => onDelete(Id));
-        PlayCommand     = ReactiveCommand.Create(() => onMarkPlaying(Id));
+        PlayCommand     = ReactiveCommand.Create(() => onMarkPlaying(this));
     }
 
     public string Id { get; }
@@ -44,6 +46,8 @@ public sealed class SqItemVm : ViewModelBase
     public double? DurationSeconds { get; }
     public string SourceKind { get; }
     public string? Url { get; }
+    public string? FileId { get; }
+    public string? FileName { get; }
 
     public bool IsPending
     {
@@ -133,6 +137,9 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
+
+    /// <summary>Wired by MainWindowViewModel to NowPlaying.LoadUrlAsync so clicking Play actually plays the track.</summary>
+    public Func<string, Task>? PlayTrackRequested { get; set; }
     public event Action<AppSettings>? SettingsSaveRequested;
 
     // ── Reactive properties ───────────────────────────────────────────────────
@@ -384,6 +391,37 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { LastError = ex.Message; }
     }
 
+    internal async Task PlayItemAsync(SqItemVm item)
+    {
+        try
+        {
+            var playbackUrl = ResolvePlaybackUrl(item);
+            if (playbackUrl is not null && PlayTrackRequested is not null)
+                await PlayTrackRequested(playbackUrl);
+
+            await MarkNowPlayingAsync(item.Id);
+        }
+        catch (Exception ex) { LastError = ex.Message; }
+    }
+
+    private string? ResolvePlaybackUrl(SqItemVm item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Url))
+            return item.Url;
+
+        if (!string.IsNullOrWhiteSpace(item.FileId) && _settings is not null && !string.IsNullOrWhiteSpace(_settings.SqOwnerToken))
+        {
+            var baseUrl = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
+            // Append the original extension so the player's URL-sniffing recognizes this as
+            // direct audio; the backend strips it back off before looking up the file (see get_sq_upload).
+            var extension = string.IsNullOrWhiteSpace(item.FileName) ? ".mp3" : Path.GetExtension(item.FileName);
+            if (string.IsNullOrWhiteSpace(extension)) extension = ".mp3";
+            return $"{baseUrl}/streamer-queue/v1/rooms/{Uri.EscapeDataString(RoomId)}/uploads/{Uri.EscapeDataString(item.FileId)}{extension}?ownerToken={Uri.EscapeDataString(_settings.SqOwnerToken)}";
+        }
+
+        return null;
+    }
+
     public async Task ReorderAsync(IEnumerable<string> orderedIds)
     {
         try { await _controller.ReorderAsync(orderedIds, CancellationToken.None); }
@@ -508,7 +546,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         id => _ = ApproveAsync(id),
         id => _ = RejectAsync(id),
         id => _ = DeleteAsync(id),
-        id => _ = MarkNowPlayingAsync(id));
+        item => _ = PlayItemAsync(item));
 
     private void UpdateSubmitUrl()
     {

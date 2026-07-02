@@ -24,6 +24,7 @@ public sealed record SqSubmission(
     string? Artist,
     string? Url,
     string? FileId,
+    string? FileName,
     string SourceKind,
     SqTier Tier,
     string? TierChangedAtUtc,

@@ -129,6 +129,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         RandomizerTools = new RandomizerToolsViewModel();
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
+        StreamerQueue.PlayTrackRequested = url => NowPlaying.LoadUrlAsync(url);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or

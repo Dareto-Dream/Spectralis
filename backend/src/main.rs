@@ -3497,9 +3497,12 @@ async fn get_sq_upload(
     if !is_owner {
         return Err(AppError::forbidden("Owner token required to download uploads."));
     }
+    // fileId is a bare UUID (no dots); clients may append an extension for
+    // player URL-sniffing (e.g. .../uploads/{id}.mp3) — strip it before lookup.
+    let bare_id = file_id.split('.').next().unwrap_or(&file_id);
     // Find the submission to get the stored filename
     let stored_name = room.get("submissions").and_then(Value::as_array)
-        .and_then(|a| a.iter().find(|s| s.get("fileId").and_then(Value::as_str) == Some(&file_id)))
+        .and_then(|a| a.iter().find(|s| s.get("fileId").and_then(Value::as_str) == Some(bare_id)))
         .and_then(|s| s.get("fileName").and_then(Value::as_str).map(ToOwned::to_owned))
         .ok_or_else(|| AppError::not_found("Upload not found."))?;
 
