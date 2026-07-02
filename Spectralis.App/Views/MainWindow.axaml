@@ -222,17 +222,27 @@
                    IsVisible="{Binding !IsSidebarCollapsed}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:NavSection">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                  <PathIcon Data="{Binding IconData}" Width="16" Height="16" />
-                  <TextBlock Text="{Binding Label}" />
-                </StackPanel>
+                <Panel>
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding !IsSeparator}">
+                    <PathIcon Data="{Binding IconData}" Width="16" Height="16" />
+                    <TextBlock Text="{Binding Label}" />
+                  </StackPanel>
+                  <StackPanel Spacing="6" Margin="0,10,0,2" IsVisible="{Binding IsSeparator}">
+                    <Separator />
+                    <TextBlock Text="{Binding Label}"
+                               FontSize="10" FontWeight="SemiBold" LetterSpacing="1"
+                               Opacity="0.45" />
+                  </StackPanel>
+                </Panel>
               </DataTemplate>
             </ListBox.ItemTemplate>
             <ListBox.Styles>
-              <Style Selector="ListBoxItem">
+              <Style Selector="ListBoxItem" x:DataType="vm:NavSection">
                 <Setter Property="Padding" Value="13,8,16,8" />
                 <Setter Property="BorderThickness" Value="3,0,0,0" />
                 <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="IsHitTestVisible" Value="{Binding !IsSeparator}" />
+                <Setter Property="Focusable" Value="{Binding !IsSeparator}" />
               </Style>
               <Style Selector="ListBoxItem PathIcon">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
@@ -259,14 +269,18 @@
                    IsVisible="{Binding IsSidebarCollapsed}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:NavSection">
-                <PathIcon Data="{Binding IconData}"
-                          Width="18" Height="18"
-                          HorizontalAlignment="Center"
-                          ToolTip.Tip="{Binding Label}" />
+                <Panel>
+                  <PathIcon Data="{Binding IconData}"
+                            Width="18" Height="18"
+                            HorizontalAlignment="Center"
+                            ToolTip.Tip="{Binding Label}"
+                            IsVisible="{Binding !IsSeparator}" />
+                  <Separator Margin="8,8" IsVisible="{Binding IsSeparator}" />
+                </Panel>
               </DataTemplate>
             </ListBox.ItemTemplate>
             <ListBox.Styles>
-              <Style Selector="ListBoxItem">
+              <Style Selector="ListBoxItem" x:DataType="vm:NavSection">
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="Margin" Value="0,2" />
                 <Setter Property="MinHeight" Value="40" />
@@ -274,6 +288,8 @@
                 <Setter Property="VerticalContentAlignment" Value="Center" />
                 <Setter Property="BorderThickness" Value="3,0,0,0" />
                 <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="IsHitTestVisible" Value="{Binding !IsSeparator}" />
+                <Setter Property="Focusable" Value="{Binding !IsSeparator}" />
               </Style>
               <Style Selector="ListBoxItem PathIcon">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
