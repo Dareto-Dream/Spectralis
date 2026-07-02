@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
-using Spectralis.Core.Integrations.Obs;
+using Spectralis.Core.Layout;
 
 namespace Spectralis.App.Views;
 
