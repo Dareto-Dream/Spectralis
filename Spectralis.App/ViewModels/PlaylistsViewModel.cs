@@ -431,6 +431,20 @@ public sealed class PlaylistsViewModel : ViewModelBase
         Reload();
     }
 
+    /// <summary>Adds a local library track into an existing playlist — the local-file counterpart
+    /// to <see cref="AddSpotifyTrackAsync"/>, used by the same Library "Add to Playlist" action.</summary>
+    public void AddLocalTrack(Guid playlistId, string path)
+    {
+        if (FindPlaylist(playlistId) is not { } playlist)
+        {
+            return;
+        }
+
+        playlist.Items.AddRange(BuildItems([path]));
+        PlaylistStore.Save(playlist);
+        Reload();
+    }
+
     public Playlist ImportM3u(string filePath)
     {
         var items = M3uParser.ImportItems(filePath);
