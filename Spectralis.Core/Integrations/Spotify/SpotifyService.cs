@@ -11,7 +11,8 @@ public sealed class SpotifyService : IDisposable
 {
     private const string AuthBase = "https://accounts.spotify.com";
     private const string ApiBase = "https://api.spotify.com/v1";
-    private const string Scopes = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state";
+    private const string Scopes = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state " +
+        "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private";
 
     private static readonly HttpClient Http = new();
 
@@ -41,7 +42,11 @@ public sealed class SpotifyService : IDisposable
             $"&redirect_uri={Uri.EscapeDataString(SpotifyAuthCallbackServer.RedirectUri)}" +
             $"&state={Uri.EscapeDataString(state)}" +
             $"&code_challenge_method=S256" +
-            $"&code_challenge={Uri.EscapeDataString(challenge)}";
+            $"&code_challenge={Uri.EscapeDataString(challenge)}" +
+            // Forces the consent screen even for an already-authorized app, so a user who
+            // linked before the playlist scopes existed actually gets asked to grant them
+            // instead of silently getting back a token that still lacks them.
+            $"&show_dialog=true";
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         using var server = new SpotifyAuthCallbackServer();
@@ -60,9 +65,18 @@ public sealed class SpotifyService : IDisposable
         tokens.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenData.Value.ExpiresIn - 30);
         tokens.AccountDisplayName = profile?.DisplayName;
         tokens.AccountEmail = profile?.Email;
+        tokens.Scope = tokenData.Value.Scope;
         tokens.Save();
         return true;
     }
+
+    /// <summary>True once the linked token's granted scopes cover playlist read/write. A token
+    /// saved before these scopes existed has a null/empty <see cref="SpotifyTokenStore.Scope"/>,
+    /// so this reads false and callers should prompt the user to relink via <see cref="LinkAccountAsync"/>.</summary>
+    public bool HasPlaylistScopes =>
+        !string.IsNullOrEmpty(tokens.Scope) &&
+        tokens.Scope.Contains("playlist-read-private", StringComparison.Ordinal) &&
+        tokens.Scope.Contains("playlist-modify-private", StringComparison.Ordinal);
 
     public void UnlinkAccount()
     {
@@ -282,6 +296,135 @@ public sealed class SpotifyService : IDisposable
         catch { return null; }
     }
 
+    public async Task<IReadOnlyList<SpotifyPlaylistSummary>> GetPlaylistsAsync(string clientId)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null) return [];
+
+        return await FetchPaginatedAsync($"{ApiBase}/me/playlists?limit=50", token, "items", ReadPlaylistSummary);
+    }
+
+    public async Task<IReadOnlyList<SpotifyTrackResult>> GetPlaylistTracksAsync(string clientId, string playlistId)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(playlistId)) return [];
+
+        var url = $"{ApiBase}/playlists/{Uri.EscapeDataString(playlistId)}/tracks?limit=100";
+        return await FetchPaginatedAsync(url, token, "items", ReadPlaylistTrack);
+    }
+
+    public async Task<IReadOnlyList<SpotifyTrackResult>> SearchTracksAsync(string clientId, string query, int limit = 20)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(query)) return [];
+
+        var url = $"{ApiBase}/search?type=track&limit={Math.Clamp(limit, 1, 50)}&q={Uri.EscapeDataString(query.Trim())}";
+        return await FetchPaginatedAsync(url, token, "items", ReadSearchTrack, containerProperty: "tracks", maxItems: limit);
+    }
+
+    /// <summary>Appends tracks to the end of a Spotify playlist. Returns the new snapshot id on
+    /// success, or null on failure — callers must refresh their cached snapshot id either way
+    /// before the next write, since a stale one is rejected by Spotify.</summary>
+    public async Task<string?> AddPlaylistItemsAsync(string clientId, string playlistId, IReadOnlyList<string> trackUris)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(playlistId) || trackUris.Count == 0) return null;
+
+        var body = JsonSerializer.Serialize(new { uris = trackUris });
+        return await SendPlaylistWriteAsync(HttpMethod.Post, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+    }
+
+    /// <summary>Removes specific tracks from a Spotify playlist, guarded by <paramref name="snapshotId"/>
+    /// so a stale local copy can't silently clobber a concurrent edit made elsewhere.</summary>
+    public async Task<string?> RemovePlaylistItemsAsync(string clientId, string playlistId, IReadOnlyList<string> trackUris, string snapshotId)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(playlistId) || trackUris.Count == 0) return null;
+
+        var body = JsonSerializer.Serialize(new
+        {
+            tracks = trackUris.Select(uri => new { uri }).ToArray(),
+            snapshot_id = snapshotId,
+        });
+        return await SendPlaylistWriteAsync(HttpMethod.Delete, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+    }
+
+    /// <summary>Moves a contiguous run of tracks within a Spotify playlist, guarded by <paramref name="snapshotId"/>.</summary>
+    public async Task<string?> ReorderPlaylistItemsAsync(string clientId, string playlistId, int rangeStart, int insertBefore, string snapshotId, int rangeLength = 1)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(playlistId)) return null;
+
+        var body = JsonSerializer.Serialize(new
+        {
+            range_start = rangeStart,
+            range_length = rangeLength,
+            insert_before = insertBefore,
+            snapshot_id = snapshotId,
+        });
+        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+    }
+
+    private static async Task<string?> SendPlaylistWriteAsync(HttpMethod method, string path, string token, string json)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(method, ApiBase + path);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var resp = await Http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("snapshot_id", out var snapEl) ? snapEl.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Follows Spotify's cursor-paginated "next" URL until exhausted or <paramref name="maxItems"/>
+    /// is hit. <paramref name="containerProperty"/> unwraps one nesting level first (search's
+    /// paging object lives under "tracks", unlike playlist endpoints which page at the root).</summary>
+    private static async Task<List<T>> FetchPaginatedAsync<T>(
+        string initialUrl, string token, string itemsProperty, Func<JsonElement, T?> parseItem,
+        string? containerProperty = null, int maxItems = 500) where T : class
+    {
+        var results = new List<T>();
+        var url = initialUrl;
+        try
+        {
+            while (url is not null && results.Count < maxItems)
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                using var resp = await Http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) break;
+
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                var root = doc.RootElement;
+                if (containerProperty is not null && !root.TryGetProperty(containerProperty, out root))
+                {
+                    break;
+                }
+
+                if (root.TryGetProperty(itemsProperty, out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var itemEl in itemsEl.EnumerateArray())
+                    {
+                        var parsed = parseItem(itemEl);
+                        if (parsed is not null)
+                            results.Add(parsed);
+                    }
+                }
+
+                url = root.TryGetProperty("next", out var nextEl) && nextEl.ValueKind == JsonValueKind.String
+                    ? nextEl.GetString()
+                    : null;
+            }
+        }
+        catch { }
+        return results;
+    }
+
     private static async Task<bool> SendApiAsync(HttpMethod method, string path, string token, string json)
     {
         try
@@ -311,8 +454,88 @@ public sealed class SpotifyService : IDisposable
             return null;
         }
 
+        var (artists, album, artUrl) = ReadTrackDetails(element);
+        return new SpotifyPlaybackTrack(
+            element.TryGetProperty("id", out var idEl) ? idEl.GetString() : null,
+            element.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
+            artists,
+            album,
+            artUrl,
+            element.TryGetProperty("duration_ms", out var durationEl) && durationEl.ValueKind == JsonValueKind.Number
+                ? durationEl.GetInt32()
+                : 0);
+    }
+
+    private static SpotifyPlaylistSummary? ReadPlaylistSummary(JsonElement element)
+    {
+        var id = element.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(id)) return null;
+
+        string? imageUrl = null;
+        if (element.TryGetProperty("images", out var imagesEl) && imagesEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var imageEl in imagesEl.EnumerateArray())
+            {
+                imageUrl = imageEl.TryGetProperty("url", out var urlEl) ? urlEl.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(imageUrl))
+                    break;
+            }
+        }
+
+        var ownerId = element.TryGetProperty("owner", out var ownerEl) && ownerEl.ValueKind == JsonValueKind.Object &&
+            ownerEl.TryGetProperty("id", out var ownerIdEl)
+            ? ownerIdEl.GetString()
+            : null;
+
+        var trackCount = element.TryGetProperty("tracks", out var tracksEl) && tracksEl.ValueKind == JsonValueKind.Object &&
+            tracksEl.TryGetProperty("total", out var totalEl) && totalEl.ValueKind == JsonValueKind.Number
+            ? totalEl.GetInt32()
+            : 0;
+
+        return new SpotifyPlaylistSummary(
+            id,
+            element.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
+            imageUrl,
+            element.TryGetProperty("snapshot_id", out var snapEl) ? snapEl.GetString() : null,
+            trackCount,
+            element.TryGetProperty("collaborative", out var collabEl) && collabEl.GetBoolean(),
+            ownerId);
+    }
+
+    /// <summary>Unwraps a playlist-tracks page item (each one wraps the actual track under "track")
+    /// before delegating to the same parsing <see cref="ReadSearchTrack"/> uses.</summary>
+    private static SpotifyTrackResult? ReadPlaylistTrack(JsonElement itemEl) =>
+        itemEl.TryGetProperty("track", out var trackEl) && trackEl.ValueKind == JsonValueKind.Object
+            ? ReadSearchTrack(trackEl)
+            : null;
+
+    private static SpotifyTrackResult? ReadSearchTrack(JsonElement trackEl)
+    {
+        if (trackEl.TryGetProperty("type", out var typeEl) &&
+            !string.Equals(typeEl.GetString(), "track", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var uri = trackEl.TryGetProperty("uri", out var uriEl) ? uriEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(uri)) return null;
+
+        var (artists, album, artUrl) = ReadTrackDetails(trackEl);
+        return new SpotifyTrackResult(
+            uri,
+            trackEl.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
+            artists,
+            album,
+            artUrl,
+            trackEl.TryGetProperty("duration_ms", out var durationEl) && durationEl.ValueKind == JsonValueKind.Number
+                ? durationEl.GetInt32()
+                : 0);
+    }
+
+    private static (string Artists, string? Album, string? ArtUrl) ReadTrackDetails(JsonElement trackEl)
+    {
         var artistNames = new List<string>();
-        if (element.TryGetProperty("artists", out var artistsEl) && artistsEl.ValueKind == JsonValueKind.Array)
+        if (trackEl.TryGetProperty("artists", out var artistsEl) && artistsEl.ValueKind == JsonValueKind.Array)
         {
             foreach (var artistEl in artistsEl.EnumerateArray())
             {
@@ -327,7 +550,7 @@ public sealed class SpotifyService : IDisposable
 
         string? albumName = null;
         string? albumArtUrl = null;
-        if (element.TryGetProperty("album", out var albumEl) && albumEl.ValueKind == JsonValueKind.Object)
+        if (trackEl.TryGetProperty("album", out var albumEl) && albumEl.ValueKind == JsonValueKind.Object)
         {
             albumName = albumEl.TryGetProperty("name", out var albumNameEl) ? albumNameEl.GetString() : null;
             if (albumEl.TryGetProperty("images", out var imagesEl) && imagesEl.ValueKind == JsonValueKind.Array)
@@ -341,18 +564,10 @@ public sealed class SpotifyService : IDisposable
             }
         }
 
-        return new SpotifyPlaybackTrack(
-            element.TryGetProperty("id", out var idEl) ? idEl.GetString() : null,
-            element.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
-            string.Join(", ", artistNames),
-            albumName,
-            albumArtUrl,
-            element.TryGetProperty("duration_ms", out var durationEl) && durationEl.ValueKind == JsonValueKind.Number
-                ? durationEl.GetInt32()
-                : 0);
+        return (string.Join(", ", artistNames), albumName, albumArtUrl);
     }
 
-    private static async Task<(string AccessToken, string RefreshToken, int ExpiresIn)?> ExchangeCodeAsync(
+    private static async Task<(string AccessToken, string RefreshToken, int ExpiresIn, string? Scope)?> ExchangeCodeAsync(
         string clientId, string code, string verifier)
     {
         try
@@ -372,7 +587,8 @@ public sealed class SpotifyService : IDisposable
             return (
                 at.GetString()!,
                 root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() ?? "" : "",
-                root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600
+                root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600,
+                root.TryGetProperty("scope", out var sc) ? sc.GetString() : null
             );
         }
         catch { return null; }
@@ -467,3 +683,20 @@ public sealed record SpotifyPlaybackSnapshot(
 public sealed record SpotifyQueueSnapshot(
     SpotifyPlaybackTrack? Current,
     IReadOnlyList<SpotifyPlaybackTrack> Queue);
+
+public sealed record SpotifyPlaylistSummary(
+    string Id,
+    string Name,
+    string? ImageUrl,
+    string? SnapshotId,
+    int TrackCount,
+    bool Collaborative,
+    string? OwnerId);
+
+public sealed record SpotifyTrackResult(
+    string Uri,
+    string Name,
+    string? Artist,
+    string? Album,
+    string? AlbumArtUrl,
+    int DurationMs);
