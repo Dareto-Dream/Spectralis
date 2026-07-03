@@ -21,6 +21,10 @@ public sealed class Playlist
     /// app data, copied there at pick-time so it survives the source file moving/deleting.</summary>
     public string? CoverImagePath { get; set; }
 
+    /// <summary>Spotify's own cover image URL, cached from the last playlist sync — second
+    /// priority in the art fallback chain, below <see cref="CoverImagePath"/>.</summary>
+    public string? SpotifyImageUrl { get; set; }
+
     /// <summary>Hidden from the Playlists grid without affecting the real Spotify playlist.</summary>
     public bool IsHidden { get; set; }
 
@@ -44,6 +48,10 @@ public sealed class PlaylistItem
     public string? Title { get; set; }
     public string? Artist { get; set; }
     public double DurationSeconds { get; set; }
+
+    /// <summary>Cached per-track Spotify art URL for <see cref="SpotifyTrackUri"/> items — local
+    /// items get their art read straight from embedded tags instead, so this stays null for those.</summary>
+    public string? AlbumArtUrl { get; set; }
 }
 
 /// <summary>A persistable pointer to one visualizer, spanning the three ways one can be identified
