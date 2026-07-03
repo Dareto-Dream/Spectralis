@@ -1748,6 +1748,22 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
+        // A single-uri PlayUriAsync call gives Spotify no context to fall through to, so the SDK
+        // never reports a distinct "ended"/no-track state the way OnSpotifyPlaybackStopped
+        // expects — it just reports the same track paused at (or basically at) its own duration.
+        // Catch that here too so queue-driven playback actually advances instead of sitting
+        // paused at the end of every track.
+        if (_queueDrivenSpotifyTrack && state.IsPaused && state.DurationMs > 0 &&
+            state.PositionMs >= state.DurationMs - 1000 &&
+            _spotifyState?.TrackId == state.TrackId)
+        {
+            _spotifyState = null;
+            _queueDrivenSpotifyTrack = false;
+            StopSpotifyLoopback();
+            _ = AutoAdvanceAsync();
+            return;
+        }
+
         var isNewTrack = _spotifyState?.TrackId != state.TrackId || _spotifyState?.Name != state.Name;
 
         _spotifyState = state;
