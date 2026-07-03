@@ -13,16 +13,18 @@ public sealed class TimingChip : ViewModelBase
     private bool _isTimed;
     private bool _isSelected;
 
-    public TimingChip(string text, int globalIndex, int lineIndex)
+    public TimingChip(string text, int globalIndex, int lineIndex, int wordIndexInLine)
     {
         Text = text;
         GlobalIndex = globalIndex;
         LineIndex = lineIndex;
+        WordIndexInLine = wordIndexInLine;
     }
 
     public string Text { get; }
     public int GlobalIndex { get; }
     public int LineIndex { get; }
+    public int WordIndexInLine { get; }
 
     public bool IsTimed
     {
@@ -230,10 +232,10 @@ public sealed class TimingStudioViewModel : ViewModelBase
             var line = _session.Lines[lineIndex];
             var words = line.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var lineChips = new ObservableCollection<TimingChip>();
-            foreach (var word in words)
+            for (var wordIndex = 0; wordIndex < words.Length; wordIndex++)
             {
-                var chip = new TimingChip(word, _allChips.Count, lineIndex);
-                chip.IsTimed = line.Timestamp.HasValue;
+                var chip = new TimingChip(words[wordIndex], _allChips.Count, lineIndex, wordIndex);
+                chip.IsTimed = wordIndex < line.WordTimestamps.Length && line.WordTimestamps[wordIndex].HasValue;
                 _allChips.Add(chip);
                 lineChips.Add(chip);
             }
@@ -284,12 +286,13 @@ public sealed class TimingStudioViewModel : ViewModelBase
 
         var chip = _allChips[_chipCurrentIndex];
 
-        // The LRC format we export is line-based, so the first word tapped in a
-        // line is what actually stamps that line in the session.
-        if (_session.Lines[chip.LineIndex].Timestamp is null)
+        // Stamps this word specifically (what the exported enhanced-LRC word tags come from),
+        // and — if it's the line's first word — the line itself too, same as before.
+        var wasLineTimed = _session.Lines[chip.LineIndex].Timestamp is not null;
+        var pos = _engine.GetPosition();
+        _session.StampWord(chip.LineIndex, chip.WordIndexInLine, pos);
+        if (!wasLineTimed)
         {
-            var pos = _engine.GetPosition();
-            _session.StampLine(chip.LineIndex, pos);
             Rows[chip.LineIndex].TimestampText = LyricsTimingSession.FormatTimestamp(pos);
             UpdateCursor();
         }
@@ -325,10 +328,9 @@ public sealed class TimingStudioViewModel : ViewModelBase
                 chip.IsTimed = false;
                 chip.IsSelected = true;
 
-                var isFirstWordOfLine = _chipCurrentIndex == 0 || _allChips[_chipCurrentIndex - 1].LineIndex != chip.LineIndex;
-                if (isFirstWordOfLine)
+                _session.ClearWord(chip.LineIndex, chip.WordIndexInLine);
+                if (chip.WordIndexInLine == 0)
                 {
-                    _session.ClearLine(chip.LineIndex);
                     Rows[chip.LineIndex].TimestampText = "--:--.--";
                     UpdateCursor();
                 }
