@@ -59,13 +59,15 @@
   <!-- Data: all numerics - time codes, BPM, bitrate, file size, sample rate. -->
   <FontFamily x:Key="Font.Data">Cascadia Mono, Consolas, JetBrains Mono, monospace</FontFamily>
 
-  <x:Double x:Key="FontSize.Display.Large">34</x:Double>
-  <x:Double x:Key="FontSize.Display">24</x:Double>
-  <x:Double x:Key="FontSize.Heading">17</x:Double>
-  <x:Double x:Key="FontSize.UI.Large">15</x:Double>
-  <x:Double x:Key="FontSize.UI">13</x:Double>
-  <x:Double x:Key="FontSize.UI.Small">12</x:Double>
-  <x:Double x:Key="FontSize.Data">12</x:Double>
+  <!-- Bumped a notch across the board (2026-08): at real desktop scale the old
+       13/12px body sizes read as undersized, especially on high-DPI displays. -->
+  <x:Double x:Key="FontSize.Display.Large">38</x:Double>
+  <x:Double x:Key="FontSize.Display">26</x:Double>
+  <x:Double x:Key="FontSize.Heading">19</x:Double>
+  <x:Double x:Key="FontSize.UI.Large">17</x:Double>
+  <x:Double x:Key="FontSize.UI">15</x:Double>
+  <x:Double x:Key="FontSize.UI.Small">13</x:Double>
+  <x:Double x:Key="FontSize.Data">13</x:Double>
 
   <!-- ======================= Spacing scale ======================= -->
 
