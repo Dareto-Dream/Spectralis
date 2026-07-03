@@ -12,7 +12,7 @@ public sealed class SpotifyService : IDisposable
     private const string AuthBase = "https://accounts.spotify.com";
     private const string ApiBase = "https://api.spotify.com/v1";
     private const string Scopes = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state " +
-        "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private";
+        "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read";
 
     private static readonly HttpClient Http = new();
 
@@ -311,6 +311,19 @@ public sealed class SpotifyService : IDisposable
 
         var url = $"{ApiBase}/playlists/{Uri.EscapeDataString(playlistId)}/tracks?limit=100";
         return await FetchPaginatedAsync(url, token, "items", ReadPlaylistTrack);
+    }
+
+    /// <summary>Spotify's "Liked Songs" — /me/tracks, not a real playlist id, so it has no
+    /// snapshot id or write endpoints of its own. Same item shape as a playlist's tracks page
+    /// (each item wraps "track"), so this reuses <see cref="ReadPlaylistTrack"/> as-is. Capped at
+    /// <paramref name="limit"/> since a real library can run into the thousands and this is meant
+    /// to back one grid tile, not a full liked-songs browser.</summary>
+    public async Task<IReadOnlyList<SpotifyTrackResult>> GetLikedSongsAsync(string clientId, int limit = 500)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null) return [];
+
+        return await FetchPaginatedAsync($"{ApiBase}/me/tracks?limit=50", token, "items", ReadPlaylistTrack, maxItems: limit);
     }
 
     public async Task<IReadOnlyList<SpotifyTrackResult>> SearchTracksAsync(string clientId, string query, int limit = 20)
