@@ -34,7 +34,7 @@ public partial class PlaylistsView : UserControl
             var playlist = vm.CreatePlaylist(name, []);
             if (await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
             {
-                vm.SavePlaylist(playlist);
+                await vm.SavePlaylist(playlist);
             }
         }
     }
@@ -114,7 +114,7 @@ public partial class PlaylistsView : UserControl
             var playlist = vm.FindPlaylist(row.Id);
             if (playlist is not null && await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
             {
-                vm.SavePlaylist(playlist);
+                await vm.SavePlaylist(playlist);
             }
         }
     }
