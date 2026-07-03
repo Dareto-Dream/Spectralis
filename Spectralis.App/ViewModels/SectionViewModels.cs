@@ -1877,9 +1877,16 @@ public sealed class SettingsViewModel : ViewModelBase
             SpotifyStatus = overrideMessage;
             return;
         }
-        SpotifyStatus = _spotify.IsLinked
-            ? $"Linked as {_spotify.AccountDisplayName ?? _spotify.AccountEmail ?? "unknown account"}"
-            : "Not linked.";
+        if (!_spotify.IsLinked)
+        {
+            SpotifyStatus = "Not linked.";
+            return;
+        }
+
+        var accountLabel = _spotify.AccountDisplayName ?? _spotify.AccountEmail ?? "unknown account";
+        SpotifyStatus = _spotify.HasPlaylistScopes
+            ? $"Linked as {accountLabel}"
+            : $"Linked as {accountLabel} — reconnect to enable Spotify playlists";
     }
 
     private void RegisterDefaultApp()
