@@ -40,16 +40,22 @@
         <Button Content="Import M3U..." Click="OnImportM3u" />
       </StackPanel>
 
-      <ScrollViewer Grid.Row="1" Margin="16,0">
-        <ListBox x:Name="PlaylistGrid"
-                 ItemsSource="{Binding Rows}"
-                 SelectedItem="{Binding SelectedRow}"
-                 DoubleTapped="OnRowDoubleTapped">
-          <ListBox.ItemsPanel>
-            <ItemsPanelTemplate>
-              <WrapPanel Orientation="Horizontal" />
-            </ItemsPanelTemplate>
-          </ListBox.ItemsPanel>
+      <!-- No outer ScrollViewer: the ListBox already has its own, and nesting a second one
+           around it gave the inner WrapPanel unconstrained width to measure against, so it
+           never wrapped and scrolled sideways instead of down. HorizontalScrollBarVisibility
+           set explicitly to Disabled pins the ListBox (and the WrapPanel inside it) to the
+           viewport's width, which is what actually forces the wrap. -->
+      <ListBox Grid.Row="1" Margin="16,0"
+               x:Name="PlaylistGrid"
+               ItemsSource="{Binding Rows}"
+               SelectedItem="{Binding SelectedRow}"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               DoubleTapped="OnRowDoubleTapped">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate DataType="vm:PlaylistRow">
               <StackPanel Width="160" Spacing="6" Margin="4,4,4,12">
@@ -108,9 +114,8 @@
               <Separator />
               <MenuItem Header="Delete" Click="OnDelete" />
             </ContextMenu>
-          </ListBox.ContextMenu>
-        </ListBox>
-      </ScrollViewer>
+        </ListBox.ContextMenu>
+      </ListBox>
 
       <TextBlock Grid.Row="2" Classes="muted"
                  Text="{Binding StatusText}"
