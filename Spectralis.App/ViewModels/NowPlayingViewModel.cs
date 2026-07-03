@@ -18,6 +18,7 @@ using Spectralis.Core.Metadata;
 using Spectralis.Core.Scrobbling;
 using Spectralis.Core.ContentWarnings;
 using Spectralis.Core.Integrations.Spotify;
+using Spectralis.Core.Playlists;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Installed;
 using Spectralis.Core.Visualizers.Scripting;
@@ -1037,6 +1038,30 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged(nameof(SelectedVisualizer));
         }
     }
+
+    /// <summary>Applies a playlist's saved default visualizer, if it still resolves against the
+    /// live catalog/script/installed list — a script or installed visualizer can be deleted after
+    /// being set as a default, so a miss here is silently ignored rather than treated as an error.</summary>
+    public void ApplyDefaultVisualizer(VisualizerRef? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        var match = VisualizerOptions.FirstOrDefault(option => reference.Kind switch
+        {
+            VisualizerRefKind.Scripted => option.Script?.Id == reference.Id,
+            VisualizerRefKind.Installed => option.Installed?.Id == reference.Id,
+            _ => option.Script is null && option.Installed is null && option.Mode == reference.Mode,
+        });
+
+        if (match is not null)
+        {
+            SelectedVisualizer = match;
+        }
+    }
+
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions { get; }
     public IReadOnlyList<SelectionOption<int>> CycleDurationOptions { get; }
 
