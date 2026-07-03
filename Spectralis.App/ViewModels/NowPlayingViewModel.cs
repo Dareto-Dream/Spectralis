@@ -2294,15 +2294,24 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             position = _engine.GetPosition();
         }
 
-        LengthSeconds = length;
-        this.RaisePropertyChanged(nameof(LengthText));
-
+        // Position must be pushed to the slider before length. The transport slider's
+        // Value is TwoWay-bound and its Maximum is bound to LengthSeconds — if Maximum
+        // shrinks (e.g. a new Spotify track is shorter than where the previous one left
+        // off) while Value still holds the old track's near-end position, the Slider
+        // clamps Value down to the new Maximum itself, and that clamp round-trips back
+        // through the TwoWay binding as a real seek. On a Spotify track transition that
+        // lands the seek right at the new track's own end, which immediately skips it.
+        // Updating position first keeps Value small before Maximum ever moves, so the
+        // Slider never needs to coerce it.
         if (Math.Abs(position - _positionSeconds) > 0.05)
         {
             _positionSeconds = Math.Min(position, length);
             this.RaisePropertyChanged(nameof(PositionSeconds));
             this.RaisePropertyChanged(nameof(PositionText));
         }
+
+        LengthSeconds = length;
+        this.RaisePropertyChanged(nameof(LengthText));
 
         if (IsAlbumWorldActive)
         {
