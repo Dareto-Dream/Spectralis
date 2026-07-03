@@ -28,11 +28,25 @@ public sealed class Playlist
     /// <summary>Hidden from the Playlists grid without affecting the real Spotify playlist.</summary>
     public bool IsHidden { get; set; }
 
-    /// <summary>Manual position in the Playlists grid; lower sorts first.</summary>
+    /// <summary>Manual position among pinned playlists; lower sorts first. Unpinned playlists
+    /// ignore this — their order is driven by <see cref="LastPlayedAt"/> instead.</summary>
     public int SortOrder { get; set; }
 
     /// <summary>Applied via NowPlayingViewModel.SelectedVisualizer when this playlist starts playing.</summary>
     public VisualizerRef? DefaultVisualizer { get; set; }
+
+    /// <summary>Pinned playlists render above the bar in the Playlists grid, manually ordered by
+    /// <see cref="SortOrder"/>. Everything else renders below it, most-recently-played first.</summary>
+    public bool IsPinned { get; set; }
+
+    /// <summary>Set whenever this playlist is played; drives the below-the-bar sort order.</summary>
+    public DateTime? LastPlayedAt { get; set; }
+
+    /// <summary>True for the single synthetic playlist mirroring Spotify's Liked Songs (via
+    /// /me/tracks, not a real playlist id) — pinned by default on first import. Distinct from
+    /// <see cref="SpotifyPlaylistId"/>, which stays null here since Liked Songs isn't addressable
+    /// through the normal /playlists/{id} write endpoints.</summary>
+    public bool IsLikedSongs { get; set; }
 }
 
 public sealed class PlaylistItem

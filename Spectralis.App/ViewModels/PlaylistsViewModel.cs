@@ -20,6 +20,7 @@ public sealed class PlaylistRow : ViewModelBase
     public required int TrackCount { get; init; }
     public required bool IsSmart { get; init; }
     public required bool IsSpotify { get; init; }
+    public required bool IsPinned { get; init; }
     public required string RuntimeText { get; init; }
 
     public string DisplayName => IsSmart ? $"★ {Name}" : Name;
@@ -62,6 +63,10 @@ public sealed class PlaylistsViewModel : ViewModelBase
         _ = SyncSpotifyPlaylistsAsync();
     }
 
+    /// <summary>Pinned playlists — render above the bar, manually ordered.</summary>
+    public ObservableCollection<PlaylistRow> PinnedRows { get; } = new();
+
+    /// <summary>Everything else — render below the bar, most-recently-played first.</summary>
     public ObservableCollection<PlaylistRow> Rows { get; } = new();
 
     public PlaylistRow? SelectedRow
@@ -70,7 +75,9 @@ public sealed class PlaylistsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _selectedRow, value);
     }
 
-    public bool HasPlaylists => Rows.Count > 0;
+    public bool HasPlaylists => PinnedRows.Count > 0 || Rows.Count > 0;
+
+    public bool HasPinnedRows => PinnedRows.Count > 0;
 
     public string StatusText
     {
@@ -81,23 +88,34 @@ public sealed class PlaylistsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Order is pinned (manual, by SortOrder) → bar → everything else, most-recently-played
+    /// first. Smart playlists don't participate in pinning or recency (their membership is
+    /// rule-evaluated on the fly, not a fixed track list with a stable "played" moment) — they just
+    /// render at the end of the unpinned section, same spot they've always rendered in.</summary>
     public void Reload()
     {
         _playlists = PlaylistStore.LoadAll();
         _smartPlaylists = PlaylistStore.LoadAllSmart();
 
+        PinnedRows.Clear();
         Rows.Clear();
-        foreach (var playlist in _playlists.Where(p => !p.IsHidden).OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt))
+
+        var visible = _playlists.Where(p => !p.IsHidden).ToList();
+        var pinned = visible.Where(p => p.IsPinned).OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt);
+        var unpinned = visible.Where(p => !p.IsPinned)
+            .OrderByDescending(p => p.LastPlayedAt ?? DateTime.MinValue)
+            .ThenBy(p => p.CreatedAt);
+
+        foreach (var playlist in pinned)
         {
-            var row = new PlaylistRow
-            {
-                Id = playlist.Id,
-                Name = playlist.Name,
-                TrackCount = playlist.Items.Count,
-                IsSmart = false,
-                IsSpotify = playlist.SpotifyPlaylistId is not null,
-                RuntimeText = TimeFormat.FormatSeconds(playlist.Items.Sum(i => i.DurationSeconds)),
-            };
+            var row = BuildRow(playlist);
+            PinnedRows.Add(row);
+            _ = ResolveCoverAsync(row, playlist);
+        }
+
+        foreach (var playlist in unpinned)
+        {
+            var row = BuildRow(playlist);
             Rows.Add(row);
             _ = ResolveCoverAsync(row, playlist);
         }
@@ -116,13 +134,26 @@ public sealed class PlaylistsViewModel : ViewModelBase
                 TrackCount = matches.Count,
                 IsSmart = true,
                 IsSpotify = false,
+                IsPinned = false,
                 RuntimeText = TimeFormat.FormatSeconds(totalSeconds),
             });
         }
 
         this.RaisePropertyChanged(nameof(HasPlaylists));
+        this.RaisePropertyChanged(nameof(HasPinnedRows));
         this.RaisePropertyChanged(nameof(StatusText));
     }
+
+    private static PlaylistRow BuildRow(Playlist playlist) => new()
+    {
+        Id = playlist.Id,
+        Name = playlist.Name,
+        TrackCount = playlist.Items.Count,
+        IsSmart = false,
+        IsSpotify = playlist.SpotifyPlaylistId is not null || playlist.IsLikedSongs,
+        IsPinned = playlist.IsPinned,
+        RuntimeText = TimeFormat.FormatSeconds(playlist.Items.Sum(i => i.DurationSeconds)),
+    };
 
     private async Task ResolveCoverAsync(PlaylistRow row, Playlist playlist)
     {
@@ -143,48 +174,74 @@ public sealed class PlaylistsViewModel : ViewModelBase
 
         var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
         var remote = await _spotify.GetPlaylistsAsync(clientId);
-        if (remote.Count == 0)
+
+        if (remote.Count > 0)
+        {
+            var cached = PlaylistStore.LoadAll();
+            var byRemoteId = cached
+                .Where(p => p.SpotifyPlaylistId is not null)
+                .ToDictionary(p => p.SpotifyPlaylistId!, p => p);
+
+            foreach (var summary in remote)
+            {
+                var isNew = !byRemoteId.TryGetValue(summary.Id, out var playlist);
+                playlist ??= new Playlist { Name = summary.Name, SpotifyPlaylistId = summary.Id };
+                playlist.SpotifyImageUrl = summary.ImageUrl;
+
+                if (isNew || playlist.SpotifySnapshotId != summary.SnapshotId)
+                {
+                    var tracks = await _spotify.GetPlaylistTracksAsync(clientId, summary.Id);
+                    playlist.Items = tracks.Select(t => new PlaylistItem
+                    {
+                        SpotifyTrackUri = t.Uri,
+                        Title = t.Name,
+                        Artist = t.Artist,
+                        DurationSeconds = t.DurationMs / 1000.0,
+                        AlbumArtUrl = t.AlbumArtUrl,
+                    }).ToList();
+                    playlist.SpotifySnapshotId = summary.SnapshotId;
+                }
+
+                PlaylistStore.Save(playlist);
+                byRemoteId.Remove(summary.Id);
+            }
+
+            // Anything left in byRemoteId is a previously-synced playlist Spotify no longer reports
+            // (unfollowed/deleted) — drop the stale local cache entry.
+            foreach (var stale in byRemoteId.Values)
+            {
+                PlaylistStore.Delete(stale.Id);
+            }
+        }
+
+        await SyncLikedSongsAsync(clientId);
+        Reload();
+    }
+
+    /// <summary>Liked Songs isn't a real playlist (no id, no snapshot) so it's matched by the
+    /// IsLikedSongs flag instead of SpotifyPlaylistId, and — unlike normal playlists — always
+    /// re-fetched in full since /me/tracks has nothing like a snapshot id to diff against.
+    /// Pinned by default, but only on first import, so un-pinning it later sticks across syncs.</summary>
+    private async Task SyncLikedSongsAsync(string clientId)
+    {
+        var tracks = await _spotify.GetLikedSongsAsync(clientId);
+        if (tracks.Count == 0)
         {
             return;
         }
 
-        var cached = PlaylistStore.LoadAll();
-        var byRemoteId = cached
-            .Where(p => p.SpotifyPlaylistId is not null)
-            .ToDictionary(p => p.SpotifyPlaylistId!, p => p);
-
-        foreach (var summary in remote)
+        var existing = PlaylistStore.LoadAll().FirstOrDefault(p => p.IsLikedSongs);
+        var playlist = existing ?? new Playlist { Name = "Liked Songs", IsLikedSongs = true, IsPinned = true };
+        playlist.Items = tracks.Select(t => new PlaylistItem
         {
-            var isNew = !byRemoteId.TryGetValue(summary.Id, out var playlist);
-            playlist ??= new Playlist { Name = summary.Name, SpotifyPlaylistId = summary.Id };
-            playlist.SpotifyImageUrl = summary.ImageUrl;
+            SpotifyTrackUri = t.Uri,
+            Title = t.Name,
+            Artist = t.Artist,
+            DurationSeconds = t.DurationMs / 1000.0,
+            AlbumArtUrl = t.AlbumArtUrl,
+        }).ToList();
 
-            if (isNew || playlist.SpotifySnapshotId != summary.SnapshotId)
-            {
-                var tracks = await _spotify.GetPlaylistTracksAsync(clientId, summary.Id);
-                playlist.Items = tracks.Select(t => new PlaylistItem
-                {
-                    SpotifyTrackUri = t.Uri,
-                    Title = t.Name,
-                    Artist = t.Artist,
-                    DurationSeconds = t.DurationMs / 1000.0,
-                    AlbumArtUrl = t.AlbumArtUrl,
-                }).ToList();
-                playlist.SpotifySnapshotId = summary.SnapshotId;
-            }
-
-            PlaylistStore.Save(playlist);
-            byRemoteId.Remove(summary.Id);
-        }
-
-        // Anything left in byRemoteId is a previously-synced playlist Spotify no longer reports
-        // (unfollowed/deleted) — drop the stale local cache entry.
-        foreach (var stale in byRemoteId.Values)
-        {
-            PlaylistStore.Delete(stale.Id);
-        }
-
-        Reload();
+        PlaylistStore.Save(playlist);
     }
 
     public Playlist? FindPlaylist(Guid id) => _playlists.FirstOrDefault(p => p.Id == id);
@@ -222,9 +279,18 @@ public sealed class PlaylistsViewModel : ViewModelBase
             return;
         }
 
-        if (!row.IsSmart)
+        if (!row.IsSmart && FindPlaylist(row.Id) is { } playlist)
         {
-            _applyDefaultVisualizer?.Invoke(FindPlaylist(row.Id)?.DefaultVisualizer);
+            _applyDefaultVisualizer?.Invoke(playlist.DefaultVisualizer);
+
+            // Drives the below-the-bar sort — playing a playlist bumps it to the top of the
+            // most-recently-played order. Pinned playlists ignore this (their spot is manual).
+            if (!playlist.IsPinned)
+            {
+                playlist.LastPlayedAt = DateTime.UtcNow;
+                PlaylistStore.Save(playlist);
+                Reload();
+            }
         }
 
         await _playQueue(refs, 0);
@@ -299,6 +365,25 @@ public sealed class PlaylistsViewModel : ViewModelBase
         Reload();
     }
 
+    /// <summary>Pinned playlists render above the bar and stop sorting by recency; a freshly
+    /// pinned one lands at the end of the pinned section until manually moved.</summary>
+    public void TogglePinned(PlaylistRow row)
+    {
+        if (row.IsSmart || FindPlaylist(row.Id) is not { } playlist)
+        {
+            return;
+        }
+
+        if (!playlist.IsPinned)
+        {
+            playlist.SortOrder = _playlists.Where(p => p.IsPinned).Select(p => p.SortOrder).DefaultIfEmpty(-1).Max() + 1;
+        }
+
+        playlist.IsPinned = !playlist.IsPinned;
+        PlaylistStore.Save(playlist);
+        Reload();
+    }
+
     public void SetHidden(PlaylistRow row, bool hidden)
     {
         if (row.IsSmart || FindPlaylist(row.Id) is not { } playlist)
@@ -358,15 +443,16 @@ public sealed class PlaylistsViewModel : ViewModelBase
         Reload();
     }
 
-    /// <summary>Manual reorder within the Playlists grid. direction is -1 (up/earlier) or +1 (down/later).</summary>
+    /// <summary>Manual reorder within the pinned section. direction is -1 (up/earlier) or +1
+    /// (down/later). Unpinned rows sort by recency instead, so this is a no-op for them.</summary>
     public void MoveRow(PlaylistRow row, int direction)
     {
-        if (row.IsSmart)
+        if (row.IsSmart || !row.IsPinned)
         {
             return;
         }
 
-        var ordered = _playlists.Where(p => !p.IsHidden).OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt).ToList();
+        var ordered = _playlists.Where(p => !p.IsHidden && p.IsPinned).OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt).ToList();
         var index = ordered.FindIndex(p => p.Id == row.Id);
         var target = index + direction;
         if (index < 0 || target < 0 || target >= ordered.Count)

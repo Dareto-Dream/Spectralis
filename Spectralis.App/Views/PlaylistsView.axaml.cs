@@ -208,6 +208,14 @@ public partial class PlaylistsView : UserControl
         }
     }
 
+    private void OnTogglePinned(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { SelectedRow: { } row } vm)
+        {
+            vm.TogglePinned(row);
+        }
+    }
+
     private void OnMoveUp(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is { SelectedRow: { } row } vm)
