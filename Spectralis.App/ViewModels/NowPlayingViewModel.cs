@@ -15,6 +15,7 @@ using Spectralis.Core.Embedded;
 using Spectralis.Core.Formats;
 using Spectralis.Core.Lyrics;
 using Spectralis.Core.Metadata;
+using Spectralis.Core.Scrobbling;
 using Spectralis.Core.ContentWarnings;
 using Spectralis.Core.Integrations.Spotify;
 using Spectralis.Core.Visualizers;
@@ -271,6 +272,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private long _nextVisualizerCycleTick;
     private bool _showRemainingTime;
     private bool _showQueue;
+    private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
+    private readonly IDisposable? _idleActivityTick;
 
     public NowPlayingViewModel(
         AudioEngine engine,
@@ -335,6 +338,17 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => RefreshFromEngine());
         }
+
+        // Surfaced on the "nothing playing" empty state so it doesn't read as a
+        // dead screen — same source data the status bar already had, just visible.
+        RefreshIdleActivity();
+        _idleActivityTick = Avalonia.Threading.DispatcherTimer.Run(
+            () =>
+            {
+                RefreshIdleActivity();
+                return true;
+            },
+            TimeSpan.FromSeconds(30));
     }
 
     /// <summary>Raised after a local file loads into the engine; drives library play counts.</summary>
@@ -1405,6 +1419,57 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when there is nothing to show — no track and no album world map.</summary>
     public bool IsNilState => !HasTrack && !IsAlbumWorldActive;
+
+    /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
+    public bool IsOledTheme => _settings.ThemeMode == AppThemeMode.Oled;
+
+    /// <summary>True when there's real scrobble history to show on the empty state.</summary>
+    public bool HasIdleActivityStats => _idleActivity.HasHistory;
+
+    public bool HasIdleStreak => _idleActivity.CurrentStreakDays > 1;
+
+    public string IdleListensText => _idleActivity.TotalScrobbles.ToString("N0");
+
+    public string IdleHoursText => _idleActivity.TotalHours >= 10
+        ? _idleActivity.TotalHours.ToString("0")
+        : _idleActivity.TotalHours.ToString("0.#");
+
+    public string IdleStreakText => _idleActivity.CurrentStreakDays == 1
+        ? "1 day"
+        : $"{_idleActivity.CurrentStreakDays} days";
+
+    /// <summary>One telemetry line for the empty state — same convention as the
+    /// library's BPM/key/kbps columns, not a separate "stat card" component.</summary>
+    public string IdleActivitySummaryText
+    {
+        get
+        {
+            var parts = new List<string> { $"{IdleListensText} listens", $"{IdleHoursText}h logged" };
+            if (HasIdleStreak)
+            {
+                parts.Add($"{IdleStreakText} streak");
+            }
+
+            return string.Join("   ·   ", parts);
+        }
+    }
+
+    private void RefreshIdleActivity()
+    {
+        var next = ListeningActivitySnapshot.FromHistory(ScrobbleQueue.LoadHistory());
+        if (next == _idleActivity)
+        {
+            return;
+        }
+
+        _idleActivity = next;
+        this.RaisePropertyChanged(nameof(HasIdleActivityStats));
+        this.RaisePropertyChanged(nameof(HasIdleStreak));
+        this.RaisePropertyChanged(nameof(IdleListensText));
+        this.RaisePropertyChanged(nameof(IdleHoursText));
+        this.RaisePropertyChanged(nameof(IdleStreakText));
+        this.RaisePropertyChanged(nameof(IdleActivitySummaryText));
+    }
 
     /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
     public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive;
@@ -2647,6 +2712,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _positionPoll?.Dispose();
+        _idleActivityTick?.Dispose();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
         RemoteAudioCache.TryDelete(_remoteAudioTempPath);

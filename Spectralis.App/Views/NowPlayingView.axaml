@@ -17,10 +17,59 @@
       <Setter Property="Fill" Value="{StaticResource Brush.Signal}" />
       <Setter Property="Opacity" Value="1" />
     </Style>
+
+    <!-- Ambient backdrop for empty states only — same grid + glow language the
+         visualizers already draw (VisualizerRendererBase.DrawGrid/DrawBackground),
+         ported to XAML. Scoped to this one panel so it never shows up behind real
+         content elsewhere. Backs off sharply in OLED mode. -->
+    <Style Selector="Border.ambient-grid">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="Border.ambient-grid.oled">
+      <Setter Property="Opacity" Value="0.14" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow">
+      <Setter Property="Opacity" Value="0.08" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow.oled">
+      <Setter Property="Opacity" Value="0.025" />
+    </Style>
   </Grid.Styles>
 
   <!-- ============ Empty state ============ -->
   <Panel IsVisible="{Binding IsNilState}">
+    <Border IsHitTestVisible="False" ClipToBounds="True"
+            Classes="ambient-grid" Classes.oled="{Binding IsOledTheme}">
+      <Border.Background>
+        <DrawingBrush TileMode="Tile" Stretch="None"
+                      DestinationRect="0,0,128,128" SourceRect="0,0,128,128">
+          <DrawingBrush.Drawing>
+            <GeometryDrawing>
+              <GeometryDrawing.Pen>
+                <Pen Brush="{StaticResource Brush.Border}" Thickness="1" />
+              </GeometryDrawing.Pen>
+              <GeometryDrawing.Geometry>
+                <GeometryGroup>
+                  <LineGeometry StartPoint="0,0" EndPoint="128,0" />
+                  <LineGeometry StartPoint="0,0" EndPoint="0,128" />
+                </GeometryGroup>
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+          </DrawingBrush.Drawing>
+        </DrawingBrush>
+      </Border.Background>
+    </Border>
+    <Ellipse IsHitTestVisible="False"
+             Classes="ambient-glow" Classes.oled="{Binding IsOledTheme}"
+             Fill="{StaticResource Brush.Signal}"
+             Width="900" Height="440"
+             HorizontalAlignment="Center" VerticalAlignment="Bottom"
+             Margin="0,0,0,-200">
+      <Ellipse.Effect>
+        <BlurEffect Radius="140" />
+      </Ellipse.Effect>
+    </Ellipse>
+
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
 
       <!-- Identity -->
@@ -73,6 +122,16 @@
                  IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                  TextWrapping="Wrap" TextAlignment="Center"
                  Margin="0,8,0,0" />
+
+      <!-- Listening stats: same data the status bar always had — a telemetry
+           readout, same as BPM/key/kbps in the library table, not a stat card. -->
+      <TextBlock Classes="data"
+                 Text="{Binding IdleActivitySummaryText}"
+                 IsVisible="{Binding HasIdleActivityStats}"
+                 FontSize="{StaticResource FontSize.UI}"
+                 LetterSpacing="0.3"
+                 HorizontalAlignment="Center"
+                 Margin="0,26,0,0" />
     </StackPanel>
   </Panel>
 
