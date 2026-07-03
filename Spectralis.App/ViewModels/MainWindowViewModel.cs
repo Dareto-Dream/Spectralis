@@ -170,7 +170,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         NowPlaying.AlbumWorldExitDelegate = Capsules.Clear;
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
-        TimingStudio = new TimingStudioViewModel(Engine);
+        TimingStudio = new TimingStudioViewModel(Engine, AppSettings);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
         DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
