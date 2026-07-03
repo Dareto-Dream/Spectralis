@@ -220,7 +220,7 @@
               <DataTemplate x:DataType="vm:NavSection">
                 <Panel>
                   <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding !IsSeparator}">
-                    <PathIcon Data="{Binding IconData}" Width="16" Height="16" />
+                    <PathIcon Data="{Binding IconData}" Width="20" Height="20" />
                     <TextBlock Text="{Binding Label}" />
                   </StackPanel>
                   <StackPanel Spacing="6" Margin="0,10,0,2" IsVisible="{Binding IsSeparator}">
@@ -241,7 +241,8 @@
                 <Setter Property="Focusable" Value="{Binding !IsSeparator}" />
               </Style>
               <Style Selector="ListBoxItem PathIcon">
-                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+                <Setter Property="Opacity" Value="0.7" />
               </Style>
               <Style Selector="ListBoxItem TextBlock">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
@@ -251,6 +252,7 @@
               </Style>
               <Style Selector="ListBoxItem:selected PathIcon">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+                <Setter Property="Opacity" Value="1" />
               </Style>
               <Style Selector="ListBoxItem:selected TextBlock">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
@@ -267,7 +269,7 @@
               <DataTemplate x:DataType="vm:NavSection">
                 <Panel>
                   <PathIcon Data="{Binding IconData}"
-                            Width="18" Height="18"
+                            Width="22" Height="22"
                             HorizontalAlignment="Center"
                             ToolTip.Tip="{Binding Label}"
                             IsVisible="{Binding !IsSeparator}" />
@@ -288,13 +290,15 @@
                 <Setter Property="Focusable" Value="{Binding !IsSeparator}" />
               </Style>
               <Style Selector="ListBoxItem PathIcon">
-                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Secondary}" />
+                <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
+                <Setter Property="Opacity" Value="0.7" />
               </Style>
               <Style Selector="ListBoxItem:selected">
                 <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
               </Style>
               <Style Selector="ListBoxItem:selected PathIcon">
                 <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+                <Setter Property="Opacity" Value="1" />
               </Style>
             </ListBox.Styles>
           </ListBox>
