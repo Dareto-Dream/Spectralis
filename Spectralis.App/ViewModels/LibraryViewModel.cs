@@ -4,6 +4,7 @@ using ReactiveUI;
 using Spectralis.App.Services;
 using Spectralis.Core.Analysis;
 using Spectralis.Core.Common;
+using Spectralis.Core.Integrations.Spotify;
 using Spectralis.Core.Metadata;
 
 namespace Spectralis.App.ViewModels;
@@ -33,6 +34,15 @@ public sealed class TrackRow
     public long SizeBytes { get; init; }
     public string SizeText => SizeBytes > 0 ? FormatLabel.FormatBytes(SizeBytes) : string.Empty;
 
+    /// <summary>True for a row found via Spotify search rather than the local library — Path is a
+    /// "spotify:track:..." uri in that case, playable the same way a local path is everywhere the
+    /// app already treats Queue entries generically (see NowPlayingViewModel.LoadQueueItemAsync).</summary>
+    public bool IsSpotify { get; init; }
+
+    /// <summary>Only set for a Spotify row — carries the full result so "Add to Playlist" can push
+    /// it through PlaylistsViewModel.AddSpotifyTrackAsync without re-fetching anything.</summary>
+    public SpotifyTrackResult? SpotifySource { get; init; }
+
     public static TrackRow From(LibraryEntry entry)
     {
         var track = entry.Track;
@@ -55,6 +65,18 @@ public sealed class TrackRow
         };
     }
 
+    public static TrackRow FromSpotify(SpotifyTrackResult track) => new()
+    {
+        Path = track.Uri,
+        Title = track.Name,
+        Artist = track.Artist ?? string.Empty,
+        Album = track.Album ?? string.Empty,
+        DurationSeconds = track.DurationMs / 1000.0,
+        Format = "Spotify",
+        IsSpotify = true,
+        SpotifySource = track,
+    };
+
     public bool Matches(string needle) =>
         Title.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
         Artist.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
@@ -67,10 +89,14 @@ public sealed class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryScanner _scanner;
     private readonly Func<IReadOnlyList<string>, int, Task> _playQueue;
     private readonly IDisposable _searchSubscription;
+    private readonly IDisposable _spotifySearchSubscription;
     private readonly AppSettings? _settings;
+    private readonly SpotifyService _spotify = new();
     private readonly LibraryWatcher _watcher = new();
 
     private List<TrackRow> _allRows = new();
+    private List<TrackRow> _spotifyResults = [];
+    private CancellationTokenSource? _spotifySearchCts;
     private string _searchText = string.Empty;
     private bool _isScanning;
     private string _scanStatus = string.Empty;
@@ -104,6 +130,14 @@ public sealed class LibraryViewModel : ViewModelBase, IDisposable
             .Throttle(TimeSpan.FromMilliseconds(200))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilter());
+
+        // Slower debounce than the local filter above — this one's a network call, not an
+        // in-memory scan. Independent of the local subscription; each re-renders Rows when its
+        // own results land, so the local list can update well before the Spotify one resolves.
+        _spotifySearchSubscription = this.WhenAnyValue(vm => vm.SearchText)
+            .Throttle(TimeSpan.FromMilliseconds(400))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(async _ => await RunSpotifySearchAsync());
 
         // Loaded off the UI thread and applied when ready — a synchronous full-table
         // load here used to block the main window from appearing until the whole
@@ -314,6 +348,43 @@ public sealed class LibraryViewModel : ViewModelBase, IDisposable
         {
             Rows.Add(row);
         }
+
+        // Appended after the local results rather than interleaved, so the "these came from
+        // Spotify" grouping reads clearly instead of scattering Spotify badges through the list.
+        if (needle.Length > 0)
+        {
+            foreach (var row in _spotifyResults)
+            {
+                Rows.Add(row);
+            }
+        }
+    }
+
+    /// <summary>Debounced Spotify track search off the same SearchText the local filter uses —
+    /// gated on being linked at all, independent of the playlist-import opt-out (that toggle is
+    /// about pulling playlists in, not about whether search can reach Spotify).</summary>
+    private async Task RunSpotifySearchAsync()
+    {
+        _spotifySearchCts?.Cancel();
+        var cts = _spotifySearchCts = new CancellationTokenSource();
+
+        var query = SearchText.Trim();
+        if (query.Length < 2 || _settings is null || !_spotify.IsLinked)
+        {
+            _spotifyResults = [];
+            ApplyFilter();
+            return;
+        }
+
+        var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
+        var results = await _spotify.SearchTracksAsync(clientId, query, limit: 15);
+        if (cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _spotifyResults = results.Select(TrackRow.FromSpotify).ToList();
+        ApplyFilter();
     }
 
     // ── Watched folders ─────────────────────────────────────────────────────
@@ -462,6 +533,7 @@ public sealed class LibraryViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _searchSubscription.Dispose();
+        _spotifySearchSubscription.Dispose();
         _watcher.Dispose();
         _analysisWorker?.Cancel();
     }

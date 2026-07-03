@@ -100,7 +100,7 @@ public partial class LibraryView : UserControl
         var paths = TrackGrid.SelectedItems
             .OfType<TrackRow>()
             .Select(row => row.Path)
-            .Where(File.Exists)
+            .Where(IsPlayableRef)
             .ToList();
         if (paths.Count == 0) return;
         if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel shell })
@@ -112,11 +112,48 @@ public partial class LibraryView : UserControl
         var paths = TrackGrid.SelectedItems
             .OfType<TrackRow>()
             .Select(row => row.Path)
-            .Where(File.Exists)
+            .Where(IsPlayableRef)
             .ToList();
         if (paths.Count == 0) return;
         if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel shell })
             await shell.NowPlaying.QueueFilesAsync(paths, playIfQueueWasEmpty: true);
+    }
+
+    /// <summary>A local file that exists, or a "spotify:..." uri — the same generic Queue-entry
+    /// test NowPlayingViewModel.LoadQueueItemAsync applies when actually loading one.</summary>
+    private static bool IsPlayableRef(string pathOrUri) =>
+        pathOrUri.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase) || File.Exists(pathOrUri);
+
+    private async void OnContextAddToPlaylist(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window { DataContext: MainWindowViewModel shell } owner)
+        {
+            return;
+        }
+
+        var rows = TrackGrid.SelectedItems.OfType<TrackRow>().ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var target = await PlaylistPickerWindow.PromptAsync(owner, shell.Playlists.Rows);
+        if (target is null)
+        {
+            return;
+        }
+
+        foreach (var row in rows)
+        {
+            if (row.IsSpotify && row.SpotifySource is not null)
+            {
+                await shell.Playlists.AddSpotifyTrackAsync(target.Id, row.SpotifySource);
+            }
+            else if (File.Exists(row.Path))
+            {
+                shell.Playlists.AddLocalTrack(target.Id, row.Path);
+            }
+        }
     }
 
     private async void OnContextContentWarnings(object? sender, RoutedEventArgs e)
