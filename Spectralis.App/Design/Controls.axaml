@@ -294,6 +294,10 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.UI}" />
     <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Brush.Border}" />
     <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Brush.Border}" />
+    <!-- Explicit, not left to the Simple theme's default: unset, every row picks
+         up an accent-tinted background from the base theme (this is what made
+         Playlists render as a solid teal/accent wash instead of a plain list). -->
+    <Setter Property="RowBackground" Value="Transparent" />
   </Style>
   <Style Selector="DataGridColumnHeader">
     <Setter Property="Background" Value="{StaticResource Brush.Bg.Raised}" />
