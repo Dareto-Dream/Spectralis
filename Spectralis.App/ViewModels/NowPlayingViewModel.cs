@@ -738,13 +738,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void ResetPlaybackSession()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
-            _ = _spotifyHost.StopAsync();
-
-        StopSpotifyLoopback();
-        _spotifyVisualizer = null;
-        _engine.ExternalVisualizerSource = null;
-
+        // ApplyTrack(null) below already stops Spotify's real device (if it was the active
+        // source) and clears the loopback/visualizer/state bookkeeping that used to be
+        // duplicated here — duplicating it was how this and the "switch to a local track"
+        // path could disagree about whether Spotify still needed stopping.
         _remoteLoadCts?.Cancel();
         var oldRemotePath = _remoteAudioTempPath;
         _remoteAudioTempPath = null;
@@ -2187,6 +2184,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             // WebView widget fallback: embed the platform player directly (SoundCloud, Suno, Spotify).
             if (resolved.IsWebViewFallback())
             {
+                StopSpotifyPlayback();
                 var htmlBytes = System.Text.Encoding.UTF8.GetBytes(resolved.WebViewEmbedHtml!);
                 EmbeddedHtml = new EmbeddedHtmlContext(
                     resolved.Kind.ToString(),
@@ -2522,15 +2520,35 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         ApplyTrack(refreshed);
     }
 
-    private void ApplyTrack(TrackInfo? track)
+    /// <summary>Pauses Spotify's real device (if it was the active source) and clears the
+    /// Spotify-specific bookkeeping tied to it. Doesn't touch Title/Artist/HasTrack — callers
+    /// replacing the whole "now playing" surface should follow up with ApplyTrack themselves.
+    /// This used to be duplicated (slightly differently) between ApplyTrack and
+    /// ResetPlaybackSession, which is how Spotify ended up able to keep playing in the background
+    /// after switching to a local track: ApplyTrack cleared _spotifyState without ever actually
+    /// telling the device to stop, so by the time Stop was pressed there was nothing left for
+    /// ResetPlaybackSession's own (now-removed) _spotifyState check to catch.</summary>
+    private void StopSpotifyPlayback()
     {
-        var wasSpotify = _spotifyState is not null;
+        if (_spotifyState is null)
+        {
+            return;
+        }
+
+        _ = _spotifyHost?.StopAsync();
         _spotifyState = null;
-        _spotifyArtCts?.Cancel();
-        _spotifyLyricsCts?.Cancel();
+        _queueDrivenSpotifyTrack = false;
         StopSpotifyLoopback();
         _spotifyVisualizer = null;
         _engine.ExternalVisualizerSource = null;
+    }
+
+    private void ApplyTrack(TrackInfo? track)
+    {
+        var wasSpotify = _spotifyState is not null;
+        StopSpotifyPlayback();
+        _spotifyArtCts?.Cancel();
+        _spotifyLyricsCts?.Cancel();
         if (wasSpotify)
         {
             this.RaisePropertyChanged(nameof(HasNext));
