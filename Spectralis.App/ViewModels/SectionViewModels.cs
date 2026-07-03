@@ -1760,6 +1760,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool ImportSpotifyPlaylists
+    {
+        get => _settings.ImportSpotifyPlaylists;
+        set
+        {
+            if (_settings.ImportSpotifyPlaylists == value)
+            {
+                return;
+            }
+
+            _settings.ImportSpotifyPlaylists = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool EnableAutoUpdates
     {
         get => _settings.EnableAutoUpdates;

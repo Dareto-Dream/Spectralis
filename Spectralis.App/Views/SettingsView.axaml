@@ -237,6 +237,8 @@
                   Classes="destructive"
                   IsEnabled="{Binding SpotifyIsLinked}" />
         </StackPanel>
+        <CheckBox Content="Show my Spotify playlists on the Playlists page"
+                  IsChecked="{Binding ImportSpotifyPlaylists}" />
       </StackPanel>
 
       <!-- Advanced: default app + protocol registration -->
