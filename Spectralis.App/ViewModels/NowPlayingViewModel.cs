@@ -113,6 +113,18 @@ public sealed class QueueItemViewModel : ViewModelBase
         _isCurrent = isCurrent;
     }
 
+    /// <summary>Known display metadata (a Spotify track's real title/artist, from the playlist
+    /// that queued it) — used instead of trying to derive anything from the raw entry, which for
+    /// a "spotify:track:..." uri has no meaningful filename/host to extract at all.</summary>
+    public QueueItemViewModel(int index, string path, string title, string subtitle)
+    {
+        Index = index;
+        Path = path;
+        IsUrl = false;
+        Title = title;
+        Subtitle = subtitle;
+    }
+
     public QueueItemViewModel(int index, string path)
     {
         Index = index;
@@ -422,10 +434,23 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public PlayQueue Queue { get; } = new();
 
+    /// <summary>Known (Title, Artist) for queue entries that aren't real file paths — set via
+    /// <see cref="SetQueueTrackMetadata"/> right before queueing a playlist that has richer
+    /// metadata than the raw path/uri can express (a Spotify track's actual name, say).</summary>
+    private Dictionary<string, (string Title, string Subtitle)> _queueTrackMetadata = [];
+
     public bool HasNext => _spotifyState is not null || Queue.HasNext;
     public bool HasPrevious => _spotifyState is not null || Queue.HasPrevious;
 
     public ObservableCollection<QueueItemViewModel> QueueItems { get; } = new();
+
+    /// <summary>Call immediately before PlayQueueAsync/QueueFilesAsync with the same entries so
+    /// the Queue panel can show real titles for non-file entries instead of deriving something
+    /// from the raw path/uri (which for a Spotify track is just an opaque id, not a name).</summary>
+    public void SetQueueTrackMetadata(IReadOnlyDictionary<string, (string Title, string Artist)> metadata)
+    {
+        _queueTrackMetadata = metadata.ToDictionary(kv => kv.Key, kv => (kv.Value.Title, kv.Value.Artist));
+    }
 
     public bool ShowQueue
     {
@@ -663,10 +688,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         var items = Queue.Items;
         for (var index = 0; index < items.Count; index++)
         {
-            QueueItems.Add(new QueueItemViewModel(index, items[index])
-            {
-                IsCurrent = index == Queue.CurrentIndex,
-            });
+            var path = items[index];
+            var row = _queueTrackMetadata.TryGetValue(path, out var meta)
+                ? new QueueItemViewModel(index, path, meta.Title, meta.Subtitle)
+                : new QueueItemViewModel(index, path);
+            row.IsCurrent = index == Queue.CurrentIndex;
+            QueueItems.Add(row);
         }
 
         RaiseQueueNavigationChanged();
@@ -1754,8 +1781,22 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 ? await FetchSpotifyArtAsync(state.AlbumArtUrl, cts.Token)
                 : null;
 
-            if (!cts.IsCancellationRequested && _spotifyHost is not null)
+            // Only meaningful for the standalone "Play Spotify" flow, where Spotify's own
+            // server-side device queue genuinely is what's next. For a queue-driven playlist
+            // (mixed local+Spotify or a synced Spotify playlist) Spectralis's own Queue is
+            // authoritative instead — Spotify's device queue is empty/irrelevant since each
+            // track is started with a single-uri play, no context — so calling this here
+            // clobbered the correctly-built Queue panel with Spotify's (empty-ish, occasionally
+            // just stale/duplicated) queue snapshot instead. SyncQueueCurrent just re-flags which
+            // row is playing, using the list SyncQueueItems already built for this Queue.
+            if (_queueDrivenSpotifyTrack)
+            {
+                SyncQueueCurrent();
+            }
+            else if (!cts.IsCancellationRequested && _spotifyHost is not null)
+            {
                 _ = RefreshSpotifyQueueAsync();
+            }
 
             // Fetch timed lyrics from Spotify relay
             _spotifyLyricsCts?.Cancel();
