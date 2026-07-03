@@ -37,10 +37,12 @@ public sealed class PlaylistArtResolver
             ? await Dispatcher.UIThread.InvokeAsync(() => TryDecodeBytes(directBytes))
             : await BuildCollageAsync(playlist.Items.Take(4).ToList(), ct);
 
-        if (_resolved.TryGetValue(playlist.Id, out var previous))
-        {
-            previous.Bitmap?.Dispose();
-        }
+        // Deliberately not disposing the outgoing bitmap here: Reload() runs on every mutation
+        // (including background Spotify syncs), and an older PlaylistRow still mid-layout can be
+        // holding the exact same Bitmap reference when this resolves — disposing it out from
+        // under a live Image control is a hard crash (Bitmap.get_Size() NRE during Measure), not
+        // a graceful "just show nothing." Letting the GC reclaim it once nothing references it
+        // anymore is the safe trade for a resource this small and this infrequently replaced.
         _resolved[playlist.Id] = (bitmap, version);
         return bitmap;
     }
