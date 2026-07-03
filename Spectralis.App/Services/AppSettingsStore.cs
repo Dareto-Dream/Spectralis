@@ -75,6 +75,8 @@ public sealed class AppSettings
     public string LastSeenAppVersion { get; set; } = string.Empty;
     public string IgnoredUpdateVersion { get; set; } = string.Empty;
     public string SpotifyCustomClientId { get; set; } = string.Empty;
+    /// <summary>Opt-out: when Spotify is linked, mirror the user's Spotify playlists into the Playlists page.</summary>
+    public bool ImportSpotifyPlaylists { get; set; } = true;
     public bool SharedPlayEnabled { get; set; }
     public string SharedPlayCdnBaseUrl { get; set; } = string.Empty;
     public bool SharedPlayLiveChannelEnabled { get; set; }
@@ -150,6 +152,7 @@ public sealed class AppSettings
             LastSeenAppVersion = LastSeenAppVersion,
             IgnoredUpdateVersion = IgnoredUpdateVersion,
             SpotifyCustomClientId = SpotifyCustomClientId,
+            ImportSpotifyPlaylists = ImportSpotifyPlaylists,
             SharedPlayEnabled = SharedPlayEnabled,
             SharedPlayCdnBaseUrl = SharedPlayCdnBaseUrl,
             SharedPlayLiveChannelEnabled = SharedPlayLiveChannelEnabled,
