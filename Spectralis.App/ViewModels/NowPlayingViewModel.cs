@@ -261,6 +261,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private bool _isExporting;
     private bool _showMoreInfo = true;
     private SpotifyTrackState? _spotifyState;
+    /// <summary>True when the currently-playing Spotify track was reached via Spectralis's own
+    /// Queue (e.g. a mixed local+Spotify playlist) rather than the standalone "Play Spotify"
+    /// entry point. Next/Previous/auto-advance must stay Queue-driven in that case instead of
+    /// deferring to Spotify's own context queue, since the next Queue entry may be a local file.</summary>
+    private bool _queueDrivenSpotifyTrack;
     private CancellationTokenSource? _spotifyArtCts;
     private double _spotifyPositionMs;
     private double _spotifyDurationMs;
@@ -874,7 +879,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayNextAsync()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
+        if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             await _spotifyHost.NextTrackAsync();
             return;
@@ -885,7 +890,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayPreviousAsync()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
+        if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             if (_spotifyPositionMs > 3000)
                 await _spotifyHost.SeekAsync(0);
@@ -907,9 +912,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadQueueItemAsync(string pathOrUrl, bool startPlayback)
     {
         SyncQueueCurrent();
-        if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        if (pathOrUrl.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+        {
+            await LoadSpotifyQueueTrackAsync(pathOrUrl, startPlayback);
+        }
+        else if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
+            _queueDrivenSpotifyTrack = false;
             await LoadUrlAsync(pathOrUrl);
             if (startPlayback && _engine.IsLoaded && !_engine.IsPlaying)
             {
@@ -919,13 +929,34 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
         else
         {
+            _queueDrivenSpotifyTrack = false;
             await LoadCurrentQueueTrackAsync(pathOrUrl, startPlayback);
         }
     }
 
+    /// <summary>Plays a single Spotify track as the current Queue entry (a mixed local+Spotify
+    /// playlist), rather than deferring to Spotify's own context/queue the way the standalone
+    /// "Play Spotify" flow does. Stops the local engine first — <see cref="AudioEngine.Stop"/>
+    /// (not Pause) also zeroes its reported position, so a subsequent Previous press doesn't
+    /// mistake the stale local track for "recently playing" and seek it instead of moving the Queue.</summary>
+    private async Task LoadSpotifyQueueTrackAsync(string trackUri, bool startPlayback)
+    {
+        _queueDrivenSpotifyTrack = true;
+        _engine.Stop();
+
+        if (!startPlayback || _spotifyHost is null)
+        {
+            return;
+        }
+
+        RemoteStatus = "Connecting to Spotify...";
+        var started = await _spotifyHost.PlayUriAsync(trackUri);
+        RemoteStatus = started ? "Spotify playback requested" : _spotifyHost.StatusMessage ?? "Spotify playback failed";
+    }
+
     private async Task AutoAdvanceAsync()
     {
-        if (_spotifyState is not null)
+        if (_spotifyState is not null && !_queueDrivenSpotifyTrack)
         {
             RefreshFromEngine();
             return;
@@ -1635,15 +1666,36 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         set
         {
             if (_spotifyHost is not null)
+            {
                 _spotifyHost.TrackStateChanged -= OnSpotifyStateChanged;
+                _spotifyHost.PlaybackStopped -= OnSpotifyPlaybackStopped;
+            }
             _spotifyHost = value;
             if (_spotifyHost is not null)
+            {
                 _spotifyHost.TrackStateChanged += OnSpotifyStateChanged;
+                _spotifyHost.PlaybackStopped += OnSpotifyPlaybackStopped;
+            }
         }
     }
 
     private void OnSpotifyStateChanged(object? sender, SpotifyTrackState state)
         => _ = ApplySpotifyStateAsync(state);
+
+    /// <summary>Only meaningful for a queue-driven Spotify track (see <see cref="_queueDrivenSpotifyTrack"/>):
+    /// Spotify has nothing left in its own queue to advance to, so Spectralis's own Queue takes over.
+    /// A standalone "Play Spotify" session stopping naturally isn't Spectralis's concern.</summary>
+    private void OnSpotifyPlaybackStopped(object? sender, EventArgs e)
+    {
+        if (!_queueDrivenSpotifyTrack)
+        {
+            return;
+        }
+
+        _spotifyState = null;
+        _queueDrivenSpotifyTrack = false;
+        _ = AutoAdvanceAsync();
+    }
 
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
@@ -1762,6 +1814,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _queueDrivenSpotifyTrack = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await SpotifyHost.PlayAsync();
         RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
