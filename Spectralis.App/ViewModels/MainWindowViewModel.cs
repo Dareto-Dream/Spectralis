@@ -77,7 +77,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             PlayFromLibraryAsync,
             AppSettings);
         Library.InitializeWatchedFolders(AppSettings.LibraryAutoScanOnOpen);
-        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync);
+        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer);
         Scrobbling = new ScrobblingService(() => new ScrobblingConfig(
             AppSettings.LastFmEnabled,
             AppSettings.LastFmApiKey,
