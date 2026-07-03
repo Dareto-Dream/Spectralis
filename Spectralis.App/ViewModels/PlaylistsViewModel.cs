@@ -43,6 +43,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
     private readonly Func<IReadOnlyList<string>, int, Task> _playQueue;
     private readonly AppSettings _settings;
     private readonly Action<VisualizerRef?>? _applyDefaultVisualizer;
+    private readonly Action<IReadOnlyDictionary<string, (string Title, string Artist)>>? _setQueueMetadata;
     private readonly SpotifyService _spotify = new();
     private readonly PlaylistArtResolver _artResolver = new();
     private List<Playlist> _playlists = new();
@@ -53,12 +54,14 @@ public sealed class PlaylistsViewModel : ViewModelBase
         LibraryDatabase database,
         Func<IReadOnlyList<string>, int, Task> playQueue,
         AppSettings settings,
-        Action<VisualizerRef?>? applyDefaultVisualizer = null)
+        Action<VisualizerRef?>? applyDefaultVisualizer = null,
+        Action<IReadOnlyDictionary<string, (string Title, string Artist)>>? setQueueMetadata = null)
     {
         _database = database;
         _playQueue = playQueue;
         _settings = settings;
         _applyDefaultVisualizer = applyDefaultVisualizer;
+        _setQueueMetadata = setQueueMetadata;
         Reload();
         _ = SyncSpotifyPlaylistsAsync();
     }
@@ -282,6 +285,15 @@ public sealed class PlaylistsViewModel : ViewModelBase
         if (!row.IsSmart && FindPlaylist(row.Id) is { } playlist)
         {
             _applyDefaultVisualizer?.Invoke(playlist.DefaultVisualizer);
+
+            // Queue rows can't derive a real title from a "spotify:track:..." uri the way a
+            // local path's filename works as a fallback — hand the actual names over so the
+            // Queue panel doesn't just show raw track ids.
+            var metadata = playlist.Items
+                .Where(i => !string.IsNullOrWhiteSpace(i.Title))
+                .GroupBy(PlayableRef)
+                .ToDictionary(g => g.Key, g => (g.First().Title!, g.First().Artist ?? string.Empty));
+            _setQueueMetadata?.Invoke(metadata);
 
             // Drives the below-the-bar sort — playing a playlist bumps it to the top of the
             // most-recently-played order. Pinned playlists ignore this (their spot is manual).
