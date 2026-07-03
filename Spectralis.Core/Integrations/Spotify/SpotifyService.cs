@@ -334,6 +334,20 @@ public sealed class SpotifyService : IDisposable
         return await SendPlaylistWriteAsync(HttpMethod.Post, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
     }
 
+    /// <summary>Replaces a Spotify playlist's entire track list in one call — the simplest way to
+    /// push an arbitrary set of local add/remove/reorder edits back at once, rather than diffing
+    /// them into separate add/remove/reorder requests. Spotify caps this endpoint at 100 uris per
+    /// call; callers with larger playlists would need to chain add calls for the remainder, which
+    /// this doesn't attempt since Spectralis-edited playlists aren't expected to hit that size.</summary>
+    public async Task<string?> ReplacePlaylistItemsAsync(string clientId, string playlistId, IReadOnlyList<string> trackUris)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null || string.IsNullOrWhiteSpace(playlistId)) return null;
+
+        var body = JsonSerializer.Serialize(new { uris = trackUris.Take(100) });
+        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+    }
+
     /// <summary>Removes specific tracks from a Spotify playlist, guarded by <paramref name="snapshotId"/>
     /// so a stale local copy can't silently clobber a concurrent edit made elsewhere.</summary>
     public async Task<string?> RemovePlaylistItemsAsync(string clientId, string playlistId, IReadOnlyList<string> trackUris, string snapshotId)
