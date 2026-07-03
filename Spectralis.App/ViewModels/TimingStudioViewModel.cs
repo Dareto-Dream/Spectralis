@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
 using ReactiveUI;
+using Spectralis.App.Services;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Lyrics;
 using Spectralis.Core.Metadata;
@@ -74,6 +75,7 @@ public sealed class TimedLineRow : ViewModelBase
 public sealed class TimingStudioViewModel : ViewModelBase
 {
     private readonly AudioEngine _engine;
+    private readonly AppSettings? _settings;
     private readonly LyricsTimingSession _session = new();
     private string _plainText = string.Empty;
     private string _status = string.Empty;
@@ -84,9 +86,10 @@ public sealed class TimingStudioViewModel : ViewModelBase
     private int _chipCurrentIndex = -1;
     private readonly List<TimingChip> _allChips = [];
 
-    public TimingStudioViewModel(AudioEngine engine)
+    public TimingStudioViewModel(AudioEngine engine, AppSettings? settings = null)
     {
         _engine = engine;
+        _settings = settings;
 
         LoadLinesCommand = ReactiveCommand.Create(LoadLines);
         TapCommand = ReactiveCommand.Create(Tap);
@@ -110,6 +113,9 @@ public sealed class TimingStudioViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isWordMode, value);
             this.RaisePropertyChanged(nameof(IsLineMode));
+            this.RaisePropertyChanged(nameof(ShowLineNudgeControls));
+            this.RaisePropertyChanged(nameof(ShowLineList));
+            this.RaisePropertyChanged(nameof(ShowWordChips));
             if (HasLines) RebuildChips();
         }
     }
@@ -122,6 +128,15 @@ public sealed class TimingStudioViewModel : ViewModelBase
             if (value) IsWordMode = false;
         }
     }
+
+    /// <summary>Nudge/seek only make sense once there's a selected line to move.</summary>
+    public bool ShowLineNudgeControls => IsLineMode && HasLines;
+
+    public bool ShowLineList => IsLineMode && HasLines;
+    public bool ShowWordChips => IsWordMode && HasLines;
+
+    /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
+    public bool IsOledTheme => _settings?.ThemeMode == AppThemeMode.Oled;
 
     public ReactiveCommand<Unit, Unit> LoadLinesCommand { get; }
     public ReactiveCommand<Unit, Unit> TapCommand { get; }
@@ -178,7 +193,13 @@ public sealed class TimingStudioViewModel : ViewModelBase
     public bool HasLines
     {
         get => _hasLines;
-        private set => this.RaiseAndSetIfChanged(ref _hasLines, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _hasLines, value);
+            this.RaisePropertyChanged(nameof(ShowLineNudgeControls));
+            this.RaisePropertyChanged(nameof(ShowLineList));
+            this.RaisePropertyChanged(nameof(ShowWordChips));
+        }
     }
 
     private void LoadLines()
