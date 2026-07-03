@@ -10,6 +10,11 @@ public sealed class TimedLyricLine
 
     /// <summary>Stamped start time in seconds, or null while untimed.</summary>
     public double? Timestamp { get; internal set; }
+
+    /// <summary>Per-word stamps for word-mode tapping, parallel to Text.Split(' ', RemoveEmptyEntries)
+    /// — index i is the i-th word's timestamp, or null if that word hasn't been tapped. Stays all-null
+    /// for a line only ever tapped in Line Mode, which is what keeps ExportLrc's output plain for it.</summary>
+    public double?[] WordTimestamps { get; internal set; } = [];
 }
 
 /// <summary>
@@ -37,7 +42,8 @@ public sealed class LyricsTimingSession
             var line = rawLine.Trim();
             if (line.Length > 0)
             {
-                _lines.Add(new TimedLyricLine(line));
+                var wordCount = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+                _lines.Add(new TimedLyricLine(line) { WordTimestamps = new double?[wordCount] });
             }
         }
     }
@@ -105,17 +111,72 @@ public sealed class LyricsTimingSession
         }
     }
 
+    /// <summary>Stamps one word within a line for word-mode tapping — this is what actually
+    /// backs the exported enhanced-LRC word tags, on top of stamping the line itself (matching
+    /// StampLine's convention) if this is the line's first word.</summary>
+    public void StampWord(int lineIndex, int wordIndex, double seconds)
+    {
+        if (lineIndex < 0 || lineIndex >= _lines.Count)
+        {
+            return;
+        }
+
+        var line = _lines[lineIndex];
+        var clamped = Math.Max(0, seconds);
+        if (wordIndex >= 0 && wordIndex < line.WordTimestamps.Length)
+        {
+            line.WordTimestamps[wordIndex] = clamped;
+        }
+
+        if (line.Timestamp is null)
+        {
+            line.Timestamp = clamped;
+            if (lineIndex >= CurrentIndex)
+            {
+                CurrentIndex = lineIndex + 1;
+            }
+        }
+    }
+
+    /// <summary>Clears one word's stamp (word-mode undo). Also clears the line's own stamp when
+    /// undoing its first word, mirroring StampWord stamping the line on that same word.</summary>
+    public void ClearWord(int lineIndex, int wordIndex)
+    {
+        if (lineIndex < 0 || lineIndex >= _lines.Count)
+        {
+            return;
+        }
+
+        var line = _lines[lineIndex];
+        if (wordIndex >= 0 && wordIndex < line.WordTimestamps.Length)
+        {
+            line.WordTimestamps[wordIndex] = null;
+        }
+
+        if (wordIndex == 0)
+        {
+            line.Timestamp = null;
+            if (CurrentIndex > lineIndex)
+            {
+                CurrentIndex = lineIndex;
+            }
+        }
+    }
+
     public void Reset()
     {
         foreach (var line in _lines)
         {
             line.Timestamp = null;
+            Array.Clear(line.WordTimestamps);
         }
 
         CurrentIndex = 0;
     }
 
-    /// <summary>Exports stamped lines as LRC text. Untimed trailing lines are omitted.</summary>
+    /// <summary>Exports stamped lines as LRC text. Untimed trailing lines are omitted. A line
+    /// with any word-mode stamps gets enhanced-LRC &lt;mm:ss.xx&gt; word tags inline; a line only
+    /// ever tapped in Line Mode exports as plain text, same as before word tags existed.</summary>
     public string ExportLrc(string? title = null, string? artist = null)
     {
         var builder = new StringBuilder();
@@ -132,7 +193,34 @@ public sealed class LyricsTimingSession
         foreach (var line in _lines.Where(static line => line.Timestamp is not null)
                                    .OrderBy(static line => line.Timestamp))
         {
-            builder.Append(FormatTimestamp(line.Timestamp!.Value)).AppendLine(line.Text);
+            builder.Append(FormatTimestamp(line.Timestamp!.Value)).AppendLine(BuildLineBody(line));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildLineBody(TimedLyricLine line)
+    {
+        if (line.WordTimestamps.Length == 0 || line.WordTimestamps.All(static t => t is null))
+        {
+            return line.Text;
+        }
+
+        var words = line.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var builder = new StringBuilder();
+        for (var i = 0; i < words.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(' ');
+            }
+
+            if (i < line.WordTimestamps.Length && line.WordTimestamps[i] is { } wordTime)
+            {
+                builder.Append(FormatWordTimestamp(wordTime));
+            }
+
+            builder.Append(words[i]);
         }
 
         return builder.ToString();
@@ -146,12 +234,16 @@ public sealed class LyricsTimingSession
         return lrcPath;
     }
 
-    public static string FormatTimestamp(double seconds)
+    public static string FormatTimestamp(double seconds) => $"[{FormatTimeCode(seconds)}]";
+
+    private static string FormatWordTimestamp(double seconds) => $"<{FormatTimeCode(seconds)}>";
+
+    private static string FormatTimeCode(double seconds)
     {
         var totalCentiseconds = (long)Math.Round(seconds * 100, MidpointRounding.AwayFromZero);
         var minutes = totalCentiseconds / 6000;
         var secs = (totalCentiseconds / 100) % 60;
         var centiseconds = totalCentiseconds % 100;
-        return $"[{minutes:D2}:{secs:D2}.{centiseconds:D2}]";
+        return $"{minutes:D2}:{secs:D2}.{centiseconds:D2}";
     }
 }
