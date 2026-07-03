@@ -17,6 +17,11 @@ public sealed class SpotifyTokenStore
     public string? AccountDisplayName { get; set; }
     public string? AccountEmail { get; set; }
 
+    /// <summary>Space-separated scope string as granted by Spotify at link time. Never persisted
+    /// before the playlist scopes existed, so an old token predating this field reads as empty —
+    /// treated as "missing playlist scopes" by <see cref="SpotifyService.HasPlaylistScopes"/>.</summary>
+    public string? Scope { get; set; }
+
     public bool HasValidToken =>
         !string.IsNullOrEmpty(AccessToken) && DateTime.UtcNow < ExpiresAt.AddSeconds(-30);
 
@@ -48,6 +53,7 @@ public sealed class SpotifyTokenStore
         ExpiresAt = default;
         AccountDisplayName = null;
         AccountEmail = null;
+        Scope = null;
         try { if (File.Exists(StorePath)) File.Delete(StorePath); } catch { }
     }
 }
