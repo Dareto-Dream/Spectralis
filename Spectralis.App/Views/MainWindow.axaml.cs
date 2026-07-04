@@ -60,6 +60,15 @@ public partial class MainWindow : Window
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 InitializeSpotifyPlaybackHost(vm);
                 vm.PropertyChanged += OnMainVmPropertyChangedForDeadZones;
+
+                // Pre-warm the Song Wars page so it exists (with live state) even
+                // before the user ever visits the sidebar section — the Tools menu
+                // and OBS overlay both need a single, always-available instance.
+                _songWarsView = (SongWarsView)new ViewLocator().Build(vm.SongWars)!;
+                _songWarsView.DataContext = vm.SongWars;
+                _songWarsView.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
+                _songWarsView.PopOutRequested = () => OpenOrFocusSongWars(vm);
+                vm.ObsOverlay.GetActiveTournament = () => _songWarsView.CurrentTournament;
             }
 
             if (IsVisible)
@@ -894,11 +903,29 @@ public partial class MainWindow : Window
     private async void OnMenuListeningStats(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await new StatsWindow().ShowDialog(this);
 
+    /// <summary>The one live Song Wars instance — permanently docked in the
+    /// sidebar page (pre-warmed in DataContextChanged below), state and all.
+    /// Popping out relocates its MainContentGrid into _songWarsWindow rather
+    /// than spawning a second, independent instance.</summary>
+    private SongWarsView? _songWarsView;
+
+    /// <summary>Thin floating shell, created lazily on first pop-out and torn
+    /// down (not just hidden) when docked back to the sidebar. Owns no state
+    /// of its own. Left alive-but-hidden only while docked into the Now
+    /// Playing panel (the older, still-supported dock target).</summary>
     private SongWarsWindow? _songWarsWindow;
 
     private void OnMenuSongWars(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
+        OpenOrFocusSongWars(vm);
+    }
+
+    /// <summary>Shared "pop out, refocus, or undock" entry point — used by the
+    /// Tools menu item and the Song Wars sidebar page's own pop-out button.</summary>
+    private void OpenOrFocusSongWars(MainWindowViewModel vm)
+    {
+        if (_songWarsView is null) return;
 
         if (_songWarsWindow is { IsVisible: true })
         {
@@ -908,34 +935,36 @@ public partial class MainWindow : Window
 
         if (vm.NowPlaying.ShowSongWarsPanel)
         {
-            // Already docked — undock to bring up the window
+            // Already docked into Now Playing — undock to bring up the window
             SongWarsUndock(vm);
             return;
         }
 
-        OpenSongWarsWindow(vm);
-    }
-
-    private void OpenSongWarsWindow(MainWindowViewModel vm)
-    {
-        _songWarsWindow = new SongWarsWindow();
-        _songWarsWindow.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
-        _songWarsWindow.RequestDock = () => SongWarsDock(vm);
-        _songWarsWindow.Closed += (_, _) =>
+        if (_songWarsWindow is null)
         {
-            _songWarsWindow = null;
-            vm.ObsOverlay.GetActiveTournament = null;
-            vm.NowPlaying.SongWarsPopOutRequested = null;
-        };
-        vm.ObsOverlay.GetActiveTournament = () =>
-            _songWarsWindow?.CurrentTournament ?? vm.NowPlaying.SongWarsSession?.Tournament;
+            var shell = new SongWarsWindow();
+            shell.RequestDock = () => SongWarsDock(vm);
+            shell.Closed += (_, _) =>
+            {
+                // Dock the live content back to the sidebar page.
+                _songWarsView.PoppedOutPlaceholder.IsVisible = false;
+                _songWarsView.ContentHost.Children.Add(_songWarsView.MainContentGrid);
+                _songWarsWindow = null;
+            };
+            _songWarsWindow = shell;
+
+            _songWarsView.ContentHost.Children.Remove(_songWarsView.MainContentGrid);
+            _songWarsView.PoppedOutPlaceholder.IsVisible = true;
+            shell.HostContent(_songWarsView.MainContentGrid);
+        }
+
         _songWarsWindow.Show(this);
     }
 
     private void SongWarsDock(MainWindowViewModel vm)
     {
-        if (_songWarsWindow is null) return;
-        vm.NowPlaying.SongWarsSession = _songWarsWindow.CurrentSession;
+        if (_songWarsWindow is null || _songWarsView is null) return;
+        vm.NowPlaying.SongWarsSession = _songWarsView.CurrentSession;
         vm.NowPlaying.NotifySongWarsChanged();
         vm.NowPlaying.ShowSongWarsPanel = vm.NowPlaying.SongWarsHasSession;
         vm.NowPlaying.SongWarsPopOutRequested = () => SongWarsUndock(vm);
@@ -946,14 +975,7 @@ public partial class MainWindow : Window
     {
         vm.NowPlaying.ShowSongWarsPanel = false;
         vm.NowPlaying.SongWarsPopOutRequested = null;
-        if (_songWarsWindow is not null)
-        {
-            _songWarsWindow.Show(this);
-        }
-        else
-        {
-            OpenSongWarsWindow(vm);
-        }
+        _songWarsWindow?.Show(this);
     }
 
     private async void OnMenuScrobblingSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
