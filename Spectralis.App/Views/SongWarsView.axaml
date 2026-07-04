@@ -1,0 +1,307 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:design="using:Spectralis.App.Design"
+             x:Class="Spectralis.App.Views.SongWarsView"
+             x:DataType="vm:SongWarsViewModel">
+
+  <UserControl.Styles>
+    <!-- Same scoped ambient backdrop as the Now Playing / Timing Studio empty
+         states — only shows behind the "no saved tournaments" placeholder. -->
+    <Style Selector="Border.ambient-grid">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="Border.ambient-grid.oled">
+      <Setter Property="Opacity" Value="0.14" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow">
+      <Setter Property="Opacity" Value="0.08" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow.oled">
+      <Setter Property="Opacity" Value="0.025" />
+    </Style>
+
+    <!-- Bracket cards are built imperatively (RefreshBracketView) — these size
+         classes let that code stay off StyledElement.FindResource, which
+         returns UnsetValueType until the control is attached to a tree (this
+         view is pre-warmed by MainWindow before that's guaranteed). -->
+    <Style Selector="TextBlock.bracket-micro">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
+    </Style>
+    <Style Selector="TextBlock.bracket-small">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.UI.Small}" />
+    </Style>
+    <Style Selector="Button.judge-remove">
+      <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Muted}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- Page header -->
+    <Border Grid.Row="0" Background="{StaticResource Brush.Bg.Raised}" Padding="24,14">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <TextBlock Classes="heading" Text="Song Wars" />
+          <TextBlock Classes="secondary" Text="Bracket-style track tournaments, judged live" />
+        </StackPanel>
+        <Button Grid.Column="1" x:Name="PopOutButton" Content="⧉ Pop out" Classes="ghost"
+                Click="OnPopOutClick" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- MainContentGrid lives here when docked; relocated into the floating
+         shell window (and back) when popped out / docked again. -->
+    <Panel Grid.Row="1" x:Name="ContentHost">
+
+      <Grid x:Name="MainContentGrid" RowDefinitions="Auto,*,Auto">
+
+        <!-- ── Tab strip ── -->
+        <Border Grid.Row="0"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,0,0,1">
+          <StackPanel Orientation="Horizontal" Spacing="0" Margin="12,0">
+            <Button x:Name="TabBrowser" Classes="ghost" Padding="16,10" Click="OnTabBrowser" Content="Tournaments" />
+            <Button x:Name="TabSetup"   Classes="ghost" Padding="16,10" Click="OnTabSetup"   Content="Setup" />
+            <Button x:Name="TabHost"    Classes="ghost" Padding="16,10" Click="OnTabHost"    Content="Host" IsEnabled="False" />
+          </StackPanel>
+        </Border>
+
+        <!-- ── Panel area ── -->
+        <Grid Grid.Row="1">
+
+          <!-- ═══ Browser panel ═══ -->
+          <Grid x:Name="BrowserPanel" RowDefinitions="Auto,*,Auto" Margin="20,16,20,12">
+            <TextBlock Grid.Row="0" Classes="heading" Text="Saved Tournaments" Margin="0,0,0,12" />
+
+            <Grid Grid.Row="1">
+              <ListBox x:Name="TournamentList" SelectionChanged="OnTournamentSelected">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <!-- Empty state: no saved tournaments -->
+              <Panel x:Name="TournamentsEmptyState" IsVisible="False">
+                <Border IsHitTestVisible="False" ClipToBounds="True"
+                        Classes="ambient-grid" Classes.oled="{Binding IsOledTheme}">
+                  <Border.Background>
+                    <DrawingBrush TileMode="Tile" Stretch="None"
+                                  DestinationRect="0,0,128,128" SourceRect="0,0,128,128">
+                      <DrawingBrush.Drawing>
+                        <GeometryDrawing>
+                          <GeometryDrawing.Pen>
+                            <Pen Brush="{StaticResource Brush.Border}" Thickness="1" />
+                          </GeometryDrawing.Pen>
+                          <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                              <LineGeometry StartPoint="0,0" EndPoint="128,0" />
+                              <LineGeometry StartPoint="0,0" EndPoint="0,128" />
+                            </GeometryGroup>
+                          </GeometryDrawing.Geometry>
+                        </GeometryDrawing>
+                      </DrawingBrush.Drawing>
+                    </DrawingBrush>
+                  </Border.Background>
+                </Border>
+                <Ellipse IsHitTestVisible="False"
+                         Classes="ambient-glow" Classes.oled="{Binding IsOledTheme}"
+                         Fill="{StaticResource Brush.Signal}"
+                         Width="640" Height="360"
+                         HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Ellipse.Effect>
+                    <BlurEffect Radius="120" />
+                  </Ellipse.Effect>
+                </Ellipse>
+
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="320" Spacing="10">
+                  <PathIcon Data="{x:Static design:IconData.SongWars}"
+                            Width="36" Height="36"
+                            Opacity="0.35"
+                            HorizontalAlignment="Center"
+                            Foreground="{StaticResource Brush.Ink.Muted}" />
+                  <TextBlock Classes="secondary" Text="No tournaments yet"
+                             FontWeight="SemiBold" TextAlignment="Center" />
+                  <TextBlock Classes="muted" TextWrapping="Wrap" TextAlignment="Center"
+                             FontSize="{StaticResource FontSize.UI.Small}"
+                             Text="Head to Setup to add tracks and judges, then create your first bracket." />
+                </StackPanel>
+              </Panel>
+            </Grid>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+              <Button Content="Load Tournament" Click="OnLoadTournament" x:Name="LoadTournamentButton" IsEnabled="False" Classes="primary" />
+              <Button Content="Delete" Classes="destructive" Click="OnDeleteTournament" x:Name="DeleteTournamentButton" IsEnabled="False" />
+              <Button Content="New Tournament..." Classes="ghost" Click="OnTabSetup" />
+            </StackPanel>
+          </Grid>
+
+          <!-- ═══ Setup panel ═══ -->
+          <Grid x:Name="SetupPanel" IsVisible="False" RowDefinitions="Auto,Auto,Auto,Auto" Margin="20,16,20,12">
+
+            <!-- Tournament name: a headline, not a form row -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="0,0,0,20">
+              <TextBlock Grid.Column="0" Classes="secondary" Text="New Tournament" VerticalAlignment="Bottom" Margin="0,0,0,6" />
+              <TextBox Grid.Column="1" x:Name="TournamentNameBox" Watermark="e.g. Battle of the Beats" Classes="title" />
+            </Grid>
+
+            <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="16">
+              <!-- Tracks -->
+              <Border Grid.Column="0" Classes="card" Padding="16">
+                <StackPanel Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="heading" Text="Tracks" />
+                    <TextBlock x:Name="SubCountLabel" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <ScrollViewer MaxHeight="260">
+                    <ListBox x:Name="SubmissionList" SelectionChanged="OnSubmissionSelected">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </ScrollViewer>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="Add File..." Click="OnAddSubmission" />
+                    <Button Content="Remove" Classes="destructive" Click="OnRemoveSubmission" x:Name="RemoveSubButton" IsEnabled="False" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <!-- Judges -->
+              <Border Grid.Column="1" Classes="card" Padding="16">
+                <StackPanel Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="heading" Text="Judges" />
+                    <TextBlock x:Name="JudgeCountLabel" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel x:Name="JudgeNamesPanel" Spacing="6" />
+                  <Button x:Name="AddJudgeButton" Content="+ Add judge" Classes="ghost"
+                          Foreground="{StaticResource Brush.Signal}"
+                          HorizontalContentAlignment="Left" Padding="0,4"
+                          Click="OnAddJudge" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <TextBlock Grid.Row="2" x:Name="SetupSummaryLabel" Classes="data" Margin="0,16,0,0" />
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,14,0,0">
+              <Button Content="Create Tournament" Click="OnCreateTournament" x:Name="CreateButton" Classes="primary" />
+              <TextBlock x:Name="SetupStatusLabel" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Grid>
+
+          <!-- ═══ Host panel ═══ -->
+          <Grid x:Name="HostPanel" IsVisible="False" RowDefinitions="Auto,*,Auto" Margin="20,12,20,12">
+
+            <!-- Match header -->
+            <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+              <TextBlock x:Name="TournamentHeaderLabel" Classes="heading" />
+              <TextBlock x:Name="RoundStatusLabel" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" />
+            </StackPanel>
+
+            <Grid Grid.Row="1" ColumnDefinitions="420,*" ColumnSpacing="16">
+
+              <!-- Left: match controls + voting -->
+              <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="8">
+
+                <!-- Track pair -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,*" ColumnSpacing="10">
+                  <Border Grid.Column="0" Classes="card" Padding="10,8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="data" Text="Track A" FontSize="{StaticResource FontSize.UI.Small}" />
+                      <TextBlock x:Name="TrackATitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock x:Name="TrackAArtist" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" TextTrimming="CharacterEllipsis" />
+                      <Button Content="▶ Play A" Click="OnPlayA" Margin="0,4,0,0" x:Name="PlayAButton" />
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card" Padding="10,8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="data" Text="Track B (Challenger)" FontSize="{StaticResource FontSize.UI.Small}" />
+                      <TextBlock x:Name="TrackBTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock x:Name="TrackBArtist" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" TextTrimming="CharacterEllipsis" />
+                      <Button Content="▶ Play B" Click="OnPlayB" Margin="0,4,0,0" x:Name="PlayBButton" />
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <!-- Phase controls -->
+                <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                  <Button x:Name="BeginAButton"      Content="Begin A"      Click="OnBeginA"      Margin="0,0,6,6" />
+                  <Button x:Name="BeginBButton"      Content="Begin B"      Click="OnBeginB"      Margin="0,0,6,6" />
+                  <Button x:Name="OpenVotingButton"  Content="Open Voting"  Click="OnOpenVoting"  Margin="0,0,6,6" />
+                  <Button x:Name="RevealButton"      Content="Reveal"       Click="OnReveal"      Margin="0,0,6,6" />
+                  <Button x:Name="NextMatchButton"   Content="Next Match"   Click="OnNextMatch"   Margin="0,0,6,6" />
+                  <Button x:Name="SkipButton"        Content="Skip"         Click="OnSkip"        Margin="0,0,6,6" Classes="ghost" />
+                  <Button x:Name="PauseResumeButton" Content="Pause"        Click="OnPauseResume" Margin="0,0,6,6" Classes="ghost" />
+                </WrapPanel>
+
+                <!-- Judge vote rows -->
+                <StackPanel x:Name="VoteSection" Grid.Row="2" Spacing="4">
+                  <TextBlock Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Judge Votes — B is the challenger (focus)" />
+                  <StackPanel x:Name="JudgeVoteRows" Spacing="4" />
+                  <TextBlock x:Name="TallyLabel" Classes="data" FontSize="{StaticResource FontSize.UI.Small}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <!-- Outcome -->
+                <Border x:Name="ResultSection" Grid.Row="3"
+                        Classes="card"
+                        Padding="12,8"
+                        IsVisible="False">
+                  <StackPanel Spacing="4">
+                    <TextBlock x:Name="OutcomeTitleLabel" Classes="heading" />
+                    <TextBlock x:Name="OutcomeDetailLabel" Classes="secondary" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <!-- Status -->
+                <TextBlock Grid.Row="4" x:Name="MatchStatusLabel" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Bottom" />
+
+              </Grid>
+
+              <!-- Right: Bracket view -->
+              <Grid Grid.Column="1" RowDefinitions="Auto,*">
+                <TextBlock Grid.Row="0" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" Text="Bracket" Margin="0,0,0,6" />
+                <ScrollViewer Grid.Row="1"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                  <StackPanel x:Name="BracketPanel" Spacing="16" Margin="0,2" />
+                </ScrollViewer>
+              </Grid>
+
+            </Grid>
+
+          </Grid>
+        </Grid>
+
+        <!-- ── Footer ── -->
+        <Border Grid.Row="2"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,1,0,0"
+                Padding="12,8">
+          <TextBlock x:Name="FooterStatus" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+        </Border>
+
+      </Grid>
+
+      <!-- Shown in place of MainContentGrid while it's relocated into the
+           floating pop-out window. -->
+      <StackPanel x:Name="PoppedOutPlaceholder" IsVisible="False"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+        <PathIcon Data="{x:Static design:IconData.SongWars}"
+                  Width="36" Height="36"
+                  Opacity="0.35"
+                  HorizontalAlignment="Center"
+                  Foreground="{StaticResource Brush.Ink.Muted}" />
+        <TextBlock Classes="secondary" Text="Song Wars is popped out" FontWeight="SemiBold" TextAlignment="Center" />
+        <Button Content="Bring to front" Classes="ghost" Click="OnPopOutClick" HorizontalAlignment="Center" />
+      </StackPanel>
+    </Panel>
+  </Grid>
+</UserControl>
