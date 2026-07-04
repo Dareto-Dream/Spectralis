@@ -140,6 +140,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
         StreamerQueue.PlayTrackRequested = url => NowPlaying.LoadUrlAsync(url);
+        SongWars = new SongWarsViewModel(AppSettings);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or
@@ -214,6 +215,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             NavSection.Separator("CREATE & STREAM"),
             new("Shared Play", IconData.SharedPlay, SharedPlay),
             new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
+            new("Song Wars", IconData.SongWars, SongWars),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
@@ -344,6 +346,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public PlaylistsViewModel Playlists { get; }
     public SharedPlayViewModel SharedPlay { get; }
     public StreamerQueueViewModel StreamerQueue { get; }
+    public SongWarsViewModel SongWars { get; }
     public RandomizerToolsViewModel RandomizerTools { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
