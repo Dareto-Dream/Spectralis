@@ -68,6 +68,9 @@
   <x:Double x:Key="FontSize.UI">15</x:Double>
   <x:Double x:Key="FontSize.UI.Small">13</x:Double>
   <x:Double x:Key="FontSize.Data">13</x:Double>
+  <!-- Dense/compact contexts only (bracket cards, status pills) — below this
+       everything else in the app uses FontSize.UI.Small. -->
+  <x:Double x:Key="FontSize.Micro">10</x:Double>
 
   <!-- ======================= Spacing scale ======================= -->
 
