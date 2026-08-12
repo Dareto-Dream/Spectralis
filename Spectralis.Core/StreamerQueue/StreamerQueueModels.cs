@@ -68,3 +68,5 @@ public sealed record SqPromoteResponse(
 public sealed record SqCreateRoomResponse(string RoomId, string OwnerToken);
 
 public sealed record SqStripeConnectResponse(string ConnectUrl);
+
+public sealed record SqDiscordPinResponse(string Pin, string ExpiresAtUtc);
