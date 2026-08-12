@@ -59,6 +59,13 @@ public sealed class SpotifyPlaybackHostService
     /// <summary>Fired on every player_state_changed event from the SDK with track + playback state.</summary>
     public event EventHandler<SpotifyTrackState>? TrackStateChanged;
 
+    /// <summary>Fired when the SDK reports no current track at all — true playback stop, distinct
+    /// from a pause. Spotify sends this once its own queue is exhausted (e.g. after a single-track
+    /// <see cref="PlayUriAsync"/> call with no context behind it), which is how a mixed
+    /// local+Spotify playlist learns a queue-driven Spotify track finished and it's time to
+    /// advance Spectralis's own Queue.</summary>
+    public event EventHandler? PlaybackStopped;
+
     public Task<bool> PauseAsync()
         => _deviceId is not null ? _spotify.PauseAsync(_resolveClientId(), _deviceId) : Task.FromResult(false);
 
@@ -84,6 +91,22 @@ public sealed class SpotifyPlaybackHostService
 
     public Task<SpotifyQueueSnapshot?> GetQueueAsync()
         => _spotify.GetQueueAsync(_resolveClientId());
+
+    /// <summary>Plays one specific track/context URI on this device — used when Spectralis's own
+    /// queue (not Spotify's) is driving playback, e.g. a mixed local+Spotify playlist. Unlike
+    /// <see cref="PlayAsync"/>, no separate transfer step is needed: specifying a device id on
+    /// the play call itself moves playback there.</summary>
+    public async Task<bool> PlayUriAsync(string uri)
+    {
+        if (!await EnsureDeviceReadyAsync())
+            return false;
+
+        await _host.ExecuteScriptAsync("window.spotifyActivate && window.spotifyActivate()");
+        var played = await _spotify.PlayUriAsync(uri, _resolveClientId(), _deviceId);
+        if (played)
+            _statusMessage = "Spotify playback requested";
+        return played;
+    }
 
     /// <summary>
     /// Ensures the SDK device is registered and ready, then transfers the
@@ -215,6 +238,10 @@ public sealed class SpotifyPlaybackHostService
                 case "connect_result":
                     var success = root.TryGetProperty("success", out var successEl) && successEl.GetBoolean();
                     AppLogPaths.AppendTimestamped(SpotifyLogPath, $"connect_result success={success}");
+                    break;
+                case "no_state":
+                    AppLogPaths.AppendTimestamped(SpotifyLogPath, "no_state (playback stopped)");
+                    PlaybackStopped?.Invoke(this, EventArgs.Empty);
                     break;
                 case "state_changed":
                     if (root.TryGetProperty("track", out var tEl))

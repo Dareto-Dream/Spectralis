@@ -47,6 +47,10 @@
     <Setter Property="Foreground" Value="{StaticResource Brush.Error}" />
   </Style>
 
+  <Style Selector="TextBlock.success">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Success}" />
+  </Style>
+
   <!-- All numeric data is monospace and right-aligned at the call site. -->
   <Style Selector="TextBlock.data">
     <Setter Property="FontFamily" Value="{StaticResource Font.Data}" />
@@ -179,6 +183,20 @@
     <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Muted}" />
   </Style>
 
+  <!-- Headline-style input: naming something (a tournament, a project) rather
+       than filling a form row. Border-bottom only, Display type. -->
+  <Style Selector="TextBox.title">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="FontFamily" Value="{StaticResource Font.Display}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Heading}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="0,4" />
+  </Style>
+  <Style Selector="TextBox.title:focus /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+  </Style>
+
   <Style Selector="ComboBox">
     <Setter Property="Background" Value="{StaticResource Brush.Bg.Raised}" />
     <Setter Property="Foreground" Value="{StaticResource Brush.Ink.Primary}" />
@@ -274,6 +292,28 @@
     <Setter Property="Background" Value="{StaticResource Brush.Selection}" />
   </Style>
 
+  <!-- ======================= Cards / panels ======================= -->
+
+  <!-- Raised content block: the Background/BorderBrush/BorderThickness trio
+       that kept getting repeated inline at every call site, centralized. -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{StaticResource Brush.Bg.Raised}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <!-- Active/live state on a card: signal border + the same faint signal
+       wash ListBoxItem:selected already uses. -->
+  <Style Selector="Border.card.accent">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal}" />
+    <Setter Property="Background" Value="{StaticResource Brush.Selection}" />
+  </Style>
+
+  <!-- Thin rule between grouped sections (bracket rounds, list groups). -->
+  <Style Selector="Border.divider">
+    <Setter Property="Background" Value="{StaticResource Brush.Border}" />
+  </Style>
+
   <!-- ======================= Scrollbars: thin rails, no chrome ======================= -->
 
   <Style Selector="ScrollBar:vertical">
@@ -294,6 +334,10 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.UI}" />
     <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Brush.Border}" />
     <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Brush.Border}" />
+    <!-- Explicit, not left to the Simple theme's default: unset, every row picks
+         up an accent-tinted background from the base theme (this is what made
+         Playlists render as a solid teal/accent wash instead of a plain list). -->
+    <Setter Property="RowBackground" Value="Transparent" />
   </Style>
   <Style Selector="DataGridColumnHeader">
     <Setter Property="Background" Value="{StaticResource Brush.Bg.Raised}" />

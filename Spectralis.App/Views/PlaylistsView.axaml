@@ -5,6 +5,57 @@
              x:Class="Spectralis.App.Views.PlaylistsView"
              x:DataType="vm:PlaylistsViewModel">
 
+  <UserControl.Resources>
+    <!-- Shared by both the pinned and unpinned lists below so the tile markup isn't duplicated. -->
+    <DataTemplate x:Key="PlaylistTileTemplate" DataType="vm:PlaylistRow">
+      <StackPanel Width="160" Spacing="6" Margin="4,4,4,12">
+
+        <!-- Cover: art if resolved, else the placeholder glyph. Runtime badge sits
+             bottom-right over the art, matching the app's monospace data-readout style. -->
+        <Panel Width="160" Height="160">
+          <Border Background="{StaticResource Brush.Bg.Base}"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="1">
+            <Grid>
+              <Image Source="{Binding CoverBitmap}" Stretch="UniformToFill"
+                     IsVisible="{Binding CoverBitmap, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <PathIcon Data="{x:Static design:IconData.Album}"
+                        Width="40" Height="40"
+                        Foreground="{StaticResource Brush.Ink.Muted}"
+                        Opacity="0.5"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding CoverBitmap, Converter={x:Static ObjectConverters.IsNull}}" />
+            </Grid>
+          </Border>
+          <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                  Margin="0,0,4,4" Padding="4,2"
+                  Background="{StaticResource Brush.Bg.Base}"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="1">
+            <TextBlock Classes="data" Text="{Binding RuntimeText}" FontSize="{StaticResource FontSize.UI.Small}" />
+          </Border>
+          <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                  Margin="4,4,0,0" Padding="4,1"
+                  Background="{StaticResource Brush.Bg.Base}"
+                  BorderBrush="{StaticResource Brush.Border}"
+                  BorderThickness="1"
+                  IsVisible="{Binding IsSpotify}">
+            <TextBlock Text="Spotify" Classes="muted" FontSize="{StaticResource FontSize.UI.Small}" />
+          </Border>
+          <PathIcon Data="{x:Static design:IconData.Pin}"
+                    Width="14" Height="14"
+                    Foreground="{StaticResource Brush.Ink.Primary}"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,4,4,0"
+                    IsVisible="{Binding IsPinned}" />
+        </Panel>
+
+        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+        <TextBlock Classes="muted" Text="{Binding TrackCountText}" FontSize="{StaticResource FontSize.UI.Small}" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <Panel>
 
     <!-- ============ Empty state ============ -->
@@ -19,7 +70,7 @@
       <TextBlock Classes="display" Text="No playlists yet"
                  TextAlignment="Center" Margin="0,0,0,8" />
       <TextBlock Classes="muted"
-                 Text="Create a static playlist, build a smart playlist from rules, or import an M3U."
+                 Text="Create a static playlist, build a smart playlist from rules, import an M3U, or link Spotify in Settings to pull yours in."
                  TextAlignment="Center"
                  FontSize="{StaticResource FontSize.UI.Small}"
                  TextWrapping="Wrap"
@@ -31,7 +82,7 @@
       </StackPanel>
     </StackPanel>
 
-    <!-- ============ Playlist browser ============ -->
+    <!-- ============ Playlist grid ============ -->
     <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasPlaylists}">
 
       <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,12">
@@ -40,35 +91,86 @@
         <Button Content="Import M3U..." Click="OnImportM3u" />
       </StackPanel>
 
-      <DataGrid Grid.Row="1"
-                x:Name="PlaylistGrid"
-                ItemsSource="{Binding Rows}"
-                SelectedItem="{Binding SelectedRow}"
-                IsReadOnly="True"
-                CanUserSortColumns="True"
-                CanUserResizeColumns="True"
-                GridLinesVisibility="Horizontal"
-                HeadersVisibility="Column"
-                Background="Transparent"
-                BorderThickness="0"
-                DoubleTapped="OnRowDoubleTapped"
-                Margin="16,0">
-        <DataGrid.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Play" Click="OnPlay" />
-            <MenuItem Header="Edit..." Click="OnEdit" />
-            <Separator />
-            <MenuItem Header="Export M3U..." Click="OnExportM3u" />
-            <Separator />
-            <MenuItem Header="Delete" Click="OnDelete" />
-          </ContextMenu>
-        </DataGrid.ContextMenu>
-        <DataGrid.Columns>
-          <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*" />
-          <DataGridTextColumn Header="Tracks" Binding="{Binding TrackCountText}" Width="110" />
-          <DataGridTextColumn Header="Type" Binding="{Binding TypeLabel}" Width="100" />
-        </DataGrid.Columns>
-      </DataGrid>
+      <!-- One real ScrollViewer around both lists so pinned + bar + unpinned scroll together as a
+           single region. Each inner ListBox has its own scrolling turned off entirely (both axes)
+           so it just grows to fit its wrapped rows instead of clipping/scrolling on its own —
+           the outer ScrollViewer is the only thing that actually scrolls. Horizontal stays
+           disabled everywhere in the chain, which is what makes the WrapPanels wrap instead of
+           running sideways (see the commit that first fixed this). -->
+      <ScrollViewer Grid.Row="1" Margin="16,0"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="0">
+
+          <ListBox x:Name="PinnedGrid"
+                   ItemsSource="{Binding PinnedRows}"
+                   SelectedItem="{Binding SelectedRow}"
+                   ItemTemplate="{StaticResource PlaylistTileTemplate}"
+                   IsVisible="{Binding HasPinnedRows}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                   DoubleTapped="OnRowDoubleTapped">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Play" Click="OnPlay" />
+                <MenuItem Header="Edit..." Click="OnEdit" />
+                <MenuItem Header="Pin/Unpin" Click="OnTogglePinned" />
+                <MenuItem Header="Rename Locally..." Click="OnRenameLocally" />
+                <MenuItem Header="Set Cover Image..." Click="OnSetCoverImage" />
+                <MenuItem Header="Set Default Visualizer..." Click="OnSetDefaultVisualizer" />
+                <Separator />
+                <MenuItem Header="Move Left" Click="OnMoveUp" />
+                <MenuItem Header="Move Right" Click="OnMoveDown" />
+                <Separator />
+                <MenuItem Header="Export M3U..." Click="OnExportM3u" />
+                <Separator />
+                <MenuItem Header="Delete" Click="OnDelete" />
+              </ContextMenu>
+            </ListBox.ContextMenu>
+          </ListBox>
+
+          <Border Height="1" Margin="4,8"
+                  Background="{StaticResource Brush.Border}"
+                  IsVisible="{Binding HasPinnedRows}" />
+
+          <ListBox x:Name="PlaylistGrid"
+                   ItemsSource="{Binding Rows}"
+                   SelectedItem="{Binding SelectedRow}"
+                   ItemTemplate="{StaticResource PlaylistTileTemplate}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                   DoubleTapped="OnRowDoubleTapped">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Play" Click="OnPlay" />
+                <MenuItem Header="Edit..." Click="OnEdit" />
+                <MenuItem Header="Pin/Unpin" Click="OnTogglePinned" />
+                <MenuItem Header="Rename Locally..." Click="OnRenameLocally" />
+                <MenuItem Header="Set Cover Image..." Click="OnSetCoverImage" />
+                <MenuItem Header="Set Default Visualizer..." Click="OnSetDefaultVisualizer" />
+                <Separator />
+                <MenuItem Header="Move Left" Click="OnMoveUp" />
+                <MenuItem Header="Move Right" Click="OnMoveDown" />
+                <Separator />
+                <MenuItem Header="Export M3U..." Click="OnExportM3u" />
+                <Separator />
+                <MenuItem Header="Delete" Click="OnDelete" />
+              </ContextMenu>
+            </ListBox.ContextMenu>
+          </ListBox>
+
+        </StackPanel>
+      </ScrollViewer>
 
       <TextBlock Grid.Row="2" Classes="muted"
                  Text="{Binding StatusText}"
