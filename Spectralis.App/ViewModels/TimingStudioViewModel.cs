@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
 using ReactiveUI;
+using Spectralis.App.Services;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Lyrics;
 using Spectralis.Core.Metadata;
@@ -12,16 +13,18 @@ public sealed class TimingChip : ViewModelBase
     private bool _isTimed;
     private bool _isSelected;
 
-    public TimingChip(string text, int globalIndex, int lineIndex)
+    public TimingChip(string text, int globalIndex, int lineIndex, int wordIndexInLine)
     {
         Text = text;
         GlobalIndex = globalIndex;
         LineIndex = lineIndex;
+        WordIndexInLine = wordIndexInLine;
     }
 
     public string Text { get; }
     public int GlobalIndex { get; }
     public int LineIndex { get; }
+    public int WordIndexInLine { get; }
 
     public bool IsTimed
     {
@@ -74,6 +77,7 @@ public sealed class TimedLineRow : ViewModelBase
 public sealed class TimingStudioViewModel : ViewModelBase
 {
     private readonly AudioEngine _engine;
+    private readonly AppSettings? _settings;
     private readonly LyricsTimingSession _session = new();
     private string _plainText = string.Empty;
     private string _status = string.Empty;
@@ -84,9 +88,10 @@ public sealed class TimingStudioViewModel : ViewModelBase
     private int _chipCurrentIndex = -1;
     private readonly List<TimingChip> _allChips = [];
 
-    public TimingStudioViewModel(AudioEngine engine)
+    public TimingStudioViewModel(AudioEngine engine, AppSettings? settings = null)
     {
         _engine = engine;
+        _settings = settings;
 
         LoadLinesCommand = ReactiveCommand.Create(LoadLines);
         TapCommand = ReactiveCommand.Create(Tap);
@@ -110,6 +115,9 @@ public sealed class TimingStudioViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _isWordMode, value);
             this.RaisePropertyChanged(nameof(IsLineMode));
+            this.RaisePropertyChanged(nameof(ShowLineNudgeControls));
+            this.RaisePropertyChanged(nameof(ShowLineList));
+            this.RaisePropertyChanged(nameof(ShowWordChips));
             if (HasLines) RebuildChips();
         }
     }
@@ -122,6 +130,15 @@ public sealed class TimingStudioViewModel : ViewModelBase
             if (value) IsWordMode = false;
         }
     }
+
+    /// <summary>Nudge/seek only make sense once there's a selected line to move.</summary>
+    public bool ShowLineNudgeControls => IsLineMode && HasLines;
+
+    public bool ShowLineList => IsLineMode && HasLines;
+    public bool ShowWordChips => IsWordMode && HasLines;
+
+    /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
+    public bool IsOledTheme => _settings?.ThemeMode == AppThemeMode.Oled;
 
     public ReactiveCommand<Unit, Unit> LoadLinesCommand { get; }
     public ReactiveCommand<Unit, Unit> TapCommand { get; }
@@ -178,7 +195,13 @@ public sealed class TimingStudioViewModel : ViewModelBase
     public bool HasLines
     {
         get => _hasLines;
-        private set => this.RaiseAndSetIfChanged(ref _hasLines, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _hasLines, value);
+            this.RaisePropertyChanged(nameof(ShowLineNudgeControls));
+            this.RaisePropertyChanged(nameof(ShowLineList));
+            this.RaisePropertyChanged(nameof(ShowWordChips));
+        }
     }
 
     private void LoadLines()
@@ -209,10 +232,10 @@ public sealed class TimingStudioViewModel : ViewModelBase
             var line = _session.Lines[lineIndex];
             var words = line.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var lineChips = new ObservableCollection<TimingChip>();
-            foreach (var word in words)
+            for (var wordIndex = 0; wordIndex < words.Length; wordIndex++)
             {
-                var chip = new TimingChip(word, _allChips.Count, lineIndex);
-                chip.IsTimed = line.Timestamp.HasValue;
+                var chip = new TimingChip(words[wordIndex], _allChips.Count, lineIndex, wordIndex);
+                chip.IsTimed = wordIndex < line.WordTimestamps.Length && line.WordTimestamps[wordIndex].HasValue;
                 _allChips.Add(chip);
                 lineChips.Add(chip);
             }
@@ -263,12 +286,13 @@ public sealed class TimingStudioViewModel : ViewModelBase
 
         var chip = _allChips[_chipCurrentIndex];
 
-        // The LRC format we export is line-based, so the first word tapped in a
-        // line is what actually stamps that line in the session.
-        if (_session.Lines[chip.LineIndex].Timestamp is null)
+        // Stamps this word specifically (what the exported enhanced-LRC word tags come from),
+        // and — if it's the line's first word — the line itself too, same as before.
+        var wasLineTimed = _session.Lines[chip.LineIndex].Timestamp is not null;
+        var pos = _engine.GetPosition();
+        _session.StampWord(chip.LineIndex, chip.WordIndexInLine, pos);
+        if (!wasLineTimed)
         {
-            var pos = _engine.GetPosition();
-            _session.StampLine(chip.LineIndex, pos);
             Rows[chip.LineIndex].TimestampText = LyricsTimingSession.FormatTimestamp(pos);
             UpdateCursor();
         }
@@ -304,10 +328,9 @@ public sealed class TimingStudioViewModel : ViewModelBase
                 chip.IsTimed = false;
                 chip.IsSelected = true;
 
-                var isFirstWordOfLine = _chipCurrentIndex == 0 || _allChips[_chipCurrentIndex - 1].LineIndex != chip.LineIndex;
-                if (isFirstWordOfLine)
+                _session.ClearWord(chip.LineIndex, chip.WordIndexInLine);
+                if (chip.WordIndexInLine == 0)
                 {
-                    _session.ClearLine(chip.LineIndex);
                     Rows[chip.LineIndex].TimestampText = "--:--.--";
                     UpdateCursor();
                 }

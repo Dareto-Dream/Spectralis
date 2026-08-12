@@ -7,6 +7,17 @@ using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Services;
 
+/// <summary>How the P2W (pay-to-skip) indicator renders while active.</summary>
+public enum P2wBannerStyle
+{
+    /// <summary>Full-width yellow overlay banner — the original, loudest treatment.</summary>
+    YellowBanner,
+    /// <summary>Small badge next to the app's floating overlays, matching other status pills.</summary>
+    Badge,
+    /// <summary>No visual indicator at all.</summary>
+    None,
+}
+
 public sealed class AppSettings
 {
     public AppThemeMode ThemeMode { get; set; } = AppThemeMode.Dark;
@@ -14,6 +25,7 @@ public sealed class AppSettings
     public bool UseEmbeddedTrackThemes { get; set; } = true;
     public bool EnableEmbeddedContent { get; set; } = true;
     public bool ShowMoreInfo { get; set; } = true;
+    public P2wBannerStyle P2wBannerStyle { get; set; } = P2wBannerStyle.YellowBanner;
     public VisualizerMode CurrentVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
     public VisualizerMode DefaultVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
     public bool ShowVisualizer { get; set; } = true;
@@ -27,8 +39,6 @@ public sealed class AppSettings
     public bool AutoPlayOnOpen { get; set; } = true;
     public bool QueueByDefault { get; set; }
     public bool RememberWindowPlacement { get; set; } = true;
-    public bool CloseToTray { get; set; } = true;
-    public bool CloseToTrayPromptDismissed { get; set; }
     public bool PreserveSession { get; set; } = true;
     public bool ExternalApiConsentAccepted { get; set; }
     public int WindowX { get; set; }
@@ -65,6 +75,8 @@ public sealed class AppSettings
     public string LastSeenAppVersion { get; set; } = string.Empty;
     public string IgnoredUpdateVersion { get; set; } = string.Empty;
     public string SpotifyCustomClientId { get; set; } = string.Empty;
+    /// <summary>Opt-out: when Spotify is linked, mirror the user's Spotify playlists into the Playlists page.</summary>
+    public bool ImportSpotifyPlaylists { get; set; } = true;
     public bool SharedPlayEnabled { get; set; }
     public string SharedPlayCdnBaseUrl { get; set; } = string.Empty;
     public bool SharedPlayLiveChannelEnabled { get; set; }
@@ -72,8 +84,6 @@ public sealed class AppSettings
     public string SharedPlayLiveChannelOwnerToken { get; set; } = string.Empty;
     public string SharedPlayLiveChannelDisplayName { get; set; } = string.Empty;
     public bool SidebarCollapsed { get; set; } = true;
-    /// <summary>Unlocked by clicking the version number 5 times in Settings; reveals the Developer Tools section.</summary>
-    public bool DeveloperModeUnlocked { get; set; }
 
     public string SqCdnBaseUrl { get; set; } = string.Empty;
     public string SqRoomId { get; set; } = string.Empty;
@@ -96,6 +106,7 @@ public sealed class AppSettings
             UseEmbeddedTrackThemes = UseEmbeddedTrackThemes,
             EnableEmbeddedContent = EnableEmbeddedContent,
             ShowMoreInfo = ShowMoreInfo,
+            P2wBannerStyle = P2wBannerStyle,
             CurrentVisualizer = CurrentVisualizer,
             DefaultVisualizer = DefaultVisualizer,
             ShowVisualizer = ShowVisualizer,
@@ -109,8 +120,6 @@ public sealed class AppSettings
             AutoPlayOnOpen = AutoPlayOnOpen,
             QueueByDefault = QueueByDefault,
             RememberWindowPlacement = RememberWindowPlacement,
-            CloseToTray = CloseToTray,
-            CloseToTrayPromptDismissed = CloseToTrayPromptDismissed,
             PreserveSession = PreserveSession,
             ExternalApiConsentAccepted = ExternalApiConsentAccepted,
             WindowX = WindowX,
@@ -143,6 +152,7 @@ public sealed class AppSettings
             LastSeenAppVersion = LastSeenAppVersion,
             IgnoredUpdateVersion = IgnoredUpdateVersion,
             SpotifyCustomClientId = SpotifyCustomClientId,
+            ImportSpotifyPlaylists = ImportSpotifyPlaylists,
             SharedPlayEnabled = SharedPlayEnabled,
             SharedPlayCdnBaseUrl = SharedPlayCdnBaseUrl,
             SharedPlayLiveChannelEnabled = SharedPlayLiveChannelEnabled,
@@ -150,7 +160,6 @@ public sealed class AppSettings
             SharedPlayLiveChannelOwnerToken = SharedPlayLiveChannelOwnerToken,
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
             SidebarCollapsed = SidebarCollapsed,
-            DeveloperModeUnlocked = DeveloperModeUnlocked,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
             SqCdnBaseUrl = SqCdnBaseUrl,
@@ -217,6 +226,7 @@ public static class AppSettingsStore
     {
         settings.ThemeMode = Enum.IsDefined(settings.ThemeMode) ? settings.ThemeMode : AppThemeMode.Dark;
         settings.ThemeAccent = Enum.IsDefined(settings.ThemeAccent) ? settings.ThemeAccent : AppThemeAccent.Amber;
+        settings.P2wBannerStyle = Enum.IsDefined(settings.P2wBannerStyle) ? settings.P2wBannerStyle : P2wBannerStyle.YellowBanner;
         settings.CurrentVisualizer = NormalizeVisualizer(settings.CurrentVisualizer);
         settings.DefaultVisualizer = NormalizeVisualizer(settings.DefaultVisualizer);
         settings.VisualizerSensitivity = Math.Clamp(settings.VisualizerSensitivity, 50, 200);

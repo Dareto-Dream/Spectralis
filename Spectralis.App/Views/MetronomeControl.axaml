@@ -1,13 +1,7 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Spectralis.App.Views.MetronomeWindow"
-        Title="Metronome"
-        Icon="/Assets/icon.png"
-        Width="280" SizeToContent="Height"
-        CanResize="False"
-        Topmost="True"
-        WindowStartupLocation="CenterOwner"
-        Background="{StaticResource Brush.Bg.Base}">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Spectralis.App.Views.MetronomeControl"
+             Background="{StaticResource Brush.Bg.Base}">
 
   <StackPanel>
     <!-- Beat flash strip -->
@@ -38,4 +32,4 @@
               Click="OnTap" />
     </StackPanel>
   </StackPanel>
-</Window>
+</UserControl>

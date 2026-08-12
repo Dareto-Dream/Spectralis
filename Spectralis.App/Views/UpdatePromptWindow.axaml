@@ -2,26 +2,39 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Spectralis.App.Views.UpdatePromptWindow"
         Title="Spectralis Update"
-        Width="480" Height="200"
-        MinWidth="380" MinHeight="160"
+        SystemDecorations="None"
         CanResize="False"
-        WindowStartupLocation="CenterOwner"
-        SystemDecorations="BorderOnly"
-        Background="{StaticResource Brush.Bg.Base}"
+        ShowInTaskbar="False"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
         KeyDown="OnKeyDown">
 
-  <Grid RowDefinitions="*,Auto" Margin="28,22,28,20">
+  <!-- Sized/positioned in code-behind to exactly cover the owner window, so the
+       scrim below actually dims everything behind it instead of the dialog
+       floating a fixed 480x200 box that leaves owner content exposed around it
+       (that gap is what used to let the empty-state CTAs bleed through). -->
+  <Grid>
+    <Border Background="#B0000000" />
 
-    <StackPanel Grid.Row="0" Spacing="10">
-      <TextBlock Classes="heading" Text="A Spectralis update is available" />
-      <TextBlock x:Name="MessageLabel" Classes="secondary" TextWrapping="Wrap" />
-    </StackPanel>
+    <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+            Width="480" MinHeight="200"
+            Background="{StaticResource Brush.Bg.Base}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="1">
+      <Grid RowDefinitions="*,Auto" Margin="28,22,28,20">
 
-    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button Classes="ghost" Content="Don't remind again" Click="OnDontRemind" />
-      <Button Classes="ghost" Content="Remind later"       Click="OnRemindLater" />
-      <Button             Content="Update now"             Click="OnUpdateNow"   Classes="primary" />
-    </StackPanel>
+        <StackPanel Grid.Row="0" Spacing="10">
+          <TextBlock Classes="heading" Text="A Spectralis update is available" />
+          <TextBlock x:Name="MessageLabel" Classes="secondary" TextWrapping="Wrap" />
+        </StackPanel>
 
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button Classes="ghost" Content="Don't remind again" Click="OnDontRemind" />
+          <Button Classes="ghost" Content="Remind later"       Click="OnRemindLater" />
+          <Button             Content="Update now"             Click="OnUpdateNow"   Classes="primary" />
+        </StackPanel>
+
+      </Grid>
+    </Border>
   </Grid>
 </Window>

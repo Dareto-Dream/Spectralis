@@ -10,8 +10,8 @@ namespace Spectralis.Core.Visualizers.Renderers;
 /// </summary>
 public sealed class SpectrogramRenderer : VisualizerRendererBase
 {
-    private const int RasterWidth = 512;
-    private const int RasterHeight = 256;
+    private const int RasterWidth = 768;
+    private const int RasterHeight = 512;
 
     // Pre-built BGRA colour lookup table (index 0-255 maps t in [0,1]).
     private static readonly byte[] LutB = new byte[256];
@@ -64,7 +64,7 @@ public sealed class SpectrogramRenderer : VisualizerRendererBase
         }
 
         DrawSpectrogram(canvas, bounds, scene, history);
-        DrawFrequencyOverlay(canvas, bounds, scene);
+        DrawFrequencyOverlay(canvas, bounds, scene, history[0].Length);
         DrawHud(canvas, bounds, scene);
     }
 
@@ -108,10 +108,9 @@ public sealed class SpectrogramRenderer : VisualizerRendererBase
         canvas.DrawPixels(_pixelBuf, width, height, bounds);
     }
 
-    private static void DrawFrequencyOverlay(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
+    private static void DrawFrequencyOverlay(IVizCanvas canvas, VizRect bounds, VisualizerScene scene, int fftBins)
     {
         // Reference lines at ~100 Hz, ~1 kHz, ~10 kHz, log-mapped like the raster.
-        const int fftBins = 2048;
         (double FreqHz, string Label)[] labels = [(100, "100 Hz"), (1000, "1 kHz"), (10000, "10 kHz")];
 
         var lineColor = new VizColor(60, 255, 255, 255);

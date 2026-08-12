@@ -1,8 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:design="using:Spectralis.App.Design"
              x:Class="Spectralis.App.Views.TimingStudioView"
              x:DataType="vm:TimingStudioViewModel">
+
+  <UserControl.Styles>
+    <!-- Same scoped ambient backdrop as the Now Playing empty state — only shows
+         behind the "nothing to time yet" placeholder, never behind real content. -->
+    <Style Selector="Border.ambient-grid">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="Border.ambient-grid.oled">
+      <Setter Property="Opacity" Value="0.14" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow">
+      <Setter Property="Opacity" Value="0.08" />
+    </Style>
+    <Style Selector="Ellipse.ambient-glow.oled">
+      <Setter Property="Opacity" Value="0.025" />
+    </Style>
+  </UserControl.Styles>
 
   <Grid ColumnDefinitions="*,*" Margin="16">
 
@@ -49,7 +67,7 @@
 
       <!-- Line mode list -->
       <ScrollViewer Grid.Row="1" x:Name="TimingScroll"
-                    IsVisible="{Binding IsLineMode}">
+                    IsVisible="{Binding ShowLineList}">
         <ScrollViewer.Styles>
           <Style Selector="TextBlock.current">
             <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
@@ -86,8 +104,55 @@
         </ItemsControl>
       </ScrollViewer>
 
+      <!-- Empty state: nothing loaded to time yet -->
+      <Panel Grid.Row="1" IsVisible="{Binding !HasLines}">
+        <Border IsHitTestVisible="False" ClipToBounds="True"
+                Classes="ambient-grid" Classes.oled="{Binding IsOledTheme}">
+          <Border.Background>
+            <DrawingBrush TileMode="Tile" Stretch="None"
+                          DestinationRect="0,0,128,128" SourceRect="0,0,128,128">
+              <DrawingBrush.Drawing>
+                <GeometryDrawing>
+                  <GeometryDrawing.Pen>
+                    <Pen Brush="{StaticResource Brush.Border}" Thickness="1" />
+                  </GeometryDrawing.Pen>
+                  <GeometryDrawing.Geometry>
+                    <GeometryGroup>
+                      <LineGeometry StartPoint="0,0" EndPoint="128,0" />
+                      <LineGeometry StartPoint="0,0" EndPoint="0,128" />
+                    </GeometryGroup>
+                  </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+              </DrawingBrush.Drawing>
+            </DrawingBrush>
+          </Border.Background>
+        </Border>
+        <Ellipse IsHitTestVisible="False"
+                 Classes="ambient-glow" Classes.oled="{Binding IsOledTheme}"
+                 Fill="{StaticResource Brush.Signal}"
+                 Width="640" Height="360"
+                 HorizontalAlignment="Center" VerticalAlignment="Center">
+          <Ellipse.Effect>
+            <BlurEffect Radius="120" />
+          </Ellipse.Effect>
+        </Ellipse>
+
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="320" Spacing="10">
+          <PathIcon Data="{x:Static design:IconData.TimingStudio}"
+                    Width="36" Height="36"
+                    Opacity="0.35"
+                    HorizontalAlignment="Center"
+                    Foreground="{StaticResource Brush.Ink.Muted}" />
+          <TextBlock Classes="secondary" Text="Nothing to time yet"
+                     FontWeight="SemiBold" TextAlignment="Center" />
+          <TextBlock Classes="muted" TextWrapping="Wrap" TextAlignment="Center"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     Text="Paste lyrics on the left and hit Load lines — they'll show up here to tap timing against playback." />
+        </StackPanel>
+      </Panel>
+
       <!-- Word chip canvas -->
-      <ScrollViewer Grid.Row="1" IsVisible="{Binding IsWordMode}">
+      <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowWordChips}">
         <ScrollViewer.Styles>
           <Style Selector="Border.chip">
             <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
@@ -151,7 +216,7 @@
 
       <!-- Line-mode nudge + seek row -->
       <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0"
-                  IsVisible="{Binding IsLineMode}">
+                  IsVisible="{Binding ShowLineNudgeControls}">
         <Button Content="-0.50s" Command="{Binding NudgeCommand}" CommandParameter="-0.5"
                 ToolTip.Tip="Nudge selected line back 0.50 s" />
         <Button Content="-0.10s" Command="{Binding NudgeCommand}" CommandParameter="-0.1"

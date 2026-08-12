@@ -76,9 +76,11 @@ __pycache__/
 .venv/
 venv/
 backend/data/
+.env
 
 # Else
 *.ignore
+commit/
 
 # Local creator signing material
 *.private.json
