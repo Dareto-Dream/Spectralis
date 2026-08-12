@@ -3296,6 +3296,10 @@ async fn post_sq_submit(
     let tier_fee = if !tier_fee_key.is_empty() { settings.get(tier_fee_key).cloned() } else { None };
     let tier_fee_enabled = tier_fee.as_ref().and_then(|f| f.get("enabled")).and_then(Value::as_bool).unwrap_or(false);
 
+    if is_paid_tier && !tier_fee_enabled {
+        return Err(AppError::bad_request("This queue does not offer that priority tier."));
+    }
+
     let needs_payment = (fee_enabled && fee_settings.get("amount").and_then(Value::as_f64).unwrap_or(0.0) > 0.0)
         || (tier_fee_enabled && tier_fee.as_ref().and_then(|f| f.get("amount")).and_then(Value::as_f64).unwrap_or(0.0) > 0.0);
 
@@ -3444,6 +3448,15 @@ async fn post_sq_upload(
     let valid_tier = if matches!(tier.as_str(), "skip" | "super_skip") { tier.as_str() } else { "normal" };
     let is_paid_tier = matches!(valid_tier, "skip" | "super_skip");
 
+    if is_paid_tier {
+        let tier_fee_key = if valid_tier == "super_skip" { "superSkip" } else { "skip" };
+        let tier_fee_enabled = settings.get(tier_fee_key).and_then(|f| f.get("enabled")).and_then(Value::as_bool).unwrap_or(false);
+        if !tier_fee_enabled {
+            let _ = fs::remove_file(&upload_path).await;
+            return Err(AppError::bad_request("This queue does not offer that priority tier."));
+        }
+    }
+
     let mut room = read_sq_room_file(&state, &id).await?;
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
         a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("payment_failed"))).count()
@@ -3550,6 +3563,10 @@ async fn post_sq_promote(
     let tier_fee = settings.get(tier_fee_key).cloned().unwrap_or_else(|| json!({"enabled": false}));
     let tier_fee_enabled = tier_fee.get("enabled").and_then(Value::as_bool).unwrap_or(false);
     let tier_amt = tier_fee.get("amount").and_then(Value::as_f64).unwrap_or(0.0);
+
+    if !tier_fee_enabled {
+        return Err(AppError::bad_request("This queue does not offer that priority tier."));
+    }
 
     let now = Utc::now().to_rfc3339();
 
