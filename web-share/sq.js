@@ -91,8 +91,7 @@ async function pollRoom() {
   try {
     roomData = await apiFetch(`/streamer-queue/v1/rooms/${ROOM_ID}`);
     updateNowPlaying();
-    const countEl = $('queueCount');
-    if (countEl) countEl.textContent = roomData.queueLength > 0 ? `${roomData.queueLength} in queue` : '';
+    renderSettings();
   } catch { /* non-fatal */ }
 }
 
@@ -156,6 +155,18 @@ function renderSettings() {
   } else {
     hide('superSkipSection');
   }
+
+  // Requests closed — streamer is still playing from the existing queue, but
+  // isn't taking new submissions right now.
+  if (roomData.acceptingSubmissions === false) {
+    hide('requestSection');
+    hide('skipSection');
+    hide('superSkipSection');
+    show('closedBanner');
+  } else {
+    show('requestSection');
+    hide('closedBanner');
+  }
 }
 
 // ─── Tab switching ────────────────────────────────────────────────────────────
@@ -187,10 +198,9 @@ function updateNowPlaying() {
   const ordered = roomData.orderedQueue || [];
   const np = ordered.find(s => s.id === roomData.nowPlayingId)
     || (roomData.submissions || []).find(s => s.id === roomData.nowPlayingId);
-  if (!np) { hide('nowPlaying'); return; }
 
-  setText('npTitle', np.title || '—');
-  setText('npArtist', np.artist || '');
+  setText('npTitle', (np && np.title) || roomData.nowPlayingTitle || '—');
+  setText('npArtist', (np && np.artist) || roomData.nowPlayingArtist || '');
 
   const p2w = roomData.nowPlayingTier === 'skip' || roomData.nowPlayingTier === 'super_skip';
   if (p2w) show('p2wBadge'); else hide('p2wBadge');

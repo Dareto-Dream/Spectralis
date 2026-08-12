@@ -2830,7 +2830,12 @@ fn sq_room_path(state: &AppState, room_id: &str) -> Result<PathBuf, AppError> {
 async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, AppError> {
     let path = sq_room_path(state, room_id)?;
     let bytes = fs::read(&path).await.map_err(|_| AppError::not_found("Streamer queue room not found."))?;
-    Ok(serde_json::from_slice(&bytes)?)
+    let mut room: Value = serde_json::from_slice(&bytes)?;
+    // Rooms created before acceptingSubmissions existed default to open.
+    if room.get("acceptingSubmissions").is_none() {
+        room["acceptingSubmissions"] = json!(true);
+    }
+    Ok(room)
 }
 
 async fn write_sq_room_file(state: &AppState, room_id: &str, room: &Value) -> Result<(), AppError> {
@@ -3098,6 +3103,7 @@ async fn post_sq_create_room(
         "roomId": &room_id,
         "ownerToken": &owner_token,
         "enabled": false,
+        "acceptingSubmissions": true,
         "settings": {
             "requireApproval": false,
             "allowDuplicates": false,
@@ -3153,15 +3159,25 @@ async fn get_sq_room(
         let ordered = sq_ordered_queue(&room);
         let now_playing_id = room.get("nowPlayingId").and_then(Value::as_str).map(ToOwned::to_owned);
         let now_playing_tier = room.get("nowPlayingTier").and_then(Value::as_str).map(ToOwned::to_owned);
+        let now_playing_sub = now_playing_id.as_deref().and_then(|npid| {
+            room.get("submissions").and_then(Value::as_array)
+                .and_then(|a| a.iter().find(|s| s.get("id").and_then(Value::as_str) == Some(npid)))
+        });
+        let now_playing_title = now_playing_sub.and_then(|s| s.get("title")).cloned().unwrap_or(Value::Null);
+        let now_playing_artist = now_playing_sub.and_then(|s| s.get("artist")).cloned().unwrap_or(Value::Null);
+        let accepting_submissions = room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true);
         Ok(Json(json!({
             "roomId": room.get("roomId"),
             "enabled": true,
+            "acceptingSubmissions": accepting_submissions,
             "settings": settings,
             "stripePublishableKey": stripe_pk,
             "activeCount": active_count,
             "queueLength": ordered.len(),
             "nowPlayingId": now_playing_id,
-            "nowPlayingTier": now_playing_tier
+            "nowPlayingTier": now_playing_tier,
+            "nowPlayingTitle": now_playing_title,
+            "nowPlayingArtist": now_playing_artist
         })))
     }
 }
@@ -3184,6 +3200,9 @@ async fn put_sq_settings(
     }
     if let Some(settings) = payload.get("settings") {
         room["settings"] = sq_normalize_settings(settings, &room["settings"].clone());
+    }
+    if let Some(v) = payload.get("acceptingSubmissions").and_then(Value::as_bool) {
+        room["acceptingSubmissions"] = json!(v);
     }
     room["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_sq_room_file(&state, &id, &room).await?;
@@ -3223,6 +3242,9 @@ async fn post_sq_submit(
     let mut room = read_sq_room_file(&state, &id).await?;
     if !room.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         return Err(AppError::not_found("Streamer queue is not enabled."));
+    }
+    if !room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true) {
+        return Err(AppError::bad_request("This queue is not accepting requests right now."));
     }
 
     let settings = room["settings"].clone();
@@ -3370,6 +3392,9 @@ async fn post_sq_upload(
     let room = read_sq_room_file(&state, &id).await?;
     if !room.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         return Err(AppError::not_found("Streamer queue is not enabled."));
+    }
+    if !room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true) {
+        return Err(AppError::bad_request("This queue is not accepting requests right now."));
     }
     if !room.get("settings").and_then(|s| s.get("allowLinkSubmissions")).and_then(Value::as_bool).unwrap_or(true) {
         // allowLinkSubmissions false means links disabled, but uploads are always allowed
@@ -3532,6 +3557,9 @@ async fn post_sq_promote(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
     let mut room = read_sq_room_file(&state, &id).await?;
+    if !room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true) {
+        return Err(AppError::bad_request("This queue is not accepting requests right now."));
+    }
     let fp = build_fingerprint(&headers, &payload);
     let new_tier = match payload.get("tier").and_then(Value::as_str) {
         Some("skip") => "skip",
