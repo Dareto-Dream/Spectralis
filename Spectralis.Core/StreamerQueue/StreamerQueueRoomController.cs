@@ -99,6 +99,12 @@ public sealed class StreamerQueueRoomController : IDisposable
         await client.SetNowPlayingAsync(cdnBaseUri, roomId!, ownerToken!, submissionId, ct);
     }
 
+    public async Task<SqDiscordPinResponse> CreateDiscordPinAsync(CancellationToken ct)
+    {
+        EnsureOwner();
+        return await client.CreateDiscordPinAsync(cdnBaseUri, roomId!, ownerToken!, ct);
+    }
+
     public async Task<SqStripeConnectResponse> GetStripeConnectUrlAsync(CancellationToken ct)
     {
         EnsureOwner();

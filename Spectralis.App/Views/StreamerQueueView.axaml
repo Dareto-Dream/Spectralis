@@ -143,6 +143,16 @@
                 </Grid>
               </StackPanel>
 
+              <!-- Discord pairing -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="secondary" Text="Discord" />
+                <Button Content="Link Discord Channel" Command="{Binding LinkDiscordCommand}" />
+                <StackPanel IsVisible="{Binding DiscordPinDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Spacing="2">
+                  <TextBlock Text="{Binding DiscordPinDisplay, StringFormat='PIN: {0}'}" FontWeight="SemiBold" />
+                  <TextBlock Classes="secondary" Text="In the Discord channel to link, run /link-queue and enter this PIN. Expires in 10 minutes." TextWrapping="Wrap" />
+                </StackPanel>
+              </StackPanel>
+
               <CheckBox Content="Queue enabled" IsChecked="{Binding SqEnabled}" />
 
               <StackPanel IsVisible="{Binding SqEnabled}" Spacing="10">

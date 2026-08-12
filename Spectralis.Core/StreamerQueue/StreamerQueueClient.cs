@@ -131,6 +131,14 @@ public sealed class StreamerQueueClient : IDisposable
         return res.IsSuccessStatusCode;
     }
 
+    // ── Discord pairing ──────────────────────────────────────────────────────────
+
+    public async Task<SqDiscordPinResponse> CreateDiscordPinAsync(Uri baseUri, string roomId, string ownerToken, CancellationToken ct)
+    {
+        var res = await http.PostAsync(new Uri(RoomUri(baseUri, roomId) + "/discord-pin"), JsonContent(new { ownerToken }), ct);
+        return await DeserializeAsync<SqDiscordPinResponse>(res, ct);
+    }
+
     // ── Stripe ────────────────────────────────────────────────────────────────
 
     public async Task<SqStripeConnectResponse> GetStripeConnectUrlAsync(Uri baseUri, string roomId, string ownerToken, CancellationToken ct)
