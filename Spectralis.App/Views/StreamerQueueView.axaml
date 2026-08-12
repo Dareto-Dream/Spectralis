@@ -24,6 +24,9 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Button Content="Create Room" Command="{Binding CreateRoomCommand}"
                   IsVisible="{Binding !HasRoom}" Classes="primary" />
+          <Button Content="{Binding AcceptingToggleLabel}" Command="{Binding ToggleAcceptingCommand}"
+                  IsVisible="{Binding HasRoom}"
+                  Classes.destructive="{Binding AcceptingSubmissions}" />
           <Button Content="Copy Submit URL" Command="{Binding CopySubmitUrlCommand}"
                   IsVisible="{Binding HasRoom}" />
         </StackPanel>
