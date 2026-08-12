@@ -103,6 +103,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private string _superSkipFeeAmount = "10.00";
     private bool _stripeConnected;
     private string _stripeStatus = "Not connected";
+    private string _discordPinDisplay = string.Empty;
 
     private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
     private AppSettings? _settings;
@@ -120,6 +121,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         DisconnectStripeCommand = ReactiveCommand.CreateFromTask(DisconnectStripeAsync, isOwner);
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
         ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
+        LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
     }
 
     public void Dispose()
@@ -137,6 +139,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> DisconnectStripeCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
+    public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
@@ -290,6 +293,15 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     {
         get => _stripeStatus;
         private set => this.RaiseAndSetIfChanged(ref _stripeStatus, value);
+    }
+
+    /// <summary>Set after CreateDiscordPinAsync succeeds; shows the streamer the PIN to
+    /// type into `/link-queue` in Discord. Cleared on room switch — a stale PIN read off
+    /// screen after it expired is just confusing.</summary>
+    public string DiscordPinDisplay
+    {
+        get => _discordPinDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
     }
 
     public ObservableCollection<SqItemVm> QueueItems { get; } = [];
@@ -477,6 +489,19 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             await _controller.StripeDisconnectAsync(ct);
             StripeConnected = false;
             StripeStatus = "Not connected";
+        }
+        catch (Exception ex) { LastError = ex.Message; }
+    }
+
+    // ── Discord pairing ──────────────────────────────────────────────────────────
+
+    private async Task LinkDiscordAsync(CancellationToken ct)
+    {
+        try
+        {
+            LastError = string.Empty;
+            var result = await _controller.CreateDiscordPinAsync(ct);
+            DiscordPinDisplay = result.Pin;
         }
         catch (Exception ex) { LastError = ex.Message; }
     }
