@@ -127,29 +127,34 @@ function renderSettings() {
     }
   }
 
-  // Skip sections
+  // Skip sections — hidden entirely unless the streamer has turned the tier on;
+  // an unchecked fee toggle means "no skip option", not "free skip".
   const skipFee = s.skip;
-  if (skipFee) {
+  if (skipFee && skipFee.enabled) {
     show('skipSection');
     const skipLabel = $('skipPriceLabel');
-    if (skipLabel) skipLabel.textContent = skipFee.enabled && skipFee.amount > 0
+    if (skipLabel) skipLabel.textContent = skipFee.amount > 0
       ? formatAmount(skipFee.amount, skipFee.currency) : 'Free';
-    if (skipFee.enabled && skipFee.amount > 0 && stripeClient) {
+    if (skipFee.amount > 0 && stripeClient) {
       show('skipFeeBlock');
       mountStripeElement('skipStripeElements');
     }
+  } else {
+    hide('skipSection');
   }
 
   const superSkipFee = s.superSkip;
-  if (superSkipFee) {
+  if (superSkipFee && superSkipFee.enabled) {
     show('superSkipSection');
     const ssLabel = $('superSkipPriceLabel');
-    if (ssLabel) ssLabel.textContent = superSkipFee.enabled && superSkipFee.amount > 0
+    if (ssLabel) ssLabel.textContent = superSkipFee.amount > 0
       ? formatAmount(superSkipFee.amount, superSkipFee.currency) : 'Free';
-    if (superSkipFee.enabled && superSkipFee.amount > 0 && stripeClient) {
+    if (superSkipFee.amount > 0 && stripeClient) {
       show('superSkipFeeBlock');
       mountStripeElement('superSkipStripeElements');
     }
+  } else {
+    hide('superSkipSection');
   }
 }
 
