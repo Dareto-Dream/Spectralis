@@ -87,6 +87,7 @@
             <MenuItem Header="Play" Click="OnContextPlay" />
             <MenuItem Header="Play Next" Click="OnContextPlayNext" />
             <MenuItem Header="Add to Queue" Click="OnContextAddToQueue" />
+            <MenuItem Header="Add to Playlist..." Click="OnContextAddToPlaylist" />
             <Separator />
             <MenuItem Header="Edit Tags..." Click="OnContextEditTags" />
             <MenuItem Header="Content Warnings..." Click="OnContextContentWarnings" />

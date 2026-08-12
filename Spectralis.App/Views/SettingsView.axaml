@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
-             xmlns:views="using:Spectralis.App.Views"
              x:Class="Spectralis.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -47,7 +46,7 @@
       <!-- Appearance and brand surface -->
       <StackPanel Spacing="8" IsVisible="{Binding IsAppearanceVisible}">
         <TextBlock Classes="heading" Text="Appearance" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Theme mode" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding ThemeModeOptions}"
@@ -76,6 +75,13 @@
           <CheckBox Grid.Row="4" Grid.Column="1"
                     IsChecked="{Binding ShowMoreInfo}"
                     HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="P2W indicator" VerticalAlignment="Center"
+                     ToolTip.Tip="How the pay-to-skip state is shown while File &gt; P2W Mode is on" />
+          <ComboBox Grid.Row="5" Grid.Column="1"
+                    ItemsSource="{Binding P2wBannerStyleOptions}"
+                    SelectedItem="{Binding SelectedP2wBannerStyle}"
+                    MaxWidth="180" HorizontalAlignment="Left" />
         </Grid>
       </StackPanel>
 
@@ -119,7 +125,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -156,16 +162,9 @@
                     IsChecked="{Binding RememberWindowPlacement}"
                     HorizontalAlignment="Left" />
 
-          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Taskbar behavior" VerticalAlignment="Center"
-                     ToolTip.Tip="When the X is clicked, keep Spectralis running from the taskbar instead of closing playback and Discord presence" />
-          <CheckBox Grid.Row="6" Grid.Column="1"
-                    Content="Close button keeps app running"
-                    IsChecked="{Binding CloseToTray}"
-                    HorizontalAlignment="Left" />
-
-          <TextBlock Grid.Row="7" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="secondary" Text="Preserve session" VerticalAlignment="Center"
                      ToolTip.Tip="Opening files or links from outside reuses this window instead of starting a new one" />
-          <CheckBox Grid.Row="7" Grid.Column="1"
+          <CheckBox Grid.Row="6" Grid.Column="1"
                     IsChecked="{Binding PreserveSession}"
                     HorizontalAlignment="Left" />
         </Grid>
@@ -238,6 +237,8 @@
                   Classes="destructive"
                   IsEnabled="{Binding SpotifyIsLinked}" />
         </StackPanel>
+        <CheckBox Content="Show my Spotify playlists on the Playlists page"
+                  IsChecked="{Binding ImportSpotifyPlaylists}" />
       </StackPanel>
 
       <!-- Advanced: default app + protocol registration -->
@@ -257,9 +258,7 @@
         <TextBlock Classes="heading" Text="Updates" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Installed version" VerticalAlignment="Center" />
-          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding VersionText}" VerticalAlignment="Center"
-                     PointerPressed="OnVersionTextPressed"
-                     ToolTip.Tip="Click 5 times to unlock Developer Tools" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Classes="data" Text="{Binding VersionText}" VerticalAlignment="Center" />
 
           <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Automatic updates" VerticalAlignment="Center" />
           <CheckBox Grid.Row="1" Grid.Column="1"
@@ -287,54 +286,6 @@
           <Button Content="Terms" Click="OnOpenTerms" Margin="0,0,8,8" />
           <Button Content="Privacy" Click="OnOpenPrivacy" Margin="0,0,8,8" />
         </WrapPanel>
-      </StackPanel>
-
-      <!-- Shared Play -->
-      <StackPanel Spacing="4" IsVisible="{Binding IsSharedPlayVisible}">
-        <TextBlock Classes="heading" Text="Shared Play" />
-        <CheckBox Content="Enable Shared Play" IsChecked="{Binding SharedPlayEnabled}" />
-        <TextBlock Classes="secondary" Text="CDN base URL (optional)" />
-        <TextBox Text="{Binding SharedPlayCdnBaseUrl}" Watermark="Leave blank for default CDN" />
-        <Separator />
-        <CheckBox Content="Enable Live Channel" IsChecked="{Binding SharedPlayLiveChannelEnabled}" />
-        <TextBlock Classes="secondary" Text="Channel ID" />
-        <TextBox Text="{Binding SharedPlayLiveChannelId}" />
-        <TextBlock Classes="secondary" Text="Owner token" />
-        <TextBox Text="{Binding SharedPlayLiveChannelOwnerToken}" PasswordChar="•" />
-        <TextBlock Classes="secondary" Text="Display name" />
-        <TextBox Text="{Binding SharedPlayLiveChannelDisplayName}" Watermark="Spectralis Listener" />
-      </StackPanel>
-
-      <!-- Streamer dead zones -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsStreamerVisible}">
-        <TextBlock Classes="heading" Text="Dead Zones" />
-        <TextBlock Classes="secondary" TextWrapping="Wrap"
-                   Text="Draw zones where your camera or scene overlays appear. These are app-wide: in-app floating overlays (P2W banner, clipboard toast) and the visualizer HUD label reposition around them automatically. Click Apply to also bake them into the current OBS layout's widget positions." />
-
-        <!-- Designer canvas -->
-        <Border Height="220" CornerRadius="6"
-                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
-                ClipToBounds="True">
-          <views:DeadZoneDesignerView x:Name="DeadZoneDesigner" />
-        </Border>
-
-        <TextBlock Classes="secondary" FontStyle="Italic"
-                   Text="Click and drag to draw a zone. Click a zone to select it. Drag corners to resize. The outlined edge is the canvas boundary." />
-
-        <TextBlock Classes="data" Text="{Binding StreamerSettings.DeadZoneCountText}"
-                   IsVisible="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
-
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Apply to OBS layout" Click="OnApplyDeadZones" Classes="primary"
-                  IsEnabled="{Binding StreamerSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
-          <Button Content="Remove selected" Click="OnRemoveSelectedDeadZone" />
-          <Button Content="Clear all" Click="OnClearDeadZones" Classes="destructive" />
-          <ToggleButton Content="Preview" Click="OnToggleDeadZonePreview"
-                        ToolTip.Tip="Show current OBS widget positions and where dead zones would push them" />
-        </StackPanel>
-
-        <TextBlock Classes="data" Text="{Binding StreamerSettings.Status}"
-                   IsVisible="{Binding StreamerSettings.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
       <!-- Developer -->

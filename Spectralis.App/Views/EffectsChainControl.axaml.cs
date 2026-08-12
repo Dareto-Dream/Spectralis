@@ -4,9 +4,9 @@ using Spectralis.App.ViewModels;
 
 namespace Spectralis.App.Views;
 
-public partial class EffectsChainWindow : Window
+public partial class EffectsChainControl : UserControl
 {
-    public EffectsChainWindow()
+    public EffectsChainControl()
     {
         InitializeComponent();
     }
