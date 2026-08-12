@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Spectralis.App.ViewModels"
+        x:Class="Spectralis.App.Views.VisualizerPickerWindow"
+        Title="Default Visualizer"
+        Icon="/Assets/icon.png"
+        Width="360" Height="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20" RowSpacing="12">
+    <TextBlock Grid.Row="0" Classes="secondary"
+               Text="Applied automatically whenever this playlist starts playing:" TextWrapping="Wrap" />
+
+    <ListBox x:Name="OptionList" Grid.Row="1"
+             DoubleTapped="OnListDoubleTapped">
+      <ListBox.ItemTemplate>
+        <DataTemplate DataType="vm:VisualizerOption">
+          <TextBlock Text="{Binding Label}" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Clear" Click="OnClear" />
+      <Button Content="Set" Click="OnSet" IsDefault="True" Classes="primary" />
+      <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

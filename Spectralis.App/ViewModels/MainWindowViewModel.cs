@@ -21,11 +21,25 @@ public sealed class NavSection : ViewModelBase
         Content = content;
     }
 
+    /// <summary>Section group header (e.g. "CREATE &amp; STREAM") — not a routable destination.</summary>
+    private NavSection(string label)
+    {
+        Label = label;
+        IconData = string.Empty;
+        Content = null!;
+        IsSeparator = true;
+    }
+
+    public static NavSection Separator(string label) => new(label);
+
     public string Label { get; }
 
     public string IconData { get; }
 
     public ViewModelBase Content { get; }
+
+    /// <summary>True for group-header rows: never selectable, Content is not valid to read.</summary>
+    public bool IsSeparator { get; }
 }
 
 public sealed class MainWindowViewModel : ViewModelBase
@@ -41,8 +55,6 @@ public sealed class MainWindowViewModel : ViewModelBase
     private byte[]? _clipboardToastArtwork;
     private DateTimeOffset _clipboardToastShownAt;
     private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
-    private string _mostRecentSongSource = string.Empty;
-    private string _mostRecentSongLabel = string.Empty;
 
     public MainWindowViewModel()
     {
@@ -53,7 +65,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         EffectChain = new EffectChain();
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
-        NowPlaying = new NowPlayingViewModel(Engine, AppSettings);
+        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain);
 
         var databasePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -65,7 +77,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             PlayFromLibraryAsync,
             AppSettings);
         Library.InitializeWatchedFolders(AppSettings.LibraryAutoScanOnOpen);
-        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync);
+        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata);
         Scrobbling = new ScrobblingService(() => new ScrobblingConfig(
             AppSettings.LastFmEnabled,
             AppSettings.LastFmApiKey,
@@ -96,7 +108,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             ApplyBeatGridForTrack(path);
             if (Engine.CurrentTrack is { } track)
             {
-                RememberMostRecentSong(path, track.DisplayTitle, track.Artist);
                 Scrobbling.NotifyTrackLoaded(
                     path,
                     track.DisplayTitle,
@@ -108,7 +119,6 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         NowPlaying.RemoteTrackLoaded += (sourceUrl, title, artist, album, durationSeconds) =>
         {
-            RememberMostRecentSong(sourceUrl, title, artist);
             Scrobbling.NotifyTrackLoaded(sourceUrl, title, artist, album, durationSeconds);
         };
 
@@ -129,6 +139,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         RandomizerTools = new RandomizerToolsViewModel();
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
+        StreamerQueue.PlayTrackRequested = url => NowPlaying.LoadUrlAsync(url);
+        SongWars = new SongWarsViewModel(AppSettings);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or
@@ -159,7 +171,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         NowPlaying.AlbumWorldExitDelegate = Capsules.Clear;
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
-        TimingStudio = new TimingStudioViewModel(Engine);
+        TimingStudio = new TimingStudioViewModel(Engine, AppSettings);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
         DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
@@ -180,13 +192,18 @@ public sealed class MainWindowViewModel : ViewModelBase
             (id, layout) => ObsOverlay.SetNamedLayout(id, layout),
             id => ObsOverlay.RemoveNamedLayout(id));
         StreamerSettings = new StreamerSettingsViewModel(AppSettings, ObsEditor);
+        ObsEditor.StreamerSettings = StreamerSettings;
         Settings = new SettingsViewModel(
             AppSettings,
             NowPlaying,
             enabled => DiscordPresence.SetEnabled(enabled),
             ObsEditor,
             Library,
-            StreamerSettings);
+            onP2wBannerStyleChanged: () =>
+            {
+                this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
+                this.RaisePropertyChanged(nameof(ShowP2wBadge));
+            });
 
         Sections = new ObservableCollection<NavSection>
         {
@@ -194,9 +211,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Library", IconData.Library, Library),
             new("Playlists", IconData.Playlists, Playlists),
             new("Capsules", IconData.Capsules, Capsules),
+            new("Randomizer", IconData.Randomizer, RandomizerTools),
+            NavSection.Separator("CREATE & STREAM"),
             new("Shared Play", IconData.SharedPlay, SharedPlay),
             new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
-            new("Randomizer", IconData.Randomizer, RandomizerTools),
+            new("Song Wars", IconData.SongWars, SongWars),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
@@ -316,10 +335,6 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ListeningActivitySnapshot IdleActivity => _idleActivity;
 
-    public bool CanPlayMostRecentSong => !string.IsNullOrWhiteSpace(_mostRecentSongSource);
-
-    public string MostRecentSongLabel => _mostRecentSongLabel;
-
     public EffectChain EffectChain { get; }
 
     public AppSettings AppSettings { get; }
@@ -331,6 +346,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public PlaylistsViewModel Playlists { get; }
     public SharedPlayViewModel SharedPlay { get; }
     public StreamerQueueViewModel StreamerQueue { get; }
+    public SongWarsViewModel SongWars { get; }
     public RandomizerToolsViewModel RandomizerTools { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
@@ -370,8 +386,19 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsP2wModeActive
     {
         get => _isP2wModeActive;
-        set => this.RaiseAndSetIfChanged(ref _isP2wModeActive, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isP2wModeActive, value);
+            this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
+            this.RaisePropertyChanged(nameof(ShowP2wBadge));
+        }
     }
+
+    /// <summary>P2W indicator: full yellow banner variant — the loud, original treatment.</summary>
+    public bool ShowP2wYellowBanner => IsP2wModeActive && AppSettings.P2wBannerStyle == P2wBannerStyle.YellowBanner;
+
+    /// <summary>P2W indicator: small badge variant, matched to the app's other status pills.</summary>
+    public bool ShowP2wBadge => IsP2wModeActive && AppSettings.P2wBannerStyle == P2wBannerStyle.Badge;
 
     public bool IsSidebarCollapsed
     {
@@ -478,28 +505,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
         await NowPlaying.LoadUrlAsync(url);
-    }
-
-    public async Task PlayMostRecentSongAsync()
-    {
-        var source = _mostRecentSongSource;
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return;
-        }
-
-        SelectSection(NowPlaying);
-        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-        {
-            await NowPlaying.LoadUrlAsync(source);
-            return;
-        }
-
-        if (File.Exists(source))
-        {
-            await NowPlaying.PlayQueueAsync([source], 0);
-        }
     }
 
     /// <summary>
@@ -615,23 +620,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(IdleActivity));
         this.RaisePropertyChanged(nameof(IdleActivityText));
         this.RaisePropertyChanged(nameof(StatusHintText));
-    }
-
-    private void RememberMostRecentSong(string source, string title, string artist)
-    {
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return;
-        }
-
-        _mostRecentSongSource = source;
-        _mostRecentSongLabel = string.IsNullOrWhiteSpace(title)
-            ? source
-            : string.IsNullOrWhiteSpace(artist)
-                ? title
-                : $"{artist} - {title}";
-        this.RaisePropertyChanged(nameof(CanPlayMostRecentSong));
-        this.RaisePropertyChanged(nameof(MostRecentSongLabel));
     }
 
     private static string BuildIdleActivityText(ListeningActivitySnapshot snapshot)

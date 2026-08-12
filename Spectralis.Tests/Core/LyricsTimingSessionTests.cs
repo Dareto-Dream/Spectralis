@@ -84,6 +84,37 @@ public class LyricsTimingSessionTests
     }
 
     [Fact]
+    public void ExportLrc_WordStampedLine_EmitsWordTags()
+    {
+        var session = LoadedSession(); // "First line" is two words
+        session.StampWord(0, 0, 1.0);
+        session.StampWord(0, 1, 1.5);
+
+        var lrc = session.ExportLrc();
+        Assert.Contains("<00:01.00>First <00:01.50>line", lrc);
+
+        var parsed = LrcParser.Parse(lrc, "word-tagged");
+        Assert.NotNull(parsed);
+        Assert.True(parsed!.HasWordTimings);
+        Assert.Equal(2, parsed.Lines[0].Segments.Count);
+        Assert.Equal(1.0, parsed.Lines[0].Segments[0].StartTime, 2);
+        Assert.Equal(1.5, parsed.Lines[0].Segments[1].StartTime, 2);
+    }
+
+    [Fact]
+    public void ExportLrc_LineModeOnly_StaysPlainText()
+    {
+        var session = LoadedSession();
+        session.Tap(1.0); // Line Mode only — no word ever individually stamped
+
+        var lrc = session.ExportLrc();
+        Assert.DoesNotContain("<00:", lrc);
+
+        var parsed = LrcParser.Parse(lrc, "line-only");
+        Assert.False(parsed!.HasWordTimings);
+    }
+
+    [Fact]
     public void AdjustTimestamp_OnlyTouchesStampedLines()
     {
         var session = LoadedSession();

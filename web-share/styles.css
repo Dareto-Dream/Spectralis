@@ -22,6 +22,12 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
 
+/* Several sections below (e.g. .sq-disabled, .sq-main) set their own
+   `display`, which otherwise beats the UA stylesheet's [hidden] rule at
+   equal specificity — toggling the hidden attribute would have no visual
+   effect without this. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);

@@ -36,13 +36,6 @@ public partial class MainWindow : Window
     private readonly OpenUrlService _clipboardUrlResolver = new();
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
-    private ITrayService? _trayService;
-    private bool _hiddenToTray;
-    private bool _forceClose;
-    private bool _closePromptOpen;
-    private bool _trayEventsAttached;
-    private bool _trayVmSubscribed;
-    private bool _trayNowPlayingSubscribed;
 
     public MainWindow()
     {
@@ -66,8 +59,16 @@ public partial class MainWindow : Window
                 vm.Capsules.TrustCreatorPrompt = PromptTrustCreatorAsync;
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 InitializeSpotifyPlaybackHost(vm);
-                InitializeTraySupport(vm);
                 vm.PropertyChanged += OnMainVmPropertyChangedForDeadZones;
+
+                // Pre-warm the Song Wars page so it exists (with live state) even
+                // before the user ever visits the sidebar section — the Tools menu
+                // and OBS overlay both need a single, always-available instance.
+                _songWarsView = (SongWarsView)new ViewLocator().Build(vm.SongWars)!;
+                _songWarsView.DataContext = vm.SongWars;
+                _songWarsView.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
+                _songWarsView.PopOutRequested = () => OpenOrFocusSongWars(vm);
+                vm.ObsOverlay.GetActiveTournament = () => _songWarsView.CurrentTournament;
             }
 
             if (IsVisible)
@@ -77,34 +78,22 @@ public partial class MainWindow : Window
         };
         SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         Opened += async (_, _) =>
         {
             ApplySavedWindowPlacement();
             _clipboardMonitorTimer.Start();
             InitializeMediaSession();
-            UpdateTrayState();
             ApplyDeadZoneAvoidance();
             await ShowConsentDialogIfNeededAsync();
         };
         Closed += (_, _) =>
         {
             _clipboardMonitorTimer.Stop();
-            _trayService?.Dispose();
-            _trayService = null;
         };
-        Closing += (_, e) =>
+        Closing += (_, _) =>
         {
-            if (!_forceClose &&
-                !_hiddenToTray &&
-                DataContext is MainWindowViewModel vm &&
-                vm.AppSettings.CloseToTray)
-            {
-                e.Cancel = true;
-                _ = HandleCloseButtonAsync();
-                return;
-            }
-
             SaveWindowPlacement();
             _mediaSession?.Dispose();
             _mediaSession = null;
@@ -115,7 +104,10 @@ public partial class MainWindow : Window
 
     private void OnMainVmPropertyChangedForDeadZones(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.IsP2wModeActive) or nameof(MainWindowViewModel.ClipboardToastVisible))
+        if (e.PropertyName is nameof(MainWindowViewModel.IsP2wModeActive)
+            or nameof(MainWindowViewModel.ShowP2wYellowBanner)
+            or nameof(MainWindowViewModel.ShowP2wBadge)
+            or nameof(MainWindowViewModel.ClipboardToastVisible))
             ApplyDeadZoneAvoidance();
     }
 
@@ -127,6 +119,7 @@ public partial class MainWindow : Window
 
         var zones = vm.AppSettings.DeadZones;
         PositionTopRight(P2wBanner, zones, winW, winH, baseRight: 18, baseTop: 18);
+        PositionTopRight(P2wBadge, zones, winW, winH, baseRight: 18, baseTop: 18);
         PositionBottomRight(ClipboardToastBorder, zones, winW, winH, baseRight: 20, baseBottom: 30);
     }
 
@@ -168,202 +161,7 @@ public partial class MainWindow : Window
 
     // ── OS media session (SMTC on Windows) ──────────────────────────────────
 
-    private void InitializeTraySupport(MainWindowViewModel vm)
-    {
-        _trayService ??= new AvaloniaTrayService();
-        if (!_trayEventsAttached)
-        {
-            _trayService.OpenRequested += (_, _) => Dispatcher.UIThread.Post(RestoreFromTray);
-            _trayService.PlayMostRecentRequested += (_, _) => Dispatcher.UIThread.Post(() => _ = PlayMostRecentFromTrayAsync());
-            _trayService.ExitRequested += (_, _) => Dispatcher.UIThread.Post(RequestAppExit);
-            _trayEventsAttached = true;
-        }
-
-        if (!_trayVmSubscribed)
-        {
-            vm.PropertyChanged += OnTrayViewModelChanged;
-            _trayVmSubscribed = true;
-        }
-
-        if (!_trayNowPlayingSubscribed)
-        {
-            vm.NowPlaying.PropertyChanged += OnTrayNowPlayingChanged;
-            _trayNowPlayingSubscribed = true;
-        }
-    }
-
-    private void HideToTray()
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        InitializeTraySupport(vm);
-        SaveWindowPlacement();
-        _hiddenToTray = true;
-        ShowInTaskbar = false;
-        UpdateTrayState();
-        _trayService?.Show(BuildTrayTooltip(vm));
-        Hide();
-    }
-
-    private void RestoreFromTray()
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        _hiddenToTray = false;
-        ShowInTaskbar = true;
-        if (WindowState == WindowState.Minimized)
-        {
-            WindowState = WindowState.Normal;
-        }
-
-        Show();
-        Activate();
-        UpdateTrayState();
-        _trayService?.Hide();
-    }
-
-    private async Task HandleCloseButtonAsync()
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            RequestAppExit();
-            return;
-        }
-
-        if (!vm.AppSettings.CloseToTray)
-        {
-            RequestAppExit();
-            return;
-        }
-
-        if (!vm.AppSettings.CloseToTrayPromptDismissed)
-        {
-            if (_closePromptOpen)
-            {
-                return;
-            }
-
-            _closePromptOpen = true;
-            var result = await CloseToTrayPromptWindow.ShowAsync(this, vm.AppSettings.CloseToTray);
-            _closePromptOpen = false;
-            if (!result.Accepted)
-            {
-                return;
-            }
-
-            vm.Settings.CloseToTray = result.CloseToTray;
-            vm.AppSettings.CloseToTrayPromptDismissed = true;
-            AppSettingsStore.Save(vm.AppSettings);
-
-            if (!result.CloseToTray)
-            {
-                RequestAppExit();
-                return;
-            }
-        }
-
-        HideToTray();
-    }
-
-    private async Task PlayMostRecentFromTrayAsync()
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        RestoreFromTray();
-        if (vm.NowPlaying.HasTrack)
-        {
-            if (!vm.NowPlaying.IsPlaying)
-            {
-                vm.NowPlaying.TogglePlayback();
-            }
-
-            return;
-        }
-
-        await vm.PlayMostRecentSongAsync();
-    }
-
-    private void RequestAppExit()
-    {
-        _forceClose = true;
-        _trayService?.Hide();
-        Close();
-    }
-
-    private void UpdateTrayState()
-    {
-        if (_trayService is null || DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        if (vm.NowPlaying.HasTrack)
-        {
-            _trayService.UpdateNowPlaying(vm.NowPlaying.Title, vm.NowPlaying.Artist);
-        }
-        else
-        {
-            _trayService.UpdateNowPlaying("Spectralis", vm.IdleActivityText);
-        }
-
-        if (_hiddenToTray)
-        {
-            _trayService.Show(BuildTrayTooltip(vm));
-        }
-    }
-
-    private void OnTrayViewModelChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(MainWindowViewModel.IdleActivityText) or nameof(MainWindowViewModel.StatusText))
-        {
-            UpdateTrayState();
-        }
-    }
-
-    private void OnTrayNowPlayingChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds)
-            or nameof(NowPlayingViewModel.LengthSeconds))
-        {
-            if (_hiddenToTray)
-            {
-                UpdateTrayState();
-            }
-
-            return;
-        }
-
-        if (e.PropertyName is nameof(NowPlayingViewModel.HasTrack)
-            or nameof(NowPlayingViewModel.Title)
-            or nameof(NowPlayingViewModel.Artist)
-            or nameof(NowPlayingViewModel.IsPlaying))
-        {
-            UpdateTrayState();
-        }
-    }
-
-    private static string BuildTrayTooltip(MainWindowViewModel vm)
-    {
-        if (!vm.NowPlaying.HasTrack)
-        {
-            return $"Spectralis\n{vm.IdleActivityText}";
-        }
-
-        var state = vm.NowPlaying.IsPlaying ? "Playing" : "Paused";
-        var title = string.IsNullOrWhiteSpace(vm.NowPlaying.Artist)
-            ? vm.NowPlaying.Title
-            : $"{vm.NowPlaying.Artist} - {vm.NowPlaying.Title}";
-        return $"{state}: {title}\n{vm.NowPlaying.PositionText} / {vm.NowPlaying.LengthText}";
-    }
+    private void RequestAppExit() => Close();
 
     private Spectralis.Core.Platform.IMediaSessionService? _mediaSession;
 
@@ -418,10 +216,12 @@ public partial class MainWindow : Window
         SpotifyHostSlot.Content = webView;
 
         var spotify = new SpotifyService();
-        vm.NowPlaying.SpotifyHost = new SpotifyPlaybackHostService(
+        var spotifyPlaybackHost = new SpotifyPlaybackHostService(
             webView,
             spotify,
             () => SpotifyClientIdProvider.ResolveClientId(vm.AppSettings.SpotifyCustomClientId));
+        vm.NowPlaying.SpotifyHost = spotifyPlaybackHost;
+        vm.DiscordPresence.SetSpotifyHost(spotifyPlaybackHost);
 #endif
     }
 
@@ -661,10 +461,7 @@ public partial class MainWindow : Window
             : WindowState.Maximized;
     }
 
-    private async void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        await HandleCloseButtonAsync();
-    }
+    private void OnCloseWindow(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => RequestAppExit();
 
     private void OnToggleSidebar(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -1051,29 +848,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private EffectsChainWindow? _effectsWindow;
-
-    private void OnMenuEffectsChain(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        if (_effectsWindow is { IsVisible: true })
-        {
-            _effectsWindow.Activate();
-            return;
-        }
-
-        _effectsWindow = new EffectsChainWindow
-        {
-            DataContext = new EffectsChainViewModel(vm.EffectChain),
-        };
-        _effectsWindow.Closed += (_, _) => _effectsWindow = null;
-        _effectsWindow.Show(this);
-    }
-
     private ScriptedVisualizerManagerWindow? _scriptedVizWindow;
 
     private void OnMenuScriptedVisualizers(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1117,25 +891,6 @@ public partial class MainWindow : Window
         _karaokeWindow.Show(this);
     }
 
-    private MetronomeWindow? _metronomeWindow;
-
-    private void OnMenuMetronome(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_metronomeWindow is { IsVisible: true })
-        {
-            _metronomeWindow.Activate();
-            return;
-        }
-
-        // Seed the metronome with the current track's analyzed BPM when known.
-        var initialBpm = DataContext is MainWindowViewModel vm && vm.NowPlaying.HasBeatGrid
-            ? (float)vm.NowPlaying.BeatGridBpm
-            : 120f;
-        _metronomeWindow = new MetronomeWindow(initialBpm);
-        _metronomeWindow.Closed += (_, _) => _metronomeWindow = null;
-        _metronomeWindow.Show(this);
-    }
-
     private void OnMenuAnalyzeLibrary(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is MainWindowViewModel vm)
@@ -1148,11 +903,29 @@ public partial class MainWindow : Window
     private async void OnMenuListeningStats(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await new StatsWindow().ShowDialog(this);
 
+    /// <summary>The one live Song Wars instance — permanently docked in the
+    /// sidebar page (pre-warmed in DataContextChanged below), state and all.
+    /// Popping out relocates its MainContentGrid into _songWarsWindow rather
+    /// than spawning a second, independent instance.</summary>
+    private SongWarsView? _songWarsView;
+
+    /// <summary>Thin floating shell, created lazily on first pop-out and torn
+    /// down (not just hidden) when docked back to the sidebar. Owns no state
+    /// of its own. Left alive-but-hidden only while docked into the Now
+    /// Playing panel (the older, still-supported dock target).</summary>
     private SongWarsWindow? _songWarsWindow;
 
     private void OnMenuSongWars(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
+        OpenOrFocusSongWars(vm);
+    }
+
+    /// <summary>Shared "pop out, refocus, or undock" entry point — used by the
+    /// Tools menu item and the Song Wars sidebar page's own pop-out button.</summary>
+    private void OpenOrFocusSongWars(MainWindowViewModel vm)
+    {
+        if (_songWarsView is null) return;
 
         if (_songWarsWindow is { IsVisible: true })
         {
@@ -1162,34 +935,36 @@ public partial class MainWindow : Window
 
         if (vm.NowPlaying.ShowSongWarsPanel)
         {
-            // Already docked — undock to bring up the window
+            // Already docked into Now Playing — undock to bring up the window
             SongWarsUndock(vm);
             return;
         }
 
-        OpenSongWarsWindow(vm);
-    }
-
-    private void OpenSongWarsWindow(MainWindowViewModel vm)
-    {
-        _songWarsWindow = new SongWarsWindow();
-        _songWarsWindow.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
-        _songWarsWindow.RequestDock = () => SongWarsDock(vm);
-        _songWarsWindow.Closed += (_, _) =>
+        if (_songWarsWindow is null)
         {
-            _songWarsWindow = null;
-            vm.ObsOverlay.GetActiveTournament = null;
-            vm.NowPlaying.SongWarsPopOutRequested = null;
-        };
-        vm.ObsOverlay.GetActiveTournament = () =>
-            _songWarsWindow?.CurrentTournament ?? vm.NowPlaying.SongWarsSession?.Tournament;
+            var shell = new SongWarsWindow();
+            shell.RequestDock = () => SongWarsDock(vm);
+            shell.Closed += (_, _) =>
+            {
+                // Dock the live content back to the sidebar page.
+                _songWarsView.PoppedOutPlaceholder.IsVisible = false;
+                _songWarsView.ContentHost.Children.Add(_songWarsView.MainContentGrid);
+                _songWarsWindow = null;
+            };
+            _songWarsWindow = shell;
+
+            _songWarsView.ContentHost.Children.Remove(_songWarsView.MainContentGrid);
+            _songWarsView.PoppedOutPlaceholder.IsVisible = true;
+            shell.HostContent(_songWarsView.MainContentGrid);
+        }
+
         _songWarsWindow.Show(this);
     }
 
     private void SongWarsDock(MainWindowViewModel vm)
     {
-        if (_songWarsWindow is null) return;
-        vm.NowPlaying.SongWarsSession = _songWarsWindow.CurrentSession;
+        if (_songWarsWindow is null || _songWarsView is null) return;
+        vm.NowPlaying.SongWarsSession = _songWarsView.CurrentSession;
         vm.NowPlaying.NotifySongWarsChanged();
         vm.NowPlaying.ShowSongWarsPanel = vm.NowPlaying.SongWarsHasSession;
         vm.NowPlaying.SongWarsPopOutRequested = () => SongWarsUndock(vm);
@@ -1200,14 +975,7 @@ public partial class MainWindow : Window
     {
         vm.NowPlaying.ShowSongWarsPanel = false;
         vm.NowPlaying.SongWarsPopOutRequested = null;
-        if (_songWarsWindow is not null)
-        {
-            _songWarsWindow.Show(this);
-        }
-        else
-        {
-            OpenSongWarsWindow(vm);
-        }
+        _songWarsWindow?.Show(this);
     }
 
     private async void OnMenuScrobblingSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1258,81 +1026,15 @@ public partial class MainWindow : Window
             .Show(this);
     }
 
-    private async void OnMenuSetAsDefault(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            await MessageWindow.ShowAsync(this, "Set as Default App",
-                "Default app registration is only supported on Windows.");
-            return;
-        }
-
-        try
-        {
-            var registrar = new Spectralis.App.Platform.Windows.WindowsProtocolRegistrar();
-            registrar.RegisterProtocol();
-            registrar.RegisterFileAssociations(
-                Spectralis.Core.Common.SupportedAudioFormats.Extensions
-                    .Concat([".spectralis", ".spectral"]).ToArray());
-        }
-        catch (Exception ex)
-        {
-            await MessageWindow.ShowAsync(this, "Set as Default App",
-                $"Registration failed: {ex.Message}");
-            return;
-        }
-
-#if WINDOWS10_0_19041_0_OR_GREATER
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "ms-settings:defaultapps?registeredAppUser=Spectralis",
-                UseShellExecute = true,
-            });
-        }
-        catch { }
-#endif
-    }
-
     private void OnMenuRedeemVisualizer(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
-        var win = new RedeemVisualizerWindow();
+        var win = new RedeemVisualizerWindow
+        {
+            OpenScriptedVisualizersRequested = () => OnMenuScriptedVisualizers(null, null!),
+        };
         win.Closed += (_, _) => vm.NowPlaying.RefreshVisualizerOptions();
         win.Show(this);
-    }
-
-    private async void OnMenuClearRedeemedVisualizers(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var store = new Spectralis.Core.Visualizers.Installed.InstalledVisualizerStore();
-        var count = store.Count();
-        if (count == 0)
-        {
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                "No redeemed visualizers are installed on this device.");
-            return;
-        }
-
-        var confirmed = await ConfirmWindow.ShowAsync(this,
-            "Clear Redeemed Visualizers",
-            $"Remove all {count} installed visualizer{(count == 1 ? "" : "s")} from this device?",
-            "Clear", "Cancel");
-        if (!confirmed) return;
-
-        try
-        {
-            store.ClearAll();
-            if (DataContext is MainWindowViewModel vm)
-                vm.NowPlaying.RefreshVisualizerOptions();
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                "All redeemed visualizers have been removed.");
-        }
-        catch (Exception ex)
-        {
-            await MessageWindow.ShowAsync(this, "Clear Redeemed Visualizers",
-                $"Could not clear redeemed visualizers.\n\n{ex.Message}");
-        }
     }
 
     private async void OnMenuClearCachedAlbumState(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

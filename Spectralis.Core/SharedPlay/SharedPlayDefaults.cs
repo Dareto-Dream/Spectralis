@@ -6,6 +6,7 @@ public static class SharedPlayDefaults
 {
     public const string LegacyCdnBaseUrl = "https://cdn.deltavdevs.com";
     public const string CdnBaseUrl = "https://audioplayer-production-5b83.up.railway.app";
+    public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
     public const string ProtocolVersion = "shared-play-v2";
     public const string ClientName = "Spectralis";
     public const string RichPackageContentType = "application/vnd.spectralis.shared-play+zip";

@@ -28,6 +28,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private string _roomCode = string.Empty;
     private bool _isHosting;
     private string _lastError = string.Empty;
+    private AppSettings? _settings;
 
     public SharedPlayViewModel()
     {
@@ -75,6 +76,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public void ApplySettings(AppSettings settings)
     {
+        _settings = settings;
         _controller.ApplySettings(
             settings.SharedPlayEnabled,
             settings.SharedPlayCdnBaseUrl,
@@ -82,6 +84,78 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
             settings.SharedPlayLiveChannelId,
             settings.SharedPlayLiveChannelOwnerToken,
             settings.SharedPlayLiveChannelDisplayName);
+    }
+
+    public bool SharedPlayEnabled
+    {
+        get => _settings?.SharedPlayEnabled ?? false;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayEnabled == value) return;
+            _settings.SharedPlayEnabled = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string CdnBaseUrl
+    {
+        get => _settings?.SharedPlayCdnBaseUrl ?? string.Empty;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayCdnBaseUrl == value) return;
+            _settings.SharedPlayCdnBaseUrl = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool LiveChannelEnabled
+    {
+        get => _settings?.SharedPlayLiveChannelEnabled ?? false;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayLiveChannelEnabled == value) return;
+            _settings.SharedPlayLiveChannelEnabled = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string LiveChannelId
+    {
+        get => _settings?.SharedPlayLiveChannelId ?? string.Empty;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayLiveChannelId == value) return;
+            _settings.SharedPlayLiveChannelId = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string LiveChannelOwnerToken
+    {
+        get => _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayLiveChannelOwnerToken == value) return;
+            _settings.SharedPlayLiveChannelOwnerToken = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string LiveChannelDisplayName
+    {
+        get => _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty;
+        set
+        {
+            if (_settings is null || _settings.SharedPlayLiveChannelDisplayName == value) return;
+            _settings.SharedPlayLiveChannelDisplayName = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
     }
 
     public void NotifyPlayback(TrackInfo? track, bool isPlaying, double positionSeconds, double durationSeconds, string reason = "tick")
@@ -714,6 +788,9 @@ public sealed class ObsEditorViewModel : ViewModelBase
 
     public event EventHandler? LayoutRefreshRequested;
 
+    /// <summary>Set post-construction by the app shell; hosts the dead-zone designer for this OBS overlay.</summary>
+    public StreamerSettingsViewModel? StreamerSettings { get; set; }
+
     public ObsEditorViewModel(
         AppSettings settings,
         Action<bool>? setObsOverlayEnabled = null,
@@ -1192,8 +1269,6 @@ public enum SettingsCategory
     Playback,
     Library,
     Integrations,
-    SharedPlay,
-    Streamer,
     Updates,
     About,
     Developer,
@@ -1204,6 +1279,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly AppSettings _settings;
     private readonly NowPlayingViewModel _nowPlaying;
     private readonly Action<bool>? _setDiscordPresenceEnabled;
+    private readonly Action? _onP2wBannerStyleChanged;
     private string _registrationStatus = string.Empty;
     private string _diagnosticsStatus = string.Empty;
     private string _updateStatus = string.Empty;
@@ -1212,11 +1288,10 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly SpotifyService _spotify = new();
     private SelectionOption<AppThemeMode> _selectedThemeMode;
     private SelectionOption<AppThemeAccent> _selectedThemeAccent;
+    private SelectionOption<P2wBannerStyle> _selectedP2wBannerStyle;
     private VisualizerOption _selectedDefaultVisualizer;
     private SelectionOption<MidiPlaybackInstrument> _selectedMidiInstrument;
     private SettingsCategory _selectedCategory = SettingsCategory.Appearance;
-    private int _versionClickCount;
-    private DateTimeOffset _lastVersionClickAtUtc;
 
     public SettingsViewModel(
         AppSettings settings,
@@ -1224,14 +1299,14 @@ public sealed class SettingsViewModel : ViewModelBase
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
         LibraryViewModel? library = null,
-        StreamerSettingsViewModel? streamerSettings = null)
+        Action? onP2wBannerStyleChanged = null)
     {
         _settings = settings;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
+        _onP2wBannerStyleChanged = onP2wBannerStyleChanged;
         ObsEditor = obsEditor ?? new ObsEditorViewModel(settings);
         Library = library;
-        StreamerSettings = streamerSettings;
         ThemeModeOptions = Enum.GetValues<AppThemeMode>()
             .Select(mode => new SelectionOption<AppThemeMode>(ThemeModeLabel(mode), mode))
             .ToArray();
@@ -1240,6 +1315,10 @@ public sealed class SettingsViewModel : ViewModelBase
             .ToArray();
         _selectedThemeMode = ThemeModeOptions.First(option => option.Value == _settings.ThemeMode);
         _selectedThemeAccent = ThemeAccentOptions.First(option => option.Value == _settings.ThemeAccent);
+        P2wBannerStyleOptions = Enum.GetValues<P2wBannerStyle>()
+            .Select(style => new SelectionOption<P2wBannerStyle>(P2wBannerStyleLabel(style), style))
+            .ToArray();
+        _selectedP2wBannerStyle = P2wBannerStyleOptions.First(option => option.Value == _settings.P2wBannerStyle);
         _selectedDefaultVisualizer = VisualizerOptions.FirstOrDefault(option => option.Mode == _settings.DefaultVisualizer)
             ?? VisualizerOptions.First(option => option.Mode == VisualizerMode.MirrorSpectrum);
         MidiInstrumentOptions = MidiPlaybackInstrumentCatalog.GetOptions()
@@ -1317,83 +1396,34 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public bool SpotifyIsLinked => _spotify.IsLinked;
 
-    public bool SharedPlayEnabled
+    /// <summary>Dev Tools toggle: points Shared Play and Streamer Queue at the staging backend instead of production.</summary>
+    public bool UseStagingBackend
     {
-        get => _settings.SharedPlayEnabled;
+        get => string.Equals(_settings.SharedPlayCdnBaseUrl, SharedPlayDefaults.StagingCdnBaseUrl, StringComparison.OrdinalIgnoreCase);
         set
         {
-            if (_settings.SharedPlayEnabled == value) return;
-            _settings.SharedPlayEnabled = value;
+            if (UseStagingBackend == value) return;
+            var target = value ? SharedPlayDefaults.StagingCdnBaseUrl : string.Empty;
+            _settings.SharedPlayCdnBaseUrl = target;
+            _settings.SqCdnBaseUrl = target;
+            // A room ID/token pair only exists on the backend it was created against.
+            _settings.SqRoomId = string.Empty;
+            _settings.SqOwnerToken = string.Empty;
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(BackendStatusText));
         }
     }
 
-    public string SharedPlayCdnBaseUrl
-    {
-        get => _settings.SharedPlayCdnBaseUrl;
-        set
-        {
-            if (_settings.SharedPlayCdnBaseUrl == value) return;
-            _settings.SharedPlayCdnBaseUrl = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
-    public bool SharedPlayLiveChannelEnabled
-    {
-        get => _settings.SharedPlayLiveChannelEnabled;
-        set
-        {
-            if (_settings.SharedPlayLiveChannelEnabled == value) return;
-            _settings.SharedPlayLiveChannelEnabled = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
-    public string SharedPlayLiveChannelId
-    {
-        get => _settings.SharedPlayLiveChannelId;
-        set
-        {
-            if (_settings.SharedPlayLiveChannelId == value) return;
-            _settings.SharedPlayLiveChannelId = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
-    public string SharedPlayLiveChannelOwnerToken
-    {
-        get => _settings.SharedPlayLiveChannelOwnerToken;
-        set
-        {
-            if (_settings.SharedPlayLiveChannelOwnerToken == value) return;
-            _settings.SharedPlayLiveChannelOwnerToken = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
-    public string SharedPlayLiveChannelDisplayName
-    {
-        get => _settings.SharedPlayLiveChannelDisplayName;
-        set
-        {
-            if (_settings.SharedPlayLiveChannelDisplayName == value) return;
-            _settings.SharedPlayLiveChannelDisplayName = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
+    public string BackendStatusText => UseStagingBackend
+        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Restart Spectralis to apply."
+        : "Backend: production. Restart Spectralis to apply.";
 
     public ObsEditorViewModel ObsEditor { get; }
-    public StreamerSettingsViewModel? StreamerSettings { get; }
 
     public IReadOnlyList<SelectionOption<AppThemeMode>> ThemeModeOptions { get; }
     public IReadOnlyList<SelectionOption<AppThemeAccent>> ThemeAccentOptions { get; }
+    public IReadOnlyList<SelectionOption<P2wBannerStyle>> P2wBannerStyleOptions { get; }
     public IReadOnlyList<VisualizerOption> VisualizerOptions => _nowPlaying.VisualizerOptions;
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions => _nowPlaying.SampleRateOptions;
     public IReadOnlyList<SelectionOption<int>> CycleDurationOptions => _nowPlaying.CycleDurationOptions;
@@ -1430,6 +1460,23 @@ public sealed class SettingsViewModel : ViewModelBase
             _settings.ThemeAccent = value.Value;
             AppSettingsStore.Save(_settings);
             AppThemeService.Apply(_settings);
+        }
+    }
+
+    public SelectionOption<P2wBannerStyle> SelectedP2wBannerStyle
+    {
+        get => _selectedP2wBannerStyle;
+        set
+        {
+            if (value is null || _selectedP2wBannerStyle == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _selectedP2wBannerStyle, value);
+            _settings.P2wBannerStyle = value.Value;
+            AppSettingsStore.Save(_settings);
+            _onP2wBannerStyleChanged?.Invoke();
         }
     }
 
@@ -1680,22 +1727,6 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
-    public bool CloseToTray
-    {
-        get => _settings.CloseToTray;
-        set
-        {
-            if (_settings.CloseToTray == value)
-            {
-                return;
-            }
-
-            _settings.CloseToTray = value;
-            AppSettingsStore.Save(_settings);
-            this.RaisePropertyChanged();
-        }
-    }
-
     public bool EnableDiscordRichPresence
     {
         get => _settings.EnableDiscordRichPresence;
@@ -1729,6 +1760,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool ImportSpotifyPlaylists
+    {
+        get => _settings.ImportSpotifyPlaylists;
+        set
+        {
+            if (_settings.ImportSpotifyPlaylists == value)
+            {
+                return;
+            }
+
+            _settings.ImportSpotifyPlaylists = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool EnableAutoUpdates
     {
         get => _settings.EnableAutoUpdates;
@@ -1751,32 +1798,6 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Non-null when a Squirrel/Velopack update notice was consumed on startup this session.</summary>
     public string? ConsumedUpdateVersion { get; private set; }
 
-    public bool DeveloperModeUnlocked => _settings.DeveloperModeUnlocked;
-
-    /// <summary>Click the version number 5 times within 3 seconds to reveal the Developer category.</summary>
-    public void RegisterVersionClick()
-    {
-        var now = DateTimeOffset.UtcNow;
-        if (now - _lastVersionClickAtUtc > TimeSpan.FromSeconds(3))
-        {
-            _versionClickCount = 0;
-        }
-        _lastVersionClickAtUtc = now;
-        _versionClickCount++;
-
-        if (_settings.DeveloperModeUnlocked || _versionClickCount < 5)
-        {
-            return;
-        }
-
-        _versionClickCount = 0;
-        _settings.DeveloperModeUnlocked = true;
-        AppSettingsStore.Save(_settings);
-        this.RaisePropertyChanged(nameof(DeveloperModeUnlocked));
-        RefreshCategoryOptions();
-        DiagnosticsStatus = "Developer tools unlocked.";
-    }
-
     public IReadOnlyList<SelectionOption<SettingsCategory>> CategoryOptions { get; private set; } = [];
 
     public SelectionOption<SettingsCategory> SelectedCategoryOption
@@ -1792,8 +1813,6 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsPlaybackVisible));
             this.RaisePropertyChanged(nameof(IsLibraryVisible));
             this.RaisePropertyChanged(nameof(IsIntegrationsVisible));
-            this.RaisePropertyChanged(nameof(IsSharedPlayVisible));
-            this.RaisePropertyChanged(nameof(IsStreamerVisible));
             this.RaisePropertyChanged(nameof(IsUpdatesVisible));
             this.RaisePropertyChanged(nameof(IsAboutVisible));
             this.RaisePropertyChanged(nameof(IsDeveloperVisible));
@@ -1805,8 +1824,6 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool IsPlaybackVisible => _selectedCategory == SettingsCategory.Playback;
     public bool IsLibraryVisible => _selectedCategory == SettingsCategory.Library;
     public bool IsIntegrationsVisible => _selectedCategory == SettingsCategory.Integrations;
-    public bool IsSharedPlayVisible => _selectedCategory == SettingsCategory.SharedPlay;
-    public bool IsStreamerVisible => _selectedCategory == SettingsCategory.Streamer;
     public bool IsUpdatesVisible => _selectedCategory == SettingsCategory.Updates;
     public bool IsAboutVisible => _selectedCategory == SettingsCategory.About;
     public bool IsDeveloperVisible => _selectedCategory == SettingsCategory.Developer;
@@ -1816,19 +1833,13 @@ public sealed class SettingsViewModel : ViewModelBase
     private void RefreshCategoryOptions()
     {
         CategoryOptions = AllCategories
-            .Where(category => category != SettingsCategory.Developer || _settings.DeveloperModeUnlocked)
             .Select(category => new SelectionOption<SettingsCategory>(CategoryLabel(category), category))
             .ToArray();
         this.RaisePropertyChanged(nameof(CategoryOptions));
         this.RaisePropertyChanged(nameof(SelectedCategoryOption));
     }
 
-    private static string CategoryLabel(SettingsCategory category) => category switch
-    {
-        SettingsCategory.SharedPlay => "Shared Play",
-        SettingsCategory.Streamer => "Streamer",
-        _ => category.ToString(),
-    };
+    private static string CategoryLabel(SettingsCategory category) => category.ToString();
 
     public string UpdateStatus
     {
@@ -1882,9 +1893,16 @@ public sealed class SettingsViewModel : ViewModelBase
             SpotifyStatus = overrideMessage;
             return;
         }
-        SpotifyStatus = _spotify.IsLinked
-            ? $"Linked as {_spotify.AccountDisplayName ?? _spotify.AccountEmail ?? "unknown account"}"
-            : "Not linked.";
+        if (!_spotify.IsLinked)
+        {
+            SpotifyStatus = "Not linked.";
+            return;
+        }
+
+        var accountLabel = _spotify.AccountDisplayName ?? _spotify.AccountEmail ?? "unknown account";
+        SpotifyStatus = _spotify.HasPlaylistScopes
+            ? $"Linked as {accountLabel}"
+            : $"Linked as {accountLabel} — reconnect to enable Spotify playlists";
     }
 
     private void RegisterDefaultApp()
@@ -1906,7 +1924,20 @@ public sealed class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             RegistrationStatus = $"Registration failed: {ex.Message}";
+            return;
         }
+
+#if WINDOWS10_0_19041_0_OR_GREATER
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "ms-settings:defaultapps?registeredAppUser=Spectralis",
+                UseShellExecute = true,
+            });
+        }
+        catch { }
+#endif
     }
 
     private void RefreshRegistrationStatus()
@@ -1937,6 +1968,15 @@ public sealed class SettingsViewModel : ViewModelBase
         };
 
     private static string ThemeAccentLabel(AppThemeAccent accent) => accent.ToString();
+
+    private static string P2wBannerStyleLabel(P2wBannerStyle style) =>
+        style switch
+        {
+            P2wBannerStyle.YellowBanner => "Yellow banner",
+            P2wBannerStyle.Badge => "Small badge",
+            P2wBannerStyle.None => "None",
+            _ => style.ToString(),
+        };
 
     public string BuildDiagnosticsText() => DiagnosticsSnapshot.Build();
 

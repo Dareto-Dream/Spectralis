@@ -34,7 +34,7 @@ public partial class PlaylistsView : UserControl
             var playlist = vm.CreatePlaylist(name, []);
             if (await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
             {
-                vm.SavePlaylist(playlist);
+                await vm.SavePlaylist(playlist);
             }
         }
     }
@@ -114,7 +114,7 @@ public partial class PlaylistsView : UserControl
             var playlist = vm.FindPlaylist(row.Id);
             if (playlist is not null && await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
             {
-                vm.SavePlaylist(playlist);
+                await vm.SavePlaylist(playlist);
             }
         }
     }
@@ -147,13 +147,88 @@ public partial class PlaylistsView : UserControl
             return;
         }
 
-        var confirmed = await ConfirmWindow.ShowAsync(
-            owner,
-            "Delete Playlist",
-            $"Delete \"{row.Name}\"? This cannot be undone.");
+        var message = row.IsSpotify
+            ? $"Hide \"{row.Name}\" from Spectralis? It stays on your real Spotify account — a future sync brings it back unless you unfollow it there too."
+            : $"Delete \"{row.Name}\"? This cannot be undone.";
+        var confirmed = await ConfirmWindow.ShowAsync(owner, row.IsSpotify ? "Hide Playlist" : "Delete Playlist", message);
         if (confirmed)
         {
             vm.DeleteRow(row);
+        }
+    }
+
+    private async void OnRenameLocally(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { SelectedRow: { } row } vm || OwnerWindow is not { } owner || row.IsSmart)
+        {
+            return;
+        }
+
+        var name = await NameInputWindow.PromptAsync(owner, "Rename Playlist", "Local name (doesn't rename it on Spotify):", row.Name);
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            vm.RenameLocally(row, name);
+        }
+    }
+
+    private async void OnSetCoverImage(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { SelectedRow: { } row } vm || OwnerWindow is not { } owner || row.IsSmart)
+        {
+            return;
+        }
+
+        var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose cover image",
+            AllowMultiple = false,
+            FileTypeFilter = [FilePickerFileTypes.ImageAll],
+        });
+
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (path is not null)
+        {
+            vm.SetCoverImage(row, path);
+        }
+    }
+
+    private async void OnSetDefaultVisualizer(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { SelectedRow: { } row } vm ||
+            OwnerWindow is not { DataContext: MainWindowViewModel shell } owner ||
+            row.IsSmart)
+        {
+            return;
+        }
+
+        var (confirmed, result) = await VisualizerPickerWindow.PromptAsync(owner, shell.NowPlaying.VisualizerOptions);
+        if (confirmed)
+        {
+            vm.SetDefaultVisualizer(row, result);
+        }
+    }
+
+    private void OnTogglePinned(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { SelectedRow: { } row } vm)
+        {
+            vm.TogglePinned(row);
+        }
+    }
+
+    private void OnMoveUp(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { SelectedRow: { } row } vm)
+        {
+            vm.MoveRow(row, -1);
+        }
+    }
+
+    private void OnMoveDown(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { SelectedRow: { } row } vm)
+        {
+            vm.MoveRow(row, 1);
         }
     }
 }

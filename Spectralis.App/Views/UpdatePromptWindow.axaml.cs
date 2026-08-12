@@ -20,7 +20,12 @@ public partial class UpdatePromptWindow : Window
 
     public static async Task<UpdatePromptChoice> ShowAsync(Window owner, string? updateVersion)
     {
-        var win = new UpdatePromptWindow(updateVersion);
+        var win = new UpdatePromptWindow(updateVersion)
+        {
+            Width = owner.Bounds.Width,
+            Height = owner.Bounds.Height,
+            Position = owner.Position,
+        };
         await win.ShowDialog(owner);
         return win.Choice;
     }

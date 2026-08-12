@@ -7,6 +7,7 @@ using Spectralis.App.Design;
 using Spectralis.App.Services;
 using NAudio.Wave.SampleProviders;
 using Spectralis.Core.Audio;
+using Spectralis.Core.Audio.Effects;
 using Spectralis.Core.Audio.Loopback;
 using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Common;
@@ -14,8 +15,10 @@ using Spectralis.Core.Embedded;
 using Spectralis.Core.Formats;
 using Spectralis.Core.Lyrics;
 using Spectralis.Core.Metadata;
+using Spectralis.Core.Scrobbling;
 using Spectralis.Core.ContentWarnings;
 using Spectralis.Core.Integrations.Spotify;
+using Spectralis.Core.Playlists;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Installed;
 using Spectralis.Core.Visualizers.Scripting;
@@ -108,6 +111,18 @@ public sealed class QueueItemViewModel : ViewModelBase
         Subtitle = subtitle;
         IsUrl = false;
         _isCurrent = isCurrent;
+    }
+
+    /// <summary>Known display metadata (a Spotify track's real title/artist, from the playlist
+    /// that queued it) — used instead of trying to derive anything from the raw entry, which for
+    /// a "spotify:track:..." uri has no meaningful filename/host to extract at all.</summary>
+    public QueueItemViewModel(int index, string path, string title, string subtitle)
+    {
+        Index = index;
+        Path = path;
+        IsUrl = false;
+        Title = title;
+        Subtitle = subtitle;
     }
 
     public QueueItemViewModel(int index, string path)
@@ -215,6 +230,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private bool _showLyrics;
     private bool _showSongWarsPanel;
     private bool _showNotepadPanel;
+    private bool _showMetronomePanel;
+    private bool _showEffectsChainPanel;
     private SongWarsSessionController? _songWarsSession;
     private int _activeLyricIndex = -1;
     private readonly ReactiveRuntime _reactiveRuntime = new();
@@ -257,6 +274,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private bool _isExporting;
     private bool _showMoreInfo = true;
     private SpotifyTrackState? _spotifyState;
+    /// <summary>True when the currently-playing Spotify track was reached via Spectralis's own
+    /// Queue (e.g. a mixed local+Spotify playlist) rather than the standalone "Play Spotify"
+    /// entry point. Next/Previous/auto-advance must stay Queue-driven in that case instead of
+    /// deferring to Spotify's own context queue, since the next Queue entry may be a local file.</summary>
+    private bool _queueDrivenSpotifyTrack;
     private CancellationTokenSource? _spotifyArtCts;
     private double _spotifyPositionMs;
     private double _spotifyDurationMs;
@@ -268,13 +290,17 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private long _nextVisualizerCycleTick;
     private bool _showRemainingTime;
     private bool _showQueue;
+    private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
+    private readonly IDisposable? _idleActivityTick;
 
     public NowPlayingViewModel(
         AudioEngine engine,
         AppSettings? settings = null,
-        bool enablePositionPolling = true)
+        bool enablePositionPolling = true,
+        EffectChain? effectChain = null)
     {
         _engine = engine;
+        EffectsChain = new EffectsChainViewModel(effectChain ?? new EffectChain());
         _settings = settings is null
             ? new AppSettings()
             : AppSettingsStore.Normalize(settings);
@@ -330,6 +356,17 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => RefreshFromEngine());
         }
+
+        // Surfaced on the "nothing playing" empty state so it doesn't read as a
+        // dead screen — same source data the status bar already had, just visible.
+        RefreshIdleActivity();
+        _idleActivityTick = Avalonia.Threading.DispatcherTimer.Run(
+            () =>
+            {
+                RefreshIdleActivity();
+                return true;
+            },
+            TimeSpan.FromSeconds(30));
     }
 
     /// <summary>Raised after a local file loads into the engine; drives library play counts.</summary>
@@ -397,15 +434,32 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public PlayQueue Queue { get; } = new();
 
+    /// <summary>Known (Title, Artist) for queue entries that aren't real file paths — set via
+    /// <see cref="SetQueueTrackMetadata"/> right before queueing a playlist that has richer
+    /// metadata than the raw path/uri can express (a Spotify track's actual name, say).</summary>
+    private Dictionary<string, (string Title, string Subtitle)> _queueTrackMetadata = [];
+
     public bool HasNext => _spotifyState is not null || Queue.HasNext;
     public bool HasPrevious => _spotifyState is not null || Queue.HasPrevious;
 
     public ObservableCollection<QueueItemViewModel> QueueItems { get; } = new();
 
+    /// <summary>Call immediately before PlayQueueAsync/QueueFilesAsync with the same entries so
+    /// the Queue panel can show real titles for non-file entries instead of deriving something
+    /// from the raw path/uri (which for a Spotify track is just an opaque id, not a name).</summary>
+    public void SetQueueTrackMetadata(IReadOnlyDictionary<string, (string Title, string Artist)> metadata)
+    {
+        _queueTrackMetadata = metadata.ToDictionary(kv => kv.Key, kv => (kv.Value.Title, kv.Value.Artist));
+    }
+
     public bool ShowQueue
     {
         get => _showQueue;
-        set => this.RaiseAndSetIfChanged(ref _showQueue, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showQueue, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     public bool HasQueueItems => Queue.Count > 0;
@@ -413,7 +467,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowSongWarsPanel
     {
         get => _showSongWarsPanel;
-        set => this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showSongWarsPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     public NotepadsViewModel Notepads { get; } = new();
@@ -421,7 +479,37 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowNotepadPanel
     {
         get => _showNotepadPanel;
-        set => this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showNotepadPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
+    }
+
+    /// <summary>True when any of the docked side panels (lyrics/queue/notes/song wars/metronome/effects) is open — drives the collapsed panel-rail button's active state.</summary>
+    public bool AnyPanelOpen =>
+        ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel || ShowMetronomePanel || ShowEffectsChainPanel;
+
+    public EffectsChainViewModel EffectsChain { get; }
+
+    public bool ShowMetronomePanel
+    {
+        get => _showMetronomePanel;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showMetronomePanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
+    }
+
+    public bool ShowEffectsChainPanel
+    {
+        get => _showEffectsChainPanel;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showEffectsChainPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     public SongWarsSessionController? SongWarsSession
@@ -600,10 +688,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         var items = Queue.Items;
         for (var index = 0; index < items.Count; index++)
         {
-            QueueItems.Add(new QueueItemViewModel(index, items[index])
-            {
-                IsCurrent = index == Queue.CurrentIndex,
-            });
+            var path = items[index];
+            var row = _queueTrackMetadata.TryGetValue(path, out var meta)
+                ? new QueueItemViewModel(index, path, meta.Title, meta.Subtitle)
+                : new QueueItemViewModel(index, path);
+            row.IsCurrent = index == Queue.CurrentIndex;
+            QueueItems.Add(row);
         }
 
         RaiseQueueNavigationChanged();
@@ -675,13 +765,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void ResetPlaybackSession()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
-            _ = _spotifyHost.StopAsync();
-
-        StopSpotifyLoopback();
-        _spotifyVisualizer = null;
-        _engine.ExternalVisualizerSource = null;
-
+        // ApplyTrack(null) below already stops Spotify's real device (if it was the active
+        // source) and clears the loopback/visualizer/state bookkeeping that used to be
+        // duplicated here — duplicating it was how this and the "switch to a local track"
+        // path could disagree about whether Spotify still needed stopping.
         _remoteLoadCts?.Cancel();
         var oldRemotePath = _remoteAudioTempPath;
         _remoteAudioTempPath = null;
@@ -817,7 +904,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayNextAsync()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
+        if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             await _spotifyHost.NextTrackAsync();
             return;
@@ -828,7 +915,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayPreviousAsync()
     {
-        if (_spotifyState is not null && _spotifyHost is not null)
+        if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             if (_spotifyPositionMs > 3000)
                 await _spotifyHost.SeekAsync(0);
@@ -850,9 +937,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadQueueItemAsync(string pathOrUrl, bool startPlayback)
     {
         SyncQueueCurrent();
-        if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        if (pathOrUrl.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+        {
+            await LoadSpotifyQueueTrackAsync(pathOrUrl, startPlayback);
+        }
+        else if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
+            _queueDrivenSpotifyTrack = false;
             await LoadUrlAsync(pathOrUrl);
             if (startPlayback && _engine.IsLoaded && !_engine.IsPlaying)
             {
@@ -862,12 +954,39 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
         else
         {
+            _queueDrivenSpotifyTrack = false;
             await LoadCurrentQueueTrackAsync(pathOrUrl, startPlayback);
         }
     }
 
+    /// <summary>Plays a single Spotify track as the current Queue entry (a mixed local+Spotify
+    /// playlist), rather than deferring to Spotify's own context/queue the way the standalone
+    /// "Play Spotify" flow does. Stops the local engine first — <see cref="AudioEngine.Stop"/>
+    /// (not Pause) also zeroes its reported position, so a subsequent Previous press doesn't
+    /// mistake the stale local track for "recently playing" and seek it instead of moving the Queue.</summary>
+    private async Task LoadSpotifyQueueTrackAsync(string trackUri, bool startPlayback)
+    {
+        _queueDrivenSpotifyTrack = true;
+        _engine.Stop();
+
+        if (!startPlayback || _spotifyHost is null)
+        {
+            return;
+        }
+
+        RemoteStatus = "Connecting to Spotify...";
+        var started = await _spotifyHost.PlayUriAsync(trackUri);
+        RemoteStatus = started ? "Spotify playback requested" : _spotifyHost.StatusMessage ?? "Spotify playback failed";
+    }
+
     private async Task AutoAdvanceAsync()
     {
+        if (_spotifyState is not null && !_queueDrivenSpotifyTrack)
+        {
+            RefreshFromEngine();
+            return;
+        }
+
         if (Queue.HasNext || Queue.Repeat != RepeatMode.None)
         {
             await PlayNextAsync();
@@ -943,6 +1062,30 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged(nameof(SelectedVisualizer));
         }
     }
+
+    /// <summary>Applies a playlist's saved default visualizer, if it still resolves against the
+    /// live catalog/script/installed list — a script or installed visualizer can be deleted after
+    /// being set as a default, so a miss here is silently ignored rather than treated as an error.</summary>
+    public void ApplyDefaultVisualizer(VisualizerRef? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        var match = VisualizerOptions.FirstOrDefault(option => reference.Kind switch
+        {
+            VisualizerRefKind.Scripted => option.Script?.Id == reference.Id,
+            VisualizerRefKind.Installed => option.Installed?.Id == reference.Id,
+            _ => option.Script is null && option.Installed is null && option.Mode == reference.Mode,
+        });
+
+        if (match is not null)
+        {
+            SelectedVisualizer = match;
+        }
+    }
+
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions { get; }
     public IReadOnlyList<SelectionOption<int>> CycleDurationOptions { get; }
 
@@ -1299,7 +1442,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool ShowLyrics
     {
         get => _showLyrics;
-        set => this.RaiseAndSetIfChanged(ref _showLyrics, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showLyrics, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
     }
 
     /// <summary>Index of the active synced line; -1 before the first line.</summary>
@@ -1352,6 +1499,57 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when there is nothing to show — no track and no album world map.</summary>
     public bool IsNilState => !HasTrack && !IsAlbumWorldActive;
+
+    /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
+    public bool IsOledTheme => _settings.ThemeMode == AppThemeMode.Oled;
+
+    /// <summary>True when there's real scrobble history to show on the empty state.</summary>
+    public bool HasIdleActivityStats => _idleActivity.HasHistory;
+
+    public bool HasIdleStreak => _idleActivity.CurrentStreakDays > 1;
+
+    public string IdleListensText => _idleActivity.TotalScrobbles.ToString("N0");
+
+    public string IdleHoursText => _idleActivity.TotalHours >= 10
+        ? _idleActivity.TotalHours.ToString("0")
+        : _idleActivity.TotalHours.ToString("0.#");
+
+    public string IdleStreakText => _idleActivity.CurrentStreakDays == 1
+        ? "1 day"
+        : $"{_idleActivity.CurrentStreakDays} days";
+
+    /// <summary>One telemetry line for the empty state — same convention as the
+    /// library's BPM/key/kbps columns, not a separate "stat card" component.</summary>
+    public string IdleActivitySummaryText
+    {
+        get
+        {
+            var parts = new List<string> { $"{IdleListensText} listens", $"{IdleHoursText}h logged" };
+            if (HasIdleStreak)
+            {
+                parts.Add($"{IdleStreakText} streak");
+            }
+
+            return string.Join("   ·   ", parts);
+        }
+    }
+
+    private void RefreshIdleActivity()
+    {
+        var next = ListeningActivitySnapshot.FromHistory(ScrobbleQueue.LoadHistory());
+        if (next == _idleActivity)
+        {
+            return;
+        }
+
+        _idleActivity = next;
+        this.RaisePropertyChanged(nameof(HasIdleActivityStats));
+        this.RaisePropertyChanged(nameof(HasIdleStreak));
+        this.RaisePropertyChanged(nameof(IdleListensText));
+        this.RaisePropertyChanged(nameof(IdleHoursText));
+        this.RaisePropertyChanged(nameof(IdleStreakText));
+        this.RaisePropertyChanged(nameof(IdleActivitySummaryText));
+    }
 
     /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
     public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive;
@@ -1517,18 +1715,55 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         set
         {
             if (_spotifyHost is not null)
+            {
                 _spotifyHost.TrackStateChanged -= OnSpotifyStateChanged;
+                _spotifyHost.PlaybackStopped -= OnSpotifyPlaybackStopped;
+            }
             _spotifyHost = value;
             if (_spotifyHost is not null)
+            {
                 _spotifyHost.TrackStateChanged += OnSpotifyStateChanged;
+                _spotifyHost.PlaybackStopped += OnSpotifyPlaybackStopped;
+            }
         }
     }
 
     private void OnSpotifyStateChanged(object? sender, SpotifyTrackState state)
         => _ = ApplySpotifyStateAsync(state);
 
+    /// <summary>Only meaningful for a queue-driven Spotify track (see <see cref="_queueDrivenSpotifyTrack"/>):
+    /// Spotify has nothing left in its own queue to advance to, so Spectralis's own Queue takes over.
+    /// A standalone "Play Spotify" session stopping naturally isn't Spectralis's concern.</summary>
+    private void OnSpotifyPlaybackStopped(object? sender, EventArgs e)
+    {
+        if (!_queueDrivenSpotifyTrack)
+        {
+            return;
+        }
+
+        _spotifyState = null;
+        _queueDrivenSpotifyTrack = false;
+        _ = AutoAdvanceAsync();
+    }
+
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
+        // A single-uri PlayUriAsync call gives Spotify no context to fall through to, so the SDK
+        // never reports a distinct "ended"/no-track state the way OnSpotifyPlaybackStopped
+        // expects — it just reports the same track paused at (or basically at) its own duration.
+        // Catch that here too so queue-driven playback actually advances instead of sitting
+        // paused at the end of every track.
+        if (_queueDrivenSpotifyTrack && state.IsPaused && state.DurationMs > 0 &&
+            state.PositionMs >= state.DurationMs - 1000 &&
+            _spotifyState?.TrackId == state.TrackId)
+        {
+            _spotifyState = null;
+            _queueDrivenSpotifyTrack = false;
+            StopSpotifyLoopback();
+            _ = AutoAdvanceAsync();
+            return;
+        }
+
         var isNewTrack = _spotifyState?.TrackId != state.TrackId || _spotifyState?.Name != state.Name;
 
         _spotifyState = state;
@@ -1562,8 +1797,22 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                 ? await FetchSpotifyArtAsync(state.AlbumArtUrl, cts.Token)
                 : null;
 
-            if (!cts.IsCancellationRequested && _spotifyHost is not null)
+            // Only meaningful for the standalone "Play Spotify" flow, where Spotify's own
+            // server-side device queue genuinely is what's next. For a queue-driven playlist
+            // (mixed local+Spotify or a synced Spotify playlist) Spectralis's own Queue is
+            // authoritative instead — Spotify's device queue is empty/irrelevant since each
+            // track is started with a single-uri play, no context — so calling this here
+            // clobbered the correctly-built Queue panel with Spotify's (empty-ish, occasionally
+            // just stale/duplicated) queue snapshot instead. SyncQueueCurrent just re-flags which
+            // row is playing, using the list SyncQueueItems already built for this Queue.
+            if (_queueDrivenSpotifyTrack)
+            {
+                SyncQueueCurrent();
+            }
+            else if (!cts.IsCancellationRequested && _spotifyHost is not null)
+            {
                 _ = RefreshSpotifyQueueAsync();
+            }
 
             // Fetch timed lyrics from Spotify relay
             _spotifyLyricsCts?.Cancel();
@@ -1644,6 +1893,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _queueDrivenSpotifyTrack = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await SpotifyHost.PlayAsync();
         RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
@@ -1991,6 +2241,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             // WebView widget fallback: embed the platform player directly (SoundCloud, Suno, Spotify).
             if (resolved.IsWebViewFallback())
             {
+                StopSpotifyPlayback();
                 var htmlBytes = System.Text.Encoding.UTF8.GetBytes(resolved.WebViewEmbedHtml!);
                 EmbeddedHtml = new EmbeddedHtmlContext(
                     resolved.Kind.ToString(),
@@ -2176,15 +2427,24 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             position = _engine.GetPosition();
         }
 
-        LengthSeconds = length;
-        this.RaisePropertyChanged(nameof(LengthText));
-
+        // Position must be pushed to the slider before length. The transport slider's
+        // Value is TwoWay-bound and its Maximum is bound to LengthSeconds — if Maximum
+        // shrinks (e.g. a new Spotify track is shorter than where the previous one left
+        // off) while Value still holds the old track's near-end position, the Slider
+        // clamps Value down to the new Maximum itself, and that clamp round-trips back
+        // through the TwoWay binding as a real seek. On a Spotify track transition that
+        // lands the seek right at the new track's own end, which immediately skips it.
+        // Updating position first keeps Value small before Maximum ever moves, so the
+        // Slider never needs to coerce it.
         if (Math.Abs(position - _positionSeconds) > 0.05)
         {
             _positionSeconds = Math.Min(position, length);
             this.RaisePropertyChanged(nameof(PositionSeconds));
             this.RaisePropertyChanged(nameof(PositionText));
         }
+
+        LengthSeconds = length;
+        this.RaisePropertyChanged(nameof(LengthText));
 
         if (IsAlbumWorldActive)
         {
@@ -2317,15 +2577,35 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         ApplyTrack(refreshed);
     }
 
-    private void ApplyTrack(TrackInfo? track)
+    /// <summary>Pauses Spotify's real device (if it was the active source) and clears the
+    /// Spotify-specific bookkeeping tied to it. Doesn't touch Title/Artist/HasTrack — callers
+    /// replacing the whole "now playing" surface should follow up with ApplyTrack themselves.
+    /// This used to be duplicated (slightly differently) between ApplyTrack and
+    /// ResetPlaybackSession, which is how Spotify ended up able to keep playing in the background
+    /// after switching to a local track: ApplyTrack cleared _spotifyState without ever actually
+    /// telling the device to stop, so by the time Stop was pressed there was nothing left for
+    /// ResetPlaybackSession's own (now-removed) _spotifyState check to catch.</summary>
+    private void StopSpotifyPlayback()
     {
-        var wasSpotify = _spotifyState is not null;
+        if (_spotifyState is null)
+        {
+            return;
+        }
+
+        _ = _spotifyHost?.StopAsync();
         _spotifyState = null;
-        _spotifyArtCts?.Cancel();
-        _spotifyLyricsCts?.Cancel();
+        _queueDrivenSpotifyTrack = false;
         StopSpotifyLoopback();
         _spotifyVisualizer = null;
         _engine.ExternalVisualizerSource = null;
+    }
+
+    private void ApplyTrack(TrackInfo? track)
+    {
+        var wasSpotify = _spotifyState is not null;
+        StopSpotifyPlayback();
+        _spotifyArtCts?.Cancel();
+        _spotifyLyricsCts?.Cancel();
         if (wasSpotify)
         {
             this.RaisePropertyChanged(nameof(HasNext));
@@ -2594,6 +2874,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _positionPoll?.Dispose();
+        _idleActivityTick?.Dispose();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
         RemoteAudioCache.TryDelete(_remoteAudioTempPath);
