@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
     fs::create_dir_all(data_dir.join("sessions")).await?;
     fs::create_dir_all(data_dir.join("sq-rooms")).await?;
     fs::create_dir_all(data_dir.join("sq-uploads")).await?;
+    fs::create_dir_all(data_dir.join("sq-discord-pins")).await?;
 
     let state = AppState {
         data_dir: Arc::new(data_dir),
@@ -162,8 +163,10 @@ async fn main() -> Result<()> {
         )
         // ── Streamer Queue v1 (standalone, no shared-play session required) ──────
         .route("/streamer-queue/v1/rooms", post(post_sq_create_room))
+        .route("/streamer-queue/v1/rooms/discord-pin/exchange", post(post_sq_discord_pin_exchange))
         .route("/streamer-queue/v1/rooms/:id", get(get_sq_room))
         .route("/streamer-queue/v1/rooms/:id/settings", put(put_sq_settings))
+        .route("/streamer-queue/v1/rooms/:id/discord-pin", post(post_sq_discord_pin))
         .route("/streamer-queue/v1/rooms/:id/submit", post(post_sq_submit))
         .route("/streamer-queue/v1/rooms/:id/upload", post(post_sq_upload))
         .route("/streamer-queue/v1/rooms/:id/uploads/:file_id", get(get_sq_upload))
@@ -2809,6 +2812,18 @@ fn sq_upload_dir(state: &AppState) -> PathBuf {
     state.data_dir.join("sq-uploads")
 }
 
+fn sq_pin_dir(state: &AppState) -> PathBuf {
+    state.data_dir.join("sq-discord-pins")
+}
+
+fn sq_pin_path(state: &AppState, pin: &str) -> PathBuf {
+    sq_pin_dir(state).join(format!("{}.json", pin))
+}
+
+fn generate_discord_pin() -> String {
+    format!("{:06}", rand::thread_rng().gen_range(0..1_000_000))
+}
+
 fn clean_sq_room_id(value: &str) -> Result<String, AppError> {
     let cleaned: String = value
         .trim()
@@ -2848,6 +2863,11 @@ async fn write_sq_room_file(state: &AppState, room_id: &str, room: &Value) -> Re
 
 fn sq_owner_token_valid(room: &Value, token: &str) -> bool {
     let stored = room.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    !stored.is_empty() && stored == token
+}
+
+fn sq_bot_token_valid(room: &Value, token: &str) -> bool {
+    let stored = room.get("discordBotToken").and_then(Value::as_str).unwrap_or("");
     !stored.is_empty() && stored == token
 }
 
@@ -3188,18 +3208,41 @@ async fn put_sq_settings(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
     let mut room = read_sq_room_file(&state, &id).await?;
-    let token = payload.get("ownerToken").and_then(Value::as_str).unwrap_or("");
-    if !sq_owner_token_valid(&room, token) {
+    let owner_token = payload.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    let is_owner = sq_owner_token_valid(&room, owner_token);
+
+    // A Discord bot token (see post_sq_discord_pin_exchange) is a lower-trust,
+    // narrower-scope credential: it may only flip acceptingSubmissions, never touch
+    // enabled/channelId/settings (fees, Stripe, approval rules, etc).
+    let is_bot = if is_owner {
+        false
+    } else {
+        let bot_token = payload.get("botToken").and_then(Value::as_str).unwrap_or("");
+        sq_bot_token_valid(&room, bot_token)
+    };
+
+    if !is_owner && !is_bot {
         return Err(AppError::forbidden("Owner token is invalid."));
     }
-    if let Some(v) = payload.get("enabled").and_then(Value::as_bool) {
-        room["enabled"] = json!(v);
+
+    if is_bot
+        && (payload.get("enabled").is_some()
+            || payload.get("channelId").is_some()
+            || payload.get("settings").is_some())
+    {
+        return Err(AppError::forbidden("A Discord bot token can only open or close the queue."));
     }
-    if let Some(channel_id) = payload.get("channelId").and_then(Value::as_str) {
-        room["channelId"] = json!(clean_channel_id(channel_id)?);
-    }
-    if let Some(settings) = payload.get("settings") {
-        room["settings"] = sq_normalize_settings(settings, &room["settings"].clone());
+
+    if is_owner {
+        if let Some(v) = payload.get("enabled").and_then(Value::as_bool) {
+            room["enabled"] = json!(v);
+        }
+        if let Some(channel_id) = payload.get("channelId").and_then(Value::as_str) {
+            room["channelId"] = json!(clean_channel_id(channel_id)?);
+        }
+        if let Some(settings) = payload.get("settings") {
+            room["settings"] = sq_normalize_settings(settings, &room["settings"].clone());
+        }
     }
     if let Some(v) = payload.get("acceptingSubmissions").and_then(Value::as_bool) {
         room["acceptingSubmissions"] = json!(v);
@@ -3207,6 +3250,79 @@ async fn put_sq_settings(
     room["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_sq_room_file(&state, &id, &room).await?;
     Ok(Json(sq_build_response(room)))
+}
+
+async fn post_sq_discord_pin(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let room = read_sq_room_file(&state, &id).await?;
+    let token = payload.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !sq_owner_token_valid(&room, token) {
+        return Err(AppError::forbidden("Owner token is invalid."));
+    }
+
+    fs::create_dir_all(sq_pin_dir(&state)).await?;
+    // Collisions with a still-live PIN are astronomically unlikely (1 in a million,
+    // and PINs expire in minutes) but retry a few times rather than trust that.
+    for _ in 0..5 {
+        let pin = generate_discord_pin();
+        let path = sq_pin_path(&state, &pin);
+        if fs::metadata(&path).await.is_ok() {
+            continue;
+        }
+        let expires_at = (Utc::now() + Duration::minutes(10)).to_rfc3339();
+        let record = json!({ "roomId": &id, "expiresAtUtc": &expires_at });
+        write_json(path, &record).await?;
+        return Ok(Json(json!({ "pin": pin, "expiresAtUtc": expires_at })));
+    }
+    Err(AppError::internal("Could not generate a unique PIN, try again."))
+}
+
+async fn post_sq_discord_pin_exchange(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let pin: String = payload
+        .get("pin")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .take(6)
+        .collect();
+    if pin.len() != 6 {
+        return Err(AppError::bad_request("Invalid PIN."));
+    }
+
+    let path = sq_pin_path(&state, &pin);
+    let bytes = fs::read(&path).await.map_err(|_| AppError::not_found("That PIN wasn't found or has expired."))?;
+    // Single-use: consume it before doing anything else, regardless of outcome.
+    let _ = fs::remove_file(&path).await;
+    let record: Value = serde_json::from_slice(&bytes)?;
+
+    let expires_at = record.get("expiresAtUtc").and_then(Value::as_str).unwrap_or("");
+    let expired = parse_utc(expires_at).map(|dt| Utc::now() > dt).unwrap_or(true);
+    if expired {
+        return Err(AppError::bad_request("That PIN has expired. Generate a new one from the app."));
+    }
+    let room_id = record
+        .get("roomId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("PIN record missing roomId."))?
+        .to_string();
+
+    let mut room = read_sq_room_file(&state, &room_id).await?;
+    let bot_token = {
+        let bytes: [u8; 32] = rand::thread_rng().gen();
+        bytes_to_hex(&bytes)
+    };
+    room["discordBotToken"] = json!(&bot_token);
+    room["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_sq_room_file(&state, &room_id, &room).await?;
+
+    Ok(Json(json!({ "roomId": room_id, "botToken": bot_token })))
 }
 
 fn sq_normalize_settings(incoming: &Value, current: &Value) -> Value {
