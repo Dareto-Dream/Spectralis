@@ -37,6 +37,7 @@ public sealed record SqSubmission(
 public sealed record SqRoom(
     string RoomId,
     bool Enabled,
+    bool AcceptingSubmissions,
     SqSettings Settings,
     string? ChannelId,
     string? StripePublishableKey,

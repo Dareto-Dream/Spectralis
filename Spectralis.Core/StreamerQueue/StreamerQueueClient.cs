@@ -48,6 +48,13 @@ public sealed class StreamerQueueClient : IDisposable
         return await DeserializeAsync<SqRoom>(res, ct);
     }
 
+    public async Task<SqRoom> SetAcceptingSubmissionsAsync(Uri baseUri, string roomId, string ownerToken, bool accepting, CancellationToken ct)
+    {
+        var body = new { ownerToken, acceptingSubmissions = accepting };
+        var res = await http.PutAsync(new Uri(RoomUri(baseUri, roomId) + "/settings"), JsonContent(body), ct);
+        return await DeserializeAsync<SqRoom>(res, ct);
+    }
+
     // ── Submissions ───────────────────────────────────────────────────────────
 
     public async Task<SqSubmitResponse> SubmitAsync(Uri baseUri, string roomId, SqSubmitRequest req, CancellationToken ct)

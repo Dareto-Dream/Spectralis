@@ -61,6 +61,14 @@ public sealed class StreamerQueueRoomController : IDisposable
         return result;
     }
 
+    public async Task<SqRoom> SetAcceptingSubmissionsAsync(bool accepting, CancellationToken ct)
+    {
+        EnsureOwner();
+        var result = await client.SetAcceptingSubmissionsAsync(cdnBaseUri, roomId!, ownerToken!, accepting, ct);
+        LastSnapshot = result;
+        return result;
+    }
+
     public async Task ApproveAsync(string submissionId, CancellationToken ct)
     {
         EnsureOwner();
