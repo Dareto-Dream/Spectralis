@@ -88,6 +88,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     // ── Settings ──────────────────────────────────────────────────────────────
     private bool _sqEnabled;
+    private bool _acceptingSubmissions = true;
     private bool _requireApproval;
     private bool _allowDuplicates;
     private bool _allowLinkSubmissions = true;
@@ -118,6 +119,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         ConnectStripeCommand   = ReactiveCommand.CreateFromTask(ConnectStripeAsync, isOwner);
         DisconnectStripeCommand = ReactiveCommand.CreateFromTask(DisconnectStripeAsync, isOwner);
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
+        ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
     }
 
     public void Dispose()
@@ -134,6 +136,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ConnectStripeCommand { get; }
     public ReactiveCommand<Unit, Unit> DisconnectStripeCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
@@ -191,6 +194,17 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         get => _sqEnabled;
         set => this.RaiseAndSetIfChanged(ref _sqEnabled, value);
     }
+
+    /// <summary>Whether the public page is currently taking new requests. Separate from
+    /// <see cref="SqEnabled"/> — closing this still lets viewers see now-playing/queue and
+    /// lets the streamer keep browsing and playing from the existing queue.</summary>
+    public bool AcceptingSubmissions
+    {
+        get => _acceptingSubmissions;
+        private set { this.RaiseAndSetIfChanged(ref _acceptingSubmissions, value); this.RaisePropertyChanged(nameof(AcceptingToggleLabel)); }
+    }
+
+    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close Queue" : "Reopen Queue";
 
     public bool RequireApproval
     {
@@ -343,6 +357,22 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, ct);
             ApplyRoomSnapshot(room);
             StatusText = "Settings saved";
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+        }
+    }
+
+    private async Task ToggleAcceptingAsync(CancellationToken ct)
+    {
+        if (!IsOwner) return;
+        try
+        {
+            LastError = string.Empty;
+            var room = await _controller.SetAcceptingSubmissionsAsync(!AcceptingSubmissions, ct);
+            ApplyQueueSnapshot(room);
+            AcceptingSubmissions = room.AcceptingSubmissions;
         }
         catch (Exception ex)
         {
@@ -515,6 +545,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     // call on every poll tick without disturbing an unsaved settings edit.
     private void ApplyQueueSnapshot(SqRoom room)
     {
+        AcceptingSubmissions = room.AcceptingSubmissions;
+
         var nowTier = room.NowPlayingTier;
         IsP2wActive = nowTier is "skip" or "super_skip";
 
@@ -539,7 +571,9 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             PendingItems.Add(MakeSqItemVm(sub));
 
         this.RaisePropertyChanged(nameof(NowPlayingItem));
-        StatusText = SqEnabled ? $"{QueueItems.Count} in queue" : "Queue disabled";
+        StatusText = !SqEnabled ? "Queue disabled"
+            : !AcceptingSubmissions ? $"{QueueItems.Count} in queue (closed to new requests)"
+            : $"{QueueItems.Count} in queue";
     }
 
     private SqItemVm MakeSqItemVm(SqSubmission sub) => new(sub,
