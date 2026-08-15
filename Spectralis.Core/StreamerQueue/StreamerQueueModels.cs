@@ -37,6 +37,7 @@ public sealed record SqSubmission(
 public sealed record SqRoom(
     string RoomId,
     bool Enabled,
+    bool AcceptingSubmissions,
     SqSettings Settings,
     string? ChannelId,
     string? StripePublishableKey,
@@ -67,3 +68,5 @@ public sealed record SqPromoteResponse(
 public sealed record SqCreateRoomResponse(string RoomId, string OwnerToken);
 
 public sealed record SqStripeConnectResponse(string ConnectUrl);
+
+public sealed record SqDiscordPinResponse(string Pin, string ExpiresAtUtc);

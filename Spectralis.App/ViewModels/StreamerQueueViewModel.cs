@@ -88,6 +88,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     // ── Settings ──────────────────────────────────────────────────────────────
     private bool _sqEnabled;
+    private bool _acceptingSubmissions = true;
     private bool _requireApproval;
     private bool _allowDuplicates;
     private bool _allowLinkSubmissions = true;
@@ -102,6 +103,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private string _superSkipFeeAmount = "10.00";
     private bool _stripeConnected;
     private string _stripeStatus = "Not connected";
+    private string _discordPinDisplay = string.Empty;
 
     private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
     private AppSettings? _settings;
@@ -118,6 +120,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         ConnectStripeCommand   = ReactiveCommand.CreateFromTask(ConnectStripeAsync, isOwner);
         DisconnectStripeCommand = ReactiveCommand.CreateFromTask(DisconnectStripeAsync, isOwner);
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
+        ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
+        LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
     }
 
     public void Dispose()
@@ -134,6 +138,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ConnectStripeCommand { get; }
     public ReactiveCommand<Unit, Unit> DisconnectStripeCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
+    public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
@@ -191,6 +197,17 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         get => _sqEnabled;
         set => this.RaiseAndSetIfChanged(ref _sqEnabled, value);
     }
+
+    /// <summary>Whether the public page is currently taking new requests. Separate from
+    /// <see cref="SqEnabled"/> — closing this still lets viewers see now-playing/queue and
+    /// lets the streamer keep browsing and playing from the existing queue.</summary>
+    public bool AcceptingSubmissions
+    {
+        get => _acceptingSubmissions;
+        private set { this.RaiseAndSetIfChanged(ref _acceptingSubmissions, value); this.RaisePropertyChanged(nameof(AcceptingToggleLabel)); }
+    }
+
+    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close Queue" : "Reopen Queue";
 
     public bool RequireApproval
     {
@@ -278,6 +295,15 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _stripeStatus, value);
     }
 
+    /// <summary>Set after CreateDiscordPinAsync succeeds; shows the streamer the PIN to
+    /// type into `/link-queue` in Discord. Cleared on room switch — a stale PIN read off
+    /// screen after it expired is just confusing.</summary>
+    public string DiscordPinDisplay
+    {
+        get => _discordPinDisplay;
+        private set => this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
+    }
+
     public ObservableCollection<SqItemVm> QueueItems { get; } = [];
     public ObservableCollection<SqItemVm> PendingItems { get; } = [];
     public SqItemVm? NowPlayingItem { get; private set; }
@@ -343,6 +369,22 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, ct);
             ApplyRoomSnapshot(room);
             StatusText = "Settings saved";
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+        }
+    }
+
+    private async Task ToggleAcceptingAsync(CancellationToken ct)
+    {
+        if (!IsOwner) return;
+        try
+        {
+            LastError = string.Empty;
+            var room = await _controller.SetAcceptingSubmissionsAsync(!AcceptingSubmissions, ct);
+            ApplyQueueSnapshot(room);
+            AcceptingSubmissions = room.AcceptingSubmissions;
         }
         catch (Exception ex)
         {
@@ -451,6 +493,19 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { LastError = ex.Message; }
     }
 
+    // ── Discord pairing ──────────────────────────────────────────────────────────
+
+    private async Task LinkDiscordAsync(CancellationToken ct)
+    {
+        try
+        {
+            LastError = string.Empty;
+            var result = await _controller.CreateDiscordPinAsync(ct);
+            DiscordPinDisplay = result.Pin;
+        }
+        catch (Exception ex) { LastError = ex.Message; }
+    }
+
     // ── Clipboard ─────────────────────────────────────────────────────────────
 
     private void CopySubmitUrl() => CopyToClipboardRequested?.Invoke(SubmitUrl);
@@ -515,6 +570,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     // call on every poll tick without disturbing an unsaved settings edit.
     private void ApplyQueueSnapshot(SqRoom room)
     {
+        AcceptingSubmissions = room.AcceptingSubmissions;
+
         var nowTier = room.NowPlayingTier;
         IsP2wActive = nowTier is "skip" or "super_skip";
 
@@ -539,7 +596,9 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             PendingItems.Add(MakeSqItemVm(sub));
 
         this.RaisePropertyChanged(nameof(NowPlayingItem));
-        StatusText = SqEnabled ? $"{QueueItems.Count} in queue" : "Queue disabled";
+        StatusText = !SqEnabled ? "Queue disabled"
+            : !AcceptingSubmissions ? $"{QueueItems.Count} in queue (closed to new requests)"
+            : $"{QueueItems.Count} in queue";
     }
 
     private SqItemVm MakeSqItemVm(SqSubmission sub) => new(sub,

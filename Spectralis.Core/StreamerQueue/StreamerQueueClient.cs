@@ -48,6 +48,13 @@ public sealed class StreamerQueueClient : IDisposable
         return await DeserializeAsync<SqRoom>(res, ct);
     }
 
+    public async Task<SqRoom> SetAcceptingSubmissionsAsync(Uri baseUri, string roomId, string ownerToken, bool accepting, CancellationToken ct)
+    {
+        var body = new { ownerToken, acceptingSubmissions = accepting };
+        var res = await http.PutAsync(new Uri(RoomUri(baseUri, roomId) + "/settings"), JsonContent(body), ct);
+        return await DeserializeAsync<SqRoom>(res, ct);
+    }
+
     // ── Submissions ───────────────────────────────────────────────────────────
 
     public async Task<SqSubmitResponse> SubmitAsync(Uri baseUri, string roomId, SqSubmitRequest req, CancellationToken ct)
@@ -122,6 +129,14 @@ public sealed class StreamerQueueClient : IDisposable
         var body = new { ownerToken, submissionId };
         var res = await http.PostAsync(new Uri(RoomUri(baseUri, roomId) + "/now-playing"), JsonContent(body), ct);
         return res.IsSuccessStatusCode;
+    }
+
+    // ── Discord pairing ──────────────────────────────────────────────────────────
+
+    public async Task<SqDiscordPinResponse> CreateDiscordPinAsync(Uri baseUri, string roomId, string ownerToken, CancellationToken ct)
+    {
+        var res = await http.PostAsync(new Uri(RoomUri(baseUri, roomId) + "/discord-pin"), JsonContent(new { ownerToken }), ct);
+        return await DeserializeAsync<SqDiscordPinResponse>(res, ct);
     }
 
     // ── Stripe ────────────────────────────────────────────────────────────────

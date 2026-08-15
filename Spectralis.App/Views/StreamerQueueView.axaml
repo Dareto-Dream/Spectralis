@@ -24,6 +24,9 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Button Content="Create Room" Command="{Binding CreateRoomCommand}"
                   IsVisible="{Binding !HasRoom}" Classes="primary" />
+          <Button Content="{Binding AcceptingToggleLabel}" Command="{Binding ToggleAcceptingCommand}"
+                  IsVisible="{Binding HasRoom}"
+                  Classes.destructive="{Binding AcceptingSubmissions}" />
           <Button Content="Copy Submit URL" Command="{Binding CopySubmitUrlCommand}"
                   IsVisible="{Binding HasRoom}" />
         </StackPanel>
@@ -138,6 +141,16 @@
                   <TextBox Text="{Binding SubmitUrl}" IsReadOnly="True" />
                   <Button Grid.Column="1" Content="Copy" Command="{Binding CopySubmitUrlCommand}" />
                 </Grid>
+              </StackPanel>
+
+              <!-- Discord pairing -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="secondary" Text="Discord" />
+                <Button Content="Link Discord Channel" Command="{Binding LinkDiscordCommand}" />
+                <StackPanel IsVisible="{Binding DiscordPinDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Spacing="2">
+                  <TextBlock Text="{Binding DiscordPinDisplay, StringFormat='PIN: {0}'}" FontWeight="SemiBold" />
+                  <TextBlock Classes="secondary" Text="In the Discord channel to link, run /link-queue and enter this PIN. Expires in 10 minutes." TextWrapping="Wrap" />
+                </StackPanel>
               </StackPanel>
 
               <CheckBox Content="Queue enabled" IsChecked="{Binding SqEnabled}" />

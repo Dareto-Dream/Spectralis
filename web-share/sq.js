@@ -91,8 +91,7 @@ async function pollRoom() {
   try {
     roomData = await apiFetch(`/streamer-queue/v1/rooms/${ROOM_ID}`);
     updateNowPlaying();
-    const countEl = $('queueCount');
-    if (countEl) countEl.textContent = roomData.queueLength > 0 ? `${roomData.queueLength} in queue` : '';
+    renderSettings();
   } catch { /* non-fatal */ }
 }
 
@@ -127,29 +126,46 @@ function renderSettings() {
     }
   }
 
-  // Skip sections
+  // Skip sections — hidden entirely unless the streamer has turned the tier on;
+  // an unchecked fee toggle means "no skip option", not "free skip".
   const skipFee = s.skip;
-  if (skipFee) {
+  if (skipFee && skipFee.enabled) {
     show('skipSection');
     const skipLabel = $('skipPriceLabel');
-    if (skipLabel) skipLabel.textContent = skipFee.enabled && skipFee.amount > 0
+    if (skipLabel) skipLabel.textContent = skipFee.amount > 0
       ? formatAmount(skipFee.amount, skipFee.currency) : 'Free';
-    if (skipFee.enabled && skipFee.amount > 0 && stripeClient) {
+    if (skipFee.amount > 0 && stripeClient) {
       show('skipFeeBlock');
       mountStripeElement('skipStripeElements');
     }
+  } else {
+    hide('skipSection');
   }
 
   const superSkipFee = s.superSkip;
-  if (superSkipFee) {
+  if (superSkipFee && superSkipFee.enabled) {
     show('superSkipSection');
     const ssLabel = $('superSkipPriceLabel');
-    if (ssLabel) ssLabel.textContent = superSkipFee.enabled && superSkipFee.amount > 0
+    if (ssLabel) ssLabel.textContent = superSkipFee.amount > 0
       ? formatAmount(superSkipFee.amount, superSkipFee.currency) : 'Free';
-    if (superSkipFee.enabled && superSkipFee.amount > 0 && stripeClient) {
+    if (superSkipFee.amount > 0 && stripeClient) {
       show('superSkipFeeBlock');
       mountStripeElement('superSkipStripeElements');
     }
+  } else {
+    hide('superSkipSection');
+  }
+
+  // Requests closed — streamer is still playing from the existing queue, but
+  // isn't taking new submissions right now.
+  if (roomData.acceptingSubmissions === false) {
+    hide('requestSection');
+    hide('skipSection');
+    hide('superSkipSection');
+    show('closedBanner');
+  } else {
+    show('requestSection');
+    hide('closedBanner');
   }
 }
 
@@ -182,10 +198,9 @@ function updateNowPlaying() {
   const ordered = roomData.orderedQueue || [];
   const np = ordered.find(s => s.id === roomData.nowPlayingId)
     || (roomData.submissions || []).find(s => s.id === roomData.nowPlayingId);
-  if (!np) { hide('nowPlaying'); return; }
 
-  setText('npTitle', np.title || '—');
-  setText('npArtist', np.artist || '');
+  setText('npTitle', (np && np.title) || roomData.nowPlayingTitle || '—');
+  setText('npArtist', (np && np.artist) || roomData.nowPlayingArtist || '');
 
   const p2w = roomData.nowPlayingTier === 'skip' || roomData.nowPlayingTier === 'super_skip';
   if (p2w) show('p2wBadge'); else hide('p2wBadge');
