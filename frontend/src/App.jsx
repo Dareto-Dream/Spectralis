@@ -23,414 +23,23 @@ const FEATURES = [
   { num: '09', icon: Shield,     title: 'Creator Trust',          body: 'Unknown creator keys trigger a one-time trust prompt. Revoked keys are always rejected. Capabilities are intersection-enforced against the CDN.' },
 ]
 
-const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','AIFF','MP4','AIFF']
+const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','AIFF','MP4']
 
-const CHANGELOG_RELEASES = [
-  {
-    version: '5.2.0',
-    label: 'Dead zones & notepads',
-    date: 'Latest',
-    summary: 'Dead zones now protect the app itself, not just your OBS layout — the visualizer and docked sidebars shift out of the way of your webcam or alerts. A new Notepads panel lets you jot notes while audio plays and embed them straight into the file. Plus a reworked spin wheel editor, a SoundCloud playback fix, and a fix for broken redeemable visualizer images.',
-    metrics: ['App-wide dead zones', 'Notepads', 'Weighted spin wheel'],
-    groups: [
-      {
-        icon: Crosshair,
-        title: 'Dead Zones Go App-Wide',
-        bullets: [
-          "Dead zones aren't OBS-only anymore — they reposition the app's own layout too, so a webcam or alert box doesn't cover something you're actually using.",
-          'The visualizer panel shifts away from any overlapping dead zone; docked sidebars (Queue, Lyrics, Song Wars, Notepads) lose height instead of width, so nothing wraps awkwardly.',
-          'The dead-zone designer finally shows where its canvas edges actually are, plus a Preview toggle that overlays your current OBS widget positions next to where dead zones would push them.',
-        ],
-      },
-      {
-        icon: NotebookPen,
-        title: 'Notepads',
-        bullets: [
-          'New Notepads panel in Now Playing — write notes while audio plays, keep several open as tabs, and pop any of them out into their own window.',
-          "Save a notepad straight into the currently playing local file's tags; the note travels with the file and reopens automatically next time that track plays.",
-          'Useful for tracking a manual queue without Streamer Queue, leaving improvement notes on a mix, or writing a description for whoever the file gets shared with.',
-          'An Open Notepad button on the empty "nothing playing" screen too, since taking notes shouldn\'t require a track to be loaded.',
-        ],
-      },
-      {
-        icon: Dices,
-        title: 'Randomizer Tools, Reworked',
-        bullets: [
-          'Wheel entries are now edited as plain text, one per line, instead of adding them one at a time.',
-          'Each entry gets a settings flyout for color, font, and spin weighting — heavier entries get bigger slices and better odds.',
-          'Save and reload named wheels for later use.',
-        ],
-      },
-      {
-        icon: Bug,
-        title: 'Fixes',
-        bullets: [
-          "SoundCloud (and other remote sources) could leave the seek bar stuck on the previous track's end position while the next one loaded — position now resets immediately.",
-          "Redeemable visualizer images that referenced assets by their module's binding name instead of the CDN manifest's literal asset key now resolve correctly.",
-        ],
-      },
-    ],
-  },
-  {
-    version: '5.1.5',
-    label: 'Streamer toolkit',
-    date: 'Previous',
-    summary: 'A streamer-focused release: a standalone Streamer Queue with paid skips, OBS dead zones that keep overlays off your face cam, spin-the-wheel and coin-toss randomizer tools, a Song Wars overhaul, and a rewritten Shared Play with short room codes.',
-    metrics: ['Streamer Queue', 'OBS dead zones', 'Song Wars overhaul'],
-    groups: [
-      {
-        icon: ListMusic,
-        title: 'Streamer Queue',
-        bullets: [
-          'New standalone Streamer Queue nav section, decoupled from Shared Play — its own room IDs and owner tokens.',
-          'Viewers submit requests by link or file upload from a browser page; approve, reject, edit, or reorder from the desktop app.',
-          'Priority tiers for skip and super-skip requests, with optional Stripe pay-to-skip.',
-          'Fingerprint-based duplicate/spam scoring never leaves the server — API responses never expose it.',
-        ],
-      },
-      {
-        icon: Globe,
-        title: 'Album Worlds (.spectral)',
-        bullets: [
-          'Album worlds now open into a full world map instead of the old capsule page, with per-track JS-bridge navigation.',
-          'Session tracking for played seconds and completion per world visit.',
-          'Story renderer supports chapters plus a backstory fallback; capsule view shows a labeled backstory section.',
-          'Legacy v1/v2 spectralis and v0 spectral capsules keep working.',
-        ],
-      },
-      {
-        icon: Crosshair,
-        title: 'OBS Dead Zones',
-        bullets: [
-          'Draw dead zones over your webcam, alerts, or chat box in a new dead-zone designer.',
-          'Overlay widgets automatically push away from dead zones instead of overlapping them.',
-        ],
-      },
-      {
-        icon: Dices,
-        title: 'Randomizer Tools',
-        bullets: [
-          'New Randomizer Tools page with a coin flip and an animated spin wheel, side by side.',
-          'Wheel canvas is fully responsive and fills the available view.',
-        ],
-      },
-      {
-        icon: Trophy,
-        title: 'Song Wars',
-        bullets: [
-          'Song Wars panel can dock into the Now Playing sidebar or pop out into its own window.',
-          'Bracket UI overhaul — clearer title bar, bracket view, and fixed action buttons.',
-          'Skip now actually calls into the bracket engine instead of getting silently dropped.',
-        ],
-      },
-      {
-        icon: Minimize2,
-        title: 'Minimize to Tray',
-        bullets: [
-          'Closing the window minimizes to the system tray instead of quitting.',
-          'Discord Rich Presence now reports an idle state, with idle-time stats tracked alongside listening history.',
-        ],
-      },
-      {
-        icon: Palette,
-        title: 'Visualizer Color',
-        bullets: [
-          'Visualizer colors now follow the active app theme instead of a fixed palette.',
-        ],
-      },
-      {
-        icon: Users,
-        title: 'Shared Play v2',
-        bullets: [
-          'Shared Play sessions rewritten around short, SHA-256-derived 6-character room codes.',
-          'New channels/packages model for session state, presence, and reactions.',
-          'Redesigned web player with an immersive dark layout for browser listeners.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '5.0.4',
-    label: 'Cross-platform',
-    date: 'Previous',
-    summary: 'Spectralis goes cross-platform. Linux ships as a native x86_64 AppImage. Velopack replaces Squirrel for in-process auto-updates with delta patching, and Avalonia UI powers a shared rendering layer on Windows and Linux.',
-    metrics: ['Linux AppImage', 'Velopack updater', 'Delta patches'],
-    groups: [
-      {
-        icon: Terminal,
-        title: 'Linux Support',
-        bullets: [
-          'Native x86_64 AppImage — self-contained, no package manager or admin rights required.',
-          'Full feature parity with Windows: all visualizers, synced lyrics, Discord RPC, and OBS overlay server.',
-          '.desktop file and MIME type registration for native system integration.',
-          'Avalonia UI replaces WinForms, enabling a single shared rendering layer on both platforms.',
-        ],
-      },
-      {
-        icon: RefreshCw,
-        title: 'Velopack Auto-Updater',
-        bullets: [
-          'In-process update checks replace the legacy Squirrel installer.',
-          'Delta packages — only changed bytes are downloaded on each update.',
-          'Channel-aware release feed on the CDN (win-x64; linux-x64 feed coming next).',
-          'Updates apply silently on next launch — no UAC prompt, no manual installer.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.6.1',
-    label: 'UI polish',
-    date: 'Previous',
-    summary: 'A focused comfort pass for the 4.6 UI: clearer workspace navigation, a more useful visualizer toolbar, and menus grouped around how people actually use the app.',
-    metrics: ['Workflow fixes', 'View switching', 'Toolbar polish'],
-    groups: [
-      {
-        icon: MonitorPlay,
-        title: 'Main Window Flow',
-        bullets: [
-          'Visualizer selection, previous/next, peak hold, response, auto-cycle, and lyric inspection now live in one coherent toolbar.',
-          'Compact visualizer controls have clearer labels and hover hints.',
-          'Peak hold and visualizer response changes now persist immediately from the toolbar.',
-        ],
-      },
-      {
-        icon: Layers,
-        title: 'Library and Playlists',
-        bullets: [
-          'Library Browser and Playlists are explicit workspace views instead of ambiguous show/hide toggles.',
-          'The Library menu now includes a checked Now Playing view for getting back to playback.',
-          'Library and Playlist views span the full content area and stay visible while browsing.',
-          'Saving the queue as a playlist opens the Playlists workspace directly.',
-        ],
-      },
-      {
-        icon: Sparkles,
-        title: 'Menu Cleanup',
-        bullets: [
-          'Library actions are grouped around browsing, playlists, analysis, stats, scrobbling, and folders.',
-          'Tools are grouped into Audio, Creator, and Live instead of one flat mixed list.',
-          'Embedded content and YouTube video no longer jump in front of Library or Playlists.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.6.0',
-    label: 'Overhaul release',
-    date: 'Previous',
-    summary: 'A full creator-and-listener upgrade: library, playlists, metadata editing, scrobbling, analysis, effects, karaoke, and custom visualizer scripting.',
-    metrics: ['8 feature drops', 'Library-first workflow', 'Creator tooling'],
-    groups: [
-      {
-        icon: Music,
-        title: 'Library Management',
-        bullets: [
-          'Persistent local music library with watched folders and background scanning.',
-          'Automatic updates when tracks are added, removed, or renamed.',
-          'Search and browsing by tracks, artists, albums, and genres.',
-          'Play counts and last-played timestamps.',
-        ],
-      },
-      {
-        icon: FileCode2,
-        title: 'Tag Editor',
-        bullets: [
-          'Edit core metadata, BPM, comments, composer, and cover art.',
-          'Batch edit multiple files.',
-          'Fetch metadata from MusicBrainz and cover art from Cover Art Archive.',
-          'Creates a backup before the first metadata write.',
-        ],
-      },
-      {
-        icon: Layers,
-        title: 'Playlists',
-        bullets: [
-          'Persistent playlists with browser and editor screens.',
-          'Smart playlists powered by library metadata.',
-          'M3U and M3U8 import/open support.',
-          'Save the current queue as a playlist.',
-        ],
-      },
-      {
-        icon: Radio,
-        title: 'Scrobbling and Stats',
-        bullets: [
-          'Last.fm and ListenBrainz scrobbling.',
-          'Now-playing updates for connected services.',
-          'Offline scrobble queue with retry.',
-          'Local listening history and My Listening stats.',
-        ],
-      },
-      {
-        icon: BarChart3,
-        title: 'Beat Grid and Analysis',
-        bullets: [
-          'BPM and key analysis for library tracks.',
-          'Background library analysis with progress feedback.',
-          'On-demand analysis from the library browser.',
-          'Metronome seeded from the current track BPM.',
-        ],
-      },
-      {
-        icon: Activity,
-        title: 'Audio Effects',
-        bullets: [
-          'Real-time effects chain.',
-          '10-band EQ, compressor, reverb, and vocal remover.',
-          'Add, remove, reorder, enable, and tune effects in-app.',
-          'Playback pipeline rebuilds as settings change.',
-        ],
-      },
-      {
-        icon: Mic2,
-        title: 'Karaoke Mode',
-        bullets: [
-          'Full-screen lyric display with previous/current/next context.',
-          'Line and syllable-style lyric fill animation.',
-          'Playback control from the karaoke window.',
-          'Vocal blend slider backed by the effects chain.',
-        ],
-      },
-      {
-        icon: Sparkles,
-        title: 'Scripted Visualizers',
-        bullets: [
-          'JavaScript-based visualizer scripting runtime.',
-          'Local scripted visualizer storage.',
-          'Script manager and editor surface.',
-          'Canvas-like drawing context for custom visuals.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.5.x',
-    label: 'Song Wars',
-    date: 'Earlier',
-    summary: 'Introduced tournament mode foundations for live song battles.',
-    metrics: ['Tournament core', 'Judge voting', 'Smoke tests'],
-    groups: [
-      {
-        icon: GitFork,
-        title: 'Song Wars Tournament System',
-        bullets: [
-          'Local tournament setup with submissions, judges, brackets, and match state.',
-          'Double-elimination logic with winners bracket, losers bracket, grand finals, skips, byes, and replays.',
-          'Vote tally rules for 1-5 judges with pass, fail, eliminated, tie-skip, and no-majority outcomes.',
-          'Tournament persistence and smoke tests.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.4.x',
-    label: 'Lyrics engine',
-    date: 'Earlier',
-    summary: 'Expanded lyrics, metadata-driven playback, and the Song Wars plan.',
-    metrics: ['Lyric Inspector', 'Glow pack', 'Engine work'],
-    groups: [
-      {
-        icon: Mic2,
-        title: 'Lyrics and Playback Engines',
-        bullets: [
-          'Richer lyrics and visualizer support for track-driven experiences.',
-          'Lyric Inspector surface.',
-          'Multiple-engine playback and visualizer handling improvements.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.3.x',
-    label: 'Streaming tools',
-    date: 'Earlier',
-    summary: 'Shared Play, OBS, extension, legal, and integration polish.',
-    metrics: ['Shared Play polish', 'OBS editor', 'Extension'],
-    groups: [
-      {
-        icon: MonitorPlay,
-        title: 'Shared Play and OBS',
-        bullets: [
-          'Improved Shared Play rooms, browser player layout, cache behavior, and network handling.',
-          'Expanded OBS overlay tooling with editor/canvas work and layout smoke tests.',
-          'Added Chromium extension files and external-open IPC support.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.2.x',
-    label: 'Album worlds',
-    date: 'Earlier',
-    summary: 'Album worlds, MIDI playback, docs, and updater improvements.',
-    metrics: ['Album worlds', 'MIDI/KAR', 'Docs'],
-    groups: [
-      {
-        icon: Package,
-        title: 'Album Worlds and MIDI',
-        bullets: [
-          'Signed .spectral album world support.',
-          'Album capsule reading, runtime state, session storage, cache storage, and fallback UI.',
-          'MIDI and KAR playback with bundled SoundFont assets.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '4.0.x - 4.1.x',
-    label: 'Shared backend',
-    date: 'Earlier',
-    summary: 'Backend-backed Shared Play and Zero capsule hardening.',
-    metrics: ['Rust backend', 'Zero hardening', 'Web player'],
-    groups: [
-      {
-        icon: Shield,
-        title: 'Shared Play Backend and Zero Hardening',
-        bullets: [
-          'Rust Shared Play backend, Railway config, and browser player.',
-          'Shared Play cache, session, package, presence, queue, and reaction support.',
-          'Zero capsule lifecycle fixes, inactive handling, and animation-frame cleanup.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '3.x',
-    label: 'Capsules and OBS',
-    date: 'Earlier',
-    summary: 'Capsules, OBS overlays, video export, lyrics, and reactive content.',
-    metrics: ['Capsules', 'OBS overlay', 'Video export'],
-    groups: [
-      {
-        icon: Package,
-        title: 'Capsules, OBS, and Export',
-        bullets: [
-          'Signed .spectralis single-track capsules with creator trust checks.',
-          'Local OBS overlay server, layout presets, and high-DPI spectrum canvas.',
-          'Video export support, richer synced lyrics, Spotify lyrics, and reactive content packs.',
-        ],
-      },
-    ],
-  },
-  {
-    version: '1.x - 2.x',
-    label: 'Foundation',
-    date: 'Earlier',
-    summary: 'The first player, visualizers, metadata, lyrics, external sources, and Shared Play.',
-    metrics: ['Initial player', 'Visualizers', 'External sources'],
-    groups: [
-      {
-        icon: Waves,
-        title: 'Player Foundation',
-        bullets: [
-          'Windows desktop audio player with metadata extraction and synced .lrc lyrics.',
-          'Early visualizers, themes, embedded WASM/HTML experiences, and release packaging.',
-          'Shared Play foundations, queue improvements, Spotify groundwork, and external URL handling.',
-        ],
-      },
-    ],
-  },
+const CHANGELOG_URL = 'https://cdn.deltavdevs.com/spectralis/changelog.json'
+
+// changelog groups reference icons by name (CDN JSON can't carry components)
+const CHANGELOG_ICONS = {
+  Waves, Radio, Zap, Shield, FileCode2, Package, MonitorPlay, BarChart3,
+  Activity, Layers, Sparkles, Music, Mic2, Terminal, RefreshCw, ListMusic,
+  Globe, Crosshair, Dices, Trophy, Minimize2, Palette, Users, NotebookPen,
+  Bug, GitFork,
+}
+
+const SCREENSHOTS = [
+  { src: '/screenshots/mirror-spectrum.png', title: 'Mirror Spectrum', body: 'Live spectrum with synced lyrics panel.' },
+  { src: '/screenshots/streamer-queue.png',  title: 'Streamer Queue',  body: 'Viewer submissions, priority skips, queue settings.' },
+  { src: '/screenshots/randomizer.png',      title: 'Randomizer Tools', body: 'Weighted spin wheel and coin toss for stream decisions.' },
+  { src: '/screenshots/song-wars.png',       title: 'Song Wars',       body: 'Live bracket voting between tracks.' },
 ]
 
 // OBS preset definitions (from ObsOverlayHtml.cs source)
@@ -623,6 +232,7 @@ function Navbar({ page, navigate }) {
         ) : (
           <>
             <a href="#features"     onClick={(e) => goSection(e, 'features')}>Features</a>
+            <a href="#screenshots"  onClick={(e) => goSection(e, 'screenshots')}>Screenshots</a>
             <a href="#changelog"    onClick={(e) => goSection(e, 'changelog')}>Changelog</a>
             <a href="#visualizers"  onClick={(e) => goSection(e, 'visualizers')}>Visualizers</a>
             <a href="#obs"          onClick={(e) => goSection(e, 'obs')}>OBS</a>
@@ -637,7 +247,7 @@ function Navbar({ page, navigate }) {
           <Download size={13} />
           Downloads
         </a>
-        <a href="https://github.com/dareto-dream/audioplayer" target="_blank" className="navbar__gh">
+        <a href="https://github.com/dareto-dream/spectralis" target="_blank" className="navbar__gh">
           <GitFork size={14} />
           GitHub
           <ArrowUpRight size={12} className="navbar__gh-arrow" />
@@ -663,17 +273,17 @@ function Hero({ navigate }) {
         </div>
         <div className="hero__headline-block">
           <h1 className="hero__title">
-            The next gen<br />
-            of visual music<br />
-            experience<br />
-            is here.
+            One app.<br />
+            Plays it.<br />
+            Visualizes it.<br />
+            Streams it live.
           </h1>
         </div>
         <div className="hero__right-block">
           <p className="hero__sub">
-            Spectralis is an audio player built for listeners and artists
-            who demand more — cinematic visualizers, synced lyrics, signed capsule
-            releases, and live OBS overlays. Now on Windows and Linux.
+            Spectralis is a desktop audio player with real-time visualizers,
+            synced lyrics, signed capsule releases, and a live OBS overlay
+            server built in. Windows and Linux.
           </p>
           <div className="hero__actions">
             <a
@@ -739,12 +349,52 @@ function Features() {
   )
 }
 
+// ── screenshots ────────────────────────────────────────────────────────────────
+
+function ScreenshotsSection() {
+  return (
+    <section className="shots section" id="screenshots">
+      <div className="section__head">
+        <span className="section__label">In the app</span>
+        <h2 className="section__title">No mockups.<br />This is it running.</h2>
+      </div>
+      <div className="shots-grid">
+        {SCREENSHOTS.map(({ src, title, body }) => (
+          <figure key={src} className="shot-card">
+            <img src={src} alt={title} loading="lazy" />
+            <figcaption>
+              <span className="shot-card__title">{title}</span>
+              <span className="shot-card__body">{body}</span>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ── changelog ─────────────────────────────────────────────────────────────────
 
 function ChangelogSection() {
-  const [activeVersion, setActiveVersion] = useState(CHANGELOG_RELEASES[0].version)
-  const activeRelease = CHANGELOG_RELEASES.find(r => r.version === activeVersion) ?? CHANGELOG_RELEASES[0]
-  const isLatest = activeRelease.version === CHANGELOG_RELEASES[0].version
+  const [releases, setReleases] = useState(null)
+  const [loadError, setLoadError] = useState(false)
+  const [activeVersion, setActiveVersion] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(CHANGELOG_URL)
+      .then(res => { if (!res.ok) throw new Error(res.status); return res.json() })
+      .then(data => {
+        if (cancelled) return
+        setReleases(data)
+        setActiveVersion(data[0]?.version ?? null)
+      })
+      .catch(() => { if (!cancelled) setLoadError(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  const activeRelease = releases?.find(r => r.version === activeVersion) ?? releases?.[0]
+  const isLatest = activeRelease && releases && activeRelease.version === releases[0].version
 
   return (
     <section className="changelog section" id="changelog">
@@ -753,63 +403,78 @@ function ChangelogSection() {
         <h2 className="section__title">What changed,<br />by release.</h2>
       </div>
 
-      <div className="changelog-shell">
-        <nav className="changelog-rail" aria-label="Release versions">
-          <div className="changelog-rail__line" />
-          {CHANGELOG_RELEASES.map((release, i) => (
-            <button
-              key={release.version}
-              type="button"
-              className={`changelog-rail__item${release.version === activeVersion ? ' active' : ''}`}
-              onClick={() => setActiveVersion(release.version)}
-            >
-              <span className="changelog-rail__dot" />
-              <span className="changelog-rail__version">
-                {release.version}
-                {i === 0 && <span className="changelog-rail__badge">NEW</span>}
-              </span>
-              <span className="changelog-rail__label">{release.label}</span>
-            </button>
-          ))}
-        </nav>
+      {loadError && (
+        <p className="changelog-status">
+          Couldn't reach the changelog feed. <a href="https://github.com/dareto-dream/spectralis/releases" target="_blank">See releases on GitHub</a> instead.
+        </p>
+      )}
 
-        <article className="changelog-release">
-          {isLatest && (
-            <div className="changelog-release__latest-bar">
-              <span className="changelog-release__latest-dot" />
-              Latest release
-            </div>
-          )}
+      {!loadError && !releases && (
+        <p className="changelog-status">Loading changelog…</p>
+      )}
 
-          <div className="changelog-release__top">
-            <div>
-              <p className="changelog-release__eyebrow">{activeRelease.date}</p>
-              <h3 className="changelog-release__title">{activeRelease.version}</h3>
-            </div>
-            <div className="changelog-release__metrics">
-              {activeRelease.metrics.map(metric => (
-                <span key={metric}>{metric}</span>
-              ))}
-            </div>
-          </div>
-
-          <p className="changelog-release__summary">{activeRelease.summary}</p>
-
-          <div className="changelog-features">
-            {activeRelease.groups.map(({ icon: Icon, title, bullets }) => (
-              <section key={title} className="changelog-feature">
-                <div className="changelog-feature__head">
-                  <span className="changelog-feature__icon"><Icon size={16} /></span>
-                  <h4>{title}</h4>
-                </div>
-                <ul>
-                  {bullets.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              </section>
+      {activeRelease && (
+        <div className="changelog-shell">
+          <nav className="changelog-rail" aria-label="Release versions">
+            <div className="changelog-rail__line" />
+            {releases.map((release, i) => (
+              <button
+                key={release.version}
+                type="button"
+                className={`changelog-rail__item${release.version === activeVersion ? ' active' : ''}`}
+                onClick={() => setActiveVersion(release.version)}
+              >
+                <span className="changelog-rail__dot" />
+                <span className="changelog-rail__version">
+                  {release.version}
+                  {i === 0 && <span className="changelog-rail__badge">NEW</span>}
+                </span>
+                <span className="changelog-rail__label">{release.label}</span>
+              </button>
             ))}
-          </div>
-        </article>
-      </div>
+          </nav>
+
+          <article className="changelog-release">
+            {isLatest && (
+              <div className="changelog-release__latest-bar">
+                <span className="changelog-release__latest-dot" />
+                Latest release
+              </div>
+            )}
+
+            <div className="changelog-release__top">
+              <div>
+                <p className="changelog-release__eyebrow">{activeRelease.date}</p>
+                <h3 className="changelog-release__title">{activeRelease.version}</h3>
+              </div>
+              <div className="changelog-release__metrics">
+                {activeRelease.metrics.map(metric => (
+                  <span key={metric}>{metric}</span>
+                ))}
+              </div>
+            </div>
+
+            <p className="changelog-release__summary">{activeRelease.summary}</p>
+
+            <div className="changelog-features">
+              {activeRelease.groups.map(({ icon, title, bullets }) => {
+                const Icon = CHANGELOG_ICONS[icon] ?? Sparkles
+                return (
+                  <section key={title} className="changelog-feature">
+                    <div className="changelog-feature__head">
+                      <span className="changelog-feature__icon"><Icon size={16} /></span>
+                      <h4>{title}</h4>
+                    </div>
+                    <ul>
+                      {bullets.map(item => <li key={item}>{item}</li>)}
+                    </ul>
+                  </section>
+                )
+              })}
+            </div>
+          </article>
+        </div>
+      )}
     </section>
   )
 }
@@ -940,7 +605,7 @@ function CTASection({ navigate }) {
       <div className="cta-inner">
         <img src="/icon.png" alt="Spectralis" className="cta-logo" />
         <div className="cta-text">
-          <h2 className="cta-title">Download free.<br />Hear it differently.</h2>
+          <h2 className="cta-title">Download free.<br />Run it locally.</h2>
           <p className="cta-sub">Windows 10/11 · Linux x86_64 · No sign-in · Free</p>
           <div className="cta-actions">
             <a
@@ -951,7 +616,7 @@ function CTASection({ navigate }) {
               <Download size={16} />
               Get Spectralis
             </a>
-            <a href="https://github.com/dareto-dream/audioplayer" target="_blank" className="btn btn--ghost btn--lg">
+            <a href="https://github.com/dareto-dream/spectralis" target="_blank" className="btn btn--ghost btn--lg">
               <GitFork size={16} />
               View on GitHub
             </a>
@@ -1128,7 +793,7 @@ function DownloadsPage({ navigate }) {
           ← Back to home
         </a>
         <a
-          href="https://github.com/dareto-dream/audioplayer"
+          href="https://github.com/dareto-dream/spectralis"
           target="_blank"
           className="btn btn--ghost"
         >
@@ -1151,7 +816,7 @@ function Footer({ navigate }) {
           <img src="/icon.png" alt="Spectralis" className="footer__logo" />
           <div>
             <p className="footer__name">Spectralis</p>
-            <p className="footer__sub">The next gen of visual music experience.</p>
+            <p className="footer__sub">Audio player, visualizer, and OBS overlay server.</p>
           </div>
         </div>
         <div className="footer__mid">
@@ -1170,12 +835,13 @@ function Footer({ navigate }) {
         </div>
         <nav className="footer__nav">
           <a href="#features">Features</a>
+          <a href="#screenshots">Screenshots</a>
           <a href="#changelog">Changelog</a>
           <a href="#visualizers">Visualizers</a>
           <a href="#obs">OBS</a>
           <a href="#capsule">Capsule</a>
           <a href="#" onClick={(e) => { e.preventDefault(); navigate('downloads') }}>Downloads</a>
-          <a href="https://github.com/dareto-dream/audioplayer" target="_blank">GitHub ↗</a>
+          <a href="https://github.com/dareto-dream/spectralis" target="_blank">GitHub ↗</a>
         </nav>
         <p className="footer__copy">© 2025 DeltaV Devs</p>
       </div>
@@ -1202,6 +868,7 @@ export default function App() {
         <>
           <Hero navigate={navigate} />
           <Features />
+          <ScreenshotsSection />
           <ChangelogSection />
           <Visualizers />
           <OBSSection />
