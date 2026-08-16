@@ -520,6 +520,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public Action? SongWarsPopOutRequested { get; set; }
 
+    /// <summary>Raised when LoadUrlAsync fails to resolve/download a remote source (e.g.
+    /// yt-dlp blocked from a video that disables embedding). View shows a friendly
+    /// "can't play this" prompt with Open in Browser / Cancel instead of a raw error.
+    /// Args: (source URL to offer opening, technical error message for the log).</summary>
+    public Action<string, string>? RemoteLoadFailedRequested { get; set; }
+
     public bool SongWarsHasSession => _songWarsSession is not null;
     public string SongWarsTournamentName => _songWarsSession?.Tournament.Name ?? "";
     public string SongWarsTrackAName => _songWarsSession?.CurrentTrackA?.DisplayTitle ?? "—";
@@ -2206,6 +2212,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             LoadError = ex.Message;
             RemoteStatus = string.Empty;
             IsOpeningRemote = false;
+            RemoteLoadFailedRequested?.Invoke(input, ex.Message);
             return;
         }
 
@@ -2338,6 +2345,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             RemoteAudioCache.TryDelete(cachedPath);
             LoadError = ex.Message;
             RemoteStatus = string.Empty;
+            RemoteLoadFailedRequested?.Invoke(resolved.SourceUrl, ex.Message);
         }
         finally
         {
