@@ -5,6 +5,8 @@ export interface GuildLink {
   botToken: string | null;
   linkedBy: string;
   linkedAt: string;
+  openMessage: string | null;
+  closedMessage: string | null;
 }
 
 export interface SqFeeSettings {
@@ -38,6 +40,26 @@ export interface SqPublicRoom {
   nowPlayingTier: string | null;
   nowPlayingTitle: string | null;
   nowPlayingArtist: string | null;
+}
+
+export interface SqSubmission {
+  id: string;
+  displayName: string;
+  title: string | null;
+  artist: string | null;
+  url: string | null;
+  sourceKind: 'link' | 'upload';
+  tier: 'normal' | 'skip' | 'super_skip';
+  status: 'pending' | 'queued' | 'approved' | 'playing' | 'played' | 'rejected' | 'awaiting_payment' | 'payment_failed';
+  submittedAtUtc: string;
+}
+
+/** Shape returned to a valid botToken (or ownerToken) — same as the owner view minus
+ * ownerToken itself. Includes per-submission status, which the public view omits and
+ * the reaction-lifecycle poller needs. */
+export interface SqBotRoom extends SqPublicRoom {
+  submissions: SqSubmission[];
+  orderedQueue: SqSubmission[];
 }
 
 export interface SqSubmitResponse {

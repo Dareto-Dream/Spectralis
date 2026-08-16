@@ -27,7 +27,26 @@ db.exec(`
     submitted_at    TEXT NOT NULL,
     PRIMARY KEY (discord_user_id, guild_id, channel_id)
   );
+
+  CREATE TABLE IF NOT EXISTS tracked_submissions (
+    submission_id TEXT PRIMARY KEY,
+    guild_id      TEXT NOT NULL,
+    channel_id    TEXT NOT NULL,
+    message_id    TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    tracked_at    TEXT NOT NULL
+  );
 `);
+
+// Lightweight migration for columns added after guild_links first shipped — ALTER
+// TABLE errors if the column already exists, which is fine, we just want it present.
+for (const col of ['open_message TEXT', 'closed_message TEXT']) {
+  try {
+    db.exec(`ALTER TABLE guild_links ADD COLUMN ${col}`);
+  } catch {
+    // already present
+  }
+}
 
 interface GuildLinkRow {
   guild_id: string;
@@ -36,6 +55,8 @@ interface GuildLinkRow {
   bot_token: string | null;
   linked_by: string;
   linked_at: string;
+  open_message: string | null;
+  closed_message: string | null;
 }
 
 function rowToLink(row: GuildLinkRow): GuildLink {
@@ -46,6 +67,8 @@ function rowToLink(row: GuildLinkRow): GuildLink {
     botToken: row.bot_token,
     linkedBy: row.linked_by,
     linkedAt: row.linked_at,
+    openMessage: row.open_message,
+    closedMessage: row.closed_message,
   };
 }
 
@@ -56,7 +79,7 @@ export function getLink(guildId: string, channelId: string): GuildLink | null {
   return row ? rowToLink(row) : null;
 }
 
-export function saveLink(link: GuildLink): void {
+export function saveLink(link: Omit<GuildLink, 'openMessage' | 'closedMessage'>): void {
   db.prepare(
     `INSERT INTO guild_links (guild_id, channel_id, room_id, bot_token, linked_by, linked_at)
      VALUES (@guildId, @channelId, @roomId, @botToken, @linkedBy, @linkedAt)
@@ -76,6 +99,44 @@ export function removeLink(guildId: string, channelId: string): boolean {
 export function allLinks(): GuildLink[] {
   const rows = db.prepare('SELECT * FROM guild_links').all() as GuildLinkRow[];
   return rows.map(rowToLink);
+}
+
+export function setOpenMessage(guildId: string, channelId: string, message: string | null): void {
+  db.prepare('UPDATE guild_links SET open_message = ? WHERE guild_id = ? AND channel_id = ?').run(message, guildId, channelId);
+}
+
+export function setClosedMessage(guildId: string, channelId: string, message: string | null): void {
+  db.prepare('UPDATE guild_links SET closed_message = ? WHERE guild_id = ? AND channel_id = ?').run(message, guildId, channelId);
+}
+
+interface TrackedSubmissionRow {
+  submission_id: string;
+  guild_id: string;
+  channel_id: string;
+  message_id: string;
+  status: string;
+}
+
+export function trackSubmission(submissionId: string, guildId: string, channelId: string, messageId: string, status: string): void {
+  db.prepare(
+    `INSERT INTO tracked_submissions (submission_id, guild_id, channel_id, message_id, status, tracked_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(submission_id) DO UPDATE SET status = excluded.status`,
+  ).run(submissionId, guildId, channelId, messageId, status, new Date().toISOString());
+}
+
+export function trackedForChannel(guildId: string, channelId: string): TrackedSubmissionRow[] {
+  return db
+    .prepare('SELECT * FROM tracked_submissions WHERE guild_id = ? AND channel_id = ?')
+    .all(guildId, channelId) as TrackedSubmissionRow[];
+}
+
+export function updateTrackedStatus(submissionId: string, status: string): void {
+  db.prepare('UPDATE tracked_submissions SET status = ? WHERE submission_id = ?').run(status, submissionId);
+}
+
+export function untrackSubmission(submissionId: string): void {
+  db.prepare('DELETE FROM tracked_submissions WHERE submission_id = ?').run(submissionId);
 }
 
 export function rememberSubmission(discordUserId: string, guildId: string, channelId: string, submissionId: string): void {

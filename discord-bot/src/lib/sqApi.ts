@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import type { SqPromoteResponse, SqPublicRoom, SqSubmitResponse } from '../types.js';
+import type { SqBotRoom, SqPromoteResponse, SqPublicRoom, SqSubmitResponse } from '../types.js';
 
 const BASE = config.sqApiBaseUrl;
 
@@ -40,6 +40,14 @@ export async function getRoom(roomId: string): Promise<SqPublicRoom> {
   return request<SqPublicRoom>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}`);
 }
 
+/** Elevated view (submission-level status) via the scoped bot token — see PLANNING.md
+ * and get_sq_room's is_bot branch in main.rs. Used by the reaction-lifecycle poller. */
+export async function getRoomAsBot(roomId: string, botToken: string): Promise<SqBotRoom> {
+  return request<SqBotRoom>(
+    `/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}?botToken=${encodeURIComponent(botToken)}`,
+  );
+}
+
 export async function submitRequest(
   roomId: string,
   discordUserId: string,
@@ -51,6 +59,37 @@ export async function submitRequest(
     method: 'POST',
     body: JSON.stringify({ url, displayName, tier, ...fingerprintFor(discordUserId) }),
   });
+}
+
+export async function uploadFile(
+  roomId: string,
+  discordUserId: string,
+  displayName: string,
+  fileBytes: Uint8Array,
+  filename: string,
+  tier: 'normal' | 'skip' | 'super_skip' = 'normal',
+): Promise<SqSubmitResponse> {
+  const fp = fingerprintFor(discordUserId);
+  const form = new FormData();
+  form.append('file', new Blob([Buffer.from(fileBytes)]), filename);
+  form.append('displayName', displayName);
+  form.append('tier', tier);
+  form.append('fpCookie', fp.fpCookie);
+  form.append('fpUa', fp.fpUa);
+  form.append('fpScreen', fp.fpScreen);
+  form.append('fpTz', String(fp.fpTz));
+
+  // Multipart needs its own boundary content-type fetch sets from the FormData body —
+  // request() always forces application/json, so this bypasses it.
+  const res = await fetch(`${BASE}/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new SqApiError(res.status, body || `SQ API error ${res.status}`);
+  }
+  return (await res.json()) as SqSubmitResponse;
 }
 
 export async function promoteSubmission(

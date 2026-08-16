@@ -1,8 +1,9 @@
-import { Client, Collection, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { ActivityType, Client, Collection, Events, GatewayIntentBits, Partials, REST, Routes } from 'discord.js';
 import type { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import { config } from './lib/config.js';
 import { allLinks } from './lib/db.js';
 import { startPolling } from './lib/nowPlayingPoller.js';
+import { handlePotentialSubmission } from './lib/messageSubmission.js';
 
 import * as linkQueue from './commands/link-queue.js';
 import * as unlinkQueue from './commands/unlink-queue.js';
@@ -12,13 +13,26 @@ import * as skip from './commands/skip.js';
 import * as superskip from './commands/superskip.js';
 import * as closeQueue from './commands/close-queue.js';
 import * as openQueue from './commands/open-queue.js';
+import * as setOpenMessage from './commands/set-open-message.js';
+import * as setClosedMessage from './commands/set-closed-message.js';
 
 interface Command {
   data: SlashCommandBuilder;
   execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
 }
 
-const commands: Command[] = [linkQueue, unlinkQueue, queue, request, skip, superskip, closeQueue, openQueue] as Command[];
+const commands: Command[] = [
+  linkQueue,
+  unlinkQueue,
+  queue,
+  request,
+  skip,
+  superskip,
+  closeQueue,
+  openQueue,
+  setOpenMessage,
+  setClosedMessage,
+] as Command[];
 const commandsByName = new Collection<string, Command>(commands.map((c) => [c.data.name, c]));
 
 async function registerCommands(): Promise<void> {
@@ -28,13 +42,21 @@ async function registerCommands(): Promise<void> {
   });
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Message, Partials.Reaction],
+});
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
+  readyClient.user.setPresence({ status: 'online', activities: [{ name: 'streamer queues', type: ActivityType.Watching }] });
   const links = allLinks();
   links.forEach((link, i) => startPolling(client, link, i));
   console.log(`Polling ${links.length} linked channel(s).`);
+});
+
+client.on(Events.MessageCreate, (message) => {
+  void handlePotentialSubmission(message);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
