@@ -247,7 +247,7 @@ function Navbar({ page, navigate }) {
           <Download size={13} />
           Downloads
         </a>
-        <a href="https://github.com/dareto-dream/audioplayer" target="_blank" className="navbar__gh">
+        <a href="https://github.com/dareto-dream/spectralis" target="_blank" className="navbar__gh">
           <GitFork size={14} />
           GitHub
           <ArrowUpRight size={12} className="navbar__gh-arrow" />
@@ -616,7 +616,7 @@ function CTASection({ navigate }) {
               <Download size={16} />
               Get Spectralis
             </a>
-            <a href="https://github.com/dareto-dream/audioplayer" target="_blank" className="btn btn--ghost btn--lg">
+            <a href="https://github.com/dareto-dream/spectralis" target="_blank" className="btn btn--ghost btn--lg">
               <GitFork size={16} />
               View on GitHub
             </a>
@@ -793,7 +793,7 @@ function DownloadsPage({ navigate }) {
           ← Back to home
         </a>
         <a
-          href="https://github.com/dareto-dream/audioplayer"
+          href="https://github.com/dareto-dream/spectralis"
           target="_blank"
           className="btn btn--ghost"
         >
