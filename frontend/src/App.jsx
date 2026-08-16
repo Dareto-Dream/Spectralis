@@ -362,63 +362,78 @@ function ChangelogSection() {
         <h2 className="section__title">What changed,<br />by release.</h2>
       </div>
 
-      <div className="changelog-shell">
-        <nav className="changelog-rail" aria-label="Release versions">
-          <div className="changelog-rail__line" />
-          {CHANGELOG_RELEASES.map((release, i) => (
-            <button
-              key={release.version}
-              type="button"
-              className={`changelog-rail__item${release.version === activeVersion ? ' active' : ''}`}
-              onClick={() => setActiveVersion(release.version)}
-            >
-              <span className="changelog-rail__dot" />
-              <span className="changelog-rail__version">
-                {release.version}
-                {i === 0 && <span className="changelog-rail__badge">NEW</span>}
-              </span>
-              <span className="changelog-rail__label">{release.label}</span>
-            </button>
-          ))}
-        </nav>
+      {loadError && (
+        <p className="changelog-status">
+          Couldn't reach the changelog feed. <a href="https://github.com/dareto-dream/spectralis/releases" target="_blank">See releases on GitHub</a> instead.
+        </p>
+      )}
 
-        <article className="changelog-release">
-          {isLatest && (
-            <div className="changelog-release__latest-bar">
-              <span className="changelog-release__latest-dot" />
-              Latest release
-            </div>
-          )}
+      {!loadError && !releases && (
+        <p className="changelog-status">Loading changelog…</p>
+      )}
 
-          <div className="changelog-release__top">
-            <div>
-              <p className="changelog-release__eyebrow">{activeRelease.date}</p>
-              <h3 className="changelog-release__title">{activeRelease.version}</h3>
-            </div>
-            <div className="changelog-release__metrics">
-              {activeRelease.metrics.map(metric => (
-                <span key={metric}>{metric}</span>
-              ))}
-            </div>
-          </div>
-
-          <p className="changelog-release__summary">{activeRelease.summary}</p>
-
-          <div className="changelog-features">
-            {activeRelease.groups.map(({ icon: Icon, title, bullets }) => (
-              <section key={title} className="changelog-feature">
-                <div className="changelog-feature__head">
-                  <span className="changelog-feature__icon"><Icon size={16} /></span>
-                  <h4>{title}</h4>
-                </div>
-                <ul>
-                  {bullets.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              </section>
+      {activeRelease && (
+        <div className="changelog-shell">
+          <nav className="changelog-rail" aria-label="Release versions">
+            <div className="changelog-rail__line" />
+            {releases.map((release, i) => (
+              <button
+                key={release.version}
+                type="button"
+                className={`changelog-rail__item${release.version === activeVersion ? ' active' : ''}`}
+                onClick={() => setActiveVersion(release.version)}
+              >
+                <span className="changelog-rail__dot" />
+                <span className="changelog-rail__version">
+                  {release.version}
+                  {i === 0 && <span className="changelog-rail__badge">NEW</span>}
+                </span>
+                <span className="changelog-rail__label">{release.label}</span>
+              </button>
             ))}
-          </div>
-        </article>
-      </div>
+          </nav>
+
+          <article className="changelog-release">
+            {isLatest && (
+              <div className="changelog-release__latest-bar">
+                <span className="changelog-release__latest-dot" />
+                Latest release
+              </div>
+            )}
+
+            <div className="changelog-release__top">
+              <div>
+                <p className="changelog-release__eyebrow">{activeRelease.date}</p>
+                <h3 className="changelog-release__title">{activeRelease.version}</h3>
+              </div>
+              <div className="changelog-release__metrics">
+                {activeRelease.metrics.map(metric => (
+                  <span key={metric}>{metric}</span>
+                ))}
+              </div>
+            </div>
+
+            <p className="changelog-release__summary">{activeRelease.summary}</p>
+
+            <div className="changelog-features">
+              {activeRelease.groups.map(({ icon, title, bullets }) => {
+                const Icon = CHANGELOG_ICONS[icon] ?? Sparkles
+                return (
+                  <section key={title} className="changelog-feature">
+                    <div className="changelog-feature__head">
+                      <span className="changelog-feature__icon"><Icon size={16} /></span>
+                      <h4>{title}</h4>
+                    </div>
+                    <ul>
+                      {bullets.map(item => <li key={item}>{item}</li>)}
+                    </ul>
+                  </section>
+                )
+              })}
+            </div>
+          </article>
+        </div>
+      )}
     </section>
   )
 }
