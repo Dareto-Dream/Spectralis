@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using ReactiveUI;
 using Spectralis.App.Services;
+using Spectralis.Core.Metadata;
 using Spectralis.Core.StreamerQueue;
 
 namespace Spectralis.App.ViewModels;
@@ -11,6 +12,8 @@ namespace Spectralis.App.ViewModels;
 public sealed class SqItemVm : ViewModelBase
 {
     private bool _isPending;
+    private string _title;
+    private string? _artist;
 
     public SqItemVm(SqSubmission sub,
         Action<string> onApprove,
@@ -20,8 +23,8 @@ public sealed class SqItemVm : ViewModelBase
     {
         Id = sub.Id;
         DisplayName = sub.DisplayName;
-        Title = sub.Title ?? "(untitled)";
-        Artist = sub.Artist;
+        _title = sub.Title ?? "(untitled)";
+        _artist = sub.Artist;
         Tier = sub.Tier;
         Status = sub.Status;
         DurationSeconds = sub.DurationSeconds;
@@ -39,8 +42,22 @@ public sealed class SqItemVm : ViewModelBase
 
     public string Id { get; }
     public string DisplayName { get; }
-    public string Title { get; }
-    public string? Artist { get; }
+
+    /// <summary>Settable so a background metadata scrape (see
+    /// StreamerQueueViewModel.ScrapeMetadataAsync) can fill in an accurate title/artist
+    /// after the item is already on screen, instead of waiting for the next poll tick.</summary>
+    public string Title
+    {
+        get => _title;
+        set => this.RaiseAndSetIfChanged(ref _title, value);
+    }
+
+    public string? Artist
+    {
+        get => _artist;
+        set => this.RaiseAndSetIfChanged(ref _artist, value);
+    }
+
     public SqTier Tier { get; }
     public SqStatus Status { get; }
     public double? DurationSeconds { get; }
@@ -75,7 +92,18 @@ public sealed class SqItemVm : ViewModelBase
 public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 {
     private readonly StreamerQueueRoomController _controller = new();
+    private readonly OpenUrlService _openUrlService = new();
     private CancellationTokenSource _pollCts = new();
+
+    // ── Metadata scraping ────────────────────────────────────────────────────────
+    // Submissions from Discord (or anywhere else that doesn't run its own metadata
+    // lookup) can land with a null title/artist. Rather than showing that forever,
+    // resolve+download the source once in the background and cache the result here —
+    // the backend has no title for this submission until someone edits it, so this
+    // local cache is what makes the queue list show something accurate.
+    private readonly Dictionary<string, (string? Title, string? Artist)> _scrapedMetadata = new();
+    private readonly HashSet<string> _scrapeInFlight = new();
+    private readonly SemaphoreSlim _scrapeGate = new(2);
 
     // ── State ─────────────────────────────────────────────────────────────────
     private bool _hasRoom;
@@ -595,17 +623,81 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         foreach (var sub in (room.Submissions ?? []).Where(s => s.Status == SqStatus.Pending))
             PendingItems.Add(MakeSqItemVm(sub));
 
+        // Drop scraped-metadata entries for submissions that left the queue (played,
+        // rejected, deleted) so this doesn't grow for the life of the app session.
+        var liveIds = (room.Submissions ?? []).Select(s => s.Id).ToHashSet();
+        foreach (var staleId in _scrapedMetadata.Keys.Where(id => !liveIds.Contains(id)).ToList())
+            _scrapedMetadata.Remove(staleId);
+
         this.RaisePropertyChanged(nameof(NowPlayingItem));
         StatusText = !SqEnabled ? "Queue disabled"
             : !AcceptingSubmissions ? $"{QueueItems.Count} in queue (closed to new requests)"
             : $"{QueueItems.Count} in queue";
     }
 
-    private SqItemVm MakeSqItemVm(SqSubmission sub) => new(sub,
-        id => _ = ApproveAsync(id),
-        id => _ = RejectAsync(id),
-        id => _ = DeleteAsync(id),
-        item => _ = PlayItemAsync(item));
+    private SqItemVm MakeSqItemVm(SqSubmission sub)
+    {
+        var item = new SqItemVm(sub,
+            id => _ = ApproveAsync(id),
+            id => _ = RejectAsync(id),
+            id => _ = DeleteAsync(id),
+            item => _ = PlayItemAsync(item));
+
+        if (_scrapedMetadata.TryGetValue(sub.Id, out var cached))
+        {
+            if (!string.IsNullOrWhiteSpace(cached.Title)) item.Title = cached.Title!;
+            if (!string.IsNullOrWhiteSpace(cached.Artist)) item.Artist = cached.Artist;
+        }
+        else if (sub.SourceKind == "link" && !string.IsNullOrWhiteSpace(sub.Url) && string.IsNullOrWhiteSpace(sub.Title))
+        {
+            _ = ScrapeMetadataAsync(sub.Id, sub.Url, item);
+        }
+
+        return item;
+    }
+
+    /// <summary>Downloads sub.Url through the same resolver actual playback uses (so
+    /// YouTube/SoundCloud/etc. get real title/artist, not just a URL-derived guess),
+    /// reads embedded tags for plain audio files, then discards the download — this is
+    /// only here to name the queue entry, not to pre-cache it for playback.</summary>
+    private async Task ScrapeMetadataAsync(string submissionId, string url, SqItemVm item)
+    {
+        if (!_scrapeInFlight.Add(submissionId)) return;
+        await _scrapeGate.WaitAsync();
+        string? cachedPath = null;
+        try
+        {
+            var resolved = await _openUrlService.ResolveAsync(url, CancellationToken.None, quickOnly: true);
+            var title = resolved.Title;
+            var artist = resolved.Artist;
+
+            if (resolved.Kind == RemoteAudioServiceKind.DirectAudio)
+            {
+                // A plain file link (e.g. a raw .mp3 URL) only gets a filename-derived
+                // title from the quick resolve — download it and read the embedded tags
+                // for the real thing instead.
+                cachedPath = await RemoteAudioCache.DownloadAsync(
+                    resolved.AudioUrl, resolved.DownloadExtension, CancellationToken.None, requestInitialRange: true);
+                var tags = TrackMetadataReader.Read(cachedPath);
+                if (!string.IsNullOrWhiteSpace(tags.Title)) title = tags.Title;
+                if (!string.IsNullOrWhiteSpace(tags.Artist)) artist = tags.Artist;
+            }
+
+            _scrapedMetadata[submissionId] = (title, artist);
+            if (!string.IsNullOrWhiteSpace(title)) item.Title = title!;
+            if (!string.IsNullOrWhiteSpace(artist)) item.Artist = artist;
+        }
+        catch
+        {
+            _scrapedMetadata[submissionId] = (null, null);
+        }
+        finally
+        {
+            RemoteAudioCache.TryDelete(cachedPath);
+            _scrapeInFlight.Remove(submissionId);
+            _scrapeGate.Release();
+        }
+    }
 
     private void UpdateSubmitUrl()
     {
