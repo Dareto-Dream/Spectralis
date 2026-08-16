@@ -2,6 +2,9 @@ import { PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { getLink } from '../lib/db.js';
 import { setAcceptingSubmissions } from '../lib/sqApi.js';
+import { lockChannel } from '../lib/channelLock.js';
+
+const DEFAULT_CLOSED_MESSAGE = '---- QUEUE CLOSED ----';
 
 export const data = new SlashCommandBuilder()
   .setName('close-queue')
@@ -27,6 +30,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply({ ephemeral: true });
   try {
     await setAcceptingSubmissions(link.roomId, link.botToken, false);
+    await lockChannel(interaction.client, link.guildId, link.channelId);
+    if (interaction.channel?.isSendable()) {
+      await interaction.channel.send(link.closedMessage ?? DEFAULT_CLOSED_MESSAGE);
+    }
     await interaction.editReply('✅ Queue closed to new requests. Existing tracks are still playable.');
   } catch (err) {
     await interaction.editReply(`Couldn't close the queue (${(err as Error).message}).`);

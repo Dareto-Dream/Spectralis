@@ -31,7 +31,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       linkedAt: new Date().toISOString(),
     };
     saveLink(link);
-    startPolling(interaction.client, link);
+    startPolling(interaction.client, { ...link, openMessage: null, closedMessage: null });
     await interaction.editReply(`✅ Linked this channel to queue \`${roomId}\`. Now-playing updates will start posting here.`);
   } catch (err) {
     await interaction.editReply(`Couldn't link that PIN (${(err as Error).message}).`);
