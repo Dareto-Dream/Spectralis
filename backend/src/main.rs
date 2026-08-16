@@ -3160,8 +3160,17 @@ async fn get_sq_room(
         .get("ownerToken")
         .map(|t| sq_owner_token_valid(&room, t))
         .unwrap_or(false);
+    // The bot needs submission-level detail (status per track) to react to Discord
+    // messages correctly, so it gets the same shape as the owner. sq_build_response
+    // already strips ownerToken; discordBotToken staying in is harmless since the bot
+    // already holds that exact value.
+    let is_bot = if is_owner {
+        false
+    } else {
+        query.get("botToken").map(|t| sq_bot_token_valid(&room, t)).unwrap_or(false)
+    };
 
-    if is_owner {
+    if is_owner || is_bot {
         Ok(Json(sq_build_response(room)))
     } else {
         // Public view: only enabled settings + submission count + ordered queue positions
