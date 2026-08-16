@@ -273,17 +273,17 @@ function Hero({ navigate }) {
         </div>
         <div className="hero__headline-block">
           <h1 className="hero__title">
-            The next gen<br />
-            of visual music<br />
-            experience<br />
-            is here.
+            One app.<br />
+            Plays it.<br />
+            Visualizes it.<br />
+            Streams it live.
           </h1>
         </div>
         <div className="hero__right-block">
           <p className="hero__sub">
-            Spectralis is an audio player built for listeners and artists
-            who demand more — cinematic visualizers, synced lyrics, signed capsule
-            releases, and live OBS overlays. Now on Windows and Linux.
+            Spectralis is a desktop audio player with real-time visualizers,
+            synced lyrics, signed capsule releases, and a live OBS overlay
+            server built in. Windows and Linux.
           </p>
           <div className="hero__actions">
             <a
@@ -605,7 +605,7 @@ function CTASection({ navigate }) {
       <div className="cta-inner">
         <img src="/icon.png" alt="Spectralis" className="cta-logo" />
         <div className="cta-text">
-          <h2 className="cta-title">Download free.<br />Hear it differently.</h2>
+          <h2 className="cta-title">Download free.<br />Run it locally.</h2>
           <p className="cta-sub">Windows 10/11 · Linux x86_64 · No sign-in · Free</p>
           <div className="cta-actions">
             <a
@@ -816,7 +816,7 @@ function Footer({ navigate }) {
           <img src="/icon.png" alt="Spectralis" className="footer__logo" />
           <div>
             <p className="footer__name">Spectralis</p>
-            <p className="footer__sub">The next gen of visual music experience.</p>
+            <p className="footer__sub">Audio player, visualizer, and OBS overlay server.</p>
           </div>
         </div>
         <div className="footer__mid">
