@@ -139,7 +139,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         RandomizerTools = new RandomizerToolsViewModel();
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
-        StreamerQueue.PlayTrackRequested = url => NowPlaying.LoadUrlAsync(url);
+        StreamerQueue.PlayTrackRequested = PlayStreamerQueueTrackAsync;
         SongWars = new SongWarsViewModel(AppSettings);
         NowPlaying.PropertyChanged += (_, e) =>
         {
@@ -504,6 +504,26 @@ public sealed class MainWindowViewModel : ViewModelBase
             await NowPlaying.LoadPreResolvedUrlAsync(resolved);
             return;
         }
+        await NowPlaying.LoadUrlAsync(url);
+    }
+
+    /// <summary>
+    /// Streamer Queue submissions play through a plain remote URL, but .spectral/.spectralis
+    /// capsules aren't audio files — they're a local-file package format (see
+    /// CapsulesViewModel.OpenFilesAsync) that native playback and OpenUrlService's yt-dlp
+    /// fallback don't know how to handle. Download those to a temp file first and hand them
+    /// to the capsule loader instead of treating them as a plain remote audio URL.
+    /// </summary>
+    private async Task PlayStreamerQueueTrackAsync(string url)
+    {
+        var extension = Path.GetExtension(new Uri(url).AbsolutePath);
+        if (CapsulesViewModel.IsPackageExtension(extension))
+        {
+            var tempPath = await RemoteAudioCache.DownloadAsync(url, extension, CancellationToken.None);
+            await Capsules.OpenFilesAsync([tempPath], startPlayback: true);
+            return;
+        }
+
         await NowPlaying.LoadUrlAsync(url);
     }
 

@@ -430,6 +430,12 @@ public sealed class CapsulesViewModel : ViewModelBase
     public static bool IsPackage(string path) =>
         IsSpectralisCapsule(path) || IsSpectralAlbum(path);
 
+    /// <summary>Same check as <see cref="IsPackage"/> but against a bare extension (e.g. from a
+    /// remote URL's path) rather than a local file path.</summary>
+    public static bool IsPackageExtension(string extension) =>
+        extension.Equals(".spectralis", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".spectral", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsSpectralisCapsule(string path) =>
         string.Equals(Path.GetExtension(path), ".spectralis", StringComparison.OrdinalIgnoreCase);
 
