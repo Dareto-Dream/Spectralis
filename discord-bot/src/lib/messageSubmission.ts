@@ -1,6 +1,7 @@
 import type { Message } from 'discord.js';
 import { getLink, rememberSubmission, trackSubmission } from './db.js';
 import { submitRequest, uploadFile } from './sqApi.js';
+import { fetchOembedMetadata } from './metadata.js';
 
 const URL_PATTERN = /(https?:\/\/\S+|spotify:\S+)/i;
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.webm'];
@@ -36,7 +37,9 @@ export async function handlePotentialSubmission(message: Message): Promise<void>
       const result = await uploadFile(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, bytes, attachment.name);
       submissionId = result.submissionId;
     } else {
-      const result = await submitRequest(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, urlMatch![0]);
+      const url = urlMatch![0];
+      const metadata = await fetchOembedMetadata(url);
+      const result = await submitRequest(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, url, 'normal', metadata);
       submissionId = result.submissionId;
     }
 
