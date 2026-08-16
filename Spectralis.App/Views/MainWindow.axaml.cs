@@ -58,6 +58,7 @@ public partial class MainWindow : Window
             {
                 vm.Capsules.TrustCreatorPrompt = PromptTrustCreatorAsync;
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
+                vm.NowPlaying.RemoteLoadFailedRequested = (url, error) => _ = PromptRemoteLoadFailedAsync(url, error);
                 InitializeSpotifyPlaybackHost(vm);
                 vm.PropertyChanged += OnMainVmPropertyChangedForDeadZones;
 
@@ -1170,6 +1171,24 @@ public partial class MainWindow : Window
 
     private async Task<bool> PromptTrustCreatorAsync(CapsuleTrustContext context) =>
         await CapsuleTrustWindow.ShowAsync(this, context);
+
+    /// <summary>Some tracks (embedding disabled, region-locked, etc.) can't be resolved
+    /// by yt-dlp at all. Rather than dumping the raw stderr on the user, offer to just
+    /// open the source page in their browser instead.</summary>
+    private async Task PromptRemoteLoadFailedAsync(string url, string error)
+    {
+        var openInBrowser = await ConfirmWindow.ShowAsync(
+            this,
+            "Can't Play This",
+            "We couldn't play this track — it may block embedding or streaming directly.\n\nOpen it in your browser instead?",
+            yesLabel: "Open in Browser",
+            noLabel: "Cancel");
+        if (openInBrowser)
+        {
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch { }
+        }
+    }
 
     private static IEnumerable<string> EnumerateClipboardUrls(string text)
     {
