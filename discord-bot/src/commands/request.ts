@@ -2,6 +2,7 @@ import { SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { getLink, rememberSubmission } from '../lib/db.js';
 import { submitRequest } from '../lib/sqApi.js';
+import { fetchOembedMetadata } from '../lib/metadata.js';
 
 export const data = new SlashCommandBuilder()
   .setName('request')
@@ -21,7 +22,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const url = interaction.options.getString('url', true);
   await interaction.deferReply({ ephemeral: true });
   try {
-    const result = await submitRequest(link.roomId, interaction.user.id, interaction.user.displayName, url);
+    const metadata = await fetchOembedMetadata(url);
+    const result = await submitRequest(link.roomId, interaction.user.id, interaction.user.displayName, url, 'normal', metadata);
     rememberSubmission(interaction.user.id, interaction.guildId!, interaction.channelId, result.submissionId);
     const position = result.position ? ` — you're #${result.position} in line.` : '';
     await interaction.editReply(`✅ Added to the queue${position}`);
