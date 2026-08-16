@@ -376,6 +376,13 @@ code {
 
 /* changelog */
 
+.changelog-status {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.changelog-status a { color: var(--red); text-decoration: underline; }
+
 .changelog-shell {
   display: grid;
   grid-template-columns: 240px 1fr;
