@@ -54,10 +54,18 @@ export async function submitRequest(
   displayName: string,
   url: string,
   tier: 'normal' | 'skip' | 'super_skip' = 'normal',
+  metadata?: { title?: string | null; artist?: string | null },
 ): Promise<SqSubmitResponse> {
   return request<SqSubmitResponse>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/submit`, {
     method: 'POST',
-    body: JSON.stringify({ url, displayName, tier, ...fingerprintFor(discordUserId) }),
+    body: JSON.stringify({
+      url,
+      displayName,
+      tier,
+      title: metadata?.title ?? null,
+      artist: metadata?.artist ?? null,
+      ...fingerprintFor(discordUserId),
+    }),
   });
 }
 
@@ -68,12 +76,14 @@ export async function uploadFile(
   fileBytes: Uint8Array,
   filename: string,
   tier: 'normal' | 'skip' | 'super_skip' = 'normal',
+  title?: string | null,
 ): Promise<SqSubmitResponse> {
   const fp = fingerprintFor(discordUserId);
   const form = new FormData();
   form.append('file', new Blob([Buffer.from(fileBytes)]), filename);
   form.append('displayName', displayName);
   form.append('tier', tier);
+  form.append('title', title ?? filename.replace(/\.[^./]+$/, ''));
   form.append('fpCookie', fp.fpCookie);
   form.append('fpUa', fp.fpUa);
   form.append('fpScreen', fp.fpScreen);
