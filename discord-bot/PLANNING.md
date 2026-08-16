@@ -1,9 +1,10 @@
 # Spectralis Discord Bot — Planning
 
-Status: **all commands implemented, not deployed**. Backend PIN pairing and the scoped
-bot token both exist now (`backend/src/main.rs`, `StreamerQueueView`'s "Link Discord"
-button). Nothing here talks to real Discord servers until a Discord application/bot
-token is created and `.env` is filled in — see "Getting a bot token running" below.
+Status: **deployed and live** on Railway (`spectralis` project, `discord-bot` service,
+tracks `main`, root `discord-bot/`). Backend PIN pairing and the scoped bot token both
+exist (`backend/src/main.rs`, `StreamerQueueView`'s "Link Discord" button). Verified
+end-to-end against a real room: `/link-queue`, `/queue`, `/request`, `/skip` all confirmed
+working from Discord.
 
 ## What it's for
 
@@ -16,8 +17,23 @@ system works). Once linked, a channel gets:
 - `/queue` — read-only now-playing + up-next.
 - `/request`, `/skip`, `/superskip` — the same actions viewers get on the `sq.html` web
   page, without leaving Discord.
+- **Message-based submissions**: any message in a linked channel containing an
+  accepted link, an audio file, or a `.spectral`/`.spectralis` project file is submitted
+  automatically — no slash command needed. The bot reacts 📥 on accept, ❌ if the
+  submission is rejected outright (queue full, bad tier, etc.), then the reaction
+  updates to ✅ once it's actually played, or ⚠️ if it's removed/rejected/skipped over
+  without playing (see `src/lib/messageSubmission.ts`, `reconcileReactions` in
+  `src/lib/nowPlayingPoller.ts`).
 - Streamer-only moderation commands (`/close-queue`, `/open-queue`) gated behind a
-  scoped bot token (see below).
+  scoped bot token (see below). Closing the queue also locks the channel (denies
+  `@everyone` Send Messages) and posts a banner — default `---- QUEUE CLOSED ----` /
+  `---- QUEUE OPEN ----`, customizable per-channel via `/set-closed-message` and
+  `/set-open-message`.
+- Bot sets an online presence ("Watching streamer queues") on startup.
+
+Reading message content requires the privileged **Message Content** intent (enabled in
+the Developer Portal), and locking channels requires the bot to hold **Manage Channels**
+in the server. Both are already granted on the invite in use.
 
 ## The linking problem
 
@@ -87,6 +103,14 @@ Implemented in `backend/src/main.rs`:
   `/link-queue`.
 - `PUT /streamer-queue/v1/rooms/{id}/settings` with `botToken` — scoped to
   `acceptingSubmissions` only. Powers `/close-queue` and `/open-queue`.
+- `GET /streamer-queue/v1/rooms/{id}?botToken=...` — same shape the owner gets
+  (per-submission status included), gated by the scoped bot token instead of
+  `ownerToken`. Powers the reaction-lifecycle poller (`reconcileReactions` in
+  `nowPlayingPoller.ts`), which needs to see individual submission status to know when
+  to flip 📥 to ✅/⚠️. `discordBotToken` staying in that response is harmless — the bot
+  already holds that exact value.
+- `POST /streamer-queue/v1/rooms/{id}/upload` (multipart) — no token needed. Powers
+  message-based file submissions (audio files, `.spectral`/`.spectralis`).
 
 The public endpoints fingerprint submitters by `fpCookie`/`fpUa`/etc. (see
 `build_fingerprint` in `backend/src/main.rs`) for per-person rate limiting and skip
@@ -115,29 +139,44 @@ CREATE TABLE submissions (
   submitted_at    TEXT NOT NULL,
   PRIMARY KEY (discord_user_id, guild_id, channel_id)
 );
+
+CREATE TABLE tracked_submissions (
+  submission_id TEXT PRIMARY KEY,  -- SQ submission ID
+  guild_id      TEXT NOT NULL,
+  channel_id    TEXT NOT NULL,
+  message_id    TEXT NOT NULL,     -- the message that gets the reaction
+  status        TEXT NOT NULL,     -- last known SQ status
+  tracked_at    TEXT NOT NULL
+);
 ```
+
+`guild_links` also has `open_message`/`closed_message` columns (added via a lightweight
+`ALTER TABLE` migration in `db.ts` — nullable, `null` falls back to the default banner
+text) set by `/set-open-message` and `/set-closed-message`.
 
 A room can be linked into more than one channel/guild (e.g. co-streamers); a channel
 can only ever point at one room. `submissions` remembers each user's most recent
 request per channel so `/skip` and `/superskip` know which submission to promote
-without asking the user to paste an ID.
+without asking the user to paste an ID. `tracked_submissions` is separate — it's keyed
+by submission (not by user) since multiple submissions can be in flight with reactions
+pending at once; rows are removed once a submission reaches a terminal state (played,
+rejected, payment_failed, or vanished from the queue) and its reaction is set.
 
 ## Commands (v1 slash commands)
 
 | Command | Backend dependency | Status |
 |---|---|---|
-| `/link-queue pin:<6 digits>` | PIN exchange endpoint | implemented |
+| `/link-queue pin:<6 digits>` | PIN exchange endpoint | implemented, verified live |
 | `/unlink-queue` | none (local only) | implemented |
-| `/queue` | public `GET room` | implemented |
-| `/request url:<link>` | public `submit` | implemented |
-| `/skip` | public `promote` | implemented (only on your own last request) |
-| `/superskip` | public `promote` | implemented (only on your own last request) |
-| `/close-queue` | scoped bot token | implemented |
-| `/open-queue` | scoped bot token | implemented |
-
-"Implemented" means the command code and backend route both exist and typecheck/build.
-None of it has run against a live Discord bot token yet — see "Getting a bot token
-running" below for what's left to actually turn it on.
+| `/queue` | public `GET room` | implemented, verified live |
+| `/request url:<link>` | public `submit` | implemented, verified live |
+| `/skip` | public `promote` | implemented, verified live (correctly refuses when the fee tier is off) |
+| `/superskip` | public `promote` | implemented (same code path as `/skip`) |
+| `/close-queue` | scoped bot token; locks channel; posts banner | implemented, verified live |
+| `/open-queue` | scoped bot token; unlocks channel; posts banner | implemented |
+| `/set-open-message [message]` | local only | implemented |
+| `/set-closed-message [message]` | local only | implemented |
+| *(message-based submission)* | public `submit`/`upload` | implemented, not yet verified live |
 
 `/link-queue` and `/unlink-queue` are restricted to members with the Discord
 `Manage Channels` permission, so random viewers can't relink or unlink a channel even
