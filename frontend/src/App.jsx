@@ -232,6 +232,7 @@ function Navbar({ page, navigate }) {
         ) : (
           <>
             <a href="#features"     onClick={(e) => goSection(e, 'features')}>Features</a>
+            <a href="#screenshots"  onClick={(e) => goSection(e, 'screenshots')}>Screenshots</a>
             <a href="#changelog"    onClick={(e) => goSection(e, 'changelog')}>Changelog</a>
             <a href="#visualizers"  onClick={(e) => goSection(e, 'visualizers')}>Visualizers</a>
             <a href="#obs"          onClick={(e) => goSection(e, 'obs')}>OBS</a>
@@ -348,12 +349,52 @@ function Features() {
   )
 }
 
+// ── screenshots ────────────────────────────────────────────────────────────────
+
+function ScreenshotsSection() {
+  return (
+    <section className="shots section" id="screenshots">
+      <div className="section__head">
+        <span className="section__label">In the app</span>
+        <h2 className="section__title">No mockups.<br />This is it running.</h2>
+      </div>
+      <div className="shots-grid">
+        {SCREENSHOTS.map(({ src, title, body }) => (
+          <figure key={src} className="shot-card">
+            <img src={src} alt={title} loading="lazy" />
+            <figcaption>
+              <span className="shot-card__title">{title}</span>
+              <span className="shot-card__body">{body}</span>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ── changelog ─────────────────────────────────────────────────────────────────
 
 function ChangelogSection() {
-  const [activeVersion, setActiveVersion] = useState(CHANGELOG_RELEASES[0].version)
-  const activeRelease = CHANGELOG_RELEASES.find(r => r.version === activeVersion) ?? CHANGELOG_RELEASES[0]
-  const isLatest = activeRelease.version === CHANGELOG_RELEASES[0].version
+  const [releases, setReleases] = useState(null)
+  const [loadError, setLoadError] = useState(false)
+  const [activeVersion, setActiveVersion] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(CHANGELOG_URL)
+      .then(res => { if (!res.ok) throw new Error(res.status); return res.json() })
+      .then(data => {
+        if (cancelled) return
+        setReleases(data)
+        setActiveVersion(data[0]?.version ?? null)
+      })
+      .catch(() => { if (!cancelled) setLoadError(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  const activeRelease = releases?.find(r => r.version === activeVersion) ?? releases?.[0]
+  const isLatest = activeRelease && releases && activeRelease.version === releases[0].version
 
   return (
     <section className="changelog section" id="changelog">
@@ -794,12 +835,13 @@ function Footer({ navigate }) {
         </div>
         <nav className="footer__nav">
           <a href="#features">Features</a>
+          <a href="#screenshots">Screenshots</a>
           <a href="#changelog">Changelog</a>
           <a href="#visualizers">Visualizers</a>
           <a href="#obs">OBS</a>
           <a href="#capsule">Capsule</a>
           <a href="#" onClick={(e) => { e.preventDefault(); navigate('downloads') }}>Downloads</a>
-          <a href="https://github.com/dareto-dream/audioplayer" target="_blank">GitHub ↗</a>
+          <a href="https://github.com/dareto-dream/spectralis" target="_blank">GitHub ↗</a>
         </nav>
         <p className="footer__copy">© 2025 DeltaV Devs</p>
       </div>
@@ -826,6 +868,7 @@ export default function App() {
         <>
           <Hero navigate={navigate} />
           <Features />
+          <ScreenshotsSection />
           <ChangelogSection />
           <Visualizers />
           <OBSSection />
