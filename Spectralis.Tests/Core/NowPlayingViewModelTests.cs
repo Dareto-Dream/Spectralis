@@ -1,6 +1,7 @@
 using Spectralis.App.Design;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Audio;
+using Spectralis.Core.Common;
 using Spectralis.Core.Embedded;
 using Xunit;
 
@@ -186,6 +187,56 @@ public sealed class NowPlayingViewModelTests : IDisposable
 
         Assert.False(_vm.IsAlbumWorldActive);
         Assert.False(_vm.IsAlbumWorldShowingWorld);
+    }
+
+    [Fact]
+    public void AttachAlbumWorld_LocksVisualizerPicker_DetachUnlocksIt()
+    {
+        var worldHtml = new EmbeddedHtmlContext(
+            "world",
+            "<!doctype html><html><body></body></html>"u8.ToArray(),
+            new Dictionary<string, byte[]>(),
+            null,
+            null);
+
+        Assert.False(_vm.IsVisualizerLocked);
+
+        _vm.AttachAlbumWorld(worldHtml, "{}", "world-dir");
+        Assert.True(_vm.IsVisualizerLocked);
+
+        var before = _vm.SelectedVisualizer;
+        _vm.NextVisualizer();
+        Assert.Same(before, _vm.SelectedVisualizer);
+
+        _vm.DetachAlbumWorld();
+        Assert.False(_vm.IsVisualizerLocked);
+    }
+
+    [Fact]
+    public async Task TrackEmbeddedHtml_LocksVisualizerPicker_PlainTrackUnlocksIt()
+    {
+        var capsuleHtml = new EmbeddedHtmlContext(
+            "capsule-story",
+            "<!doctype html><html><body></body></html>"u8.ToArray(),
+            new Dictionary<string, byte[]>(),
+            null,
+            null);
+        var path = CreateWav();
+        var trackInfo = new TrackInfo { SourcePath = path, EmbeddedHtml = capsuleHtml };
+
+        await _vm.LoadPreparedTrackAsync(path, trackInfo, startPlayback: false, ownsTemporaryFile: false);
+
+        Assert.True(_vm.IsVisualizerLocked);
+        var before = _vm.SelectedVisualizer;
+        _vm.NextVisualizer();
+        Assert.Same(before, _vm.SelectedVisualizer);
+
+        // A plain track (no embedded content) loading afterward must clear the lock.
+        await _vm.LoadTrackAsync(CreateWav());
+
+        Assert.False(_vm.IsVisualizerLocked);
+        _vm.NextVisualizer();
+        Assert.NotSame(before, _vm.SelectedVisualizer);
     }
 
     [Fact]
