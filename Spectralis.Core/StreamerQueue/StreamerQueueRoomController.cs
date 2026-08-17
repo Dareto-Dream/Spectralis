@@ -12,6 +12,10 @@ public sealed class StreamerQueueRoomController : IDisposable
     public SqRoom? LastSnapshot { get; private set; }
     public string? LastError { get; private set; }
 
+    /// <summary>Consecutive <see cref="PollAsync"/> failures. Callers can widen their polling
+    /// interval as this climbs instead of hammering a room that's down for a while.</summary>
+    public int ConsecutiveFailureCount { get; private set; }
+
     public StreamerQueueRoomController() : this(new StreamerQueueClient()) { }
 
     internal StreamerQueueRoomController(StreamerQueueClient client) => this.client = client;
@@ -43,11 +47,13 @@ public sealed class StreamerQueueRoomController : IDisposable
             var snapshot = await client.GetRoomAsync(cdnBaseUri, roomId, ownerToken, ct);
             LastSnapshot = snapshot;
             LastError = null;
+            ConsecutiveFailureCount = 0;
             return snapshot;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
+            ConsecutiveFailureCount++;
             return LastSnapshot;
         }
         finally { gate.Release(); }
