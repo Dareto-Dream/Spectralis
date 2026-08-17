@@ -2843,10 +2843,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void CycleVisualizerIfDue()
     {
+        // HasTrack/IsPlaying instead of _engine.IsLoaded/_engine.IsPlaying: Spotify playback
+        // never loads anything into the local engine (it plays through the Spotify SDK), so
+        // the engine-only checks were false for the entire duration of Spotify playback and
+        // auto-cycle silently never fired. HasTrack/IsPlaying already track both local and
+        // Spotify playback correctly (see ApplyTrack and the Spotify state-change handler).
         if (!AutoCycleVisualizers ||
             !ShowVisualizer ||
-            !_engine.IsLoaded ||
-            !_engine.IsPlaying ||
+            !HasTrack ||
+            !IsPlaying ||
             IsSurfaceEmbedded ||
             ShowYouTubeVideo ||
             IsExporting ||
