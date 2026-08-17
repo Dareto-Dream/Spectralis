@@ -56,9 +56,16 @@
         </StackPanel>
 
         <!-- Queue list header -->
-        <Grid Grid.Row="1" RowDefinitions="Auto,*">
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*">
           <TextBlock Margin="16,8,16,4" Classes="secondary" Text="UP NEXT" FontWeight="SemiBold" />
-          <ListBox Grid.Row="1" ItemsSource="{Binding QueueItems}" Margin="8,0,8,0"
+
+          <!-- Manual add -->
+          <Grid Grid.Row="1" Margin="16,0,16,8" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+            <TextBox Text="{Binding AddToQueueUrl}" Watermark="Paste a link to add it to the back of the queue" />
+            <Button Grid.Column="1" Content="Add to Queue" Command="{Binding AddToQueueCommand}" Classes="secondary" />
+          </Grid>
+
+          <ListBox Grid.Row="2" ItemsSource="{Binding QueueItems}" Margin="8,0,8,0"
                    Background="Transparent" SelectionMode="Single">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:SqItemVm">
@@ -78,6 +85,8 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                       <Button Content="Play" Command="{Binding PlayCommand}" Classes="secondary" />
+                      <Button Content="Played" Command="{Binding MarkPlayedCommand}" Classes="secondary" ToolTip.Tip="Mark as played without playing it here" />
+                      <Button Content="Skip" Command="{Binding MarkSkippedCommand}" Classes="secondary" ToolTip.Tip="Mark as skipped, keep out of the active queue" />
                       <Button Content="Remove" Command="{Binding DeleteCommand}" Classes="destructive" />
                     </StackPanel>
                   </Grid>
@@ -88,26 +97,49 @@
         </Grid>
 
         <!-- Pending approvals -->
-        <StackPanel Grid.Row="2" Margin="16,8,16,12"
-                    IsVisible="{Binding PendingItems.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <Border Height="1" Background="{StaticResource Brush.Border}" Margin="0,0,0,8" />
-          <TextBlock Classes="secondary" Text="PENDING APPROVAL" FontWeight="SemiBold" Margin="0,0,0,4" />
-          <ItemsControl ItemsSource="{Binding PendingItems}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:SqItemVm">
-                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3,0,3">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Title}" />
-                    <TextBlock Classes="secondary" Text="{Binding DisplayName}" FontStyle="Italic" />
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Approve" Command="{Binding ApproveCommand}"
-                          Classes="primary" Margin="0,0,4,0" />
-                  <Button Grid.Column="2" Content="Reject" Command="{Binding RejectCommand}"
-                          Classes="destructive" />
-                </Grid>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+        <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="8">
+          <StackPanel IsVisible="{Binding PendingItems.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Border Height="1" Background="{StaticResource Brush.Border}" Margin="0,0,0,8" />
+            <TextBlock Classes="secondary" Text="PENDING APPROVAL" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ItemsControl ItemsSource="{Binding PendingItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SqItemVm">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3,0,3">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Title}" />
+                      <TextBlock Classes="secondary" Text="{Binding DisplayName}" FontStyle="Italic" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Approve" Command="{Binding ApproveCommand}"
+                            Classes="primary" Margin="0,0,4,0" />
+                    <Button Grid.Column="2" Content="Reject" Command="{Binding RejectCommand}"
+                            Classes="destructive" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- History: recently played/skipped, with a way to walk it back -->
+          <StackPanel IsVisible="{Binding HistoryItems.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Border Height="1" Background="{StaticResource Brush.Border}" Margin="0,0,0,8" />
+            <TextBlock Classes="secondary" Text="HISTORY" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ItemsControl ItemsSource="{Binding HistoryItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SqItemVm">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3,0,3">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding Title}" Opacity="0.7" />
+                      <TextBlock Classes="secondary caption" Text="{Binding StatusLabel}" FontStyle="Italic" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Not Played Yet" Command="{Binding MarkNotPlayedCommand}"
+                            Classes="secondary" Margin="0,0,4,0" />
+                    <Button Grid.Column="2" Content="Remove" Command="{Binding DeleteCommand}"
+                            Classes="destructive" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </StackPanel>
       </Grid>
 

@@ -2,7 +2,7 @@ namespace Spectralis.Core.StreamerQueue;
 
 public enum SqTier { Normal, Skip, SuperSkip }
 
-public enum SqStatus { Pending, Queued, Approved, AwaitingPayment, Playing, Played, Rejected, PaymentFailed }
+public enum SqStatus { Pending, Queued, Approved, AwaitingPayment, Playing, Played, Skipped, Rejected, PaymentFailed }
 
 public sealed record SqFeeSettings(bool Enabled, double Amount, string Currency);
 
@@ -66,6 +66,8 @@ public sealed record SqPromoteResponse(
     string? ClientSecret);
 
 public sealed record SqCreateRoomResponse(string RoomId, string OwnerToken);
+
+public sealed record SqAddTrackResponse(string SubmissionId, string Status);
 
 public sealed record SqStripeConnectResponse(string ConnectUrl);
 

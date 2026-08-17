@@ -98,6 +98,20 @@ public sealed class StreamerQueueClient : IDisposable
         return res.IsSuccessStatusCode;
     }
 
+    public async Task<SqAddTrackResponse> AddTrackAsync(Uri baseUri, string roomId, string ownerToken, string url, string? title, string? artist, double? durationSeconds, CancellationToken ct)
+    {
+        var body = new { ownerToken, url, title, artist, durationSeconds };
+        var res = await http.PostAsync(new Uri(RoomUri(baseUri, roomId) + "/submissions"), JsonContent(body), ct);
+        return await DeserializeAsync<SqAddTrackResponse>(res, ct);
+    }
+
+    public async Task<bool> SetStatusAsync(Uri baseUri, string roomId, string submissionId, string ownerToken, string status, CancellationToken ct)
+    {
+        var body = new { ownerToken, status };
+        var res = await http.PostAsync(new Uri(SubmissionUri(baseUri, roomId, submissionId) + "/status"), JsonContent(body), ct);
+        return res.IsSuccessStatusCode;
+    }
+
     public async Task<bool> ApproveAsync(Uri baseUri, string roomId, string submissionId, string ownerToken, CancellationToken ct)
     {
         var res = await http.PostAsync(new Uri(SubmissionUri(baseUri, roomId, submissionId) + "/approve"), JsonContent(new { ownerToken }), ct);
