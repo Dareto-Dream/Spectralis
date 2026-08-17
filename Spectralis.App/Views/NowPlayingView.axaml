@@ -249,13 +249,16 @@
                       IsVisible="{Binding ShowVisualizerControls}">
             <Button Classes="ghost" Content="‹"
                     Command="{Binding PreviousVisualizerCommand}"
+                    IsEnabled="{Binding !IsVisualizerLocked}"
                     ToolTip.Tip="Previous visualizer" />
             <ComboBox ItemsSource="{Binding VisualizerOptions}"
                       SelectedItem="{Binding SelectedVisualizer}"
+                      IsEnabled="{Binding !IsVisualizerLocked}"
                       MinWidth="140"
                       ToolTip.Tip="Choose visualizer" />
             <Button Classes="ghost" Content="›"
                     Command="{Binding NextVisualizerCommand}"
+                    IsEnabled="{Binding !IsVisualizerLocked}"
                     ToolTip.Tip="Next visualizer" />
             <ToggleButton Classes="ghost" Content="AUTO"
                           IsChecked="{Binding AutoCycleVisualizers}"
