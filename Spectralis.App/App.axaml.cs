@@ -261,7 +261,8 @@ public partial class App : Application
                     break;
 
                 case ExternalOpenKind.SharedPlay:
-                    SpectralisLog.Info("Shared Play join handoff received; the Shared Play runtime is not ported yet.");
+                    viewModel.SelectSection(viewModel.SharedPlay);
+                    await viewModel.SharedPlay.JoinAsync(request.Value, request.CdnBaseUrl);
                     break;
             }
         }
