@@ -69,6 +69,18 @@ public sealed class StreamerQueueRoomController : IDisposable
         return result;
     }
 
+    public async Task<SqAddTrackResponse> AddTrackAsync(string url, string? title, string? artist, double? durationSeconds, CancellationToken ct)
+    {
+        EnsureOwner();
+        return await client.AddTrackAsync(cdnBaseUri, roomId!, ownerToken!, url, title, artist, durationSeconds, ct);
+    }
+
+    public async Task SetStatusAsync(string submissionId, string status, CancellationToken ct)
+    {
+        EnsureOwner();
+        await client.SetStatusAsync(cdnBaseUri, roomId!, submissionId, ownerToken!, status, ct);
+    }
+
     public async Task ApproveAsync(string submissionId, CancellationToken ct)
     {
         EnsureOwner();
