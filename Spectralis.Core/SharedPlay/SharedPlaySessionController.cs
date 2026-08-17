@@ -143,6 +143,27 @@ public sealed class SharedPlaySessionController : IDisposable
         return await cdnClient.FetchQueueStateAsync(activeSession.QueueUrl, cancellationToken);
     }
 
+    public async Task<SharedPlayPresenceSnapshot?> FetchPresenceAsync(CancellationToken cancellationToken)
+    {
+        if (GetSession() is not { PresenceUrl: { } presenceUrl }) return null;
+        return await cdnClient.FetchPresenceAsync(presenceUrl, cancellationToken);
+    }
+
+    public async Task<SharedPlayReactionsSnapshot?> FetchReactionsAsync(CancellationToken cancellationToken)
+    {
+        if (GetSession() is not { ReactionsUrl: { } reactionsUrl }) return null;
+        return await cdnClient.FetchReactionsAsync(reactionsUrl, cancellationToken);
+    }
+
+    /// <summary>Directly overwrites the shared queue (e.g. after removing one listener
+    /// request), bypassing the playback-change publish pipeline's dedup/gating.</summary>
+    public async Task PublishQueueAsync(SharedPlayQueueSnapshot queue, CancellationToken cancellationToken)
+    {
+        var activeSession = GetSession();
+        if (activeSession is null) return;
+        await cdnClient.PublishQueueStateAsync(activeSession, queue, cancellationToken);
+    }
+
     public string? GetJoinUrl() => Snapshot.JoinUrl;
     public string? GetChannelUrl() => Snapshot.ChannelUrl;
     public string? GetRoomCode() => Snapshot.RoomCode;
