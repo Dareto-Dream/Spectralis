@@ -21,7 +21,9 @@ public sealed class SharedPlayJoinedPackageStore
     {
     }
 
-    internal SharedPlayJoinedPackageStore(string cacheRoot)
+    /// <summary>Points the cache at a specific directory — used by tests. Production code should
+    /// use the parameterless constructor.</summary>
+    public SharedPlayJoinedPackageStore(string cacheRoot)
     {
         _cacheRoot = Path.GetFullPath(cacheRoot);
     }
