@@ -16,11 +16,12 @@ reference during the migration; see
 |---|---|
 | [`Spectralis.Core/`](Spectralis.Core/) | Cross-platform engine: audio pipeline, formats, library, lyrics, capsule trust, visualizer logic, integrations, platform seams |
 | [`Spectralis.App/`](Spectralis.App/) | Avalonia + ReactiveUI desktop app: views, viewmodels, design tokens, platform glue |
-| [`Spectralis.Tests/`](Spectralis.Tests/) | xUnit suite — unit, integration, and performance benchmarks (245 tests) |
+| [`Spectralis.Tests/`](Spectralis.Tests/) | xUnit suite — unit, integration, and performance benchmarks (300+ tests) |
 | [`Spectralis.Installer/`](Spectralis.Installer/) | Packaging: Squirrel (Windows), `.dmg` (macOS), AppImage (Linux) |
 | [`docs/`](docs/README.md) | Formats, contracts, architecture, guidelines |
-| [`backend/`](backend/) | Rust/Axum Shared Play backend (Railway) |
+| [`backend/`](backend/) | Rust/Axum Shared Play + Streamer Queue backend (Railway) |
 | [`web-share/`](web-share/), [`extension/`](extension/) | Browser Shared Play player and Chromium extension |
+| [`discord-bot/`](discord-bot/) | Discord bot: Streamer Queue slash commands, now-playing poller, reaction lifecycle |
 | [`legacy/`](legacy/) | The legacy WinForms app, maintenance mode ([docs/legacy-winforms.md](docs/legacy-winforms.md)) |
 | [`Assets/`](Assets/), `yt-dlp.exe`, `ffmpeg.exe`, [`build/`](build/) | Shared runtime assets and build helpers used by both apps |
 
@@ -34,10 +35,12 @@ reference during the migration; see
 - Includes a Lyrics Timing Studio for tapping plain lyric lines to playback and exporting `.lrc` sidecars.
 - Ships eleven built-in visualizers (Spectrum, Mirror Spectrum, Waveform, Spinning Disk, Radial Spectrum, Oscilloscope, VU Meter, Spectrum Wave, 3D Graph, Dancing Colors, 3D Sphere) rendered through a toolkit-agnostic canvas at a 60 fps budget.
 - Supports track-reactive cinematic metadata via `.spectralis-reactive.json` sidecars — section tracking, timeline events, eased parameter transitions synchronized to playback.
-- Opens signed `.spectralis` capsules — Ed25519-verified artist packages with creator trust, package metadata display, and audio fallback playback. See [docs/formats/spectralis-capsule.md](docs/formats/spectralis-capsule.md).
-- Recognizes signed `.spectral` album packages and displays album/track metadata while the full album-world runtime continues migrating. The sandboxed Chromium `spectral.*` bridge remains the target seam for those worlds. See [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md).
+- Opens signed `.spectralis` capsules — Ed25519-verified artist packages with creator trust, package metadata display, and audio fallback playback. Capsules can carry a story: either the built-in click-through pager or a fully custom creator-authored HTML page with the same `window.spectral` playback bridge album worlds get. See [docs/formats/spectralis-capsule.md](docs/formats/spectralis-capsule.md).
+- Recognizes signed `.spectral` album packages: interactive HTML "world" map (Super Mario World-style level select, liner notes page, branching narrative — creator's choice) with a JS bridge for playback control, track stats, and bookmarks, falling back to a plain tracklist when no world is declared. See [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md).
+- Streamer Queue: a standalone streamer request queue (link/upload submissions, skip/super-skip priority tiers, Stripe pay-to-skip, Discord bot integration for `/request`, `/skip`, `/queue`) — separate from Shared Play, its own rooms and owner tokens.
 - Serves a live OBS overlay at `http://127.0.0.1:5128/obs/{token}` with layout presets, SSE state push, artwork cache-busting, and current/next lyric lines.
 - Publishes Discord Rich Presence with a download button and a Listen Together button during Shared Play.
+- Shared Play: host a room so listeners follow along in the browser in sync, or join someone else's room as a listener from the desktop app itself via a `spectralis://shared-play/join` link ("Open in App" on the web player) — polled, drift-corrected playback sync against the host.
 - Loopback-capture visualizer seam with WASAPI (Windows), PulseAudio/PipeWire (Linux), and macOS backends.
 - Registers as the default app for supported audio extensions and the `spectralis://` protocol; drag-and-drop of files, folders, and capsules.
 - One-time import of the legacy WinForms library (fresh disk rescan, migration log).
