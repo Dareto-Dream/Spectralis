@@ -57,7 +57,23 @@ public sealed record SharedPlayRoomSession(
     Uri StateUrl,
     Uri QueueUrl,
     DateTimeOffset? ExpiresAtUtc,
-    string SessionKey = "");
+    string SessionKey = "",
+    Uri? PresenceUrl = null,
+    Uri? ReactionsUrl = null);
+
+public sealed record SharedPlayPresenceSnapshot(
+    int ListenerCount,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record SharedPlayReactionItem(
+    string Id,
+    string Type,
+    string Label,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record SharedPlayReactionsSnapshot(
+    SharedPlayReactionItem[] Items,
+    DateTimeOffset UpdatedAtUtc);
 
 public sealed record SharedPlayCreateSessionRequest(
     string ProtocolVersion,
