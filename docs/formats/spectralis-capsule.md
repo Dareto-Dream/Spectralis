@@ -77,13 +77,46 @@ Spectralis side lyrics panel would compete for space. The LRC can still be inclu
 
 ## Story Explainer
 
-Capsules can opt into a click-through story explainer overlay by adding a `story` object to
-`manifest.json`. The overlay is only shown when one of these values appears in `story.tags`,
-`story.presentation`, or `story.mode`:
+Capsules can opt into a click-through story explainer by adding a `story` object to
+`manifest.json`. `CapsuleStoryRenderer` picks a presentation in this priority order:
 
+1. **Custom HTML** — `story.entry`, if set and present in the ZIP.
+2. **Synthesized pager** — built from `story.pages` or `story.chapters` if either is non-empty.
+3. **Backstory pager** — a single synthesized page from `story.backstory`, if set.
+4. Nothing — no story surface is shown.
+
+### Custom story page
+
+For full creative control, ship your own HTML/CSS/JS story page instead of the built-in pager —
+the same concept as a `.spectral` album world's `world.entry`, just for a single-track capsule.
+
+```json
+"story": {
+  "entry": "story/index.html",
+  "binaryAssets": { "bg": "story/assets/bg.webp" },
+  "dataAssets": { "config": "story/assets/config.json" }
+}
 ```
-story  story-mode  explainer  story-explainer  visual-novel  visual_novel  vn
-```
+
+| Field | Required | Description |
+|---|---|---|
+| `entry` | Yes (for custom mode) | Path within ZIP to the HTML file that boots the story |
+| `binaryAssets` | No | Named binary assets (images, fonts) available at the virtual host |
+| `dataAssets` | No | Named text/JSON assets available at the virtual host |
+
+The custom story page is hosted the same way any embedded HTML capsule content is: it gets the
+full `window.spectral` bridge (see the bootstrap script built by
+`WebViewHostService.BuildBootstrapScript` in `Spectralis.Core/Integrations/Web/WebViewHostService.cs`) —
+`spectral.meta` for track metadata, `spectral.resume()`/`spectral.pause()`/`spectral.seek(sec)` to
+control playback, and `spectral.exit()` to leave the story and return to normal playback. No new
+message types were added — a single-track capsule only ever has one track to "start," so
+`spectral.resume()` covers it.
+
+If `entry` is absent, or the file it names isn't in the ZIP, the player falls back to the built-in
+synthesized pager below — same precedent as album worlds falling back to the plain tracklist when
+no `world.entry` is declared.
+
+### Synthesized pager (no-code fallback)
 
 Story pages live in `story.pages` or `story.chapters`. A default explainer image is resolved
 from `story.image`, `story.imageEntry`, `story.explainerImage`, or `story.characterImage`. If
