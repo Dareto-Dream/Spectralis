@@ -19,7 +19,8 @@ public sealed class SqItemVm : ViewModelBase
         Action<string> onApprove,
         Action<string> onReject,
         Action<string> onDelete,
-        Action<SqItemVm> onMarkPlaying)
+        Action<SqItemVm> onMarkPlaying,
+        Action<string, SqStatus> onSetStatus)
     {
         Id = sub.Id;
         DisplayName = sub.DisplayName;
@@ -34,10 +35,13 @@ public sealed class SqItemVm : ViewModelBase
         FileName = sub.FileName;
         _isPending = sub.Status == SqStatus.Pending;
 
-        ApproveCommand  = ReactiveCommand.Create(() => onApprove(Id), this.WhenAnyValue(x => x.IsPending));
-        RejectCommand   = ReactiveCommand.Create(() => onReject(Id));
-        DeleteCommand   = ReactiveCommand.Create(() => onDelete(Id));
-        PlayCommand     = ReactiveCommand.Create(() => onMarkPlaying(this));
+        ApproveCommand      = ReactiveCommand.Create(() => onApprove(Id), this.WhenAnyValue(x => x.IsPending));
+        RejectCommand       = ReactiveCommand.Create(() => onReject(Id));
+        DeleteCommand       = ReactiveCommand.Create(() => onDelete(Id));
+        PlayCommand         = ReactiveCommand.Create(() => onMarkPlaying(this));
+        MarkPlayedCommand   = ReactiveCommand.Create(() => onSetStatus(Id, SqStatus.Played));
+        MarkSkippedCommand  = ReactiveCommand.Create(() => onSetStatus(Id, SqStatus.Skipped));
+        MarkNotPlayedCommand = ReactiveCommand.Create(() => onSetStatus(Id, SqStatus.Queued));
     }
 
     public string Id { get; }
@@ -81,10 +85,22 @@ public sealed class SqItemVm : ViewModelBase
 
     public bool HasTierBadge => Tier != SqTier.Normal;
 
+    public bool IsPlayed => Status == SqStatus.Played;
+    public bool IsSkipped => Status == SqStatus.Skipped;
+    public string StatusLabel => Status switch
+    {
+        SqStatus.Played => "Played",
+        SqStatus.Skipped => "Skipped",
+        _ => string.Empty
+    };
+
     public ReactiveCommand<Unit, Unit> ApproveCommand { get; }
     public ReactiveCommand<Unit, Unit> RejectCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
+    public ReactiveCommand<Unit, Unit> MarkPlayedCommand { get; }
+    public ReactiveCommand<Unit, Unit> MarkSkippedCommand { get; }
+    public ReactiveCommand<Unit, Unit> MarkNotPlayedCommand { get; }
 }
 
 // ── Main ViewModel ────────────────────────────────────────────────────────────
@@ -113,6 +129,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private string _statusText = "No queue configured";
     private string _lastError = string.Empty;
     private bool _isP2wActive;
+    private string _addToQueueUrl = string.Empty;
 
     // ── Settings ──────────────────────────────────────────────────────────────
     private bool _sqEnabled;
@@ -150,6 +167,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
         ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
         LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
+        AddToQueueCommand      = ReactiveCommand.CreateFromTask(AddToQueueAsync,
+            this.WhenAnyValue(x => x.AddToQueueUrl, x => x.IsOwner, (u, owner) => owner && !string.IsNullOrWhiteSpace(u)));
     }
 
     public void Dispose()
@@ -168,6 +187,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
     public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddToQueueCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
@@ -332,8 +352,15 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
     }
 
+    public string AddToQueueUrl
+    {
+        get => _addToQueueUrl;
+        set => this.RaiseAndSetIfChanged(ref _addToQueueUrl, value);
+    }
+
     public ObservableCollection<SqItemVm> QueueItems { get; } = [];
     public ObservableCollection<SqItemVm> PendingItems { get; } = [];
+    public ObservableCollection<SqItemVm> HistoryItems { get; } = [];
     public SqItemVm? NowPlayingItem { get; private set; }
 
     // ── Init ──────────────────────────────────────────────────────────────────
@@ -383,6 +410,21 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             LastError = ex.Message;
             StatusText = "Room creation failed";
         }
+    }
+
+    // ── Manual add ────────────────────────────────────────────────────────────
+
+    private async Task AddToQueueAsync(CancellationToken ct)
+    {
+        if (!IsOwner || string.IsNullOrWhiteSpace(AddToQueueUrl)) return;
+        try
+        {
+            LastError = string.Empty;
+            await _controller.AddTrackAsync(AddToQueueUrl.Trim(), null, null, null, ct);
+            AddToQueueUrl = string.Empty;
+            await PollOnceAsync();
+        }
+        catch (Exception ex) { LastError = ex.Message; }
     }
 
     // ── Settings save ─────────────────────────────────────────────────────────
@@ -452,6 +494,22 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     internal async Task DeleteAsync(string id)
     {
         try { await _controller.DeleteAsync(id, CancellationToken.None); await PollOnceAsync(); }
+        catch (Exception ex) { LastError = ex.Message; }
+    }
+
+    internal async Task SetStatusAsync(string id, SqStatus status)
+    {
+        try
+        {
+            var wire = status switch
+            {
+                SqStatus.Played => "played",
+                SqStatus.Skipped => "skipped",
+                _ => "queued"
+            };
+            await _controller.SetStatusAsync(id, wire, CancellationToken.None);
+            await PollOnceAsync();
+        }
         catch (Exception ex) { LastError = ex.Message; }
     }
 
@@ -609,6 +667,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         var ordered = room.OrderedQueue ?? room.Submissions ?? [];
         QueueItems.Clear();
         PendingItems.Clear();
+        HistoryItems.Clear();
         NowPlayingItem = null;
 
         foreach (var sub in ordered.Where(s => s.Status is SqStatus.Queued or SqStatus.Approved or SqStatus.Playing))
@@ -622,6 +681,14 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
         foreach (var sub in (room.Submissions ?? []).Where(s => s.Status == SqStatus.Pending))
             PendingItems.Add(MakeSqItemVm(sub));
+
+        // Most-recently-touched played/skipped items first, so "not played yet" has
+        // something obvious to grab right after a misclick.
+        foreach (var sub in (room.Submissions ?? [])
+                     .Where(s => s.Status is SqStatus.Played or SqStatus.Skipped)
+                     .Reverse()
+                     .Take(20))
+            HistoryItems.Add(MakeSqItemVm(sub));
 
         // Drop scraped-metadata entries for submissions that left the queue (played,
         // rejected, deleted) so this doesn't grow for the life of the app session.
@@ -641,7 +708,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             id => _ = ApproveAsync(id),
             id => _ = RejectAsync(id),
             id => _ = DeleteAsync(id),
-            item => _ = PlayItemAsync(item));
+            item => _ = PlayItemAsync(item),
+            (id, status) => _ = SetStatusAsync(id, status));
 
         if (_scrapedMetadata.TryGetValue(sub.Id, out var cached))
         {
