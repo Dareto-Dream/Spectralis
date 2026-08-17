@@ -138,6 +138,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         SharedPlay.ApplySettings(AppSettings);
         SharedPlay.PlayTrackRequested = PlayStreamerQueueTrackAsync;
         NowPlaying.UpcomingQueueTrackReady += SharedPlay.PrepareUpcomingTrack;
+        SharedPlay.TrackReadyForEngine += track =>
+            _ = NowPlaying.LoadPreparedTrackAsync(track.SourcePath, track, startPlayback: false, ownsTemporaryFile: false);
+        SharedPlay.SeekRequestedForEngine += seconds => NowPlaying.PositionSeconds = seconds;
+        SharedPlay.PlayRequestedForEngine += () => { if (!NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
+        SharedPlay.PauseRequestedForEngine += () => { if (NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
+        _sharedPlayJoinTick = Avalonia.Threading.DispatcherTimer.Run(
+            () =>
+            {
+                SharedPlay.PulseJoin(Engine.GetPosition(), Engine.IsPlaying);
+                return true;
+            },
+            TimeSpan.FromMilliseconds(250));
         RandomizerTools = new RandomizerToolsViewModel();
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
@@ -334,6 +346,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private readonly IDisposable _scrobbleTick;
     private readonly IDisposable _idleActivityTick;
+    private readonly IDisposable _sharedPlayJoinTick;
 
     public ListeningActivitySnapshot IdleActivity => _idleActivity;
 
