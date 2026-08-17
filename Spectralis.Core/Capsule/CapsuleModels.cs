@@ -54,6 +54,12 @@ public sealed class CapsuleStory
     [JsonPropertyName("characterImage")] public string CharacterImage { get; set; } = "";
     [JsonPropertyName("chapters")] public List<JsonElement> Chapters { get; set; } = [];
     [JsonPropertyName("pages")] public List<JsonElement> Pages { get; set; } = [];
+
+    // Creator-authored custom story page, mirroring AlbumWorldSection. When set, this takes
+    // priority over the synthesized pages[]/chapters[]/backstory pager (see CapsuleStoryRenderer).
+    [JsonPropertyName("entry")] public string Entry { get; set; } = "";
+    [JsonPropertyName("binaryAssets")] public Dictionary<string, string> BinaryAssets { get; set; } = [];
+    [JsonPropertyName("dataAssets")] public Dictionary<string, string> DataAssets { get; set; } = [];
 }
 
 public sealed class CapsuleAudio
