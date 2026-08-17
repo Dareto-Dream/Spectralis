@@ -378,6 +378,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// </summary>
     public event Action<string, string, string, string, double>? RemoteTrackLoaded;
 
+    /// <summary>Raised with the on-disk path of the queue's next-up track as soon as it's
+    /// known, so listeners further up the pipeline (Shared Play) can pre-upload it.</summary>
+    public event Action<string>? UpcomingQueueTrackReady;
+
     /// <summary>Raised when the playback session is reset (Stop/Clear Queue). Consumers can use this to clear dependent state.</summary>
     public event EventHandler? SessionReset;
 
@@ -2315,7 +2319,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             // Pre-open the next queue track (if local) while the remote track starts playing.
             var nextQueuePath = Queue.PeekNextPath();
             if (!string.IsNullOrEmpty(nextQueuePath) && File.Exists(nextQueuePath))
+            {
                 _ = _engine.PrepareNextAsync(nextQueuePath);
+                UpcomingQueueTrackReady?.Invoke(nextQueuePath);
+            }
 
             ApplyTrack(_engine.CurrentTrack);
             ApplyYouTubeVideo(resolved);
@@ -2395,7 +2402,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             // Pre-open the next queue track in the background to minimize cold-start latency.
             var nextPath = Queue.PeekNextPath();
             if (!string.IsNullOrEmpty(nextPath) && File.Exists(nextPath))
+            {
                 _ = _engine.PrepareNextAsync(nextPath);
+                UpcomingQueueTrackReady?.Invoke(nextPath);
+            }
         }
         catch (Exception ex)
         {
