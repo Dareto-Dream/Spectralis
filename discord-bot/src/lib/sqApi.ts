@@ -12,16 +12,38 @@ class SqApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new SqApiError(res.status, body || `SQ API error ${res.status}`);
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** `retry: true` is only for idempotent GETs (the poller) — a stalled CDN response gets one
+ * short retry instead of failing the whole poll cycle. Mutating calls (submit/promote/settings)
+ * never retry here, to avoid double-submitting on a response that actually succeeded. */
+async function request<T>(path: string, init?: RequestInit, options?: { retry?: boolean }): Promise<T> {
+  const attempt = async (): Promise<T> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json', ...init?.headers },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new SqApiError(res.status, body || `SQ API error ${res.status}`);
+      }
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  try {
+    return await attempt();
+  } catch (err) {
+    if (!options?.retry || (err instanceof SqApiError && err.status < 500)) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return attempt();
   }
-  return (await res.json()) as T;
 }
 
 /** Fingerprint fields the bot sends on every viewer-facing call. A Discord user ID
@@ -37,7 +59,7 @@ function fingerprintFor(discordUserId: string) {
 }
 
 export async function getRoom(roomId: string): Promise<SqPublicRoom> {
-  return request<SqPublicRoom>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}`);
+  return request<SqPublicRoom>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}`, undefined, { retry: true });
 }
 
 /** Elevated view (submission-level status) via the scoped bot token — see PLANNING.md
@@ -45,6 +67,8 @@ export async function getRoom(roomId: string): Promise<SqPublicRoom> {
 export async function getRoomAsBot(roomId: string, botToken: string): Promise<SqBotRoom> {
   return request<SqBotRoom>(
     `/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}?botToken=${encodeURIComponent(botToken)}`,
+    undefined,
+    { retry: true },
   );
 }
 
