@@ -42,10 +42,25 @@ async function registerCommands(): Promise<void> {
   });
 }
 
+// A bad promise anywhere in a command handler, poller tick, or event listener used to take the
+// whole bot down with no trace. Log and keep running instead — this process has no supervisor
+// that would restart it mid-stream, so staying up beats a silent crash.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Message, Partials.Reaction],
 });
+
+// discord.js throws if an 'error'/'shardError' event has zero listeners — without these, a
+// gateway hiccup crashes the process the same way an unhandled rejection would.
+client.on(Events.Error, (err) => console.error('Client error:', err));
+client.on(Events.ShardError, (err) => console.error('Shard error:', err));
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
@@ -77,5 +92,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-await registerCommands();
-await client.login(config.discordToken);
+// Startup only — a transient Discord API blip here used to kill the process outright.
+// Not worth retrying once running: the gateway connection itself reconnects on its own.
+async function withStartupRetry(label: string, attempt: () => Promise<void>): Promise<void> {
+  const delaysMs = [2000, 4000, 8000];
+  for (let i = 0; ; i++) {
+    try {
+      await attempt();
+      return;
+    } catch (err) {
+      if (i >= delaysMs.length) throw err;
+      console.error(`${label} failed, retrying in ${delaysMs[i]}ms:`, err);
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[i]));
+    }
+  }
+}
+
+await withStartupRetry('Command registration', registerCommands);
+await withStartupRetry('Discord login', () => client.login(config.discordToken).then(() => {}));
