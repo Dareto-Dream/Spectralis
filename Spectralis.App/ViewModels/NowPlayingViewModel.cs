@@ -257,6 +257,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private double _volumeBeforeMute = 85;
     private EmbeddedHtmlContext? _embeddedHtml;
     private EmbeddedHtmlContext? _pickedInstalledHtml;
+    // True when the *current track itself* (not a user-picked "Special:" entry) carries
+    // embedded HTML/WASM/Markdown/video content — see IsVisualizerLocked.
+    private bool _trackHasEmbeddedSurface;
     // Album world HTML pinned across track changes so the interactive map stays live.
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
     private string? _albumWorldDir;
@@ -1031,6 +1034,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(ShowSurfaceExitButton));
         this.RaisePropertyChanged(nameof(ShowVisualizerControls));
         this.RaisePropertyChanged(nameof(EmbeddedStatusText));
+        this.RaisePropertyChanged(nameof(IsVisualizerLocked));
     }
 
     public IReadOnlyList<VisualizerOption> VisualizerOptions
@@ -1191,6 +1195,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool HasEmbeddedVisualizer => _embeddedVisualizer is not null;
 
+    /// <summary>True when a `.spectralis` capsule or `.spectral` album world track brought its
+    /// own HTML/WASM visualizer (or Markdown/video promoted to the HTML surface) — the picker,
+    /// prev/next, and keyboard shortcuts are all blocked while this is true, since the capsule
+    /// owns the surface. Does not apply to a user-picked "Special:" installed HTML visualizer —
+    /// that's a normal picker choice, not capsule content, and stays switchable.</summary>
+    public bool IsVisualizerLocked => IsAlbumWorldActive || _trackHasEmbeddedSurface;
+
     public bool HasEmbeddedModules =>
         _embeddedHtml is not null ||
         _embeddedVisualizer is not null ||
@@ -1254,6 +1265,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             if (_selectedVisualizer == value)
+            {
+                return;
+            }
+
+            // Capsule/album-world embedded visualizer owns the surface — block picker,
+            // prev/next, and keyboard-shortcut changes until it's gone. NextVisualizer()/
+            // PreviousVisualizer() both funnel through this setter, so one guard covers all
+            // three entry points (ComboBox binding, toolbar buttons, comma/period shortcuts).
+            if (IsVisualizerLocked)
             {
                 return;
             }
@@ -2684,6 +2704,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ApplyEmbeddedModules(TrackInfo track)
     {
+        _trackHasEmbeddedSurface = track.EmbeddedHtml is not null ||
+            track.EmbeddedVisualizer is not null ||
+            track.EmbeddedMarkdown is not null ||
+            track.EmbeddedVideo is not null;
+
         // When a world map is pinned, keep it live — only update the non-HTML modules.
         if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld)
         {
@@ -2735,6 +2760,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ClearEmbeddedModules()
     {
+        _trackHasEmbeddedSurface = false;
+
         if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld && _settings.EnableEmbeddedContent)
         {
             // Album world stays live across track changes.
