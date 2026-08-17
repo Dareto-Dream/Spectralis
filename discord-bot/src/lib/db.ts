@@ -7,6 +7,9 @@ import type { GuildLink } from '../types.js';
 mkdirSync(dirname(config.dbPath), { recursive: true });
 const db = new Database(config.dbPath);
 db.pragma('journal_mode = WAL');
+// Without this, a concurrent write throws SQLITE_BUSY immediately instead of waiting —
+// better-sqlite3 is synchronous, so a poller tick and a slash command can genuinely collide.
+db.pragma('busy_timeout = 5000');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS guild_links (
