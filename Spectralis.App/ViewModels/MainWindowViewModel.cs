@@ -136,6 +136,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         SharedPlay = new SharedPlayViewModel();
         SharedPlay.ApplySettings(AppSettings);
+        SharedPlay.PlayTrackRequested = PlayStreamerQueueTrackAsync;
+        NowPlaying.UpcomingQueueTrackReady += SharedPlay.PrepareUpcomingTrack;
         RandomizerTools = new RandomizerToolsViewModel();
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);

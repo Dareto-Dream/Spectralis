@@ -46,6 +46,8 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         var stateUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "state");
         var queueUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "queue");
+        var presenceUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "presence");
+        var reactionsUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "reactions");
         var joinUri = SharedPlayDefaults.BuildWebShareJoinUrl(cdnBaseUri, roomCode);
 
         var uploadTarget = response.Uploads?
@@ -65,7 +67,9 @@ public sealed class SharedPlayCdnClient : IDisposable
             stateUri,
             queueUri,
             response.ExpiresAtUtc,
-            response.SessionKey ?? string.Empty);
+            response.SessionKey ?? string.Empty,
+            presenceUri,
+            reactionsUri);
     }
 
     public async Task<SharedPlayRoomSession> UploadTrackToSessionAsync(
@@ -304,6 +308,60 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play queue publish", cancellationToken);
+    }
+
+    public async Task<SharedPlayPresenceSnapshot?> FetchPresenceAsync(
+        Uri presenceUrl,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(presenceUrl, "Shared Play presence URL");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, presenceUrl);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Shared Play presence request", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = document.RootElement;
+        var count = (int)Math.Max(0, FirstDouble(root, "listenerCount") ?? 0);
+        var updatedAt = FirstDateTimeOffset(root, "updatedAtUtc") ?? DateTimeOffset.UtcNow;
+        return new SharedPlayPresenceSnapshot(count, updatedAt);
+    }
+
+    public async Task<SharedPlayReactionsSnapshot?> FetchReactionsAsync(
+        Uri reactionsUrl,
+        CancellationToken cancellationToken)
+    {
+        EnsureHttps(reactionsUrl, "Shared Play reactions URL");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, reactionsUrl);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, "Shared Play reactions request", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = document.RootElement;
+
+        var items = new List<SharedPlayReactionItem>();
+        if (TryGetObjectProperty(root, "items", out var itemsElement) && itemsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in itemsElement.EnumerateArray())
+            {
+                var type = FirstString(element, "type") ?? "spark";
+                items.Add(new SharedPlayReactionItem(
+                    FirstString(element, "id") ?? Guid.NewGuid().ToString("N"),
+                    type,
+                    FirstString(element, "label") ?? type,
+                    FirstDateTimeOffset(element, "createdAtUtc") ?? DateTimeOffset.UtcNow));
+            }
+        }
+
+        var updatedAtUtc = FirstDateTimeOffset(root, "updatedAtUtc") ?? DateTimeOffset.UtcNow;
+        return new SharedPlayReactionsSnapshot(items.ToArray(), updatedAtUtc);
     }
 
     // ─── Streamer Queue ────────────────────────────────────────────────────────
