@@ -54,16 +54,16 @@ Ported to `Spectralis.Core/SharedPlay/`:
 
 The CDN is already running — no new server-side work needed.
 
-**Remaining work (no external gate):**
-- Wire `SharedPlaySessionController` into `NowPlayingViewModel`
-  (`NotifyPlaybackChanged` on play/pause/seek/track-load, tick timer).
-- Build the Shared Play sidebar view (host/join dialog, status panel,
-  queue sync display, Live Channel toggle).
-- Handle `ExternalOpenKind.SharedPlay` in `App.axaml.cs` (the stub log
-  line is there; now the runtime exists to back it).
+**Resolved — no remaining work.** `SharedPlaySessionController` is wired into
+`NowPlayingViewModel`/`MainWindowViewModel` (`NotifyPlayback` on play/pause/
+seek/track-load ticks). The Shared Play view covers host (create room, copy
+link, status, listener count, reactions, queue requests) and join (status,
+Leave) states. `ExternalOpenKind.SharedPlay` in `App.axaml.cs` calls
+`SharedPlayViewModel.JoinAsync`, backed by `SharedPlayJoinRuntime` +
+`SharedPlayJoinedPackageStore` (ported from the legacy join flow).
 
 **Affects:**
-- `feature-gap.md` lines 45, 184, 190, 493–510, 542 (partial)
+- `feature-gap.md` — Shared Play and shared queue section
 
 ---
 
