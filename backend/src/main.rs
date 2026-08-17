@@ -170,8 +170,10 @@ async fn main() -> Result<()> {
         .route("/streamer-queue/v1/rooms/:id/submit", post(post_sq_submit))
         .route("/streamer-queue/v1/rooms/:id/upload", post(post_sq_upload))
         .route("/streamer-queue/v1/rooms/:id/uploads/:file_id", get(get_sq_upload))
+        .route("/streamer-queue/v1/rooms/:id/submissions", post(post_sq_add_track))
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid/promote", post(post_sq_promote))
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid", patch(patch_sq_submission))
+        .route("/streamer-queue/v1/rooms/:id/submissions/:sid/status", post(post_sq_set_status))
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid/approve", post(post_sq_approve_sub))
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid/reject", post(post_sq_reject_sub))
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid", delete(delete_sq_submission))
@@ -2920,7 +2922,7 @@ fn sq_count_by_fingerprint(room: &Value, fp: &Value, threshold: f64) -> usize {
                 .filter(|s| {
                     let active = !matches!(
                         s.get("status").and_then(Value::as_str),
-                        Some("rejected") | Some("played") | Some("payment_failed")
+                        Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed")
                     );
                     if !active { return false; }
                     let other_fp = match s.get("_fp") {
@@ -3182,7 +3184,7 @@ async fn get_sq_room(
         let stripe_pk = room.get("stripePublishableKey").cloned().unwrap_or(Value::Null);
         let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
             a.iter().filter(|s| {
-                !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("payment_failed"))
+                !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))
             }).count()
         }).unwrap_or(0);
         let ordered = sq_ordered_queue(&room);
@@ -3404,7 +3406,7 @@ async fn post_sq_submit(
 
     // Enforce queue length
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
-        a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("payment_failed"))).count()
+        a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
     }).unwrap_or(0);
     if active_count >= max_queue {
         return Err(AppError::bad_request("The queue is full right now."));
@@ -3415,7 +3417,7 @@ async fn post_sq_submit(
         let already = room.get("submissions").and_then(Value::as_array).is_some_and(|a| {
             a.iter().any(|s| {
                 s.get("url").and_then(Value::as_str).is_some_and(|u| u == url)
-                    && !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played"))
+                    && !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped"))
             })
         });
         if already {
@@ -3609,7 +3611,7 @@ async fn post_sq_upload(
 
     let mut room = read_sq_room_file(&state, &id).await?;
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
-        a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("payment_failed"))).count()
+        a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
     }).unwrap_or(0);
     if active_count >= max_queue {
         let _ = fs::remove_file(&upload_path).await;
@@ -3706,7 +3708,7 @@ async fn post_sq_promote(
     }
 
     let sub_status = subs[sub_idx].get("status").and_then(Value::as_str).unwrap_or("");
-    if matches!(sub_status, "played" | "rejected" | "payment_failed") {
+    if matches!(sub_status, "played" | "skipped" | "rejected" | "payment_failed") {
         return Err(AppError::bad_request("Cannot promote a completed or rejected submission."));
     }
 
@@ -3783,7 +3785,7 @@ async fn patch_sq_submission(
     }
 
     let sub_status = subs[sub_idx].get("status").and_then(Value::as_str).unwrap_or("");
-    if matches!(sub_status, "played" | "rejected") {
+    if matches!(sub_status, "played" | "skipped" | "rejected") {
         return Err(AppError::bad_request("Cannot edit a completed or rejected submission."));
     }
 
@@ -3801,6 +3803,93 @@ async fn patch_sq_submission(
     room["updatedAtUtc"] = json!(&now);
     write_sq_room_file(&state, &id, &room).await?;
     Ok(Json(json!({ "submissionId": sid, "ok": true, "fpScore": (score * 100.0) as u8 })))
+}
+
+async fn post_sq_add_track(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let mut room = read_sq_room_file(&state, &id).await?;
+    let token = payload.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !sq_owner_token_valid(&room, token) {
+        return Err(AppError::forbidden("Owner token invalid."));
+    }
+
+    let url = payload.get("url").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())
+        .ok_or_else(|| AppError::bad_request("url is required."))?;
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("spotify:")) {
+        return Err(AppError::bad_request("URL must be http(s) or spotify:."));
+    }
+
+    let settings = room["settings"].clone();
+    let max_queue = settings.get("maxQueueLength").and_then(Value::as_u64).unwrap_or(50) as usize;
+    let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
+        a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
+    }).unwrap_or(0);
+    if active_count >= max_queue {
+        return Err(AppError::bad_request("The queue is full right now."));
+    }
+
+    let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
+    let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
+    let duration_seconds = payload.get("durationSeconds").and_then(Value::as_f64);
+
+    let sub_id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let sub = json!({
+        "id": &sub_id, "displayName": "Streamer", "title": title, "artist": artist,
+        "url": url, "fileId": null, "fileName": null, "sourceKind": "link",
+        "tier": "normal", "tierChangedAtUtc": &now,
+        "status": "queued", "paymentStatus": "none",
+        "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
+        "_fp": {}
+    });
+    room["submissions"].as_array_mut().ok_or_else(|| AppError::internal("submissions array missing."))?.push(sub.clone());
+    room["updatedAtUtc"] = json!(&now);
+    write_sq_room_file(&state, &id, &room).await?;
+    Ok(Json(json!({ "submissionId": &sub_id, "status": "queued" })))
+}
+
+async fn post_sq_set_status(
+    State(state): State<AppState>,
+    AxumPath((id, sid)): AxumPath<(String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let mut room = read_sq_room_file(&state, &id).await?;
+    let token = payload.get("ownerToken").and_then(Value::as_str).unwrap_or("");
+    if !sq_owner_token_valid(&room, token) {
+        return Err(AppError::forbidden("Owner token invalid."));
+    }
+
+    let status = match payload.get("status").and_then(Value::as_str) {
+        Some(s @ ("queued" | "played" | "skipped")) => s,
+        _ => return Err(AppError::bad_request("status must be queued, played, or skipped.")),
+    };
+
+    let subs = room.get("submissions").and_then(Value::as_array).cloned().unwrap_or_default();
+    let idx = subs.iter().position(|s| s.get("id").and_then(Value::as_str) == Some(&sid))
+        .ok_or_else(|| AppError::not_found("Submission not found."))?;
+
+    let now = Utc::now().to_rfc3339();
+    if let Some(arr) = room.get_mut("submissions").and_then(Value::as_array_mut) {
+        arr[idx]["status"] = json!(status);
+        if status == "queued" {
+            // Manual "not played yet" — send it to the back of its tier's FIFO
+            // instead of letting it jump ahead of whatever's already queued.
+            arr[idx]["tierChangedAtUtc"] = json!(&now);
+        }
+    }
+
+    // A manually played/skipped item shouldn't linger as "now playing".
+    if status != "playing" && room.get("nowPlayingId").and_then(Value::as_str) == Some(sid.as_str()) {
+        room["nowPlayingId"] = Value::Null;
+        room["nowPlayingTier"] = Value::Null;
+    }
+
+    room["updatedAtUtc"] = json!(&now);
+    write_sq_room_file(&state, &id, &room).await?;
+    Ok(Json(json!({ "submissionId": sid, "status": status })))
 }
 
 async fn post_sq_approve_sub(
