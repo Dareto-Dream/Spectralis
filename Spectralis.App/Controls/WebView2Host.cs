@@ -23,7 +23,6 @@ namespace Spectralis.App.Controls;
 public sealed class WebView2Host : NativeControlHost, IWebViewHost
 {
     private static readonly string _log = AppLogPaths.For("webview-perf.log");
-    private const int InlineNavigateToStringLimitBytes = 1_000_000;
 
     /// <summary>Optional persistent user data folder for the WebView2 environment.</summary>
     public string? UserDataFolder { get; init; }
@@ -182,9 +181,8 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
     private static void LogHtmlNavigation(string operation, string html, bool coreReady)
     {
         var utf8Bytes = Encoding.UTF8.GetByteCount(html);
-        var sizeWarning = utf8Bytes >= InlineNavigateToStringLimitBytes ? " using-file-backed-navigation" : string.Empty;
         AppLogPaths.AppendTimestamped(_log,
-            $"[WV2] {operation} coreReady={coreReady} chars={html.Length:n0} utf8={utf8Bytes:n0}{sizeWarning}");
+            $"[WV2] {operation} coreReady={coreReady} chars={html.Length:n0} utf8={utf8Bytes:n0}");
     }
 
     private static void LogNavigationException(string operation, string html, Exception ex)
@@ -195,24 +193,14 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             $"{ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
     }
 
+    // Every embedded HTML surface goes through the virtual-host file path now, not just ones
+    // over some size threshold — NavigateToString serves from about:blank with no real origin,
+    // which measurably tanks frame rate (no resource caching, some GPU compositing paths behave
+    // differently off a real https:// origin). File-backed navigation is the fast path; there's
+    // no reason a small visualizer should take the slow one.
     private void NavigateHtmlDocument(string html, string operation)
     {
         var utf8Bytes = Encoding.UTF8.GetByteCount(html);
-        if (utf8Bytes < InlineNavigateToStringLimitBytes)
-        {
-            try
-            {
-                _core!.NavigateToString(html);
-                return;
-            }
-            catch (Exception ex) when (CanRetryWithFileBackedNavigation(ex))
-            {
-                AppLogPaths.AppendTimestamped(_log,
-                    $"[WV2] {operation} retrying with virtual-host file after " +
-                    $"{ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
-            }
-        }
-
         NavigateHtmlDocumentFromFile(html, operation, utf8Bytes);
     }
 
@@ -238,10 +226,6 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             $"path={indexPath} utf8={utf8Bytes:n0} url={url}");
         _core.Navigate(url);
     }
-
-    private static bool CanRetryWithFileBackedNavigation(Exception ex) =>
-        ex is ArgumentException ||
-        ex is COMException { HResult: unchecked((int)0x80070057) };
 
     private async Task InitializeAsync()
     {
