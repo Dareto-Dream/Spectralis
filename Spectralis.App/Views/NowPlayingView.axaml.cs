@@ -828,6 +828,10 @@ public NowPlayingView()
 
     private void OnEmbeddedResumeRequested(object? sender, EventArgs e)
     {
+        // If this resume came from a story explainer with a visualizer queued behind it,
+        // swap surfaces first — ApplyEmbeddedHtmlMode picks up the change and re-navigates.
+        _viewModel?.TryAdvancePastStory();
+
         if (_viewModel is { IsPlaying: false, HasTrack: true })
         {
             _viewModel.TogglePlayback();
