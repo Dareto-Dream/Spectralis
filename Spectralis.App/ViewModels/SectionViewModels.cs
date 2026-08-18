@@ -701,10 +701,12 @@ public sealed class CapsulesViewModel : ViewModelBase
                     package.TryReadEntry);
                 var artwork = TryReadArtwork(package, manifest.Story.ImageEntry)
                     ?? manifest.Assets.Images.Select(package.TryReadEntry).FirstOrDefault(bytes => bytes is not null);
-                // If the capsule has story pages and no other HTML surface, synthesize a visual-novel pager.
-                var storyHtml = (packageModules.Html is null && metadata.EmbeddedHtml is null)
-                    ? CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry)
-                    : null;
+                // A capsule can declare both a story explainer and an HTML visualizer — the
+                // story shows first (custom story.entry, then pages[]/chapters[], then a
+                // backstory pager), and the visualizer (or synthesized markdown/video surface)
+                // is queued behind it, taking over once the story calls spectral.resume().
+                var storyHtml = CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry);
+                var otherHtml = packageModules.Html ?? metadata.EmbeddedHtml;
 
                 var trackInfo = metadata with
                 {
@@ -719,7 +721,8 @@ public sealed class CapsulesViewModel : ViewModelBase
                     CoverArt = artwork ?? metadata.CoverArt,
                     CoverArtMimeType = artwork is null ? metadata.CoverArtMimeType : GuessMimeType(manifest.Story.ImageEntry),
                     EmbeddedVisualizer = packageModules.Visualizer ?? metadata.EmbeddedVisualizer,
-                    EmbeddedHtml = packageModules.Html ?? storyHtml ?? metadata.EmbeddedHtml,
+                    EmbeddedHtml = storyHtml ?? otherHtml,
+                    EmbeddedHtmlAfterStory = storyHtml is not null ? otherHtml : null,
                     EmbeddedMarkdown = packageModules.Markdown ?? metadata.EmbeddedMarkdown,
                     EmbeddedVideo = packageModules.Video ?? metadata.EmbeddedVideo,
                 };
@@ -815,10 +818,12 @@ public sealed class CapsulesViewModel : ViewModelBase
                 return;
             }
 
-            // Try to synthesize a story page if available.
+            // Story shows first if available; whatever HTML surface the track already
+            // resolved to (visualizer, markdown, video) is queued to take over once the
+            // story calls spectral.resume() — same handoff as the single-track capsule path.
             var storyHtml = runtime.BuildStoryHtmlContext();
             if (storyHtml is not null)
-                trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
+                trackInfo = trackInfo with { EmbeddedHtml = storyHtml, EmbeddedHtmlAfterStory = trackInfo.EmbeddedHtml };
 
             runtime.NotifyTrackStarted(firstId, 0);
             await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, startPlayback);

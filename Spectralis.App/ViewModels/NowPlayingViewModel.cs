@@ -256,6 +256,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _remoteLoadCts;
     private double _volumeBeforeMute = 85;
     private EmbeddedHtmlContext? _embeddedHtml;
+    // Queued visualizer/markdown/video surface waiting behind a story explainer — see
+    // TryAdvancePastStory(). Null once consumed or when the track has no story.
+    private EmbeddedHtmlContext? _embeddedHtmlAfterStory;
     private EmbeddedHtmlContext? _pickedInstalledHtml;
     // True when the *current track itself* (not a user-picked "Special:" entry) carries
     // embedded HTML/WASM/Markdown/video content — see IsVisualizerLocked.
@@ -1192,6 +1195,23 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasEmbeddedHtml => EmbeddedHtml is not null;
+
+    /// <summary>Called when the embedded surface requests playback resume (spectral.resume()).
+    /// If a visualizer/markdown/video surface is queued behind a story explainer, swap to it
+    /// now instead of leaving the story on screen — this is the "VN talking, then visualizer"
+    /// handoff for capsules that declare both. No-ops (returns false) when nothing is queued,
+    /// e.g. every normal pause/resume during regular playback.</summary>
+    public bool TryAdvancePastStory()
+    {
+        if (_embeddedHtmlAfterStory is not { } next)
+        {
+            return false;
+        }
+
+        _embeddedHtmlAfterStory = null;
+        EmbeddedHtml = next;
+        return true;
+    }
 
     public bool HasEmbeddedVisualizer => _embeddedVisualizer is not null;
 
@@ -2721,6 +2741,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
         this.RaiseAndSetIfChanged(ref _embeddedMarkdown, track.EmbeddedMarkdown);
         this.RaiseAndSetIfChanged(ref _embeddedVideo, track.EmbeddedVideo);
+        _embeddedHtmlAfterStory = track.EmbeddedHtmlAfterStory;
         EmbeddedHtml = track.EmbeddedHtml;
 
         if (_settings.UseEmbeddedTrackThemes && track.EmbeddedTheme is { } theme &&
