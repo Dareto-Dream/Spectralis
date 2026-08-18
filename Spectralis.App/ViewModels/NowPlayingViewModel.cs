@@ -2193,7 +2193,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         try
         {
             await Task.Run(() => _engine.Load(path, trackInfo));
-            if (startPlayback)
+            // A queued post-story surface means a story explainer is about to show first —
+            // don't start audio underneath it. Playback begins later via TryAdvancePastStory's
+            // resume handoff (OnEmbeddedResumeRequested), triggered by the story's own
+            // spectral.resume() call once the reader finishes.
+            if (startPlayback && trackInfo.EmbeddedHtmlAfterStory is null)
             {
                 _engine.Play();
             }
