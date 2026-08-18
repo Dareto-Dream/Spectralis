@@ -172,7 +172,7 @@ public sealed class NowPlayingViewModelTests : IDisposable
             null,
             null);
 
-        _vm.AttachAlbumWorld(worldHtml, "{}");
+        _vm.AttachAlbumWorld(worldHtml, "{}", "world-dir");
 
         Assert.True(_vm.IsAlbumWorldActive);
         Assert.True(_vm.IsAlbumWorldShowingWorld);
