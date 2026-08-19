@@ -828,6 +828,10 @@ public NowPlayingView()
 
     private void OnEmbeddedResumeRequested(object? sender, EventArgs e)
     {
+        // If this resume came from a story explainer with a visualizer queued behind it,
+        // swap surfaces first — ApplyEmbeddedHtmlMode picks up the change and re-navigates.
+        _viewModel?.TryAdvancePastStory();
+
         if (_viewModel is { IsPlaying: false, HasTrack: true })
         {
             _viewModel.TogglePlayback();
@@ -1355,8 +1359,13 @@ public NowPlayingView()
     private static string StripInlineEventHandlers(string html) =>
         Regex.Replace(
             html,
-            "\\s+on\\w+\\s*=\\s*[\"']?[^\"']*[\"']?",
-            string.Empty,
+            // Inline event-handler attributes (onclick="...", onload='...') only ever appear
+            // inside HTML tags, never inside <script> bodies. Without the <script> alternative
+            // taking priority, this blindly matched JS identifiers like "onsetHit =" too — and
+            // since the assigned value wasn't quoted, its [^"']* clause ate everything up to the
+            // next stray quote anywhere later in the file, silently corrupting unrelated code.
+            "(?<script><script\\b[^>]*>[\\s\\S]*?</script>)|\\s+on\\w+\\s*=\\s*[\"']?[^\"']*[\"']?",
+            match => match.Groups["script"].Success ? match.Value : string.Empty,
             RegexOptions.IgnoreCase);
 
     private static string ResolveEmbeddedAssetReferences(

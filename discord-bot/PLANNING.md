@@ -192,6 +192,14 @@ on startup so a bot linked into hundreds of channels doesn't burst-request the b
 all at once. If this ever needs to scale past polling, the natural next step is a
 webhook the backend calls on now-playing change instead — not needed at current scale.
 
+A channel whose room fetch keeps failing (deleted/unlinked upstream, backend hiccup)
+backs off instead of retrying every cycle forever — the wait widens with the
+consecutive-failure count, capped at 5 minutes, and resets the moment a fetch succeeds
+again. `sqApi.ts` requests carry a 10s timeout and a single retry for the poller's GETs
+(never for mutating calls, to avoid double-submitting). A single bad promise anywhere —
+a failed embed edit, a gateway hiccup — is logged and the process stays up; nothing here
+has a supervisor that would restart it if it fell over.
+
 ## Folder layout
 
 ```

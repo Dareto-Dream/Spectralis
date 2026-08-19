@@ -29,6 +29,10 @@ public sealed record TrackInfo
     public string? CoverArtMimeType { get; init; }
     public EmbeddedVisualizerContext? EmbeddedVisualizer { get; init; }
     public EmbeddedHtmlContext? EmbeddedHtml { get; init; }
+    /// <summary>Set when a capsule declares both a story explainer and an HTML visualizer:
+    /// EmbeddedHtml is the story shown first, and this is queued to take over once the
+    /// story calls spectral.resume() — see NowPlayingViewModel.TryAdvancePastStory().</summary>
+    public EmbeddedHtmlContext? EmbeddedHtmlAfterStory { get; init; }
     public EmbeddedMarkdownContext? EmbeddedMarkdown { get; init; }
     public EmbeddedVideoContext? EmbeddedVideo { get; init; }
     public EmbeddedThemeInfo? EmbeddedTheme { get; init; }

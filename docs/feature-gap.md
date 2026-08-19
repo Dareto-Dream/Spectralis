@@ -358,11 +358,11 @@ but the user-facing flow or wiring is still missing.
 
 ## Capsules and album worlds
 
-- ✅ Partial: Internal capsule opener now opens signed `.spectralis` files from
+- ✅ Internal capsule opener opens signed `.spectralis` files from
   dialog/drop/startup routing without leaving Now Playing, verifies trust,
   extracts the declared audio entry into Now Playing with manifest metadata,
   detects package-level embedded HTML/WASM/Markdown/video descriptors, and
-  hands embedded HTML to the now-playing surface. Remaining: story mode.
+  hands embedded HTML to the now-playing surface.
 - ✅ Creator trust confirmation dialog ported: `CapsuleTrustWindow` shows the
   creator name, fingerprint, all requested capabilities with human-readable
   labels (elevated capabilities marked with an amber indicator), and content
@@ -373,7 +373,12 @@ but the user-facing flow or wiring is still missing.
   disclosure is embedded in `CapsuleTrustWindow`; `CapsuleCapability` constants
   are mapped to friendly descriptions with an elevated-risk tier for
   `visualizer.wasm`, `webview.networkAccess`, and `sharedPlay.packageUpload`.
-- Capsule story/visual-novel presentation is missing.
+- ✅ Capsule story/visual-novel presentation: `CapsuleStoryRenderer` synthesizes
+  a click-through pager from `story.pages`/`chapters`/`backstory`, or — for full
+  creative control — a creator can ship a custom `story.entry` HTML page (same
+  concept as `world.entry`) with the full `window.spectral` playback bridge.
+  Wired for both single-track `.spectralis` capsules and as the `.spectral`
+  album-world intro.
 - ✅ Partial: Capsule reactive timeline handoff ported. `ReactiveRuntime` is
   loaded via `.spectralis.reactive` sidecar (`ReactiveTimelineLoader.LoadSidecar`)
   on every local track load. `NowPlayingViewModel` advances the runtime each
@@ -490,21 +495,29 @@ but the user-facing flow or wiring is still missing.
 
 ## Shared Play and shared queue
 
-- Shared Play view is placeholder-only. Missing host session runtime, join
-  runtime, live polling/pulsing, receiver client, cache store, package store,
-  and session controller behavior.
-- Shared Play settings are missing: enable toggle, CDN base URL, Live Channel
-  enable, channel id, owner token, display name.
-- Host/join UI is missing: create room, copy/share link, listener counts, status
-  messages, and stop/leave controls.
-- Join-on-launch via `spectralis://` is missing.
-- Synced playback is missing: play/pause/seek/track-load snapshots and drift
-  correction.
-- Synced lyrics and visualizer state are missing.
-- Shared queue requests are missing: add/remove/reorder/clear, queue pointers,
-  queue pull loop, and remote package pointers.
-- Reactions/presence are missing.
-- Live Channel links and stats are missing.
+- ✅ Host session runtime, settings (enable toggle, CDN base URL, Live Channel
+  enable/id/owner token/display name), host UI (create room, copy/share link,
+  listener count, status messages, stop control) are all wired in
+  `SharedPlayViewModel`/`SharedPlaySessionController`.
+- ✅ Join runtime: `SharedPlayJoinRuntime` (poll session/playback state, drift-
+  corrected seek/play/pause, track handoff on a host track change) plus
+  `SharedPlayJoinedPackageStore` (7-day cache of downloaded joined audio),
+  ported from the legacy WinForms join flow. Join UI (status text, Leave
+  control) lives in the same `SharedPlayView` as hosting.
+- ✅ Join-on-launch via `spectralis://shared-play/join?session=...&cdn=...` is
+  wired end to end: `ExternalOpenIpc.TryParseProtocolArgument` →
+  `ExternalOpenKind.SharedPlay` → `App.axaml.cs` → `SharedPlayViewModel.JoinAsync`.
+  This is the desktop side of the web player's "Open in App" button.
+- ✅ Synced playback: play/pause/seek/track-load snapshots and drift correction
+  are handled by the join runtime (1s state poll, 250ms sync tick, same
+  thresholds as the legacy client).
+- Synced lyrics and visualizer state for a joined listener are still missing —
+  the join runtime only syncs audio position/play/pause, not the lyrics panel
+  or visualizer.
+- ✅ Shared queue requests (listener-submitted tracks), reactions, and presence
+  (listener count) are wired via `SharedPlayViewModel`'s poll loop against the
+  CDN's queue/reactions/presence endpoints.
+- Live Channel stats display is unverified/likely still incomplete.
 - Browser Shared Play handoff from Discord Listen Together is incomplete in the
   desktop app.
 - Shared Play cache cleanup is missing.
