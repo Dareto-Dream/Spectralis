@@ -46,6 +46,7 @@ public sealed class SharedPlayRequestedTrackVm : ViewModelBase
 public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 {
     private readonly SharedPlaySessionController _controller = new();
+    private readonly SharedPlayJoinRuntime _joinRuntime = new();
     private readonly HashSet<string> _seenReactionIds = new();
     private CancellationTokenSource _pollCts = new();
     private string _statusText = "No active room";
@@ -57,10 +58,18 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private int _listenerCount;
     private string _recentReactionsText = string.Empty;
     private AppSettings? _settings;
+    private bool _isJoined;
+    private string _joinedStatusText = string.Empty;
 
     public SharedPlayViewModel()
     {
         _controller.StatusChanged += OnStatusChanged;
+        _joinRuntime.StatusChanged += OnJoinStatusChanged;
+        _joinRuntime.TrackReady += (_, track) => TrackReadyForEngine?.Invoke(track);
+        _joinRuntime.SeekRequested += (_, sec) => SeekRequestedForEngine?.Invoke(sec);
+        _joinRuntime.PlayRequested += (_, _) => PlayRequestedForEngine?.Invoke();
+        _joinRuntime.PauseRequested += (_, _) => PauseRequestedForEngine?.Invoke();
+        LeaveJoinCommand = ReactiveCommand.Create(LeaveJoinedSession, this.WhenAnyValue(x => x.IsJoined));
         HostCommand     = ReactiveCommand.CreateFromTask(HostAsync);
         StopCommand     = ReactiveCommand.Create(Stop);
         CopyLinkCommand = ReactiveCommand.Create(CopyLink, this.WhenAnyValue(x => x.IsHosting));
@@ -69,16 +78,36 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> HostCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
+    public ReactiveCommand<Unit, Unit> LeaveJoinCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
 
     /// <summary>Wired by MainWindowViewModel so "Play" on a listener request actually plays it.</summary>
     public Func<string, Task>? PlayTrackRequested { get; set; }
 
+    /// <summary>Wired by MainWindowViewModel to apply a Shared Play join's downloaded track to the engine.</summary>
+    public event Action<TrackInfo>? TrackReadyForEngine;
+    public event Action<double>? SeekRequestedForEngine;
+    public event Action? PlayRequestedForEngine;
+    public event Action? PauseRequestedForEngine;
+
     public bool IsHosting
     {
         get => _isHosting;
         private set => this.RaiseAndSetIfChanged(ref _isHosting, value);
+    }
+
+    /// <summary>True while actively joined to (or joining) someone else's Shared Play room as a listener.</summary>
+    public bool IsJoined
+    {
+        get => _isJoined;
+        private set => this.RaiseAndSetIfChanged(ref _isJoined, value);
+    }
+
+    public string JoinedStatusText
+    {
+        get => _joinedStatusText;
+        private set => this.RaiseAndSetIfChanged(ref _joinedStatusText, value);
     }
 
     public string StatusText
@@ -213,6 +242,30 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     /// <summary>Uploads a queued-up-next track ahead of time so the switch is instant
     /// once it's actually reached. Cheap no-op when Shared Play isn't hosting.</summary>
     public void PrepareUpcomingTrack(string? path) => _controller.PrepareUpcomingTrack(path);
+
+    /// <summary>Joins someone else's Shared Play room as a listener — the "Open in App" flow from
+    /// the web share page. Stops any active hosting session first (host and joined listener are
+    /// mutually exclusive states of this one feature).</summary>
+    public async Task JoinAsync(string roomCode, string? cdnBaseUrl)
+    {
+        if (_isHosting) Stop();
+        await _joinRuntime.JoinAsync(
+            new SharedPlayJoinRequest(roomCode, cdnBaseUrl),
+            _settings?.SharedPlayCdnBaseUrl,
+            CancellationToken.None);
+    }
+
+    /// <summary>Call every playback tick while joined; no-op otherwise. Mirrors
+    /// AlbumWorldRuntime.Tick's (position, isPlaying) shape.</summary>
+    public void PulseJoin(double positionSeconds, bool isPlaying) => _joinRuntime.Pulse(positionSeconds, isPlaying);
+
+    private void LeaveJoinedSession() => _joinRuntime.Leave();
+
+    private void OnJoinStatusChanged(object? sender, EventArgs e)
+    {
+        IsJoined = _joinRuntime.IsJoined;
+        JoinedStatusText = _joinRuntime.StatusText ?? string.Empty;
+    }
 
     private Task HostAsync()
     {
@@ -384,6 +437,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         _pollCts.Cancel();
         _controller.Dispose();
+        _joinRuntime.Dispose();
     }
 }
 
@@ -647,10 +701,12 @@ public sealed class CapsulesViewModel : ViewModelBase
                     package.TryReadEntry);
                 var artwork = TryReadArtwork(package, manifest.Story.ImageEntry)
                     ?? manifest.Assets.Images.Select(package.TryReadEntry).FirstOrDefault(bytes => bytes is not null);
-                // If the capsule has story pages and no other HTML surface, synthesize a visual-novel pager.
-                var storyHtml = (packageModules.Html is null && metadata.EmbeddedHtml is null)
-                    ? CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry)
-                    : null;
+                // A capsule can declare both a story explainer and an HTML visualizer — the
+                // story shows first (custom story.entry, then pages[]/chapters[], then a
+                // backstory pager), and the visualizer (or synthesized markdown/video surface)
+                // is queued behind it, taking over once the story calls spectral.resume().
+                var storyHtml = CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry);
+                var otherHtml = packageModules.Html ?? metadata.EmbeddedHtml;
 
                 var trackInfo = metadata with
                 {
@@ -665,7 +721,8 @@ public sealed class CapsulesViewModel : ViewModelBase
                     CoverArt = artwork ?? metadata.CoverArt,
                     CoverArtMimeType = artwork is null ? metadata.CoverArtMimeType : GuessMimeType(manifest.Story.ImageEntry),
                     EmbeddedVisualizer = packageModules.Visualizer ?? metadata.EmbeddedVisualizer,
-                    EmbeddedHtml = packageModules.Html ?? storyHtml ?? metadata.EmbeddedHtml,
+                    EmbeddedHtml = storyHtml ?? otherHtml,
+                    EmbeddedHtmlAfterStory = storyHtml is not null ? otherHtml : null,
                     EmbeddedMarkdown = packageModules.Markdown ?? metadata.EmbeddedMarkdown,
                     EmbeddedVideo = packageModules.Video ?? metadata.EmbeddedVideo,
                 };
@@ -761,10 +818,12 @@ public sealed class CapsulesViewModel : ViewModelBase
                 return;
             }
 
-            // Try to synthesize a story page if available.
+            // Story shows first if available; whatever HTML surface the track already
+            // resolved to (visualizer, markdown, video) is queued to take over once the
+            // story calls spectral.resume() — same handoff as the single-track capsule path.
             var storyHtml = runtime.BuildStoryHtmlContext();
             if (storyHtml is not null)
-                trackInfo = trackInfo with { EmbeddedHtml = storyHtml };
+                trackInfo = trackInfo with { EmbeddedHtml = storyHtml, EmbeddedHtmlAfterStory = trackInfo.EmbeddedHtml };
 
             runtime.NotifyTrackStarted(firstId, 0);
             await _loadPreparedTrack(trackInfo.SourcePath, trackInfo, startPlayback);

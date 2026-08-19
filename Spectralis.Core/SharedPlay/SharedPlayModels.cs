@@ -49,6 +49,16 @@ public sealed record SharedPlaySessionSnapshot(
     string? ChannelUrl,
     string? LastError);
 
+/// <summary>A session fetched by a listener joining someone else's Shared Play room —
+/// the receiver-side counterpart to <see cref="SharedPlayRoomSession"/> (which is host-only).</summary>
+public sealed record SharedPlayJoinedSession(
+    string RoomCode,
+    string? TrackId,
+    Uri StateUrl,
+    Uri QueueUrl,
+    Uri PackageUrl,
+    DateTimeOffset? ExpiresAtUtc);
+
 public sealed record SharedPlayRoomSession(
     string RoomCode,
     string DisplayCode,

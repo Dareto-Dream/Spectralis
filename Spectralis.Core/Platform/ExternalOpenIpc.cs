@@ -151,6 +151,12 @@ public static class ExternalOpenIpc
             return null;
         }
 
+        if (string.Equals(uri.Host, "shared-play", StringComparison.OrdinalIgnoreCase) &&
+            Spectralis.Core.SharedPlay.SharedPlayJoinRequest.TryParse(value, allowRawCode: false, out var joinRequest))
+        {
+            return new ExternalOpenRequest(ExternalOpenKind.SharedPlay, joinRequest.RoomCode, joinRequest.CdnBaseUrl);
+        }
+
         var pathParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(uri.Host))
         {
