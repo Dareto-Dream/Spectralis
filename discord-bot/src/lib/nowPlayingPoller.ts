@@ -10,10 +10,13 @@ const MISSED_REACTION = '⚠️';
 
 const POLL_INTERVAL_MS = 15_000;
 const STAGGER_MS = 500;
+const MAX_BACKOFF_MS = 5 * 60_000;
 
 interface ChannelPollState {
   lastNowPlayingId: string | null;
   pinnedMessageId: string | null;
+  consecutiveFailures: number;
+  nextAttemptAtMs: number;
 }
 
 const state = new Map<string, ChannelPollState>(); // key: `${guildId}:${channelId}`
@@ -22,27 +25,56 @@ function keyFor(link: GuildLink): string {
   return `${link.guildId}:${link.channelId}`;
 }
 
+function emptyState(): ChannelPollState {
+  return { lastNowPlayingId: null, pinnedMessageId: null, consecutiveFailures: 0, nextAttemptAtMs: 0 };
+}
+
 async function pollOnce(client: Client, link: GuildLink): Promise<void> {
+  const key = keyFor(link);
+  const prev = state.get(key) ?? emptyState();
+
+  // A room that's been unreachable for a while (deleted/unlinked upstream) doesn't need
+  // hammering every 15s forever — back off with the failure streak, capped at 5 minutes.
+  if (Date.now() < prev.nextAttemptAtMs) return;
+
   const room = link.botToken
     ? await getRoomAsBot(link.roomId, link.botToken).catch(() => null)
     : await getRoom(link.roomId).catch(() => null);
-  if (!room) return;
 
-  if (link.botToken) {
-    await reconcileReactions(client, link, (room as SqBotRoom).submissions);
+  if (!room) {
+    const consecutiveFailures = prev.consecutiveFailures + 1;
+    const backoffMs = Math.min(consecutiveFailures * POLL_INTERVAL_MS, MAX_BACKOFF_MS);
+    state.set(key, { ...prev, consecutiveFailures, nextAttemptAtMs: Date.now() + backoffMs });
+    return;
   }
 
-  const key = keyFor(link);
-  const prev = state.get(key) ?? { lastNowPlayingId: null, pinnedMessageId: null };
-  if (room.nowPlayingId === prev.lastNowPlayingId) return;
+  try {
+    if (link.botToken) {
+      await reconcileReactions(client, link, (room as SqBotRoom).submissions);
+    }
 
-  const channel = await client.channels.fetch(link.channelId).catch(() => null);
-  if (!channel || !channel.isSendable()) return;
+    const current = state.get(key) ?? prev;
+    const cleared = { ...current, consecutiveFailures: 0, nextAttemptAtMs: 0 };
+    if (room.nowPlayingId === cleared.lastNowPlayingId) {
+      state.set(key, cleared);
+      return;
+    }
 
-  const embed = buildNowPlayingEmbed(room);
-  await postOrEditNowPlaying(channel, prev, embed);
+    const channel = await client.channels.fetch(link.channelId).catch(() => null);
+    if (!channel || !channel.isSendable()) {
+      state.set(key, cleared);
+      return;
+    }
 
-  state.set(key, { ...prev, lastNowPlayingId: room.nowPlayingId });
+    const embed = buildNowPlayingEmbed(room);
+    await postOrEditNowPlaying(channel, cleared, embed);
+
+    state.set(key, { ...cleared, lastNowPlayingId: room.nowPlayingId });
+  } catch (err) {
+    // A failed embed post/edit used to throw out of pollOnce as an unhandled rejection and
+    // skip the state update, re-posting the same embed every cycle until it happened to work.
+    console.error(`Now-playing poll failed for ${key}:`, err);
+  }
 }
 
 /** Keeps each tracked submission's reaction in sync with its backend status: 📥 while

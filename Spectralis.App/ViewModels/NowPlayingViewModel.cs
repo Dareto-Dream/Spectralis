@@ -256,7 +256,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _remoteLoadCts;
     private double _volumeBeforeMute = 85;
     private EmbeddedHtmlContext? _embeddedHtml;
+    // Queued visualizer/markdown/video surface waiting behind a story explainer — see
+    // TryAdvancePastStory(). Null once consumed or when the track has no story.
+    private EmbeddedHtmlContext? _embeddedHtmlAfterStory;
     private EmbeddedHtmlContext? _pickedInstalledHtml;
+    // True when the *current track itself* (not a user-picked "Special:" entry) carries
+    // embedded HTML/WASM/Markdown/video content — see IsVisualizerLocked.
+    private bool _trackHasEmbeddedSurface;
     // Album world HTML pinned across track changes so the interactive map stays live.
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
     private string? _albumWorldDir;
@@ -1031,6 +1037,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(ShowSurfaceExitButton));
         this.RaisePropertyChanged(nameof(ShowVisualizerControls));
         this.RaisePropertyChanged(nameof(EmbeddedStatusText));
+        this.RaisePropertyChanged(nameof(IsVisualizerLocked));
     }
 
     public IReadOnlyList<VisualizerOption> VisualizerOptions
@@ -1189,7 +1196,31 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool HasEmbeddedHtml => EmbeddedHtml is not null;
 
+    /// <summary>Called when the embedded surface requests playback resume (spectral.resume()).
+    /// If a visualizer/markdown/video surface is queued behind a story explainer, swap to it
+    /// now instead of leaving the story on screen — this is the "VN talking, then visualizer"
+    /// handoff for capsules that declare both. No-ops (returns false) when nothing is queued,
+    /// e.g. every normal pause/resume during regular playback.</summary>
+    public bool TryAdvancePastStory()
+    {
+        if (_embeddedHtmlAfterStory is not { } next)
+        {
+            return false;
+        }
+
+        _embeddedHtmlAfterStory = null;
+        EmbeddedHtml = next;
+        return true;
+    }
+
     public bool HasEmbeddedVisualizer => _embeddedVisualizer is not null;
+
+    /// <summary>True when a `.spectralis` capsule or `.spectral` album world track brought its
+    /// own HTML/WASM visualizer (or Markdown/video promoted to the HTML surface) — the picker,
+    /// prev/next, and keyboard shortcuts are all blocked while this is true, since the capsule
+    /// owns the surface. Does not apply to a user-picked "Special:" installed HTML visualizer —
+    /// that's a normal picker choice, not capsule content, and stays switchable.</summary>
+    public bool IsVisualizerLocked => IsAlbumWorldActive || _trackHasEmbeddedSurface;
 
     public bool HasEmbeddedModules =>
         _embeddedHtml is not null ||
@@ -1254,6 +1285,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             if (_selectedVisualizer == value)
+            {
+                return;
+            }
+
+            // Capsule/album-world embedded visualizer owns the surface — block picker,
+            // prev/next, and keyboard-shortcut changes until it's gone. NextVisualizer()/
+            // PreviousVisualizer() both funnel through this setter, so one guard covers all
+            // three entry points (ComboBox binding, toolbar buttons, comma/period shortcuts).
+            if (IsVisualizerLocked)
             {
                 return;
             }
@@ -2153,7 +2193,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         try
         {
             await Task.Run(() => _engine.Load(path, trackInfo));
-            if (startPlayback)
+            // A queued post-story surface means a story explainer is about to show first —
+            // don't start audio underneath it. Playback begins later via TryAdvancePastStory's
+            // resume handoff (OnEmbeddedResumeRequested), triggered by the story's own
+            // spectral.resume() call once the reader finishes.
+            if (startPlayback && trackInfo.EmbeddedHtmlAfterStory is null)
             {
                 _engine.Play();
             }
@@ -2684,6 +2728,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ApplyEmbeddedModules(TrackInfo track)
     {
+        _trackHasEmbeddedSurface = track.EmbeddedHtml is not null ||
+            track.EmbeddedVisualizer is not null ||
+            track.EmbeddedMarkdown is not null ||
+            track.EmbeddedVideo is not null;
+
         // When a world map is pinned, keep it live — only update the non-HTML modules.
         if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld)
         {
@@ -2696,6 +2745,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaiseAndSetIfChanged(ref _embeddedVisualizer, track.EmbeddedVisualizer);
         this.RaiseAndSetIfChanged(ref _embeddedMarkdown, track.EmbeddedMarkdown);
         this.RaiseAndSetIfChanged(ref _embeddedVideo, track.EmbeddedVideo);
+        _embeddedHtmlAfterStory = track.EmbeddedHtmlAfterStory;
         EmbeddedHtml = track.EmbeddedHtml;
 
         if (_settings.UseEmbeddedTrackThemes && track.EmbeddedTheme is { } theme &&
@@ -2735,6 +2785,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ClearEmbeddedModules()
     {
+        _trackHasEmbeddedSurface = false;
+
         if (_pinnedAlbumWorldHtml is not null && _albumWorldShowingWorld && _settings.EnableEmbeddedContent)
         {
             // Album world stays live across track changes.
@@ -2843,10 +2895,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void CycleVisualizerIfDue()
     {
+        // HasTrack/IsPlaying instead of _engine.IsLoaded/_engine.IsPlaying: Spotify playback
+        // never loads anything into the local engine (it plays through the Spotify SDK), so
+        // the engine-only checks were false for the entire duration of Spotify playback and
+        // auto-cycle silently never fired. HasTrack/IsPlaying already track both local and
+        // Spotify playback correctly (see ApplyTrack and the Spotify state-change handler).
         if (!AutoCycleVisualizers ||
             !ShowVisualizer ||
-            !_engine.IsLoaded ||
-            !_engine.IsPlaying ||
+            !HasTrack ||
+            !IsPlaying ||
             IsSurfaceEmbedded ||
             ShowYouTubeVideo ||
             IsExporting ||
