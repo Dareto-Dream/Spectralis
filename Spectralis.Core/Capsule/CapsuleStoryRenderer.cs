@@ -12,6 +12,11 @@ public static class CapsuleStoryRenderer
 {
     public static EmbeddedHtmlContext? TryToHtmlContext(CapsuleStory story, Func<string, byte[]?> tryReadEntry)
     {
+        // Creator-authored custom story page takes priority over the synthesized pager,
+        // same precedence album worlds give a custom world.entry over the fallback tracklist.
+        var customHtml = TryBuildCustomHtmlContext(story, tryReadEntry);
+        if (customHtml is not null) return customHtml;
+
         // pages[] preferred; chapters[] is the older alias
         var rawPages = story.Pages.Count > 0 ? story.Pages
                      : story.Chapters.Count > 0 ? story.Chapters
@@ -39,6 +44,30 @@ public static class CapsuleStoryRenderer
             new Dictionary<string, byte[]>(),
             null,
             null);
+    }
+
+    private static EmbeddedHtmlContext? TryBuildCustomHtmlContext(CapsuleStory story, Func<string, byte[]?> tryReadEntry)
+    {
+        if (string.IsNullOrWhiteSpace(story.Entry)) return null;
+
+        var htmlBytes = tryReadEntry(story.Entry);
+        if (htmlBytes is null || htmlBytes.Length == 0) return null;
+
+        var binaryAssets = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, entry) in story.BinaryAssets)
+        {
+            var bytes = tryReadEntry(entry);
+            if (bytes is not null) binaryAssets[key] = bytes;
+        }
+
+        var textAssets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, entry) in story.DataAssets)
+        {
+            var bytes = tryReadEntry(entry);
+            if (bytes is not null) textAssets[key] = Encoding.UTF8.GetString(bytes);
+        }
+
+        return new EmbeddedHtmlContext("capsule-story", htmlBytes, binaryAssets, textAssets, null);
     }
 
     private sealed record StoryPage(string Text, string? ImageDataUri, string? BackgroundDataUri);

@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using NAudio.Vorbis;
 using NAudio.Wave;
+using NLayer.NAudioSupport;
 using Spectralis.App.Controls;
 using Spectralis.Core.Visualizers;
 
@@ -143,7 +144,7 @@ public static class VideoExportEngine
             return ext switch
             {
                 ".wav" => new WaveFileReader(path),
-                ".mp3" => new Mp3FileReader(path),
+                ".mp3" => new Mp3FileReaderBase(path, wf => new Mp3FrameDecompressor(wf)),
                 _ => new MediaFoundationReader(path),
             };
         }

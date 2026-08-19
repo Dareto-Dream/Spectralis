@@ -605,12 +605,20 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         _ = PollLoopAsync(_pollCts.Token);
     }
 
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan MaxPollBackoff = TimeSpan.FromMinutes(5);
+
     private async Task PollLoopAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             await PollOnceAsync();
-            try { await Task.Delay(TimeSpan.FromSeconds(10), ct); } catch { break; }
+
+            // A room that's been failing for a while (dead endpoint, network outage) doesn't
+            // need hammering every 10s forever — widen the wait with the failure streak.
+            var backoff = PollInterval * (1 + _controller.ConsecutiveFailureCount);
+            var delay = backoff < MaxPollBackoff ? backoff : MaxPollBackoff;
+            try { await Task.Delay(delay, ct); } catch { break; }
         }
     }
 
