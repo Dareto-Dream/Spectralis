@@ -1,6 +1,7 @@
 using NAudio.Vorbis;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using NLayer.NAudioSupport;
 using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Common;
 using Spectralis.Core.Platform;
@@ -574,7 +575,10 @@ public sealed class AudioEngine : IDisposable
                     return new WaveFileReader(path);
                 case ".mp3":
                     formatName = "MP3";
-                    return new Mp3FileReader(path);
+                    // Mp3FileReader's default frame decompressor calls into Windows' ACM
+                    // codec (msacm32.dll), which doesn't exist on Linux/macOS. NLayer is a
+                    // pure managed MP3 decoder, so it works the same on every platform.
+                    return new Mp3FileReaderBase(path, wf => new Mp3FrameDecompressor(wf));
                 case ".aif":
                 case ".aifc":
                 case ".aiff":
