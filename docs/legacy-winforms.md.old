@@ -1,12 +1,11 @@
 # The legacy WinForms app
 
 The original Spectralis is a Windows-only WinForms/.NET 8 desktop app. It
-remains in the repository in **maintenance mode**: it's the feature reference
+remains in the repository in **maintenance mode**: it is the feature reference
 while the remaining modules port to the Avalonia system
 ([architecture.md](architecture.md)), and it keeps working for users until the
 Avalonia build reaches feature parity. New feature work happens in
-`Spectralis.Core` / `Spectralis.App` only, I am not touching legacy code unless
-something's actually broken.
+`Spectralis.Core` / `Spectralis.App` only.
 
 ## Where it lives
 
@@ -21,13 +20,12 @@ The legacy app lives entirely under [`legacy/`](../legacy/):
 | `legacy/build.ps1`, `legacy/setup.ps1` | Legacy release build and local publish |
 
 Shared assets stay at the repo root and are linked into both apps:
-`Assets/` (icon, SF2s), `yt-dlp.exe`, `ffmpeg.exe`, `legal.html`,
+`Assets/` (icon, SoundFonts), `yt-dlp.exe`, `ffmpeg.exe`, `legal.html`,
 `docs/legal/`, `spectralis.nuspec`, `build/Generate-Icon.ps1`, and the
 `releases/` Squirrel feed.
 
 The root `build.ps1` / `setup.ps1` build the **Avalonia** app; the legacy
-equivalents are the ones inside `legacy/`. Don't mix these up, I have done it
-and it is not fun.
+equivalents are the ones inside `legacy/`.
 
 ## Building and running
 
@@ -56,8 +54,7 @@ The Avalonia app ships under the **same Squirrel app id** (`Spectralis`) and
 the same `publish\Spectralis.exe` layout, so existing legacy installs upgrade
 in place through the existing `releases/` feed
 (`Spectralis.Installer/Windows/build-squirrel.ps1`; the first Avalonia release
-is full-package-only via `-FirstAvaloniaRelease`). Nobody has to manually
-reinstall anything, which was the whole point.
+is full-package-only via `-FirstAvaloniaRelease`).
 
 ## Data compatibility
 
@@ -75,8 +72,7 @@ reinstall anything, which was the whole point.
 
 ## Behavior differences in the Avalonia system
 
-Intentional changes relative to this app, everything else is a straight port
-(and if it's not, that's a bug, tell me).
+Intentional changes relative to this app; everything else is a straight port.
 
 ### Stricter format validation (security hardening)
 
@@ -94,10 +90,10 @@ Intentional changes relative to this app, everything else is a straight port
 
 The WinForms `ReactiveRuntime.Seek` advanced `lastPosition` before computing
 the elapsed-event window, so `set`/`reset` events with `duration: 0` never
-fired during playback — a genuinely cursed bug to track down. The new runtime
-fires events in `(last, pos]` exactly once and rebuilds state deterministically
-on seeks (including backwards). Content that unknowingly relied on instant
-events being dropped will now see them applied.
+fired during playback. The new runtime fires events in `(last, pos]` exactly
+once and rebuilds state deterministically on seeks (including backwards).
+Content that unknowingly relied on instant events being dropped will now see
+them applied.
 
 ### Shuffle pins the playing track
 
@@ -129,4 +125,4 @@ capability is granted).
 
 The interim device enumerator exposes only the system-default output (the
 legacy app also always played to the default device). Full WASAPI enumeration
-comes back with the Settings audio page, eventually.
+returns with the Settings audio page.

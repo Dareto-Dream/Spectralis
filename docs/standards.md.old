@@ -1,8 +1,8 @@
 # Spectralis Extension Standards
 
 This document defines the expected patterns for extending Spectralis without reintroducing
-hardcoded lists, giant files, or theme drift (I've done all three, more than once, hence this doc).
-It covers visualizers, themes, settings, controls, form partials, and the OBS overlay system.
+hardcoded lists, giant files, or theme drift. It covers visualizers, themes, settings, controls,
+form partials, and the OBS overlay system.
 
 For data format specifications, see [formats/](formats/).
 
@@ -31,7 +31,6 @@ For data format specifications, see [formats/](formats/).
 
 - Target less than 250 lines for most handwritten files.
 - If a handwritten file passes roughly 350–400 lines and contains more than one concern, split it.
-  Yes I know 350 isn't that much bigger than 250, that's the point, catch it early.
 - Do not put new nested utility/rendering classes inside `Form1` unless they are truly form-private
   and tiny.
 
@@ -331,8 +330,7 @@ tick. Token is a `Guid.NewGuid().ToString("N")` auto-generated in `AppSettings.N
 
 ### Rules
 
-- State DTOs (`ObsOverlayState` and nested types) must never contain local file paths — streamers
-  screen-share this stuff, leaking a path is a real embarassment waiting to happen.
+- State DTOs (`ObsOverlayState` and nested types) must never contain local file paths.
 - `ArtworkVersion` is set to the track's `FilePath` for cache-busting without exposing the path
   to overlay consumers.
 - Multi-source state follows the same `IsSpotifyActive` / `IsSoundCloudActive` / `IsSunoActive` /
@@ -340,7 +338,7 @@ tick. Token is a `Guid.NewGuid().ToString("N")` auto-generated in `AppSettings.N
 
 ---
 
-## Review Checklist (the one I actually run through before calling something done)
+## Review Checklist
 
 Before finishing a feature like a new visualizer, theme, or setting, verify:
 

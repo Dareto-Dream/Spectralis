@@ -1,9 +1,10 @@
 # Song Wars Implementation Plan
 
 Song Wars is a live tournament mode for Spectralis where a host runs a bracket, streams each song
-to an external audience, and collects judge decisions in a separate private voting surface. The
-first implementation should focus on host control, judge voting, match timing, and bracket state.
-Community voting is intentionally out of scope for this pass; later community mode can consume
+to an external audience, and collects judge decisions in a separate private voting surface. Basically
+a song battle royale for streamers. The first implementation should focus on host control, judge
+voting, match timing, and bracket state. Community voting is intentionally out of scope for this
+pass — I'd rather ship judge mode solid than half-build both; later community mode can consume
 third-party poll results from Twitch, Kick, or another polling provider.
 
 The important product split:
@@ -42,6 +43,9 @@ The important product split:
 ---
 
 ## Existing Pieces To Reuse
+
+I'm hella lazy so wherever Shared Play already does the job, Song Wars should just borrow it
+instead of reinventing plumbing.
 
 ### Shared Play
 
@@ -566,6 +570,8 @@ Tests should cover:
 ---
 
 ## Open Questions
+
+Stuff I genuinely don't know the answer to yet and don't want to fake-decide just to move on:
 
 - For a matchup, should judges vote on "which song wins" directly, or should Pass / Fail be framed
   as the second track challenging the first track?
