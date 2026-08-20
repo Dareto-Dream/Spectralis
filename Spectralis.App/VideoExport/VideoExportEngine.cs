@@ -223,14 +223,21 @@ public static class VideoExportEngine
         return p;
     }
 
+    // The bundled/PATH binary has no ".exe" suffix outside Windows — searching
+    // for "ffmpeg.exe" on Linux/macOS never matches a real ffmpeg install.
+    private static string FfmpegExecutableName => OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+
     private static string FindFfmpegPath()
     {
         var appDir = Path.GetDirectoryName(Environment.ProcessPath);
         if (appDir is not null)
         {
-            var bundled = Path.Combine(appDir, "ffmpeg.exe");
+            var bundled = Path.Combine(appDir, FfmpegExecutableName);
             if (File.Exists(bundled))
+            {
+                EnsureExecutable(bundled);
                 return bundled;
+            }
         }
 
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "")
@@ -238,7 +245,7 @@ public static class VideoExportEngine
         {
             try
             {
-                var candidate = Path.Combine(dir, "ffmpeg.exe");
+                var candidate = Path.Combine(dir, FfmpegExecutableName);
                 if (File.Exists(candidate))
                     return candidate;
             }
@@ -246,7 +253,33 @@ public static class VideoExportEngine
         }
 
         throw new FileNotFoundException(
-            "FFmpeg not found. Place ffmpeg.exe in the Spectralis application folder, " +
+            $"FFmpeg not found. Place {FfmpegExecutableName} in the Spectralis application folder, " +
             "or install FFmpeg and add it to your system PATH.");
+    }
+
+    /// <summary>Re-asserts the executable bit on the bundled binary (git tracks
+    /// it explicitly since this repo is cross-published from Windows) so a
+    /// stray build step or plain copy deploy can't silently break launch.</summary>
+    private static void EnsureExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            const UnixFileMode exec =
+                UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            var mode = File.GetUnixFileMode(path);
+            if ((mode & exec) != exec)
+            {
+                File.SetUnixFileMode(path, mode | exec);
+            }
+        }
+        catch
+        {
+            // Best-effort; if this fails, Process.Start surfaces a clear error.
+        }
     }
 }
