@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Spectralis.App.Services;
 using Spectralis.Core.Platform;
 using WebViewControl;
@@ -19,6 +20,15 @@ public sealed class CefGlueWebViewHost : IWebViewHost
 
     private readonly WebView _webView;
     private bool _disposed;
+
+    // WebView2Host writes NavigateToString content to a real file and serves it over
+    // https:// instead of an in-memory load — LoadHtml has no real origin, which
+    // measurably tanks frame rate (no resource caching, GPU compositing differences).
+    // Same deal here: every inline HTML surface gets the file-backed path.
+    private readonly string _inlineHtmlHostName = $"spectralis-inline-{Guid.NewGuid():N}.local";
+    private readonly string _inlineHtmlFolder = Path.Combine(
+        Path.GetTempPath(), "spectralis", "cefglue-inline", Guid.NewGuid().ToString("N"));
+    private bool _inlineHostMapped;
 
     public CefGlueWebViewHost(WebView webView)
     {
@@ -64,7 +74,22 @@ public sealed class CefGlueWebViewHost : IWebViewHost
 
     public void Navigate(Uri url) => _webView.LoadUrl(url.ToString());
 
-    public void NavigateToString(string html) => _webView.LoadHtml(html);
+    public void NavigateToString(string html)
+    {
+        Directory.CreateDirectory(_inlineHtmlFolder);
+        var indexPath = Path.Combine(_inlineHtmlFolder, "index.html");
+        File.WriteAllText(indexPath, html, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // MapVirtualHost adds a BeforeResourceLoad handler each call — only wire it
+        // once per instance, then just keep overwriting index.html underneath it.
+        if (!_inlineHostMapped)
+        {
+            MapVirtualHost(_inlineHtmlHostName, _inlineHtmlFolder);
+            _inlineHostMapped = true;
+        }
+
+        _webView.LoadUrl($"https://{_inlineHtmlHostName}/index.html?v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+    }
 
     public Task ExecuteScriptAsync(string script)
     {
@@ -157,6 +182,20 @@ public sealed class CefGlueWebViewHost : IWebViewHost
         _webView.Navigated -= OnNavigated;
         _webView.LoadFailed -= OnLoadFailed;
         _webView.Dispose();
+        CleanupInlineHtmlFolder();
+    }
+
+    private void CleanupInlineHtmlFolder()
+    {
+        try
+        {
+            if (Directory.Exists(_inlineHtmlFolder))
+                Directory.Delete(_inlineHtmlFolder, recursive: true);
+        }
+        catch
+        {
+            // Temp navigation files are best-effort cleanup.
+        }
     }
 
     /// <summary>Object bound into page script; CefGlue camel-cases member names.</summary>
