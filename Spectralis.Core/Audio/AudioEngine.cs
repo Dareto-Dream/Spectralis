@@ -44,7 +44,7 @@ public sealed class AudioEngine : IDisposable
 
     public AudioEngine(IAudioDeviceEnumerator? deviceEnumerator = null, int latencyMs = 70)
     {
-        _deviceEnumerator = deviceEnumerator ?? new WaveOutDeviceEnumerator();
+        _deviceEnumerator = deviceEnumerator ?? AudioDeviceEnumeratorFactory.Create();
         _latencyMs = latencyMs;
     }
 
