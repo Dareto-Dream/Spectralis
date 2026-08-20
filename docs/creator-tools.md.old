@@ -1,7 +1,6 @@
 # Creator Tools
 
-Spectralis includes lightweight tools for building richer track assets without ever leaving the
-player — I got tired of alt-tabbing to five different apps just to time some lyrics.
+Spectralis includes lightweight tools for building richer track assets without leaving the player.
 
 ## Lyrics Timing Studio
 
@@ -18,12 +17,11 @@ The studio can:
 - Copy or export an `.lrc` file.
 
 When the current track is a local file, export defaults to a matching sidecar path such as
-`track-name.lrc`. For streamed sources, Spectralis just asks you where to put it.
+`track-name.lrc`. For streamed sources, Spectralis prompts for a destination.
 
 ## Lyric Explanations
 
-Add contextual annotations to synced lyrics — basically Genius-style annotations, but yours.
-Explanations appear below the current lyric line during playback.
+Add contextual annotations to synced lyrics—like Genius lyrics annotations. Explanations appear below the current lyric line during playback.
 
 Explanations are stored as timestamp-keyed JSON and can be embedded in two ways:
 
@@ -51,8 +49,7 @@ Format: timestamps (MM:SS.MS) map to explanation text.
 
 ### Method 2: ID3v2 Tag Embedding
 
-Embed explanations directly in the audio file's ID3v2 metadata using a metadata editor like
-**foobar2000** (whic is what I use, no affiliation, it's just good).
+Embed explanations directly in the audio file's ID3v2 metadata using a metadata editor like **foobar2000**.
 
 1. Open the `.mp3` file in a metadata editor.
 2. Add a custom text frame:
@@ -60,7 +57,7 @@ Embed explanations directly in the audio file's ID3v2 metadata using a metadata 
    - **Description:** `LYRIC_EXPLANATIONS`
    - **Value:** Paste the same JSON object as above
 
-This method travels with the audio file and wins if both sidecar and embedded explanations exist.
+This method travels with the audio file and takes priority if both sidecar and embedded explanations exist.
 
 ### Best Practices
 
@@ -74,8 +71,8 @@ This method travels with the audio file and wins if both sidecar and embedded ex
 ## Content Warnings
 
 Content warnings (TWs) let you attach short labels to individual local tracks. When a track
-with warnings is about to play, a pre-play popup lists the tags and makes the listener confirm
-before audio starts — I'd rather be a little annoying here than surprise somebody.
+with warnings is about to play, a pre-play popup lists the tags and asks the listener to
+confirm before audio starts.
 
 ### Setting warnings
 
@@ -101,9 +98,9 @@ user, queue auto-advance, or a previous/next navigation — a modal popup appear
 
 Warnings are stored in `%LocalAppData%\Spectralis\content_warnings.json` as a flat
 `{ "c:\\path\\to\\file.mp3": ["tag1", "tag2"] }` dictionary keyed by the normalized
-(lowercased, fully qualified) file path. It's plain human-editable JSON, hand-edit it if you want.
+(lowercased, fully qualified) file path. The file is human-editable JSON.
 
 ### Scope
 
 Content warnings apply to **local file tracks only**. Spotify, YouTube, SoundCloud, Suno,
-and shared-queue URL pointers aren't affected, at least not yet.
+and shared-queue URL pointers are not affected.

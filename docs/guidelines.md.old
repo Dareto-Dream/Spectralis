@@ -1,8 +1,7 @@
 # Spectralis Guidelines
 
-This is the product north star for Spectralis, the thing I go back and reread when I'm not sure if
-an idea is cool or just cool to me. Use it when adding features, designing UI, building metadata
-packs, or deciding whether a new idea belongs in the app.
+This is the product north star for Spectralis. Use it when adding features, designing UI, building
+metadata packs, or deciding whether a new idea belongs in the app.
 
 Protocol details live in [standards.md](standards.md), [formats/](formats/), [cdn-contract.md](cdn-contract.md),
 and [api-contract.md](api-contract.md). This document is about the feel of the app and the direction it should
@@ -12,8 +11,7 @@ keep moving.
 
 ## The Feel
 
-Spectralis should feel like a music player that lets a track become a place. That's the whole pitch,
-honestly, everything else in this doc is just working backwards from that sentance.
+Spectralis should feel like a music player that lets a track become a place.
 
 The app shell should be calm, dark, responsive, and dependable. The track experience inside it can
 be loud, cinematic, strange, personal, funny, intense, or theatrical. The shell is the venue. The
@@ -55,9 +53,7 @@ Spectralis is not only a file player. It is a container for track-driven worlds.
 
 ### The Shell Stays Quiet
 
-The application UI should support the experience without competing with it. I fall off this wagon
-about once a month and add some shiny panel I don't need — this section exists to talk myself out
-of it.
+The application UI should support the experience without competing with it.
 
 - Prefer dense, predictable, scan-friendly controls over decorative panels.
 - Use familiar media-player patterns for playback, queue, settings, source selection, and status.
@@ -171,7 +167,7 @@ Before adding or accepting a feature, ask:
 
 ## Non-Goals
 
-Spectralis should not become (say it with me):
+Spectralis should not become:
 
 - A generic media library manager where rich track experiences are an afterthought.
 - A social network.
