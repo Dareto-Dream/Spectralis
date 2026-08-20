@@ -947,7 +947,11 @@ public partial class MainWindow : Window
             shell.RequestDock = () => SongWarsDock(vm);
             shell.Closed += (_, _) =>
             {
-                // Dock the live content back to the sidebar page.
+                // Dock the live content back to the sidebar page. MainContentGrid
+                // is still parented to the closing shell's Host — it has to be
+                // removed there first, or re-adding it to ContentHost throws
+                // (a control can't have two parents) and takes the app down.
+                shell.Host.Children.Remove(_songWarsView.MainContentGrid);
                 _songWarsView.PoppedOutPlaceholder.IsVisible = false;
                 _songWarsView.ContentHost.Children.Add(_songWarsView.MainContentGrid);
                 _songWarsWindow = null;
