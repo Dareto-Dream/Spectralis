@@ -61,10 +61,19 @@
     <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\yt-dlp.exe" Link="yt-dlp.exe" Condition="Exists('..\yt-dlp.exe')">
+    <!-- Windows-only payloads: cross-publishing net8.0 (Linux/macOS) from a
+         Windows host would otherwise still bundle these Win32 binaries in,
+         and the app would find+exec them as if they were the real thing. -->
+    <Content Include="..\yt-dlp.exe" Link="yt-dlp.exe" Condition="Exists('..\yt-dlp.exe') And '$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\ffmpeg.exe" Link="ffmpeg.exe" Condition="Exists('..\ffmpeg.exe')">
+    <Content Include="..\ffmpeg.exe" Link="ffmpeg.exe" Condition="Exists('..\ffmpeg.exe') And '$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\yt-dlp" Link="yt-dlp" Condition="Exists('..\yt-dlp') And '$(TargetFramework)' == 'net8.0'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\ffmpeg" Link="ffmpeg" Condition="Exists('..\ffmpeg') And '$(TargetFramework)' == 'net8.0'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\docs\legal\**\*.md" Link="docs\legal\%(RecursiveDir)%(Filename)%(Extension)">

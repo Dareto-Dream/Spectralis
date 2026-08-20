@@ -320,8 +320,9 @@ public sealed class OpenUrlService
         {
             if (isYouTube)
                 AppLogPaths.AppendTimestamped(YouTubeLogPath, "yt-dlp not found on PATH or app directory");
+            var expectedName = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
             throw new InvalidOperationException(
-                "yt-dlp was not found. Put yt-dlp.exe beside Spectralis or on PATH to open this service link.");
+                $"yt-dlp was not found. Put {expectedName} beside Spectralis or on PATH to open this service link.");
         }
 
         if (isYouTube)
