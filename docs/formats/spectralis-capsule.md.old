@@ -1,8 +1,7 @@
 # Spectralis Capsule Format (`.spectralis`)
 
 Capsule files are a signed binary format for distributing self-contained single-track audio
-experiences — not to be confused with the MP3-embedded metadata modules, this is a whole
-different format and not a standaone audio file you can just open in anything.
+experiences. They are distinct from MP3-embedded metadata and are not standard audio files.
 
 For the multi-track album format, see [spectral-album-world.md](spectral-album-world.md).
 
@@ -71,9 +70,8 @@ assets/data/*.lrc     optional   LRC lyrics; first .lrc entry loaded
 ### `suppressAppLyrics`
 
 Set to `true` when the capsule's embedded visualizer renders the lyrics itself and the normal
-Spectralis side lyrics panel would just compete for space — two lyric displays fighting each
-other is nobody's idea of a good time. The LRC can still be included in `assets/data` and
-embedded module data refs.
+Spectralis side lyrics panel would compete for space. The LRC can still be included in
+`assets/data` and embedded module data refs.
 
 ---
 
@@ -90,7 +88,7 @@ Capsules can opt into a click-through story explainer by adding a `story` object
 ### Custom story page
 
 For full creative control, ship your own HTML/CSS/JS story page instead of the built-in pager —
-same idea as a `.spectral` album world's `world.entry`, just scaled down for a single track.
+the same concept as a `.spectral` album world's `world.entry`, just for a single-track capsule.
 
 ```json
 "story": {
@@ -150,11 +148,10 @@ The image path must point to a file inside the ZIP.
 
 ## Rules
 
-- Capsule audio temp files get deleted when the capsule is unloaded or the form closes, no
-  leftover junk in `%TEMP%`.
+- Capsule audio temp files are deleted when the capsule is unloaded or the form closes.
 - `UnloadCapsule()` is called before any new local file load; local audio and capsule audio never
   coexist in the engine.
-- Capsule files are not added to the play queue — they replace the current track instead.
+- Capsule files are not added to the play queue; they replace the current track.
 - The `CreatorTrustStore` persists at `%LocalAppData%\Spectralis\trusted-creators.json`.
 
 ---
