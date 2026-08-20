@@ -276,16 +276,25 @@ public static class CapsuleStoryRenderer
     }
     counter.textContent = (i + 1) + ' / ' + pages.length;
     btnPrev.disabled = (i === 0);
-    btnNext.disabled = (i === pages.length - 1);
+    btnNext.disabled = false;
     btnNext.textContent = (i === pages.length - 1) ? 'Done ✓' : 'Next →';
   }
 
+  function finish() {
+    if (window.spectral && typeof window.spectral.resume === 'function') {
+      window.spectral.resume();
+    }
+  }
+
   btnPrev.addEventListener('click', function() { if (idx > 0) show(--idx); });
-  btnNext.addEventListener('click', function() { if (idx < pages.length - 1) show(++idx); });
+  btnNext.addEventListener('click', function() {
+    if (idx < pages.length - 1) { show(++idx); } else { finish(); }
+  });
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
-      if (idx < pages.length - 1) { show(++idx); e.preventDefault(); }
+      if (idx < pages.length - 1) { show(++idx); } else { finish(); }
+      e.preventDefault();
     } else if (e.key === 'ArrowLeft') {
       if (idx > 0) { show(--idx); e.preventDefault(); }
     }
