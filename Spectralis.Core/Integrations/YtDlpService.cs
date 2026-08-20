@@ -7,7 +7,9 @@ namespace Spectralis.Core.Integrations;
 /// </summary>
 public static class YtDlpService
 {
-    private const string ExecutableName = "yt-dlp.exe";
+    // The bundled/PATH binary has no ".exe" suffix outside Windows — searching
+    // for "yt-dlp.exe" on Linux/macOS never matches a real yt-dlp install.
+    private static string ExecutableName => OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
     private const string BundledPayloadName = "yt-dlp.bin";
     private static readonly TimeSpan ResolveTimeout = TimeSpan.FromSeconds(60);
 
@@ -154,6 +156,16 @@ public static class YtDlpService
             {
                 File.Copy(payloadPath, executablePath, overwrite: true);
                 File.SetLastWriteTimeUtc(executablePath, File.GetLastWriteTimeUtc(payloadPath));
+
+                // File.Copy doesn't carry the executable bit over on Unix —
+                // without this the freshly-cached copy fails to launch.
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(executablePath,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                        UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                }
             }
 
             return executablePath;
