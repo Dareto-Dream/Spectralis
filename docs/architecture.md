@@ -36,7 +36,7 @@ Every platform- or toolkit-specific dependency sits behind an interface in
 
 | Seam | Purpose | Implementations |
 |---|---|---|
-| `IAudioDevice` / `IAudioDeviceEnumerator` | Audio output | `WaveOutAudioDevice` (legacy 70 ms/3-buffer path); silent fake in tests |
+| `IAudioDevice` / `IAudioDeviceEnumerator` | Audio output | `WaveOutAudioDevice` (Windows, legacy 70 ms/3-buffer path); `PulseAudioAudioDevice` (Linux, `paplay` subprocess); silent fake in tests |
 | `IVizCanvas` | Visualizer drawing surface | `AvaloniaVizCanvas` (DrawingContext); `NullVizCanvas` in tests; future raster targets (OBS, video export) |
 | `IWebViewHost` | Embedded browser for capsule HTML / album worlds | `CefGlueWebViewHost` (WebViewControl-Avalonia, uniform Chromium on all platforms); fake in tests |
 | `ILoopbackCaptureSource` | System-audio capture for the loopback visualizer | WASAPI (Windows), `pactl`/`parec` monitor source (Linux), setup-guidance stub (macOS, pending real-Mac validation) |
