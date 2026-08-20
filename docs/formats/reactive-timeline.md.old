@@ -1,8 +1,7 @@
 # Reactive Timeline Sidecar (`.spectralis-reactive.json`)
 
-Sidecar files attach track-reactive metadata to any local audio file without touching it —
-your mp3 stays exactly as it was, this just rides next to it. Inside `.spectralis` capsules,
-`reactive.json` at the ZIP root is used instead of a sidecar.
+Sidecar files attach track-reactive metadata to any local audio file without modifying it.
+Inside `.spectralis` capsules, `reactive.json` at the ZIP root is used instead of a sidecar.
 
 ---
 
@@ -31,7 +30,7 @@ Top-level fields (see `ReactiveModels.cs`):
 
 ### Sections
 
-Named, non-overlapping time ranges — first match wins when looking up the current section.
+Named, non-overlapping time ranges. The first match wins when looking up the current section.
 Used by the OBS overlay to populate the section/mood display.
 
 ```json
@@ -88,8 +87,7 @@ advances through the timeline.
 
 ## Rules
 
-- The sidecar file must sit next to the audio file with the same base name, no exceptions.
+- The sidecar file must sit next to the audio file with the same base name.
 - Inside a capsule, the file must be named `reactive.json` at the ZIP root.
-- `format` and `formatVersion` are validated on load; mismatches are silently ignored (fail
-  quiet, not loud — same philosophy as everything else in this doc).
+- `format` and `formatVersion` are validated on load; mismatches are silently ignored.
 - Invalid event targets or actions are skipped without error.
