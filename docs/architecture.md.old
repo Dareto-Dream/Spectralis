@@ -1,8 +1,8 @@
 # Architecture — the Avalonia system
 
-How the current Spectralis system is put together: project boundries, the
-seams that keep it testable and cross-platform, and what's still left to port
-from the legacy feature set (there's always something left to port).
+How the current Spectralis system is put together: project boundaries, the
+seams that keep it testable and cross-platform, and what remains to port from
+the legacy feature set.
 
 ## Projects
 
@@ -32,8 +32,7 @@ from the legacy feature set (there's always something left to port).
 
 Every platform- or toolkit-specific dependency sits behind an interface in
 `Spectralis.Core/Platform`; production implementations live in
-`Spectralis.App/Platform` or `Core/Audio`. I am religious about this one, don't
-reach around it just because it's faster in the moment.
+`Spectralis.App/Platform` or `Core/Audio`.
 
 | Seam | Purpose | Implementations |
 |---|---|---|
@@ -51,9 +50,8 @@ reach around it just because it's faster in the moment.
 All visual values resolve through `Spectralis.App/Design/Tokens.axaml`
 (near-black surfaces, one signal-orange accent, three type roles including a
 monospace data face, 4–64 px spacing scale, spline easings). No Fluent or
-Material theme, that stuff always looks like every other app; `Design/Controls.axaml`
-restyles the Simple-theme control templates from the tokens. Nothing should be
-hardcoded in the views, if you find something hardcoded that's a bug not a feature.
+Material theme; `Design/Controls.axaml` restyles the Simple-theme control
+templates from the tokens. Nothing is hardcoded in views.
 
 ## Security posture
 
@@ -71,11 +69,11 @@ hardcoded in the views, if you find something hardcoded that's a bug not a featu
 
 ## Testing
 
-`dotnet test Spectralis.Tests` runs everything. Benchmarks (kept green in CI,
-and I do actually look when they go red): 10k-file incremental rescan < 10 s,
-50k track-row build + live search < 500 ms, 600 sustained frames of every
-visualizer < 33 ms each. Capsule tests sign real fixtures with generated
-Ed25519 keys; the CDN, audio device, and WebView are faked at their seams.
+`dotnet test Spectralis.Tests` runs everything. Benchmarks (kept green in CI):
+10k-file incremental rescan < 10 s, 50k track-row build + live search < 500 ms,
+600 sustained frames of every visualizer < 33 ms each. Capsule tests sign real
+fixtures with generated Ed25519 keys; the CDN, audio device, and WebView are
+faked at their seams.
 
 ## Status & roadmap
 
@@ -88,7 +86,7 @@ Presence, mini player, Windows media session controls, default-app/protocol
 registration, single-instance handoff, subprocess and URI hardening, and
 installers.
 
-Still porting from the legacy feature set (the list that never seems to get shorter):
+Still porting from the legacy feature set:
 
 - Shared Play session runtime + view (protocol foundation is in Core; port
   `SharedPlayCdnClient` / `SharedPlaySessionController` from the legacy tree)
@@ -108,6 +106,5 @@ Platform validation notes:
   installed (`wsl --install -d Ubuntu`), then run
   `Spectralis.Installer/Linux/build-appimage.sh`.
 - macOS: `.dmg` script and signing/notarization hooks are written but
-  unvalidated until a Mac session (I don't own a Mac, if you're reading this
-  and want to donate one, hit me up); the macOS Now Playing and AVAudioEngine
+  unvalidated until a Mac session; the macOS Now Playing and AVAudioEngine
   loopback bindings stay stubbed until then.

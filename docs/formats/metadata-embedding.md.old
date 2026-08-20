@@ -1,8 +1,8 @@
 # Metadata Embedding — ID3v2 Embedded Modules
 
-Embedded modules let creators ship rich animated experiences directly inside MP3 files as
-portable, self-contained content — no seperate download, it's just riding along in the file.
-They're stored in ID3v2 `TXXX` frames and loaded into isolated runtime contexts inside Spectralis.
+Embedded modules allow creators to ship rich animated experiences directly inside MP3 files as
+portable, self-contained content. They are stored in ID3v2 `TXXX` frames and loaded into
+isolated runtime contexts inside Spectralis.
 
 For the full metadata packing standard and tool documentation, see
 [metadata/STANDARDS.md](../../metadata/STANDARDS.md).
@@ -99,7 +99,7 @@ Text:        <base64-encoded WASM binary>
 
 ### Sandbox Constraints
 
-WASM modules run in a zero-capability sandbox (yes really, zero — no cheating):
+WASM modules run in a zero-capability sandbox:
 
 - No filesystem, network, process, or OS API access.
 - No host bindings beyond the allowed imports below.
@@ -143,8 +143,7 @@ var thickness = config is not null && config.TryGetNumber("thickness", out var t
     : 2.2f;
 ```
 
-Always provide sensible defaults, clamp numeric values, fall back gracefully on missing data — a
-visualizer that throws bc a config field is missing is a bad time for everyone.
+Always provide sensible defaults. Clamp numeric values. Fall back gracefully on missing data.
 
 ---
 
@@ -233,8 +232,7 @@ HTML-specific:
 Video-specific:
 - Container detected; codec matches `runtime` field.
 
-If any check fails, the embedded module is silently skipped and the track just plays with
-defaults — I'd rather a broken visualizer disappear quietly than crash someone's playback.
+If any check fails, the embedded module is silently skipped and the track plays with defaults.
 
 ---
 
