@@ -21,6 +21,7 @@ public static class YtDlpService
             var candidate = Path.Combine(appDir, ExecutableName);
             if (File.Exists(candidate))
             {
+                EnsureExecutable(candidate);
                 return candidate;
             }
 
@@ -137,6 +138,35 @@ public static class YtDlpService
         return result.Stdout
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(static line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Git tracks the executable bit for <c>yt-dlp</c>/<c>ffmpeg</c> explicitly
+    /// (this repo is checked out and cross-published from Windows, which has no
+    /// concept of it), but re-asserting it here means a stray build step or a
+    /// plain zip/copy deploy can't silently lose it and break launch on Linux.
+    /// </summary>
+    private static void EnsureExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            const UnixFileMode exec =
+                UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            var mode = File.GetUnixFileMode(path);
+            if ((mode & exec) != exec)
+            {
+                File.SetUnixFileMode(path, mode | exec);
+            }
+        }
+        catch
+        {
+            // Best-effort; if this fails, Process.Start surfaces a clear error.
+        }
     }
 
     private static string? PrepareBundledExecutable(string payloadPath)
