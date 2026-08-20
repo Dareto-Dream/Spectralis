@@ -7,7 +7,9 @@ namespace Spectralis.Core.Integrations;
 /// </summary>
 public static class YtDlpService
 {
-    private const string ExecutableName = "yt-dlp.exe";
+    // The bundled/PATH binary has no ".exe" suffix outside Windows — searching
+    // for "yt-dlp.exe" on Linux/macOS never matches a real yt-dlp install.
+    private static string ExecutableName => OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
     private const string BundledPayloadName = "yt-dlp.bin";
     private static readonly TimeSpan ResolveTimeout = TimeSpan.FromSeconds(60);
 
@@ -19,6 +21,7 @@ public static class YtDlpService
             var candidate = Path.Combine(appDir, ExecutableName);
             if (File.Exists(candidate))
             {
+                EnsureExecutable(candidate);
                 return candidate;
             }
 
@@ -137,6 +140,35 @@ public static class YtDlpService
             .FirstOrDefault(static line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Git tracks the executable bit for <c>yt-dlp</c>/<c>ffmpeg</c> explicitly
+    /// (this repo is checked out and cross-published from Windows, which has no
+    /// concept of it), but re-asserting it here means a stray build step or a
+    /// plain zip/copy deploy can't silently lose it and break launch on Linux.
+    /// </summary>
+    private static void EnsureExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            const UnixFileMode exec =
+                UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            var mode = File.GetUnixFileMode(path);
+            if ((mode & exec) != exec)
+            {
+                File.SetUnixFileMode(path, mode | exec);
+            }
+        }
+        catch
+        {
+            // Best-effort; if this fails, Process.Start surfaces a clear error.
+        }
+    }
+
     private static string? PrepareBundledExecutable(string payloadPath)
     {
         try
@@ -154,6 +186,16 @@ public static class YtDlpService
             {
                 File.Copy(payloadPath, executablePath, overwrite: true);
                 File.SetLastWriteTimeUtc(executablePath, File.GetLastWriteTimeUtc(payloadPath));
+
+                // File.Copy doesn't carry the executable bit over on Unix —
+                // without this the freshly-cached copy fails to launch.
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(executablePath,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                        UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                }
             }
 
             return executablePath;
