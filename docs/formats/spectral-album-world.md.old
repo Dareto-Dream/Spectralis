@@ -1,12 +1,12 @@
 # Album World Format (`.spectral`)
 
 `.spectral` is Spectralis's multi-track album capsule format. Where a `.spectralis` capsule
-ships one track with one optional experience, a `.spectral` capsule ships a whole album with
-an interactive HTML "world" the creator fully controls.
+ships one track with one optional experience, a `.spectral` capsule ships an entire album with
+an interactive HTML "world" that the creator controls.
 
 Examples of what the world can be: a Super Mario World-style level map where each song is a
-level, an interactive liner notes page, a branching narrative, whatever the creator wants to
-build honestly. If the creator ships no world, the player just falls back to a plain tracklist.
+level, an interactive liner notes page, a branching narrative, or any custom HTML experience the
+creator builds. If the creator ships no world, the player falls back to a simple tracklist.
 
 For the single-track format, see [spectralis-capsule.md](spectralis-capsule.md).
 
@@ -47,10 +47,9 @@ Trust check mirrors the `.spectralis` flow exactly:
 6. Cache updated metadata; trust the fingerprint on first approval.
 
 The shared `CreatorTrustStore` persists both `.spectralis` and `.spectral` trust decisions at
-`%LocalAppData%\Spectralis\trusted-creators.json` — one file, both formats, so don't go looking
-for a seperate album trust store, there isn't one. A creator trusted for a single-track capsule
-is not automatically trusted for an album capsule though — both formats intersect against the
-CDN key's `allowedCapabilities` independently.
+`%LocalAppData%\Spectralis\trusted-creators.json`. A creator trusted for a single-track capsule
+is not automatically trusted for an album capsule — both formats intersect against the CDN key's
+`allowedCapabilities` independently.
 
 ### Required Capability
 
@@ -160,8 +159,8 @@ spectral-world.local  →  extracted world folder
 ```
 
 The world entry point loads at `https://spectral-world.local/{entryFile}`. This means all
-relative paths in the HTML (`./assets/bg.webp`, `../data/config.json`) resolve normally — no
-CORS headaches, no base-64 data URI workarounds, build it like a normal website.
+relative paths in the HTML (`./assets/bg.webp`, `../data/config.json`) resolve normally. No
+CORS issues. No base-64 data URI workarounds.
 
 The virtual host is configured with `DenyCors` to prevent cross-origin requests from inside the
 world page.
@@ -535,7 +534,7 @@ intro story is never shown again for this album.
 
 ## Creator Guide
 
-### Minimal Album World Structure (the "I just want it to work" layout)
+### Minimal Album World Structure
 
 ```
 manifest.json
@@ -644,8 +643,7 @@ document.getElementById('exit-btn').addEventListener('click', () => {
   against this origin. Absolute paths (`/assets/bg.webp`) also work.
 - The world page has network access to the origin only — it cannot make requests to external URLs
   unless the creator explicitly requests the `webview.networkAccess` capability.
-- Don't keep expensive animation loops running when `frame.active === false` (player paused
-  or stopped) — your listener's battery and my inbox will both thank you. Use `onPlaybackFrame`
-  to detect the inactive state and pause rendering.
+- Avoid keeping expensive animation loops running when `frame.active === false` (player paused
+  or stopped). Use `onPlaybackFrame` to detect the inactive state and pause rendering.
 - `onReady` may fire up to 200 ms after the page finishes loading. Design the page to show a
-  sensible loading state before `onReady` arrives, don't just show a blank white flash.
+  sensible loading state before `onReady` arrives.

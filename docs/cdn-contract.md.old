@@ -1,7 +1,7 @@
 # Spectralis CDN Contract
 
 This document defines the endpoints and response shapes that Spectralis expects from its public
-services. It's a contract for the hosted services, not for the player.
+services. It is a contract for the hosted services, not for the player.
 
 See [api-contract.md](api-contract.md) for the planned CDN/API split and route ownership rules.
 
@@ -26,7 +26,7 @@ GET https://cdn.deltavdevs.com/spectralis
 ```
 
 Squirrel reads this path for the update manifest. Handled by the Squirrel-compatible release
-pipeline. Do not move this route, seriously.
+pipeline. Do not move this route.
 
 ---
 
@@ -63,7 +63,7 @@ GET https://cdn.deltavdevs.com/spectralis/keys/{fingerprint}.json
 - `{fingerprint}` — SHA-256 of the creator's Ed25519 public key, lowercase hex.
 
 The player fetches this when it encounters an unknown signing key in a `.spectralis` or `.spectral`
-capsule. It's also re-fetched periodically to check for revocations.
+capsule. It is also re-fetched periodically to check for revocations.
 
 **Response — 200 OK**:
 
@@ -131,8 +131,7 @@ The CDN should set:
 Cache-Control: public, max-age=300
 ```
 
-Five minutes is short enough to make revocations meaningful within a session, without hammering
-the CDN every time someone opens a capsule.
+Five minutes is short enough to make revocations meaningful within a session.
 
 ---
 
@@ -185,8 +184,7 @@ GET https://cdn.deltavdevs.com/spectralis/web-share/index.html?session={sessionI
 ```
 
 The Discord-flavored URL is the same browser player with an activity-oriented layout and Open
-Graph metadata for chat previews. It can also serve as the Discord Activity URL target, so don't
-seperate the two paths without checking that first.
+Graph metadata for chat previews. It can also serve as the Discord Activity URL target.
 
 ---
 

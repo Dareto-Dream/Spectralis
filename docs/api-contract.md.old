@@ -1,13 +1,13 @@
 # Spectralis App Service Contract
 
 This document defines the service routes Spectralis expects once the combined Railway system is
-split by responsibility (future me: don't move stuff around without updating this):
+split by responsibility:
 
 - **CDN service** — serves public/static and WebDAV-compatible content on port `8080`.
 - **Backend service** — serves dynamic API, uploads, licenses, sessions, and trust mutation on port `3000`.
-- **Update route** — stays exactly where it is today, no exceptions.
+- **Update route** — stays exactly where it is today.
 
-This is the application routing contract. It describes the target refactor but doesn't require
+This is the application routing contract. It describes the target refactor but does not require
 the desktop app to implement every route immediately.
 
 See [cdn-contract.md](cdn-contract.md) for the current endpoint shapes the app actually calls.
@@ -24,7 +24,7 @@ API origin:  https://api.deltavdevs.com
 Update feed: https://cdn.deltavdevs.com/spectralis
 ```
 
-The CDN and API may run in one Railway project or repository, but they're separate route
+The CDN and API may run in one Railway project or repository, but they are separate route
 surfaces. A reverse proxy, Railway domain mapping, or gateway should route public HTTPS traffic
 to the correct internal port.
 
@@ -52,12 +52,12 @@ Production origins must be HTTPS. Local development may use plain HTTP on loopba
 | `SpectralisApiBaseUrl` | `https://api.deltavdevs.com` | Dynamic routes, upload sessions, Shared Play state, license and redemption APIs |
 | `SpectralisUpdateFeedUrl` | `https://cdn.deltavdevs.com/spectralis` | Squirrel update feed. Do not move. |
 
-Rules (don't break these, I will find out):
+Rules:
 
 - Do not infer the API origin from the CDN origin once both are configured.
 - Do not send large uploads through the backend unless the route is explicitly designed for streaming.
-- Do not download large packages through the backend, return CDN asset URLs instead.
-- Dynamic JSON responses should be `Cache-Control: no-store` unless this doc says otherwise.
+- Do not download large packages through the backend. Return CDN asset URLs instead.
+- Dynamic JSON responses should be `Cache-Control: no-store` unless this document says otherwise.
 - Static immutable assets should use long cache lifetimes.
 - Creator key metadata should use short public caching so revocations propagate quickly.
 
@@ -87,8 +87,7 @@ GET /spectralis/web-share/index.html?session={sessionId}&source=discord&mode=act
 ```
 
 Static files are served by the CDN. The web player reads session/state data from the API.
-User-facing Shared Play links should point at this CDN route, not directly at a JSON API route
-(learned that one the hard way).
+User-facing Shared Play links should point at this CDN route, not directly at a JSON API route.
 
 ### Redeemable Visualizer Manifest
 
@@ -442,5 +441,4 @@ Admin routes require strong authentication. Successful mutations must publish up
 - New clients should call `api.deltavdevs.com` for `/shared-play/*`, `/licenses/*`,
   `/visualizers/v1/*`, and `/creators/v1/*`.
 - New clients should call `cdn.deltavdevs.com` for `/spectralis/*` and package/media downloads.
-- The Squirrel update route remains `https://cdn.deltavdevs.com/spectralis` — seperate from
-  everything else, do not touch it, ever.
+- The Squirrel update route remains `https://cdn.deltavdevs.com/spectralis`.

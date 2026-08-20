@@ -1,11 +1,11 @@
-# Feature gap - legacy WinForms app vs. Avalonia app (the big ugly checklist)
+# Feature gap - legacy WinForms app vs. Avalonia app
 
 Audit date: 2026-06-11. Source of truth: `legacy/` WinForms modules compared
 against `Spectralis.App` and `Spectralis.Core`.
 
-I track every legacy feature, workflow, setting, menu item, toolbar
-control, dialog, and small affordance that isn't yet in the Avalonia app —
-"Core ported" means the non-UI model/service exists in the new projects,
+This file tracks every legacy feature, workflow, setting, menu item, toolbar
+control, dialog, and small affordance that is not yet present in the Avalonia
+app. "Core ported" means the non-UI model/service exists in the new projects,
 but the user-facing flow or wiring is still missing.
 
 ## App shell, menus, status, and shortcuts

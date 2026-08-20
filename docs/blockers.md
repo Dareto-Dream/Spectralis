@@ -1,10 +1,10 @@
 # Current blockers — Avalonia app, 2026-06-13
 
-Every item below is a non-✅ entry in `docs/feature-gap.md` that cannot be
-implemented right now either because an external dependency is missing, a
-platform is unavailable, or a core decision needs to be made first. Items that
-are just "not yet written" (no external gate) are listed last under
-**Implementable gaps** — those can be started immediately.
+Every item below is a non-✅ entry in `docs/feature-gap.md` that I can't just
+knock out right now — either an external dependency is missing, a platform
+isn't available to test on, or I need to actually make a decision first.
+Stuff that's just "not yet written" (no external gate, no excuse) is listed
+last under **Implementable gaps** — those I could start on today if I felt like it.
 
 ---
 
@@ -15,7 +15,7 @@ are just "not yet written" (no external gate) are listed last under
 Client ID is baked into the assembly at build time via
 `$env:SPECTRALIS_SPOTIFY_CLIENT_ID` → `AssemblyMetadata["SpotifyClientId"]`.
 At runtime `SpotifyClientIdProvider` reads the metadata first, then falls back
-to the live env var.  No user-supplied client ID is needed for official builds.
+to the live env var. No user-supplied client ID needed for official builds.
 
 Ported to `Spectralis.Core/Integrations/Spotify/`:
 - `SpotifyClientIdProvider` — metadata + env var resolution
@@ -25,7 +25,7 @@ Ported to `Spectralis.Core/Integrations/Spotify/`:
   transfer/queue/snapshot); opens the system browser for auth, same as legacy
 - `SpotifyLyricsService` — fetches LINE_SYNCED LRC from the relay proxy
 
-**Remaining work (no external gate):**
+**Remaining work (no external gate, just me finding time):**
 - Wire `SpotifyService` into the UI (settings link/unlink button, NowPlaying
   source selector, SMTC handoff, Discord presence, scrobbling from Spotify
   playback snapshot).
@@ -52,7 +52,7 @@ Ported to `Spectralis.Core/SharedPlay/`:
   takes explicit params instead of the WinForms `AppSettings` object;
   logging is inlined (no App-layer dependency).
 
-The CDN is already running — no new server-side work needed.
+The CDN is already running, so no new server-side work needed here — small mercies.
 
 **Resolved — no remaining work.** `SharedPlaySessionController` is wired into
 `NowPlayingViewModel`/`MainWindowViewModel` (`NotifyPlayback` on play/pause/
@@ -78,14 +78,14 @@ The legacy app executes WASM instruction streams for embedded visualizers:
 
 The seam for WASM is implied by the module reader (`EmbeddedModuleReader` reads
 the `DELTA_BIN_` frame and `EmbeddedVisualizer` on `TrackInfo`) but there is no
-in-process executor. Shader execution has the same gap.
+in-process executor yet. Shader execution has the exact same gap, annoyingly.
 
 **What's needed to unblock:**
 Recommendation: **Wasmtime.NET** (`Wasmtime` NuGet ≥ 30). The canvas API
 (`IVizCanvas`) already exists; WASM modules call it through a host-function
 table. The trust context (`CapsuleCapability`) already gates `visualizer.wasm`.
 
-**Partial bypass available:**
+**Partial bypass available (thank god):**
 Installed HTML visualizers already work. WASM packages show
 "WASM execution not yet available" in the picker and fall back to the HTML
 surface or built-in mode. No user-visible crash — just a missing feature.
@@ -137,9 +137,10 @@ Scripts compile and stubs return safe no-ops:
 - `ILoopbackCaptureSource` macOS stub (AVAudioEngine permission hint +
   BlackHole guidance)
 
-**macOS:** no Mac hardware available in this environment. All macOS-specific
-code will be validated on real hardware when compiling for the first public
-release. The stubs are safe no-ops so Windows users are unaffected.
+**macOS:** I don't own a Mac, so this is genuinely flying blind. All
+macOS-specific code will get validated on real hardware when I'm compiling
+for the first public release. The stubs are safe no-ops so Windows users are
+unaffected in the meantime.
 
 **Linux:** `wsl --install -d Ubuntu` is available. The `build-appimage.sh`
 script can be run inside WSL for smoke tests. ELF binary output can be
@@ -152,24 +153,24 @@ inspected via `dotnet publish -r linux-x64`.
 
 ## Implementable gaps (no external blockers)
 
-These are missing but can be implemented right now. Ordered by estimated effort
-and dependency depth.
+These are missing but I could implement them right now, no excuses. Roughly
+ordered by effort and how deep the dependency chain goes.
 
 ### A — Reactive timeline: lyrics and shader dispatch
 
 `OnReactiveParamsChanged` handles `"theme"` and `"visualizer"` targets.
 The `"lyrics"` target (switch to lyrics panel, optionally highlight a line)
 and `"shader"` target (stub: log + ignore until Blocker 3 resolved) are not
-wired. This is a small extension to the existing switch statement in
-`NowPlayingViewModel`.
+wired. Small extension to the existing switch statement in
+`NowPlayingViewModel` — a lazy afternoon fix, honestly.
 
 ### B — Album world cache store (30-day)
 
-`AlbumCapsuleReader` opens `.spectral` packages but the runtime does not cache
+`AlbumCapsuleReader` opens `.spectral` packages but the runtime doesn't cache
 the unpacked world to `%LocalAppData%\Spectralis\AlbumWorlds\{fingerprint}\`.
-A 30-day eviction policy (check `manifest.json` mtime) and a
+A 30-day eviction policy (check `manifest.json` mtime) and an
 `AlbumWorldCacheStore` class are needed. The `ClearCachedAlbumState` menu
-action already deletes this directory — the write side is missing.
+action already deletes this directory — the write side is what's missing.
 
 ### C — Album world session store
 
@@ -177,7 +178,7 @@ Per-track play stats (count, last-played timestamp), achievement unlock state,
 and sequential level-gate progress need a `session.json` sidecar next to the
 cached world. `AlbumWorldCacheStore.GetSession` / `SaveSession` methods would
 cover it. The JS bridge (`saveBookmark` message) already exists in
-`WebViewHostService` but has nowhere to persist the data.
+`WebViewHostService` but has nowhere to persist the data yet.
 
 ### D — Gapless / prepared-engine handoff
 
@@ -185,12 +186,12 @@ When a remote URL is cached (YouTube, SoundCloud, Suno, BandLab), the audio
 file is already on disk before the current track ends. `AudioEngine` has no
 path to pre-load the next item. Adding a `PrepareNextAsync(path)` call that
 opens a second `MediaFoundationReader` and swaps it in at the zero-crossing
-boundary would provide gapless playback for cached remote sources.
+boundary would give gapless playback for cached remote sources.
 
 ### E — Embedded video rendering and sync
 
 `TrackInfo.EmbeddedVideo` carries a byte array (typically MP4). The WebView
-HTML surface cannot play it directly. Two options:
+HTML surface can't play it directly. Two options:
 
 1. Synthesize an HTML page that base64-encodes the video into a `<video>` tag
    and hands it to the existing `IWebViewHost.NavigateToString`. Zero new
@@ -200,7 +201,7 @@ HTML surface cannot play it directly. Two options:
    `av:MediaElement` if available.
 
 Option 1 (HTML synthesis) is the path of least resistance and matches how
-`EmbeddedMarkdownRenderer` works.
+`EmbeddedMarkdownRenderer` already works, so probably that one.
 
 ### F — Capsule story / visual-novel mode
 
@@ -208,20 +209,21 @@ Option 1 (HTML synthesis) is the path of least resistance and matches how
 entry, a summary, a backstory, and a `pages[]` array. The Capsules view already
 shows title/subtitle/summary/capabilities. Missing: a story pager that cycles
 through `pages[]` entries (each page is an HTML fragment or image reference
-inside the package) using the `IWebViewHost` surface. This is the same WebView
-surface already used for embedded HTML — the story just needs a synthesized
-host HTML that loads pages on demand.
+inside the package) using the `IWebViewHost` surface. Same WebView surface
+already used for embedded HTML — the story just needs a synthesized host HTML
+that loads pages on demand.
 
 ### G — OBS visual designer canvas
 
-The custom JSON text editor is the current power-user path. A visual designer
-would be a modeless `ObsDesignerWindow` with:
+The custom JSON text editor is the current power-user path (read: the path I
+was too lazy to build a real UI for). A visual designer would be a modeless
+`ObsDesignerWindow` with:
 - A `Canvas` control scaled to the user's OBS resolution
 - Draggable/resizable `Border` handles for each widget in `ObsLayout.Widgets`
 - A property panel on the right for widget type, field-level toggles, and opacity
 - Live preview feed via the existing OBS HTTP push (or a static mock state)
 
-This has no external dependency — `ObsLayout` / `ObsPreset` / `BuiltInObsPresets`
+No external dependency here — `ObsLayout` / `ObsPreset` / `BuiltInObsPresets`
 are all in Core. The window would call `_setObsLayout` on confirm, same as the
 preset picker.
 
@@ -230,7 +232,7 @@ preset picker.
 Clipboard monitoring currently extracts the URL, shows a toast, and caches on
 Play. Two missing behaviors:
 1. Expand short links (bit.ly, t.co, etc.) via a single HEAD request before
-   showing the toast, so the resolved domain appears in the subtitle.
+   showing the toast, so the resolved domain shows up in the subtitle.
 2. Start caching the remote audio in the background while the current track
    plays, so playback is instant when the user taps Play.
 
@@ -248,6 +250,7 @@ widget-embed wrapper would cover the gap.
 
 `NowPlayingViewModel.RemoteStatus` already exposes a status string. The yt-dlp
 download currently runs via `SafeProcessRunner` with buffered output — no
-line-by-line progress is dispatched. Switching the runner to stream stdout lines
-and parsing `[download] N% of ...` lines into `RemoteStatus` updates would give
-the live download progress that the legacy app shows.
+line-by-line progress gets dispatched. Switching the runner to stream stdout
+lines and parsing `[download] N% of ...` lines into `RemoteStatus` updates
+would give the live download progress the legacy app shows. Nice-to-have,
+not urgent.
