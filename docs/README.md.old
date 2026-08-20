@@ -1,6 +1,6 @@
 # Spectralis Docs
 
-This directory is where all the real documentation lives (as oppposed to whatever's scattered in my head).
+This directory is the canonical documentation home for Spectralis.
 
 ---
 
@@ -46,12 +46,12 @@ This directory is where all the real documentation lives (as oppposed to whateve
 
 | Document | What it covers |
 |---|---|
-| [development/worklog.md](development/worklog.md) | Active sprint log, mostly for me to remember what I was doing |
+| [development/worklog.md](development/worklog.md) | Active sprint log |
 | [../README.md](../README.md) | Project overview and setup |
 
 ---
 
-## Quick Reference — Capability Constants (the stuff I always forget the exact name of)
+## Quick Reference — Capability Constants
 
 | Constant | File format | Effect |
 |---|---|---|
