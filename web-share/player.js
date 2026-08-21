@@ -1325,7 +1325,7 @@
 
   function createWebShareJoinUrl(roomCode) {
     try {
-      var url = new URL("/spectralis/web-share", config.cdnBaseUrl);
+      var url = new URL("/spectralis/web-share/", config.cdnBaseUrl);
       url.searchParams.set("session", roomCode);
       return url.toString();
     } catch (e) { return ""; }
@@ -1333,7 +1333,7 @@
 
   function createWebShareChannelUrl(channelId) {
     try {
-      var url = new URL("/spectralis/web-share", config.cdnBaseUrl);
+      var url = new URL("/spectralis/web-share/", config.cdnBaseUrl);
       url.searchParams.set("channel", channelId);
       return url.toString();
     } catch (e) { return ""; }
