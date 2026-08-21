@@ -34,7 +34,7 @@ export default function Setup() {
       <div className="dl-platforms">
 
         {/* Windows */}
-        <div className="dl-card dl-card--windows">
+        <div className="dl-card dl-card--windows" id="windows">
           <div className="dl-card__header">
             <div className="dl-card__icon">
               <Download size={18} />
@@ -81,7 +81,7 @@ export default function Setup() {
         </div>
 
         {/* Linux */}
-        <div className="dl-card dl-card--linux">
+        <div className="dl-card dl-card--linux" id="linux">
           <div className="dl-card__header">
             <div className="dl-card__icon">
               <Terminal size={18} />
@@ -128,7 +128,7 @@ export default function Setup() {
         </div>
       </div>
 
-      <div className="dl-requirements">
+      <div className="dl-requirements" id="requirements">
         <h2 className="dl-requirements__title">System requirements</h2>
         <div className="dl-req-grid">
           <div className="dl-req-col">
