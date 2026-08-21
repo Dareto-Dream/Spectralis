@@ -10,7 +10,7 @@ public static class SharedPlayDefaults
     public const string ProtocolVersion = "shared-play-v2";
     public const string ClientName = "Spectralis";
     public const string RichPackageContentType = "application/vnd.spectralis.shared-play+zip";
-    public const string WebSharePlayerPath = "/spectralis/web-share";
+    public const string WebSharePlayerPath = "/spectralis/web-share/";
     public const string DiscordActivitySource = "discord";
     public const long MaxPackageBytes = 512L * 1024L * 1024L;
 
