@@ -9,8 +9,18 @@ import Setup from './pages/Setup.jsx'
 import './App.css'
 
 function ScrollToTop() {
-  const { pathname } = useLocation()
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [pathname])
+  const { pathname, hash } = useLocation()
+  useEffect(() => {
+    if (hash) {
+      const id = hash.slice(1)
+      // wait a frame so the target page has actually rendered its sections
+      requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [pathname, hash])
   return null
 }
 
