@@ -84,7 +84,7 @@ public sealed class SharedPlaySessionController : IDisposable
             liveChannelOwnerToken = channelOwnerToken;
             liveChannelDisplayName = channelDisplayName;
             liveChannelUrl = liveChannelEnabled
-                ? SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"/spectralis/web-share?channel={Uri.EscapeDataString(liveChannelId)}").ToString()
+                ? SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"{SharedPlayDefaults.WebSharePlayerPath}?channel={Uri.EscapeDataString(liveChannelId)}").ToString()
                 : null;
 
             if (!enabled)
