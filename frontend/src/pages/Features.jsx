@@ -14,11 +14,8 @@ function AllFeatures() {
       <div className="feat-list">
         {FEATURES.map(({ num, icon: Icon, title, body }) => (
           <div key={num} className="feat-row">
-            <span className="feat-row__num">{num}</span>
-            <h3 className="feat-row__title">
-              <Icon size={15} className="feat-row__icon" />
-              {title}
-            </h3>
+            <span className="feat-row__icon-badge"><Icon size={18} className="feat-row__icon" /></span>
+            <h3 className="feat-row__title">{title}</h3>
             <p className="feat-row__body">{body}</p>
           </div>
         ))}
