@@ -1,17 +1,19 @@
 :root {
   color-scheme: dark;
-  --bg:          #0a0a0a;
+  --bg:          #171418;
   --surface:     rgba(255,255,255,0.06);
   --surface-hi:  rgba(255,255,255,0.10);
   --border:      rgba(255,255,255,0.10);
-  --ink:         #f0ede8;
-  --ink-soft:    rgba(240,237,232,0.60);
-  --ink-muted:   rgba(240,237,232,0.35);
-  --accent:      #d8a13a;
-  --accent-dim:  rgba(216,161,58,0.18);
+  --ink:         #f5eee5;
+  --ink-soft:    rgba(245,238,229,0.60);
+  --ink-muted:   rgba(245,238,229,0.35);
+  --accent:      #a882f2;
+  --accent-2:    #764cd2;
+  --accent-dim:  rgba(168,130,242,0.18);
   --danger:      #e05a4a;
-  --font:        "Segoe UI", "Inter", "Aptos", system-ui, sans-serif;
-  --font-mono:   "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  --font:        "Open Sans", "Segoe UI", system-ui, sans-serif;
+  --font-display:"Open Sans Condensed", "Segoe UI", system-ui, sans-serif;
+  --font-mono:   "IBM Plex Mono", "Cascadia Mono", ui-monospace, monospace;
   --fire-heat:   0;
   --love-heat:   0;
   --boost-heat:  0;
@@ -103,6 +105,7 @@ body::after {
 }
 
 .landing-title {
+  font-family: var(--font-display);
   font-size: clamp(28px, 7vw, 42px);
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -143,7 +146,7 @@ body::after {
 
 .code-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(216,161,58,0.18);
+  box-shadow: 0 0 0 3px rgba(168,130,242,0.18);
 }
 
 .join-btn {
@@ -151,7 +154,7 @@ body::after {
   background: var(--accent);
   border: none;
   border-radius: var(--radius-sm);
-  color: #0a0a0a;
+  color: #fff;
   font-size: 16px;
   font-weight: 700;
   padding: 15px;
@@ -254,7 +257,7 @@ body::after {
   letter-spacing: 0.14em;
   color: var(--accent);
   background: var(--accent-dim);
-  border: 1px solid rgba(216,161,58,0.28);
+  border: 1px solid rgba(168,130,242,0.28);
   border-radius: 6px;
   padding: 3px 10px;
 }
@@ -333,8 +336,8 @@ body::after {
 .disc.is-playing {
   animation: disc-spin 8s linear infinite;
   box-shadow:
-    0 0 0 6px rgba(216,161,58,0.10),
-    0 0 0 12px rgba(216,161,58,0.04),
+    0 0 0 6px rgba(168,130,242,0.10),
+    0 0 0 12px rgba(168,130,242,0.04),
     0 8px 50px rgba(0,0,0,0.8),
     inset 0 2px 4px rgba(255,255,255,0.08);
 }
@@ -399,6 +402,7 @@ body::after {
 }
 
 .track-title {
+  font-family: var(--font-display);
   font-size: clamp(20px, 5vw, 28px);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -662,7 +666,7 @@ input[type="range"]::-moz-range-thumb {
   border-top: 1px solid rgba(255,255,255,0.04);
 }
 
-.queue-item.is-current { background: rgba(216,161,58,0.08); }
+.queue-item.is-current { background: rgba(168,130,242,0.08); }
 .queue-empty { padding: 12px 16px; color: var(--ink-muted); font-size: 13px; }
 
 .queue-title {
@@ -793,7 +797,7 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.14em;
   color: var(--accent);
   background: var(--accent-dim);
-  border: 1px solid rgba(216,161,58,0.28);
+  border: 1px solid rgba(168,130,242,0.28);
   border-radius: 6px;
   padding: 3px 10px;
 }
@@ -816,6 +820,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sq-disabled h2 {
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
   color: var(--ink);
@@ -876,7 +881,7 @@ input[type="range"]::-moz-range-thumb {
 
 .sq-disc.sq-disc-spinning {
   animation: disc-spin 8s linear infinite;
-  box-shadow: 0 0 0 3px rgba(216,161,58,0.12), 0 4px 20px rgba(0,0,0,0.6);
+  box-shadow: 0 0 0 3px rgba(168,130,242,0.12), 0 4px 20px rgba(0,0,0,0.6);
 }
 
 .sq-disc img {
@@ -959,6 +964,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sq-card-title {
+  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 700;
   color: var(--ink);
@@ -1013,7 +1019,7 @@ input[type="range"]::-moz-range-thumb {
 
 .sq-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(216,161,58,0.14);
+  box-shadow: 0 0 0 3px rgba(168,130,242,0.14);
 }
 
 /* fee block (Stripe Elements container) */
@@ -1074,7 +1080,7 @@ input[type="range"]::-moz-range-thumb {
 
 .sq-btn-primary {
   background: var(--accent);
-  color: #0a0a0a;
+  color: #fff;
 }
 
 .sq-btn-secondary {
@@ -1093,8 +1099,8 @@ input[type="range"]::-moz-range-thumb {
 .sq-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(0,0,0,0.25);
-  border-top-color: #0a0a0a;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: sq-spin 0.65s linear infinite;
   flex-shrink: 0;
@@ -1141,7 +1147,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* skip card accent */
 .sq-skip-card {
-  border-color: rgba(216,161,58,0.18);
+  border-color: rgba(168,130,242,0.18);
 }
 
 .sq-superskip-card {
