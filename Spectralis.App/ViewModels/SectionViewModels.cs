@@ -48,6 +48,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private readonly SharedPlaySessionController _controller = new();
     private readonly SharedPlayJoinRuntime _joinRuntime = new();
     private readonly HashSet<string> _seenReactionIds = new();
+    private bool _requestedTracksPrimed;
     private CancellationTokenSource _pollCts = new();
     private string _statusText = "No active room";
     private string _joinUrl = string.Empty;
@@ -86,6 +87,10 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     /// <summary>Wired by MainWindowViewModel so "Play" on a listener request actually plays it.</summary>
     public Func<string, Task>? PlayTrackRequested { get; set; }
+
+    /// <summary>Wired by MainWindowViewModel to append a freshly-seen listener request to the
+    /// playback queue automatically, without touching whatever's currently playing.</summary>
+    public Func<string, Task>? QueueTrackRequested { get; set; }
 
     /// <summary>Wired by MainWindowViewModel to apply a Shared Play join's downloaded track to the engine.</summary>
     public event Action<TrackInfo>? TrackReadyForEngine;
@@ -368,6 +373,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         RecentReactionsText = string.Empty;
         RequestedTracks.Clear();
         _seenReactionIds.Clear();
+        _requestedTracksPrimed = false;
     }
 
     private async Task PollLoopAsync(CancellationToken ct)
@@ -432,10 +438,19 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         var existingIds = RequestedTracks.Select(t => t.Id).ToHashSet();
         var liveIds = queue.Items.Select(i => i.Id).ToHashSet();
 
+        // Don't auto-queue whatever's already sitting in a room's request list the moment
+        // we start polling it (stale requests from before a restart/reconnect) — only
+        // requests that arrive from here on get appended to playback automatically.
+        var isFirstLoad = !_requestedTracksPrimed;
+        _requestedTracksPrimed = true;
+
         foreach (var item in queue.Items)
         {
             if (existingIds.Contains(item.Id)) continue;
             RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack));
+
+            if (!isFirstLoad && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
+                _ = QueueTrackRequested(item.Url);
         }
 
         foreach (var stale in RequestedTracks.Where(t => !liveIds.Contains(t.Id)).ToList())
