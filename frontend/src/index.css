@@ -15,8 +15,8 @@
   --accent-dim: rgba(168, 130, 242, 0.12);
   --accent-border: rgba(168, 130, 242, 0.32);
 
-  --grotesk: 'Space Grotesk', system-ui, sans-serif;
-  --sans:    'Barlow', system-ui, sans-serif;
+  --grotesk: 'Open Sans Condensed', system-ui, sans-serif;
+  --sans:    'Open Sans', system-ui, sans-serif;
   --mono:    'IBM Plex Mono', ui-monospace, monospace;
 }
 

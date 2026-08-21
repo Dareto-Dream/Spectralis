@@ -2,6 +2,38 @@ import { useState, useEffect } from 'react'
 import { NavLink, Link } from 'react-router-dom'
 import { Download, GitFork, ArrowUpRight } from 'lucide-react'
 
+const NAV_ITEMS = [
+  {
+    label: 'Features',
+    to: '/features',
+    menu: [
+      { label: 'All Features', to: '/features#features' },
+      { label: 'Visualizers', to: '/features#visualizers' },
+      { label: 'OBS Overlay', to: '/features#obs' },
+      { label: 'Capsule Format', to: '/features#capsule' },
+    ],
+  },
+  {
+    label: 'Learn',
+    to: '/learn',
+    menu: [
+      { label: 'Capsules', to: '/learn#capsules' },
+      { label: 'Reactive Timeline', to: '/learn#reactive-timeline' },
+      { label: 'OBS Overlay', to: '/learn#obs-overlay' },
+      { label: 'Shared Play', to: '/learn#shared-play' },
+    ],
+  },
+  {
+    label: 'Setup & Requirements',
+    to: '/setup',
+    menu: [
+      { label: 'Windows', to: '/setup#windows' },
+      { label: 'Linux', to: '/setup#linux' },
+      { label: 'System Requirements', to: '/setup#requirements' },
+    ],
+  },
+]
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -17,9 +49,23 @@ export function Navbar() {
         <span>Spectralis</span>
       </Link>
       <div className="navbar__links">
-        <NavLink to="/features" className={({ isActive }) => isActive ? 'navbar__link--active' : ''}>Features</NavLink>
-        <NavLink to="/learn" className={({ isActive }) => isActive ? 'navbar__link--active' : ''}>Learn</NavLink>
-        <NavLink to="/setup" className={({ isActive }) => isActive ? 'navbar__link--active' : ''}>Setup & Requirements</NavLink>
+        {NAV_ITEMS.map((item) => (
+          <div className="navbar__item" key={item.label}>
+            <NavLink
+              to={item.to}
+              className={({ isActive }) => `navbar__item-trigger${isActive ? ' navbar__link--active' : ''}`}
+            >
+              {item.label}
+            </NavLink>
+            <div className="navbar__dropdown">
+              {item.menu.map((sub) => (
+                <Link key={sub.to} to={sub.to} className="navbar__dropdown-link">
+                  {sub.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
         <a href="https://github.com/dareto-dream/spectralis" target="_blank" rel="noreferrer" className="navbar__gh">
           <GitFork size={14} />
           GitHub
