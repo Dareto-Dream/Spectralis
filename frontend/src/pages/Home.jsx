@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, ArrowRight, GitFork, Sparkles } from 'lucide-react'
-import { FEATURES, SCREENSHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
+import { Download, Terminal, ArrowRight, GitFork, Sparkles } from 'lucide-react'
+import { SCREENSHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
 import { CommunityBar } from '../components/CommunityBar.jsx'
+import { VisualizerGallery } from '../components/VisualizerGallery.jsx'
 
-// ── hero ─────────────────────────────────────────────────────────────────────
+// ── hero (+ video) ───────────────────────────────────────────────────────────
 
 function Hero() {
   return (
@@ -42,41 +43,47 @@ function Hero() {
   )
 }
 
-// ── features teaser ──────────────────────────────────────────────────────────
+// ── downloads ────────────────────────────────────────────────────────────────
 
-function FeaturesTeaser() {
-  const teaser = FEATURES.slice(0, 5)
+function DownloadsSection() {
   return (
-    <section className="features section" id="features">
+    <section className="section" id="downloads">
       <div className="section__head">
-        <span className="section__label">Features</span>
-        <h2 className="section__title">Everything you need.</h2>
+        <span className="section__label">Get it</span>
+        <h2 className="section__title">Download free.</h2>
+        <p className="section__sub">No sign-in, no license key, no catch. Windows and Linux.</p>
       </div>
-      <div className="feat-list">
-        {teaser.map(({ num, icon: Icon, title, body }) => (
-          <div key={num} className="feat-row">
-            <span className="feat-row__icon-badge"><Icon size={18} className="feat-row__icon" /></span>
-            <h3 className="feat-row__title">{title}</h3>
-            <p className="feat-row__body">{body}</p>
-          </div>
-        ))}
+      <div className="dl-teaser">
+        <Link to="/setup#windows" className="dl-teaser__card">
+          <span className="dl-teaser__icon"><Download size={20} /></span>
+          <span className="dl-teaser__text">
+            <span className="dl-teaser__name">Windows</span>
+            <span className="dl-teaser__sub">10 / 11 · x64 installer</span>
+          </span>
+          <ArrowRight size={16} className="dl-teaser__arrow" />
+        </Link>
+        <Link to="/setup#linux" className="dl-teaser__card">
+          <span className="dl-teaser__icon"><Terminal size={20} /></span>
+          <span className="dl-teaser__text">
+            <span className="dl-teaser__name">Linux</span>
+            <span className="dl-teaser__sub">x86_64 · AppImage</span>
+          </span>
+          <ArrowRight size={16} className="dl-teaser__arrow" />
+        </Link>
       </div>
-      <Link to="/features" className="btn btn--ghost feat-teaser__more">
-        See all features
-        <ArrowRight size={14} />
-      </Link>
     </section>
   )
 }
 
-// ── screenshots ────────────────────────────────────────────────────────────────
+// ── see what's inside ────────────────────────────────────────────────────────
 
-function ScreenshotsSection() {
+function InsideSection() {
   return (
     <section className="shots section" id="screenshots">
       <div className="section__head">
         <span className="section__label">In the app</span>
-        <h2 className="section__title">No mockups.<br />This is it running.</h2>
+        <h2 className="section__title">See what's inside.</h2>
+        <p className="section__sub">No mockups — this is Spectralis actually running, and it's always growing.</p>
       </div>
       <div className="shots-grid">
         {SCREENSHOTS.map(({ src, title, body }) => (
@@ -89,11 +96,49 @@ function ScreenshotsSection() {
           </figure>
         ))}
       </div>
+      <Link to="/features" className="btn btn--ghost section__cta">
+        All features
+        <ArrowRight size={14} />
+      </Link>
     </section>
   )
 }
 
-// ── changelog ─────────────────────────────────────────────────────────────────
+// ── make great visualizers ("behind the hits" equivalent) ───────────────────
+
+function VisualizersSection() {
+  return (
+    <section className="visualizers section" id="visualizers">
+      <div className="section__head">
+        <span className="section__label">Visual engine</span>
+        <h2 className="section__title">Make great visualizers.</h2>
+        <p className="section__sub">15 built-in renderers, reacting to every beat in real time.</p>
+      </div>
+      <VisualizerGallery />
+      <Link to="/features#visualizers" className="btn btn--ghost section__cta">
+        See all visualizers
+        <ArrowRight size={14} />
+      </Link>
+    </section>
+  )
+}
+
+// ── an evergrowing community ─────────────────────────────────────────────────
+
+function CommunitySection() {
+  return (
+    <section className="section" id="community">
+      <div className="section__head">
+        <span className="section__label">Community</span>
+        <h2 className="section__title">An evergrowing community.</h2>
+        <p className="section__sub">Streamers, producers, and listeners building on Spectralis every day.</p>
+      </div>
+      <CommunityBar />
+    </section>
+  )
+}
+
+// ── what's new (changelog) ───────────────────────────────────────────────────
 
 function ChangelogSection() {
   const [releases, setReleases] = useState(null)
@@ -120,7 +165,8 @@ function ChangelogSection() {
     <section className="changelog section" id="changelog">
       <div className="section__head">
         <span className="section__label">Changelog</span>
-        <h2 className="section__title">What changed,<br />by release.</h2>
+        <h2 className="section__title">What's new.</h2>
+        <p className="section__sub">Every release, from patch notes to major features.</p>
       </div>
 
       {loadError && (
@@ -199,7 +245,7 @@ function ChangelogSection() {
   )
 }
 
-// ── CTA ────────────────────────────────────────────────────────────────────────
+// ── start listening ──────────────────────────────────────────────────────────
 
 function CTASection() {
   return (
@@ -207,7 +253,7 @@ function CTASection() {
       <div className="cta-inner">
         <img src="/icon.png" alt="Spectralis" className="cta-logo" />
         <div className="cta-text">
-          <h2 className="cta-title">Download free.<br />Run it locally.</h2>
+          <h2 className="cta-title">Start listening.</h2>
           <p className="cta-sub">Windows 10/11 · Linux x86_64 · No sign-in · Free</p>
           <div className="cta-actions">
             <Link to="/setup" className="btn btn--primary btn--lg">
@@ -229,9 +275,10 @@ export default function Home() {
   return (
     <>
       <Hero />
-      <CommunityBar />
-      <FeaturesTeaser />
-      <ScreenshotsSection />
+      <DownloadsSection />
+      <InsideSection />
+      <VisualizersSection />
+      <CommunitySection />
       <ChangelogSection />
       <CTASection />
     </>
