@@ -27,9 +27,11 @@
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Host Room" Command="{Binding HostCommand}" Classes="primary" IsVisible="{Binding !IsHosting}" />
+          <Button Content="Host Room" Command="{Binding HostCommand}" Classes="primary"
+                  IsVisible="{Binding !IsHosting}" IsEnabled="{Binding !HostPending}"
+                  ToolTip.Tip="Starts as soon as you begin playing a track" />
           <Button Content="Stop Hosting" Command="{Binding StopCommand}" Classes="destructive" IsVisible="{Binding IsHosting}" />
-          <Button Content="Copy Link" Command="{Binding CopyLinkCommand}" IsVisible="{Binding IsHosting}" />
+          <Button Content="{Binding CopyLinkLabel}" Command="{Binding CopyLinkCommand}" IsVisible="{Binding IsHosting}" />
         </StackPanel>
 
         <StackPanel IsVisible="{Binding IsHosting}" Spacing="4">
