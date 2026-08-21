@@ -211,6 +211,20 @@
       setDotState("error");
       setStatus("Audio could not be loaded for this session.");
     });
+
+    // Browsers refuse audio.play()/AudioContext without a real user gesture
+    // first. Any tap anywhere on the page counts — this is what actually
+    // flips runtime.userActivated (nothing else in this file does).
+    document.addEventListener("click", handleUserGesture);
+    document.addEventListener("touchend", handleUserGesture, { passive: true });
+  }
+
+  function handleUserGesture() {
+    if (runtime.userActivated) return;
+    runtime.userActivated = true;
+    ensureAudioGraph().then(function () {
+      applyPlaybackSync(true);
+    });
   }
 
   // ─── Room code helpers ────────────────────────────────────────────────────
