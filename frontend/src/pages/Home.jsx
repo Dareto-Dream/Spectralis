@@ -2,75 +2,41 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, ArrowRight, GitFork, Sparkles } from 'lucide-react'
 import { FEATURES, SCREENSHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
+import { CommunityBar } from '../components/CommunityBar.jsx'
 
 // ── hero ─────────────────────────────────────────────────────────────────────
 
 function Hero() {
   return (
     <section className="hero" id="hero">
-      <video
-        className="hero__video"
-        src="/hero-preview.mp4"
-        poster="/hero-preview-poster.jpg"
-        autoPlay
-        loop
-        muted
-        playsInline
-      />
-      <div className="hero__video-overlay" />
-      <div className="hero__rule" />
-      <div className="hero__inner">
-        <div className="hero__logo-block">
-          <img src="/icon.png" alt="Spectralis" className="hero__logo" />
-          <div className="hero__tag">
-            <span className="hero__tag-dot" />
-            Windows · Linux · Free
-          </div>
-        </div>
-        <div className="hero__headline-block">
-          <h1 className="hero__title">
-            One app.<br />
-            Plays it.<br />
-            Visualizes it.<br />
-            Streams it live.
-          </h1>
-        </div>
-        <div className="hero__right-block">
-          <p className="hero__sub">
-            Spectralis is a desktop audio player with real-time visualizers,
-            synced lyrics, signed capsule releases, and a live OBS overlay
-            server built in. Windows and Linux.
-          </p>
-          <div className="hero__actions">
-            <Link to="/setup" className="btn btn--primary">
-              <Download size={15} />
-              Download free
-            </Link>
-            <Link to="/features" className="btn btn--ghost">
-              See features
-              <ArrowRight size={14} />
-            </Link>
-          </div>
-          <dl className="hero__specs">
-            <div><dt>Platform</dt><dd>Windows 10/11 · Linux x86_64</dd></div>
-            <div><dt>Runtime</dt><dd>.NET 8 · WebView2 / Avalonia</dd></div>
-            <div><dt>License</dt><dd>Free</dd></div>
-          </dl>
+      <div className="hero__center">
+        <img src="/icon.png" alt="Spectralis" className="hero__logo" />
+        <h1 className="hero__title">Spectralis</h1>
+        <p className="hero__sub">
+          A desktop audio player with real-time visualizers, synced lyrics,
+          signed capsule releases, and a live OBS overlay server built in.
+        </p>
+        <div className="hero__actions">
+          <Link to="/setup" className="btn btn--primary btn--lg">
+            <Download size={15} />
+            Download free
+          </Link>
+          <Link to="/features" className="btn btn--ghost btn--lg">
+            See features
+            <ArrowRight size={14} />
+          </Link>
         </div>
       </div>
-      <div className="hero__counts">
-        {[
-          ['15', 'Built-in visualizers'],
-          ['12+', 'Audio formats'],
-          ['11', 'OBS presets'],
-          ['Ed25519', 'Capsule signing'],
-          ['60', 'FPS rendering'],
-        ].map(([n, l]) => (
-          <div key={l} className="hero__count">
-            <span className="hero__count-n">{n}</span>
-            <span className="hero__count-l">{l}</span>
-          </div>
-        ))}
+      <div className="hero__preview">
+        <video
+          className="hero__preview-video"
+          src="/hero-preview.mp4"
+          poster="/hero-preview-poster.jpg"
+          autoPlay
+          loop
+          muted
+          playsInline
+        />
       </div>
     </section>
   )
@@ -89,11 +55,8 @@ function FeaturesTeaser() {
       <div className="feat-list">
         {teaser.map(({ num, icon: Icon, title, body }) => (
           <div key={num} className="feat-row">
-            <span className="feat-row__num">{num}</span>
-            <h3 className="feat-row__title">
-              <Icon size={15} className="feat-row__icon" />
-              {title}
-            </h3>
+            <span className="feat-row__icon-badge"><Icon size={18} className="feat-row__icon" /></span>
+            <h3 className="feat-row__title">{title}</h3>
             <p className="feat-row__body">{body}</p>
           </div>
         ))}
@@ -266,6 +229,7 @@ export default function Home() {
   return (
     <>
       <Hero />
+      <CommunityBar />
       <FeaturesTeaser />
       <ScreenshotsSection />
       <ChangelogSection />
