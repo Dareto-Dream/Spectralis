@@ -60,6 +60,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private AppSettings? _settings;
     private bool _isJoined;
     private string _joinedStatusText = string.Empty;
+    private bool _hostPending;
+    private string _copyLinkLabel = "Copy Link";
 
     public SharedPlayViewModel()
     {
@@ -95,6 +97,21 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         get => _isHosting;
         private set => this.RaiseAndSetIfChanged(ref _isHosting, value);
+    }
+
+    /// <summary>True from the moment Host Room is pressed until a room actually
+    /// exists — covers the gap where nothing's playing yet, so the button doesn't
+    /// just sit there looking clickable while silently waiting on the first tick.</summary>
+    public bool HostPending
+    {
+        get => _hostPending;
+        private set => this.RaiseAndSetIfChanged(ref _hostPending, value);
+    }
+
+    public string CopyLinkLabel
+    {
+        get => _copyLinkLabel;
+        private set => this.RaiseAndSetIfChanged(ref _copyLinkLabel, value);
     }
 
     /// <summary>True while actively joined to (or joining) someone else's Shared Play room as a listener.</summary>
@@ -301,14 +318,24 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private void CopyLink()
     {
-        if (!string.IsNullOrEmpty(_joinUrl))
-            CopyToClipboardRequested?.Invoke(_joinUrl);
+        if (string.IsNullOrEmpty(_joinUrl)) return;
+        CopyToClipboardRequested?.Invoke(_joinUrl);
+        CopyLinkLabel = "Copied!";
+        _ = ResetCopyLinkLabelAsync();
+    }
+
+    private async Task ResetCopyLinkLabelAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        CopyLinkLabel = "Copy Link";
     }
 
     private void OnStatusChanged(object? sender, EventArgs _)
     {
         var snap = _controller.Snapshot;
         IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.RoomCode);
+        HostPending = snap.IsEnabled && !IsHosting;
+        if (!IsHosting) CopyLinkLabel = "Copy Link";
         JoinUrl = snap.JoinUrl ?? string.Empty;
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
@@ -322,7 +349,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         if (snap.IsUploading) return "Uploading track...";
         if (!string.IsNullOrEmpty(snap.DisplayCode)) return $"Room: {snap.DisplayCode}";
         if (!string.IsNullOrEmpty(snap.RoomCode)) return $"Room: {SharedPlayDefaults.DisplayRoomCode(snap.RoomCode)}";
-        return "Ready to host.";
+        return "Waiting for playback to start the room…";
     }
 
     // ── Listener presence / reactions / requests polling ────────────────────────
