@@ -235,7 +235,10 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public void NotifyPlayback(TrackInfo? track, bool isPlaying, double positionSeconds, double durationSeconds, string reason = "tick")
     {
-        if (!_isHosting) return;
+        // Gate on _hostingRequested, not IsHosting: IsHosting only flips true once a room
+        // already exists, but a room is only created as a side effect of a notification
+        // reaching the controller — gating on IsHosting here would drop every tick forever.
+        if (!_hostingRequested) return;
         _controller.NotifyPlaybackChanged(track, isPlaying, positionSeconds, durationSeconds, reason);
     }
 
