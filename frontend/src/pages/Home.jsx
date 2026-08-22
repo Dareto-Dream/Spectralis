@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Terminal, ArrowRight, GitFork, Sparkles } from 'lucide-react'
+import { Download, Terminal, Apple, ArrowRight, GitFork, Sparkles } from 'lucide-react'
 import { SCREENSHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
 import { CommunityBar } from '../components/CommunityBar.jsx'
-import { VisualizerGallery } from '../components/VisualizerGallery.jsx'
+import { VisualizerStackGrid } from '../components/VisualizerStackGrid.jsx'
 
 // ── hero (+ video) ───────────────────────────────────────────────────────────
 
 function Hero() {
   return (
     <section className="hero" id="hero">
+      <div className="hero__bg" aria-hidden="true" />
       <div className="hero__center">
         <img src="/icon.png" alt="Spectralis" className="hero__logo" />
         <h1 className="hero__title">Spectralis</h1>
@@ -18,13 +19,13 @@ function Hero() {
           signed capsule releases, and a live OBS overlay server built in.
         </p>
         <div className="hero__actions">
+          {/* TODO: point at slugged update pages (e.g. /updates/:slug) once they exist, instead of #changelog */}
+          <a href="#changelog" className="btn btn--ghost btn--lg hero__whats-new">
+            What's new
+          </a>
           <Link to="/setup" className="btn btn--primary btn--lg">
+            Download Spectralis
             <Download size={15} />
-            Download free
-          </Link>
-          <Link to="/features" className="btn btn--ghost btn--lg">
-            See features
-            <ArrowRight size={14} />
           </Link>
         </div>
       </div>
@@ -39,37 +40,75 @@ function Hero() {
           playsInline
         />
       </div>
+      <p className="hero__community-label">Some of the listeners and creators who use Spectralis</p>
+      <CommunityBar />
     </section>
   )
 }
 
 // ── downloads ────────────────────────────────────────────────────────────────
 
+const DOWNLOAD_PITCH = [
+  {
+    title: 'Start listening today',
+    body: 'Point it at your library and go. Real-time visualizers, synced lyrics, and capsule releases all work the moment you open the app — no setup, no config.',
+  },
+  {
+    title: 'As deep as your library',
+    body: '15 built-in visualizer renderers, a live OBS overlay server, and signed capsule releases — all bundled in, nothing to hunt down or install separately.',
+  },
+  {
+    title: 'Free updates, for life',
+    body: 'No sign-in, no license key, no subscription. Every update and every new feature ships free, forever.',
+  },
+]
+
 function DownloadsSection() {
   return (
     <section className="section" id="downloads">
-      <div className="section__head">
-        <span className="section__label">Get it</span>
-        <h2 className="section__title">Download free.</h2>
-        <p className="section__sub">No sign-in, no license key, no catch. Windows and Linux.</p>
-      </div>
-      <div className="dl-teaser">
-        <Link to="/setup#windows" className="dl-teaser__card">
-          <span className="dl-teaser__icon"><Download size={20} /></span>
-          <span className="dl-teaser__text">
-            <span className="dl-teaser__name">Windows</span>
-            <span className="dl-teaser__sub">10 / 11 · x64 installer</span>
-          </span>
-          <ArrowRight size={16} className="dl-teaser__arrow" />
-        </Link>
-        <Link to="/setup#linux" className="dl-teaser__card">
-          <span className="dl-teaser__icon"><Terminal size={20} /></span>
-          <span className="dl-teaser__text">
-            <span className="dl-teaser__name">Linux</span>
-            <span className="dl-teaser__sub">x86_64 · AppImage</span>
-          </span>
-          <ArrowRight size={16} className="dl-teaser__arrow" />
-        </Link>
+      <div className="dl-split">
+        <div className="dl-split__pitch">
+          <span className="section__label">Get it</span>
+          <h2 className="section__title">Download free.</h2>
+          <div className="dl-pitch">
+            {DOWNLOAD_PITCH.map(({ title, body }) => (
+              <div className="dl-pitch__item" key={title}>
+                <h3 className="dl-pitch__title">{title}</h3>
+                <p className="dl-pitch__body">{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="dl-split__os">
+          <h3 className="dl-split__os-title">Pick your OS</h3>
+          <div className="dl-os-list">
+            <Link to="/setup#windows" className="dl-teaser__card">
+              <span className="dl-teaser__icon"><Download size={20} /></span>
+              <span className="dl-teaser__text">
+                <span className="dl-teaser__name">Windows</span>
+                <span className="dl-teaser__sub">10 / 11 · x64 installer</span>
+              </span>
+              <ArrowRight size={16} className="dl-teaser__arrow" />
+            </Link>
+            <div className="dl-teaser__card dl-teaser__card--soon">
+              <span className="dl-teaser__icon"><Apple size={20} /></span>
+              <span className="dl-teaser__text">
+                <span className="dl-teaser__name">macOS</span>
+                <span className="dl-teaser__sub">Universal · Apple Silicon &amp; Intel</span>
+              </span>
+              <span className="dl-teaser__badge">Coming soon</span>
+            </div>
+            <Link to="/setup#linux" className="dl-teaser__card">
+              <span className="dl-teaser__icon"><Terminal size={20} /></span>
+              <span className="dl-teaser__text">
+                <span className="dl-teaser__name">Linux</span>
+                <span className="dl-teaser__sub">x86_64 · AppImage</span>
+              </span>
+              <ArrowRight size={16} className="dl-teaser__arrow" />
+            </Link>
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -78,25 +117,23 @@ function DownloadsSection() {
 // ── see what's inside ────────────────────────────────────────────────────────
 
 function InsideSection() {
-  const [{ src, title, body }] = SCREENSHOTS
+  const [{ src, title }] = SCREENSHOTS
   return (
     <section className="shots section" id="screenshots">
-      <div className="section__head">
-        <span className="section__label">In the app</span>
-        <h2 className="section__title">See what's inside.</h2>
-        <p className="section__sub">No mockups — this is Spectralis actually running, and it's always growing.</p>
+      <div className="shots__box">
+        <div className="section__head">
+          <span className="section__label">In the app</span>
+          <h2 className="section__title">See what's inside.</h2>
+          <p className="section__sub">Visualizers, synced lyrics, capsule releases, streamer tools — all of it in the app, all of it free, and there's more on the way.</p>
+        </div>
+        <Link to="/features" className="btn btn--ghost section__cta shots__cta">
+          All Features
+          <ArrowRight size={14} />
+        </Link>
+        <figure className="shots__shot">
+          <img src={src} alt={title} loading="lazy" />
+        </figure>
       </div>
-      <Link to="/features" className="btn btn--ghost section__cta">
-        All Features
-        <ArrowRight size={14} />
-      </Link>
-      <figure className="shot-card shot-card--single">
-        <img src={src} alt={title} loading="lazy" />
-        <figcaption>
-          <span className="shot-card__title">{title}</span>
-          <span className="shot-card__body">{body}</span>
-        </figcaption>
-      </figure>
     </section>
   )
 }
@@ -108,29 +145,10 @@ function VisualizersSection() {
     <section className="visualizers section" id="visualizers">
       <div className="section__head">
         <span className="section__label">Visual engine</span>
-        <h2 className="section__title">Make great visualizers.</h2>
-        <p className="section__sub">15 built-in renderers, reacting to every beat in real time.</p>
+        <h2 className="section__title">Top-tier visuals</h2>
+        <p className="section__sub">All of your favorite visualizers in one app.</p>
       </div>
-      <VisualizerGallery />
-      <Link to="/features#visualizers" className="btn btn--ghost section__cta">
-        See all visualizers
-        <ArrowRight size={14} />
-      </Link>
-    </section>
-  )
-}
-
-// ── an evergrowing community ─────────────────────────────────────────────────
-
-function CommunitySection() {
-  return (
-    <section className="section" id="community">
-      <div className="section__head">
-        <span className="section__label">Community</span>
-        <h2 className="section__title">An evergrowing community.</h2>
-        <p className="section__sub">Streamers, producers, and listeners building on Spectralis every day.</p>
-      </div>
-      <CommunityBar />
+      <VisualizerStackGrid />
     </section>
   )
 }
@@ -275,7 +293,6 @@ export default function Home() {
       <DownloadsSection />
       <InsideSection />
       <VisualizersSection />
-      <CommunitySection />
       <ChangelogSection />
       <CTASection />
     </>
