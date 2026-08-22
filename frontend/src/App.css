@@ -528,10 +528,9 @@ code {
 
 /* ── screenshots ──────────────────────────────────────────────────────────── */
 
-.shots-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
+.shot-card--single {
+  max-width: 720px;
+  margin: 32px auto 0;
 }
 
 .shot-card {
@@ -570,9 +569,6 @@ code {
   color: var(--muted);
 }
 
-@media (max-width: 760px) {
-  .shots-grid { grid-template-columns: 1fr; }
-}
 
 /* changelog */
 

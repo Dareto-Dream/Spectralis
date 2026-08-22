@@ -78,6 +78,7 @@ function DownloadsSection() {
 // ── see what's inside ────────────────────────────────────────────────────────
 
 function InsideSection() {
+  const [{ src, title, body }] = SCREENSHOTS
   return (
     <section className="shots section" id="screenshots">
       <div className="section__head">
@@ -85,21 +86,17 @@ function InsideSection() {
         <h2 className="section__title">See what's inside.</h2>
         <p className="section__sub">No mockups — this is Spectralis actually running, and it's always growing.</p>
       </div>
-      <div className="shots-grid">
-        {SCREENSHOTS.map(({ src, title, body }) => (
-          <figure key={src} className="shot-card">
-            <img src={src} alt={title} loading="lazy" />
-            <figcaption>
-              <span className="shot-card__title">{title}</span>
-              <span className="shot-card__body">{body}</span>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
       <Link to="/features" className="btn btn--ghost section__cta">
-        All features
+        All Features
         <ArrowRight size={14} />
       </Link>
+      <figure className="shot-card shot-card--single">
+        <img src={src} alt={title} loading="lazy" />
+        <figcaption>
+          <span className="shot-card__title">{title}</span>
+          <span className="shot-card__body">{body}</span>
+        </figcaption>
+      </figure>
     </section>
   )
 }
