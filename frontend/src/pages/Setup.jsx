@@ -1,6 +1,33 @@
 import { Link } from 'react-router-dom'
 import { Download, Terminal, GitFork, ArrowUpRight } from 'lucide-react'
 
+const FAQ = [
+  {
+    q: 'Is Spectralis really free?',
+    a: 'Yes — no license key, no subscription, no feature paywall. Every release is free, forever.',
+  },
+  {
+    q: 'Do I need to sign in or create an account?',
+    a: 'No. Spectralis runs fully offline out of the box. Signing in only matters if you connect Spotify or Discord.',
+  },
+  {
+    q: 'Will installing overwrite my existing library or settings?',
+    a: 'No. Windows installs to %LocalAppData%\\Spectralis and Linux runs as a self-contained AppImage — nothing touches files outside those.',
+  },
+  {
+    q: 'How do updates work?',
+    a: 'Windows uses Velopack: it checks on launch and applies delta patches silently, no re-installer needed. On Linux, just download the latest AppImage when a new version ships.',
+  },
+  {
+    q: 'Is macOS supported?',
+    a: 'Not yet — it\'s on the roadmap. Windows and Linux are supported today.',
+  },
+  {
+    q: 'The AppImage won\'t launch on Linux — what do I do?',
+    a: 'Most distros ship FUSE by default. If yours doesn\'t, run the AppImage with --appimage-extract-and-run as a fallback.',
+  },
+]
+
 export default function Setup() {
   return (
     <main className="dl-page">
@@ -153,6 +180,18 @@ export default function Setup() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div className="dl-faq" id="faq">
+        <h2 className="dl-requirements__title">Frequently asked questions</h2>
+        <div className="dl-faq__list">
+          {FAQ.map(({ q, a }) => (
+            <details className="dl-faq__item" key={q}>
+              <summary className="dl-faq__q">{q}</summary>
+              <p className="dl-faq__a">{a}</p>
+            </details>
+          ))}
         </div>
       </div>
 
