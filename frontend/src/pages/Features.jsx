@@ -1,25 +1,41 @@
-import { Shield, Zap } from 'lucide-react'
-import { FEATURES, OBS_PRESETS, FORMAT_LIST } from '../data/site.jsx'
-import { VisualizerGallery } from '../components/VisualizerGallery.jsx'
+import { Link } from 'react-router-dom'
+import { Download, Terminal, Image, AudioWaveform } from 'lucide-react'
+
+const WIDGET_PLACEHOLDERS = [
+  { title: 'Easy to start listening', body: 'Get started listening to your favorite tracks in seconds with our easy-to-use interface.', image: '/screenshots/start-somewhere.png' },
+  { title: 'Fun for everyone', body: 'A suite of features for streamers to enhance their broadcasting experience.', image: '/screenshots/fun-for-everyone.png' },
+  { title: 'Tools for creators', body: 'Powerful tools to help you create and share your visualizations.', image: '/screenshots/tooling-for-creators.png' },
+]
+
+const WIDGET_PLACEHOLDERS_LG = [
+  { title: 'A new way to enjoy music', body: 'Spectralis offers advanced visualization and storytelling, with its in depth song capsules.', image: '/screenshots/capsules.png' },
+  { title: 'Entire worlds at your fingertips', body: 'Explore vast musical landscapes with our immersive album world capabilities, and developer support', image: '/screenshots/album-worlds.png' },
+]
+
+const GRID_PLACEHOLDERS = [
+  { title: 'Mirror Spectrum', subtitle: 'Our flagship and most popular visualizer.', image: '/screenshots/visualizers/mirror-spectrum.jpg' },
+  { title: 'Spinning Disk', subtitle: 'Bring back retro with our spinning disk visualizer.', image: '/screenshots/visualizers/album-cover.jpg' },
+  { title: 'Waveform', subtitle: 'Visualize your audio with our waveform display.', image: '/screenshots/visualizers/waveform.jpg' },
+  { title: 'Spectrogram', subtitle: 'Analyze your favorites with our spectrogram display.', image: '/screenshots/visualizers/spectrogram.jpg' },
+  { title: 'Dancing Colors', subtitle: 'Experience vibrant visuals that dance to your music.', image: '/screenshots/visualizers/dancing-colors.jpg' },
+  { title: '3D Graph', subtitle: 'Bring your music into the 3rd dimension', image: '/screenshots/visualizers/3d-graph.jpg' },
+]
 
 // ── full feature list ────────────────────────────────────────────────────────
 
 function AllFeatures() {
   return (
     <section className="features section" id="features">
+      <div className="page-head">
+        <h1 className="page-head__title">Features</h1>
+      </div>
       <div className="section__head">
-        <span className="section__label">Features</span>
-        <h2 className="section__title">Everything you need.</h2>
+        <h2 className="section__sub">From energetic mornings to relaxing evenings<br/>Spectralis has got your back</h2>
       </div>
-      <div className="feat-list">
-        {FEATURES.map(({ num, icon: Icon, title, body }) => (
-          <div key={num} className="feat-row">
-            <span className="feat-row__icon-badge"><Icon size={18} className="feat-row__icon" /></span>
-            <h3 className="feat-row__title">{title}</h3>
-            <p className="feat-row__body">{body}</p>
-          </div>
-        ))}
-      </div>
+      <Link to="/setup" className="btn btn--primary btn--lg feat-list__cta">
+        Get Spectralis 
+        <Download size={15} />
+      </Link>
     </section>
   )
 }
@@ -29,112 +45,95 @@ function AllFeatures() {
 function Visualizers() {
   return (
     <section className="visualizers section" id="visualizers">
-      <div className="section__head">
-        <span className="section__label">Visual engine</span>
-        <h2 className="section__title">15 visualizers, live.</h2>
-      </div>
-      <p className="viz-note">Real captures, straight from the app. Idle state.</p>
-      <VisualizerGallery />
-    </section>
-  )
-}
-
-// ── OBS ────────────────────────────────────────────────────────────────────────
-
-function OBSSection() {
-  return (
-    <section className="obs section" id="obs">
-      <div className="section__head">
-        <span className="section__label">OBS integration</span>
-        <h2 className="section__title">Stream-ready,<br />out of the box.</h2>
-      </div>
-      <div className="obs-inner">
-        <div className="obs-copy">
-          <p className="obs-body">
-            Spectralis serves a browser overlay at <code>localhost:5128</code> via SSE.
-            Eleven layout presets via <code>?preset=</code>. State pushes the instant
-            the track changes — no polling, no page reloads, no lag.
-          </p>
-          <ul className="obs-features">
-            <li>High-DPI spectrum canvas</li>
-            <li>Artwork cache-busting</li>
-            <li>Current + next lyric lines</li>
-            <li>Queue display</li>
-            <li>SSE state push at 100 ms cadence</li>
-          </ul>
+      <div className="feat-preview-box">
+        <div className="section__head">
+          <h2 className="section__title">A complete music experience</h2>
+          <h2 className="section__sub">Spectralis comes with a variety of visualizers to enhance your music experience</h2>
         </div>
-        <div className="obs-presets-grid">
-          {OBS_PRESETS.map(({ id, label, desc, render }) => (
-            <div key={id} className="obs-card">
-              {render()}
-              <div className="obs-card__info">
-                <code className="obs-card__label">{label}</code>
-                <p className="obs-card__desc">{desc}</p>
-              </div>
+        <p className="viz-availability">
+          Available on <Download size={15} className="viz-availability__icon" /> Windows and <Terminal size={15} className="viz-availability__icon" /> Linux
+        </p>
+        <div className="feat-preview">
+          <video
+            className="feat-preview-video"
+            src="/features-preview.mp4"
+            poster="/features-preview-poster.jpg"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+      </div>
+      <div className="feat-widgets">
+        {WIDGET_PLACEHOLDERS.map(({ title, body, image }) => (
+          <div className="feat-widget" key={title}>
+            <h3 className="feat-widget__title">{title}</h3>
+            <p className="feat-widget__body">{body}</p>
+            <div className="feat-widget__image">
+              {image ? <img src={image} alt="" /> : <Image size={28} />}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </section>
   )
 }
 
-// ── capsule ────────────────────────────────────────────────────────────────────
+// ── visualizers cta ──────────────────────────────────────────────────────────
 
-function CapsuleSection() {
+function VisualizersCTA() {
   return (
-    <section className="capsule section" id="capsule">
+    <section className="viz-cta section" id="obs">
       <div className="section__head">
-        <span className="section__label">Artist format</span>
-        <h2 className="section__title">Signed. Sealed.<br />Self-contained.</h2>
-      </div>
-      <div className="cap-inner">
-        <div className="cap-left">
-          <p className="cap-body">
-            A <code>.spectralis</code> file is a binary capsule — Ed25519-signed,
-            self-verifying, self-contained. Audio, art, lyrics, reactive timeline
-            events, and sandboxed WASM visualizers live in one file that creators
-            sign and listeners trust.
-          </p>
-          <div className="cap-card">
-            <div className="cap-card__bar">
-              <span className="cap-card__dot" style={{ background: '#ef4444' }} />
-              <span className="cap-card__dot" style={{ background: '#eab308' }} />
-              <span className="cap-card__dot" style={{ background: '#22c55e' }} />
-              <code className="cap-card__name">release.spectralis</code>
-            </div>
-            <pre className="cap-card__code">{`[4]  Magic .............. SPCC
-[4]  Format version ..... 3
-[32] Ed25519 public key
-[64] Ed25519 signature
-     ↓ ZIP payload
-     manifest.json
-     audio/track.flac
-     reactive.json
-     assets/images/cover.png
-     assets/data/lyrics.lrc`}</pre>
-          </div>
+        <div className="viz-cta__icon">
+          <AudioWaveform size={28} />
         </div>
-        <div className="cap-right">
-          <div className="cap-formats">
-            <p className="cap-formats__label">Supported formats</p>
-            <div className="cap-formats__list">
-              {FORMAT_LIST.map(f => <span key={f} className="cap-formats__pill">{f}</span>)}
+        <h2 className="section__title">Visualizers to encourage</h2>
+        <p className="section__sub">Get Spectralis' wide range of visualizers and tools, from built-in waveforms to deep visual design tools.</p>
+      </div>
+      <div className="feat-widgets-lg">
+        {WIDGET_PLACEHOLDERS_LG.map(({ title, body, image }) => (
+          <div className="feat-widget-lg" key={title}>
+            <h3 className="feat-widget-lg__title">{title}</h3>
+            <p className="feat-widget-lg__body">{body}</p>
+            <div className="feat-widget-lg__image">
+              {image ? <img src={image} alt="" /> : <Image size={36} />}
             </div>
           </div>
-          <div className="cap-trust">
-            <Shield size={15} className="cap-trust__icon" />
-            <div>
-              <p className="cap-trust__title">Creator trust system</p>
-              <p className="cap-trust__body">Unknown keys trigger a one-time trust prompt. Revoked keys always rejected. Capabilities intersection-enforced against cdn.deltavdevs.com.</p>
+        ))}
+      </div>
+      <div className="feat-grid">
+        {GRID_PLACEHOLDERS.map(({ title, subtitle, image }) => (
+          <div className="feat-grid__item" key={title}>
+            <div className="feat-grid__image">
+              {image ? <img src={image} alt="" /> : <Image size={26} />}
             </div>
+            <h3 className="feat-grid__title">{title}</h3>
+            <p className="feat-grid__subtitle">{subtitle}</p>
           </div>
-          <div className="cap-trust">
-            <Zap size={15} className="cap-trust__icon" />
-            <div>
-              <p className="cap-trust__title">Reactive timeline</p>
-              <p className="cap-trust__body">Section tracking, smooth parameter transitions, and easing curves synchronized frame-by-frame to playback position.</p>
-            </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ── get spectralis ───────────────────────────────────────────────────────────
+
+function GetSpectralisCTA() {
+  return (
+    <section className="cta section" id="capsule">
+      <div className="cta-inner">
+        <img src="/icon.png" alt="Spectralis" className="cta-logo" />
+        <div className="cta-text">
+          <h2 className="cta-title">Get Spectralis today</h2>
+          <p className="cta-sub">See if it meets your needs</p>
+          <div className="cta-actions">
+            <a href="/#changelog" className="btn btn--ghost btn--lg">What's new</a>
+            <Link to="/setup" className="btn btn--primary btn--lg">
+              Get Spectralis
+              <Download size={16} />
+            </Link>
           </div>
         </div>
       </div>
@@ -145,13 +144,10 @@ function CapsuleSection() {
 export default function Features() {
   return (
     <>
-      <div className="page-head">
-        <h1 className="page-head__title">One app,<br />every angle of the music.</h1>
-      </div>
       <AllFeatures />
       <Visualizers />
-      <OBSSection />
-      <CapsuleSection />
+      <VisualizersCTA />
+      <GetSpectralisCTA />
     </>
   )
 }
