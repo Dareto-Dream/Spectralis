@@ -1,36 +1,34 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Link } from 'react-router-dom'
-import { Download, GitFork, ArrowUpRight } from 'lucide-react'
+import { Download, GitFork, ArrowUpRight, ChevronDown } from 'lucide-react'
 
 const NAV_ITEMS = [
   {
     label: 'Features',
     to: '/features',
+    dropdown: true,
     menu: [
       { label: 'All Features', to: '/features#features' },
       { label: 'Visualizers', to: '/features#visualizers' },
-      { label: 'OBS Overlay', to: '/features#obs' },
-      { label: 'Capsule Format', to: '/features#capsule' },
+      { label: 'FAQ', to: '/setup#faq' },
     ],
+  },
+  {
+    label: 'Download',
+    to: '/setup',
+    dropdown: false,
   },
   {
     label: 'Learn',
     to: '/learn',
-    menu: [
-      { label: 'Capsules', to: '/learn#capsules' },
-      { label: 'Reactive Timeline', to: '/learn#reactive-timeline' },
-      { label: 'OBS Overlay', to: '/learn#obs-overlay' },
-      { label: 'Shared Play', to: '/learn#shared-play' },
-    ],
+    dropdown: false,
   },
   {
-    label: 'Setup & Requirements',
-    to: '/setup',
-    menu: [
-      { label: 'Windows', to: '/setup#windows' },
-      { label: 'Linux', to: '/setup#linux' },
-      { label: 'System Requirements', to: '/setup#requirements' },
-    ],
+    label: 'Help & Manuals',
+    to: '/learn',
+    dropdown: true,
+    menu: [],
+    noHighlight: true,
   },
 ]
 
@@ -48,24 +46,34 @@ export function Navbar() {
         <img src="/icon.png" alt="Spectralis" className="navbar__icon" />
         <span>Spectralis</span>
       </Link>
-      <div className="navbar__links">
+      <div className="navbar__center">
         {NAV_ITEMS.map((item) => (
           <div className="navbar__item" key={item.label}>
             <NavLink
               to={item.to}
-              className={({ isActive }) => `navbar__item-trigger${isActive ? ' navbar__link--active' : ''}`}
+              className={({ isActive }) => `navbar__item-trigger${isActive && !item.noHighlight ? ' navbar__link--active' : ''}`}
             >
               {item.label}
+              {item.dropdown && <ChevronDown size={12} className="navbar__item-arrow" />}
             </NavLink>
-            <div className="navbar__dropdown">
-              {item.menu.map((sub) => (
-                <Link key={sub.to} to={sub.to} className="navbar__dropdown-link">
-                  {sub.label}
-                </Link>
-              ))}
-            </div>
+            {item.dropdown && (
+              <div className="navbar__dropdown">
+                {item.menu.map((sub) => (
+                  <Link
+                    key={sub.to}
+                    to={sub.to}
+                    className="navbar__dropdown-link"
+                    onClick={(e) => e.currentTarget.blur()}
+                  >
+                    {sub.label}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         ))}
+      </div>
+      <div className="navbar__actions">
         <a href="https://github.com/dareto-dream/spectralis" target="_blank" rel="noreferrer" className="navbar__gh">
           <GitFork size={14} />
           GitHub
