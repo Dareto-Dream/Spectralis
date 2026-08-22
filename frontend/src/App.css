@@ -45,7 +45,7 @@
   line-height: 1.6;
 }
 
-.section__cta {
+.section .section__cta {
   margin: 40px auto 0;
   display: table;
 }
