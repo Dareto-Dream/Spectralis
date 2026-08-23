@@ -48,6 +48,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private readonly SharedPlaySessionController _controller = new();
     private readonly SharedPlayJoinRuntime _joinRuntime = new();
     private readonly HashSet<string> _seenReactionIds = new();
+    private bool _requestedTracksPrimed;
     private CancellationTokenSource _pollCts = new();
     private string _statusText = "No active room";
     private string _joinUrl = string.Empty;
@@ -60,6 +61,8 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private AppSettings? _settings;
     private bool _isJoined;
     private string _joinedStatusText = string.Empty;
+    private bool _hostPending;
+    private string _copyLinkLabel = "Copy Link";
 
     public SharedPlayViewModel()
     {
@@ -85,6 +88,10 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     /// <summary>Wired by MainWindowViewModel so "Play" on a listener request actually plays it.</summary>
     public Func<string, Task>? PlayTrackRequested { get; set; }
 
+    /// <summary>Wired by MainWindowViewModel to append a freshly-seen listener request to the
+    /// playback queue automatically, without touching whatever's currently playing.</summary>
+    public Func<string, Task>? QueueTrackRequested { get; set; }
+
     /// <summary>Wired by MainWindowViewModel to apply a Shared Play join's downloaded track to the engine.</summary>
     public event Action<TrackInfo>? TrackReadyForEngine;
     public event Action<double>? SeekRequestedForEngine;
@@ -95,6 +102,21 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         get => _isHosting;
         private set => this.RaiseAndSetIfChanged(ref _isHosting, value);
+    }
+
+    /// <summary>True from the moment Host Room is pressed until a room actually
+    /// exists — covers the gap where nothing's playing yet, so the button doesn't
+    /// just sit there looking clickable while silently waiting on the first tick.</summary>
+    public bool HostPending
+    {
+        get => _hostPending;
+        private set => this.RaiseAndSetIfChanged(ref _hostPending, value);
+    }
+
+    public string CopyLinkLabel
+    {
+        get => _copyLinkLabel;
+        private set => this.RaiseAndSetIfChanged(ref _copyLinkLabel, value);
     }
 
     /// <summary>True while actively joined to (or joining) someone else's Shared Play room as a listener.</summary>
@@ -235,7 +257,10 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public void NotifyPlayback(TrackInfo? track, bool isPlaying, double positionSeconds, double durationSeconds, string reason = "tick")
     {
-        if (!_isHosting) return;
+        // Gate on _hostingRequested, not IsHosting: IsHosting only flips true once a room
+        // already exists, but a room is only created as a side effect of a notification
+        // reaching the controller — gating on IsHosting here would drop every tick forever.
+        if (!_hostingRequested) return;
         _controller.NotifyPlaybackChanged(track, isPlaying, positionSeconds, durationSeconds, reason);
     }
 
@@ -298,14 +323,24 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private void CopyLink()
     {
-        if (!string.IsNullOrEmpty(_joinUrl))
-            CopyToClipboardRequested?.Invoke(_joinUrl);
+        if (string.IsNullOrEmpty(_joinUrl)) return;
+        CopyToClipboardRequested?.Invoke(_joinUrl);
+        CopyLinkLabel = "Copied!";
+        _ = ResetCopyLinkLabelAsync();
+    }
+
+    private async Task ResetCopyLinkLabelAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        CopyLinkLabel = "Copy Link";
     }
 
     private void OnStatusChanged(object? sender, EventArgs _)
     {
         var snap = _controller.Snapshot;
         IsHosting = snap.IsEnabled && !string.IsNullOrEmpty(snap.RoomCode);
+        HostPending = snap.IsEnabled && !IsHosting;
+        if (!IsHosting) CopyLinkLabel = "Copy Link";
         JoinUrl = snap.JoinUrl ?? string.Empty;
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
@@ -319,7 +354,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         if (snap.IsUploading) return "Uploading track...";
         if (!string.IsNullOrEmpty(snap.DisplayCode)) return $"Room: {snap.DisplayCode}";
         if (!string.IsNullOrEmpty(snap.RoomCode)) return $"Room: {SharedPlayDefaults.DisplayRoomCode(snap.RoomCode)}";
-        return "Ready to host.";
+        return "Waiting for playback to start the room…";
     }
 
     // ── Listener presence / reactions / requests polling ────────────────────────
@@ -338,6 +373,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         RecentReactionsText = string.Empty;
         RequestedTracks.Clear();
         _seenReactionIds.Clear();
+        _requestedTracksPrimed = false;
     }
 
     private async Task PollLoopAsync(CancellationToken ct)
@@ -402,10 +438,19 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         var existingIds = RequestedTracks.Select(t => t.Id).ToHashSet();
         var liveIds = queue.Items.Select(i => i.Id).ToHashSet();
 
+        // Don't auto-queue whatever's already sitting in a room's request list the moment
+        // we start polling it (stale requests from before a restart/reconnect) — only
+        // requests that arrive from here on get appended to playback automatically.
+        var isFirstLoad = !_requestedTracksPrimed;
+        _requestedTracksPrimed = true;
+
         foreach (var item in queue.Items)
         {
             if (existingIds.Contains(item.Id)) continue;
             RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack));
+
+            if (!isFirstLoad && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
+                _ = QueueTrackRequested(item.Url);
         }
 
         foreach (var stale in RequestedTracks.Where(t => !liveIds.Contains(t.Id)).ToList())
