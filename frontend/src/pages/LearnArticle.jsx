@@ -1,6 +1,6 @@
 import { useParams, Navigate, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
-import { getArticle } from '../data/articles.jsx'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ARTICLES, getArticle } from '../data/articles.jsx'
 
 export default function LearnArticle() {
   const { slug } = useParams()
@@ -9,6 +9,9 @@ export default function LearnArticle() {
   if (!article) return <Navigate to="/learn" replace />
 
   const Icon = article.icon
+  const index = ARTICLES.findIndex((a) => a.slug === slug)
+  const prev = index > 0 ? ARTICLES[index - 1] : null
+  const next = ARTICLES[(index + 1) % ARTICLES.length]
 
   return (
     <article className="learn-article section">
@@ -39,6 +42,18 @@ export default function LearnArticle() {
             </div>
           </div>
         )}
+      </div>
+      <div className="learn-article__pager">
+        {prev && (
+          <Link to={`/learn/${prev.slug}`} className="learn-article__pager-item learn-article__pager-item--prev">
+            <span className="learn-article__pager-label"><ArrowLeft size={13} /> Previous lesson</span>
+            <span className="learn-article__pager-title">{prev.title}</span>
+          </Link>
+        )}
+        <Link to={`/learn/${next.slug}`} className="learn-article__pager-item learn-article__pager-item--next">
+          <span className="learn-article__pager-label">Next lesson <ArrowRight size={13} /></span>
+          <span className="learn-article__pager-title">{next.title}</span>
+        </Link>
       </div>
     </article>
   )
