@@ -31,7 +31,13 @@ export function Footer() {
           <Link to="/setup">Setup & Requirements</Link>
           <a href="https://github.com/dareto-dream/spectralis" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
-        <p className="footer__copy">© 2025 DeltaV Devs</p>
+        <div className="footer__bottom">
+          <p className="footer__copy">© 2025 DeltaV Devs</p>
+          <nav className="footer__legal">
+            <Link to="/terms">Terms of Service</Link>
+            <Link to="/privacy">Privacy Policy</Link>
+          </nav>
+        </div>
       </div>
     </footer>
   )

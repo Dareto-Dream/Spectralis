@@ -7,6 +7,8 @@ import Features from './pages/Features.jsx'
 import Learn from './pages/Learn.jsx'
 import LearnArticle from './pages/LearnArticle.jsx'
 import Setup from './pages/Setup.jsx'
+import Terms from './pages/Terms.jsx'
+import Privacy from './pages/Privacy.jsx'
 import './App.css'
 
 function ScrollToTop() {
@@ -37,6 +39,8 @@ export default function App() {
         <Route path="/learn/:slug" element={<LearnArticle />} />
         <Route path="/setup" element={<Setup />} />
         <Route path="/downloads" element={<Navigate to="/setup" replace />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
       </Routes>
       <Footer />
     </>
