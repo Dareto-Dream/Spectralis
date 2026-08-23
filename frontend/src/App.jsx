@@ -5,6 +5,7 @@ import { Footer } from './components/Footer.jsx'
 import Home from './pages/Home.jsx'
 import Features from './pages/Features.jsx'
 import Learn from './pages/Learn.jsx'
+import LearnArticle from './pages/LearnArticle.jsx'
 import Setup from './pages/Setup.jsx'
 import './App.css'
 
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/features" element={<Features />} />
         <Route path="/learn" element={<Learn />} />
+        <Route path="/learn/:slug" element={<LearnArticle />} />
         <Route path="/setup" element={<Setup />} />
         <Route path="/downloads" element={<Navigate to="/setup" replace />} />
       </Routes>
