@@ -93,6 +93,7 @@ async fn main() -> Result<()> {
         .route("/player.js", get(player_js))
         .route("/styles.css", get(styles_css))
         .route("/spectralis/web-share", get(index))
+        .route("/spectralis/web-share/", get(index))
         .route("/spectralis/web-share/index.html", get(index))
         .route("/spectralis/web-share/*path", get(web_share_static))
         .route("/shared-play/v2/sessions", post(create_session))
@@ -280,7 +281,7 @@ async fn create_session(
     }
 
     let base = base_url(&state, &headers);
-    let join_url = format!("{base}/spectralis/web-share?session={room_code}");
+    let join_url = format!("{base}/spectralis/web-share/?session={room_code}");
     let state_url = format!("{base}/shared-play/v2/sessions/{room_code}/state");
     let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
     let presence_url = format!("{base}/shared-play/v2/sessions/{room_code}/presence");
@@ -550,7 +551,7 @@ async fn read_session_payload(
     let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
     let presence_url = format!("{base}/shared-play/v2/sessions/{room_code}/presence");
     let reactions_url = format!("{base}/shared-play/v2/sessions/{room_code}/reactions");
-    let join_url = format!("{base}/spectralis/web-share?session={room_code}");
+    let join_url = format!("{base}/spectralis/web-share/?session={room_code}");
 
     let mut session = json!({
         "protocolVersion": PROTOCOL_VERSION,
@@ -970,7 +971,7 @@ async fn put_channel(
     channel["listenerCount"] = json!(listener_count);
     channel["updatedAtUtc"] = json!(now.to_rfc3339());
     channel["channelUrl"] = json!(format!(
-        "{}/spectralis/web-share?channel={}",
+        "{}/spectralis/web-share/?channel={}",
         base_url(&state, &headers),
         &channel_id
     ));
@@ -1000,7 +1001,7 @@ async fn read_channel_payload(
         }
     }
     channel["channelUrl"] = json!(format!(
-        "{}/spectralis/web-share?channel={}",
+        "{}/spectralis/web-share/?channel={}",
         base_url(state, headers),
         channel_id
     ));

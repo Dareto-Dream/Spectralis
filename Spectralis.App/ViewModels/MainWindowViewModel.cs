@@ -137,6 +137,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         SharedPlay = new SharedPlayViewModel();
         SharedPlay.ApplySettings(AppSettings);
         SharedPlay.PlayTrackRequested = PlayStreamerQueueTrackAsync;
+        SharedPlay.QueueTrackRequested = QueueStreamerRequestTrackAsync;
         NowPlaying.UpcomingQueueTrackReady += SharedPlay.PrepareUpcomingTrack;
         SharedPlay.TrackReadyForEngine += track =>
             _ = NowPlaying.LoadPreparedTrackAsync(track.SourcePath, track, startPlayback: false, ownsTemporaryFile: false);
@@ -540,6 +541,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         await NowPlaying.LoadUrlAsync(url);
+    }
+
+    /// <summary>Auto-add path for a fresh Shared Play listener request: appends to the
+    /// playback queue instead of interrupting whatever's currently playing (contrast
+    /// <see cref="PlayStreamerQueueTrackAsync"/>, which replaces and plays immediately).</summary>
+    private async Task QueueStreamerRequestTrackAsync(string url)
+    {
+        var extension = Path.GetExtension(new Uri(url).AbsolutePath);
+        if (CapsulesViewModel.IsPackageExtension(extension))
+        {
+            var tempPath = await RemoteAudioCache.DownloadAsync(url, extension, CancellationToken.None);
+            await Capsules.OpenFilesAsync([tempPath], startPlayback: false);
+            return;
+        }
+
+        await NowPlaying.QueueUrlAsync(url);
     }
 
     /// <summary>
