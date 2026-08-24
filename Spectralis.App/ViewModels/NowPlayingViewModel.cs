@@ -1872,6 +1872,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // Fetch art and lyrics only on track changes
         if (isNewTrack)
         {
+            // Spotify (standalone "Play Spotify" and queue-driven mixed-source playlists alike)
+            // never touches the local engine, so it was invisible to both scrobbling and Discord's
+            // idle-activity stats — both are driven off Engine-only signals elsewhere. This event
+            // is the same one Suno/BandLab/YouTube/SoundCloud already use to drive scrobbling
+            // (see its doc comment), so Spotify plugs into the exact same downstream path.
+            RemoteTrackLoaded?.Invoke(
+                $"spotify:{state.TrackId}",
+                state.Name,
+                state.Artist,
+                state.Album,
+                state.DurationMs / 1000.0);
+
             _spotifyArtCts?.Cancel();
             var cts = _spotifyArtCts = new CancellationTokenSource();
             CoverArtBytes = state.AlbumArtUrl is not null
