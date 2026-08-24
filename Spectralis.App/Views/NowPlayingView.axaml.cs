@@ -39,6 +39,7 @@ public partial class NowPlayingView : Grid
     private WebView2Host? _persistentWv2;
 #endif
     private DispatcherTimer? _embeddedFramePushTimer;
+    private DispatcherTimer? _resizeSettleTimer;
     private string _loadedEmbeddedHtmlId = string.Empty;
     private double _lastPushedTime = double.MinValue;
     private bool _lastPushedActive;
@@ -85,6 +86,7 @@ public NowPlayingView()
         };
         DetachedFromVisualTree += (_, _) =>
         {
+            _resizeSettleTimer?.Stop();
             StopYouTubeVideoMode();
             StopEmbeddedHtmlMode();
 #if WINDOWS
@@ -92,7 +94,11 @@ public NowPlayingView()
             _persistentWv2 = null;
 #endif
         };
-        SizeChanged += (_, _) => ApplyDeadZoneLayout();
+        SizeChanged += (_, _) =>
+        {
+            ApplyDeadZoneLayout();
+            ScheduleEmbeddedSurfaceResizeNudge();
+        };
         VisualizerNameLabel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
         LyricsSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
         QueueSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
@@ -110,6 +116,32 @@ public NowPlayingView()
         ApplyVisualizerPanelDeadZoneAvoidance();
         ApplyVisualizerLabelDeadZoneAvoidance();
         ApplySidebarDeadZoneAvoidance();
+    }
+
+    /// <summary>Debounced trigger for <see cref="IWebViewHost.NudgeResize"/> on the active HTML
+    /// visualizer surface. A manual drag-resize fires many SizeChanged events, each rescheduling
+    /// this timer, so the nudge only actually runs once the size has settled — including the
+    /// single instant jump from a window maximize/restore, which is the case that otherwise
+    /// leaves the embedded browser painting at its pre-resize size (see NudgeResize doc).</summary>
+    private void ScheduleEmbeddedSurfaceResizeNudge()
+    {
+        if (_embeddedHost is null)
+        {
+            return;
+        }
+
+        if (_resizeSettleTimer is null)
+        {
+            _resizeSettleTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _resizeSettleTimer.Tick += (_, _) =>
+            {
+                _resizeSettleTimer!.Stop();
+                _embeddedHost?.NudgeResize();
+            };
+        }
+
+        _resizeSettleTimer.Stop();
+        _resizeSettleTimer.Start();
     }
 
     /// <summary>
