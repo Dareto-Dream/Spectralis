@@ -144,7 +144,12 @@ internal sealed class YouTubeVideoPageServer : IDisposable
             function onYouTubeIframeAPIReady() {
               player = new YT.Player('player', {
                 videoId: '{{safeVideoId}}',
-                playerVars: { autoplay: {{autoplay}}, mute: 1, start: {{start}}, controls: 1, modestbranding: 1, rel: 0, origin: window.location.origin },
+                // controls/fs/disablekb: 0 — this player is a muted visual mirror slaved to
+                // the local engine via ytpSync; YouTube's own chrome would let the user play/
+                // pause/seek YouTube directly (instantly desyncing from the real audio) or hit
+                // YouTube's native fullscreen button, which covers the app's transport bar with
+                // no way back to it. Our own always-visible bar is the only control surface.
+                playerVars: { autoplay: {{autoplay}}, mute: 1, start: {{start}}, controls: 0, fs: 0, disablekb: 1, modestbranding: 1, rel: 0, origin: window.location.origin },
                 events: {
                   onReady: function(e) {
                     applyYouTubeReferrerPolicy();
