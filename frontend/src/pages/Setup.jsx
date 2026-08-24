@@ -4,7 +4,7 @@ import { Download, Terminal, GitFork, ArrowUpRight } from 'lucide-react'
 const FAQ = [
   {
     q: 'Is Spectralis really free?',
-    a: 'Yes — no license key, no subscription, no feature paywall. Every release is free, forever.',
+    a: 'Yes, completely. Nothing is gated behind a purchase, and every release ships free, forever.',
   },
   {
     q: 'Do I need to sign in or create an account?',
@@ -12,7 +12,7 @@ const FAQ = [
   },
   {
     q: 'Will installing overwrite my existing library or settings?',
-    a: 'No. Windows installs to %LocalAppData%\\Spectralis and Linux runs as a self-contained AppImage — nothing touches files outside those.',
+    a: 'No. Windows installs to %LocalAppData%\\Spectralis, and Linux runs as a self-contained AppImage; neither touches files outside its own folder.',
   },
   {
     q: 'How do updates work?',
@@ -20,10 +20,10 @@ const FAQ = [
   },
   {
     q: 'Is macOS supported?',
-    a: 'Not yet — it\'s on the roadmap. Windows and Linux are supported today.',
+    a: 'Not yet, though it\'s on the roadmap. Windows and Linux are supported today.',
   },
   {
-    q: 'The AppImage won\'t launch on Linux — what do I do?',
+    q: 'The AppImage won\'t launch on Linux. What do I do?',
     a: 'Most distros ship FUSE by default. If yours doesn\'t, run the AppImage with --appimage-extract-and-run as a fallback.',
   },
 ]
@@ -89,11 +89,11 @@ export default function Setup() {
           <div className="dl-card__notes">
             <div className="dl-note">
               <span className="dl-note__label">Auto-updates</span>
-              <p className="dl-note__body">Velopack checks for updates on launch and applies delta patches silently — no re-installer needed.</p>
+              <p className="dl-note__body">Velopack checks for updates on launch and applies delta patches silently, so there's no re-installer to run.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Install path</span>
-              <p className="dl-note__body">Installs to <code>%LocalAppData%\Spectralis</code> — no admin rights required.</p>
+              <p className="dl-note__body">Installs to <code>%LocalAppData%\Spectralis</code> and doesn't need admin rights.</p>
             </div>
           </div>
 
@@ -136,7 +136,7 @@ export default function Setup() {
           <div className="dl-card__notes">
             <div className="dl-note">
               <span className="dl-note__label">Self-contained</span>
-              <p className="dl-note__body">Everything is bundled — no runtime dependencies, no package manager, no root required.</p>
+              <p className="dl-note__body">Everything it needs is bundled in, so it runs without installing dependencies or needing root access.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">FUSE</span>
