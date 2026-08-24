@@ -89,7 +89,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         _scrobbleTick = Avalonia.Threading.DispatcherTimer.Run(
             () =>
             {
-                Scrobbling.Tick(Engine.GetPosition(), Engine.IsPlaying);
+                // NowPlaying.PositionSeconds/IsPlaying (not Engine.*) — Spotify playback never
+                // touches Engine at all, so ticking off Engine directly meant Spotify (and
+                // queue-driven mixed-source) tracks never accumulated listened time and never
+                // crossed the scrobble threshold. NowPlayingViewModel already unifies both
+                // sources into these two properties (see RefreshFromEngine/ApplySpotifyStateAsync).
+                Scrobbling.Tick(NowPlaying.PositionSeconds, NowPlaying.IsPlaying);
                 return true;
             },
             TimeSpan.FromSeconds(5));
