@@ -1350,16 +1350,6 @@ code {
 
 .viz-head__text { padding-bottom: 6px; max-width: 360px; }
 
-.viz-head__label {
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-
 .viz-head__desc {
   font-size: 14px;
   color: var(--muted);
