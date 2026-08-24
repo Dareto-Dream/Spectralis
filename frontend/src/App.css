@@ -1392,6 +1392,16 @@ code {
 }
 .viz-grid__tile:hover { border-color: var(--accent-border); }
 
+.viz-grid__tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--tint, transparent);
+  mix-blend-mode: color;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 .viz-grid__tile::after {
   content: '';
   position: absolute;
