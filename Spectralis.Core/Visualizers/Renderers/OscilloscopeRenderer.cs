@@ -8,6 +8,9 @@ public sealed class OscilloscopeRenderer : VisualizerRendererBase
     public override void Draw(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
     {
         DrawBackground(canvas, bounds, scene);
+        // Graticule grid — iconic to a scope screen, and it was missing here (Waveform had it,
+        // Oscilloscope didn't) despite the two otherwise sharing near-identical trace styling.
+        DrawGrid(canvas, bounds, scene);
         DrawOscilloscope(canvas, bounds, scene);
         DrawHud(canvas, bounds, scene);
 
