@@ -285,6 +285,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// entry point. Next/Previous/auto-advance must stay Queue-driven in that case instead of
     /// deferring to Spotify's own context queue, since the next Queue entry may be a local file.</summary>
     private bool _queueDrivenSpotifyTrack;
+    /// <summary>True from the moment a Stop is requested until the next Spotify play command
+    /// fires. StopSpotifyPlayback's PauseAsync call is fire-and-forget, and the SDK still reports
+    /// a player_state_changed event once that pause actually lands — without this guard, that late
+    /// event reaches ApplySpotifyStateAsync after ResetPlaybackSession has already cleared
+    /// everything and resurrects _spotifyState/HasTrack, making Stop look like it needs pressing
+    /// twice (the first press "undoes itself"; the second sticks only because no further event
+    /// arrives after an already-paused player).</summary>
+    private bool _spotifyStopRequested;
     private CancellationTokenSource? _spotifyArtCts;
     private double _spotifyPositionMs;
     private double _spotifyDurationMs;
@@ -990,6 +998,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _spotifyStopRequested = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await _spotifyHost.PlayUriAsync(trackUri);
         RemoteStatus = started ? "Spotify playback requested" : _spotifyHost.StatusMessage ?? "Spotify playback failed";
@@ -1798,6 +1807,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
+        // Late player_state_changed event from a pause issued by a since-completed Stop — see
+        // _spotifyStopRequested. Applying it would resurrect the session Stop just cleared.
+        if (_spotifyStopRequested)
+        {
+            return;
+        }
+
         // A single-uri PlayUriAsync call gives Spotify no context to fall through to, so the SDK
         // never reports a distinct "ended"/no-track state the way OnSpotifyPlaybackStopped
         // expects — it just reports the same track paused at (or basically at) its own duration.
@@ -1944,6 +1960,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
 
         _queueDrivenSpotifyTrack = false;
+        _spotifyStopRequested = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await SpotifyHost.PlayAsync();
         RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
@@ -2654,6 +2671,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _spotifyStopRequested = true;
         _ = _spotifyHost?.StopAsync();
         _spotifyState = null;
         _queueDrivenSpotifyTrack = false;
