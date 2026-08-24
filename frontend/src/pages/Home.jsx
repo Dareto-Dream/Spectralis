@@ -15,8 +15,9 @@ function Hero() {
         <img src="/icon.png" alt="Spectralis" className="hero__logo" />
         <h1 className="hero__title">Spectralis</h1>
         <p className="hero__sub">
-          A desktop audio player with real-time visualizers, synced lyrics,
-          signed capsule releases, and a live OBS overlay server built in.
+          A desktop audio player that renders real-time visualizers, syncs lyrics
+          as they play, runs its own OBS overlay server, and reads signed capsule
+          releases from artists shipping more than an MP3.
         </p>
         <div className="hero__actions">
           {/* TODO: point at slugged update pages (e.g. /updates/:slug) once they exist, instead of #changelog */}
@@ -51,15 +52,15 @@ function Hero() {
 const DOWNLOAD_PITCH = [
   {
     title: 'Start listening today',
-    body: 'Point it at your library and go. Real-time visualizers, synced lyrics, and capsule releases all work the moment you open the app — no setup, no config.',
+    body: 'Point it at your library and go. Visualizers, lyrics sync, and capsule playback are already switched on the first time you open the app.',
   },
   {
     title: 'As deep as your library',
-    body: '15 built-in visualizer renderers, a live OBS overlay server, and signed capsule releases — all bundled in, nothing to hunt down or install separately.',
+    body: 'The same install includes all 15 built-in visualizer renderers, the OBS overlay server, and signed capsule support. None of it ships as a separate plugin or download.',
   },
   {
     title: 'Free updates, for life',
-    body: 'No sign-in, no license key, no subscription. Every update and every new feature ships free, forever.',
+    body: 'Every update and every new feature ships free, forever, with no account, purchase, or key standing in the way.',
   },
 ]
 
@@ -124,7 +125,7 @@ function InsideSection() {
         <div className="section__head">
           <span className="section__label">In the app</span>
           <h2 className="section__title">See what's inside.</h2>
-          <p className="section__sub">Visualizers, synced lyrics, capsule releases, streamer tools — all of it in the app, all of it free, and there's more on the way.</p>
+          <p className="section__sub">Visualizers, synced lyrics, capsule releases, and streamer tools all ship in the same free app, with more features already in progress.</p>
         </div>
         <Link to="/features" className="btn btn--ghost section__cta shots__cta">
           All Features
@@ -145,8 +146,8 @@ function VisualizersSection() {
     <section className="visualizers section" id="visualizers">
       <div className="section__head">
         <span className="section__label">Visual engine</span>
-        <h2 className="section__title">Top-tier visuals</h2>
-        <p className="section__sub">All of your favorite visualizers in one app.</p>
+        <h2 className="section__title">Built-in visualizers</h2>
+        <p className="section__sub">Spectrum bars, oscilloscopes, a spinning album disc, and a 3D sphere, ready to switch between mid-song.</p>
       </div>
       <VisualizerStackGrid />
     </section>
