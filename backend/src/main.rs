@@ -3407,6 +3407,12 @@ async fn get_sq_room(
         let now_playing_title = now_playing_sub.and_then(|s| s.get("title")).cloned().unwrap_or(Value::Null);
         let now_playing_artist = now_playing_sub.and_then(|s| s.get("artist")).cloned().unwrap_or(Value::Null);
         let accepting_submissions = room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true);
+        // Names only — discordChannelId/priority stay owner/bot-only, viewers just need
+        // to know which lane a channel-specific link ("?ch=vip") drops them into.
+        let public_channels: Vec<Value> = room.get("queueChannels").and_then(Value::as_array).cloned().unwrap_or_default()
+            .into_iter()
+            .map(|c| json!({ "id": c.get("id"), "name": c.get("name") }))
+            .collect();
         Ok(Json(json!({
             "roomId": room.get("roomId"),
             "enabled": true,
@@ -3415,6 +3421,7 @@ async fn get_sq_room(
             "stripePublishableKey": stripe_pk,
             "activeCount": active_count,
             "queueLength": ordered.len(),
+            "queueChannels": public_channels,
             "nowPlayingId": now_playing_id,
             "nowPlayingTier": now_playing_tier,
             "nowPlayingTitle": now_playing_title,
@@ -3449,7 +3456,9 @@ async fn put_sq_settings(
     if is_bot
         && (payload.get("enabled").is_some()
             || payload.get("channelId").is_some()
-            || payload.get("settings").is_some())
+            || payload.get("settings").is_some()
+            || payload.get("queueChannels").is_some()
+            || payload.get("channelMixPattern").is_some())
     {
         return Err(AppError::forbidden("A Discord bot token can only open or close the queue."));
     }
@@ -3463,6 +3472,17 @@ async fn put_sq_settings(
         }
         if let Some(settings) = payload.get("settings") {
             room["settings"] = sq_normalize_settings(settings, &room["settings"].clone());
+        }
+        if let Some(channels) = payload.get("queueChannels") {
+            room["queueChannels"] = sq_normalize_queue_channels(channels)?;
+        }
+        if let Some(pattern) = payload.get("channelMixPattern") {
+            room["channelMixPattern"] = sq_normalize_mix_pattern(pattern, &room["queueChannels"])?;
+        }
+        // Keep any previously-saved pattern consistent with whatever channel set this
+        // call ends up with, even if only queueChannels (and not the pattern) changed.
+        if !room["channelMixPattern"].is_null() {
+            room["channelMixPattern"] = sq_normalize_mix_pattern(&room["channelMixPattern"].clone(), &room["queueChannels"])?;
         }
     }
     if let Some(v) = payload.get("acceptingSubmissions").and_then(Value::as_bool) {
@@ -3613,6 +3633,7 @@ async fn post_sq_submit(
     let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
     let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
     let duration_seconds = payload.get("durationSeconds").and_then(Value::as_f64);
+    let queue_channel_id = sq_resolve_submit_channel(&room, &payload)?;
 
     // Enforce queue length
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
@@ -3685,6 +3706,7 @@ async fn post_sq_submit(
         let sub = json!({
             "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
             "url": url, "sourceKind": "link", "tier": valid_tier, "tierChangedAtUtc": &now,
+            "queueChannelId": &queue_channel_id,
             "status": "awaiting_payment", "paymentStatus": "pending", "paymentIntentId": &pi_id,
             "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
             "_fp": &fp
@@ -3699,6 +3721,7 @@ async fn post_sq_submit(
     let sub = json!({
         "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
         "url": url, "sourceKind": "link", "tier": valid_tier, "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": initial_status, "paymentStatus": "none", "paymentIntentId": null,
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": &fp
@@ -3745,6 +3768,8 @@ async fn post_sq_upload(
     let mut artist: Option<String> = None;
     let mut duration_seconds: Option<f64> = None;
     let mut tier = "normal".to_string();
+    let mut queue_channel_id_field = String::new();
+    let mut discord_channel_id_field = String::new();
     let mut fp_cookie = String::new();
     let mut fp_ua = String::new();
     let mut fp_screen = String::new();
@@ -3777,6 +3802,8 @@ async fn post_sq_upload(
             "tier" => {
                 if let Ok(v) = field.text().await { tier = v.trim().to_string(); }
             }
+            "queueChannelId" => { if let Ok(v) = field.text().await { queue_channel_id_field = v; } }
+            "discordChannelId" => { if let Ok(v) = field.text().await { discord_channel_id_field = v; } }
             "fpCookie" => { if let Ok(v) = field.text().await { fp_cookie = v; } }
             "fpUa" => { if let Ok(v) = field.text().await { fp_ua = v; } }
             "fpScreen" => { if let Ok(v) = field.text().await { fp_screen = v; } }
@@ -3820,6 +3847,15 @@ async fn post_sq_upload(
     }
 
     let mut room = read_sq_room_file(&state, &id).await?;
+    let queue_channel_id = match sq_resolve_submit_channel(&room, &json!({
+        "queueChannelId": queue_channel_id_field, "discordChannelId": discord_channel_id_field
+    })) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = fs::remove_file(&upload_path).await;
+            return Err(e);
+        }
+    };
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
         a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
     }).unwrap_or(0);
@@ -3842,6 +3878,7 @@ async fn post_sq_upload(
         "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
         "url": null, "fileId": &file_id, "fileName": stored_name, "sourceKind": "upload",
         "tier": valid_tier, "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": initial_status, "paymentStatus": "none", "paymentIntentId": null,
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": &fp
@@ -4044,6 +4081,7 @@ async fn post_sq_add_track(
     let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
     let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
     let duration_seconds = payload.get("durationSeconds").and_then(Value::as_f64);
+    let queue_channel_id = sq_resolve_submit_channel(&room, &payload)?;
 
     let sub_id = uuid::Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
@@ -4051,6 +4089,7 @@ async fn post_sq_add_track(
         "id": &sub_id, "displayName": "Streamer", "title": title, "artist": artist,
         "url": url, "fileId": null, "fileName": null, "sourceKind": "link",
         "tier": "normal", "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": "queued", "paymentStatus": "none",
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": {}
