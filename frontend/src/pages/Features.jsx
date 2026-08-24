@@ -2,22 +2,22 @@ import { Link } from 'react-router-dom'
 import { Download, Terminal, Image, AudioWaveform } from 'lucide-react'
 
 const WIDGET_PLACEHOLDERS = [
-  { title: 'Easy to start listening', body: 'Get started listening to your favorite tracks in seconds with our easy-to-use interface.', image: '/screenshots/start-somewhere.png' },
-  { title: 'Fun for everyone', body: 'A suite of features for streamers to enhance their broadcasting experience.', image: '/screenshots/fun-for-everyone.png' },
-  { title: 'Tools for creators', body: 'Powerful tools to help you create and share your visualizations.', image: '/screenshots/tooling-for-creators.png' },
+  { title: 'Easy to start listening', body: 'Open your library and press play. The interface stays out of the way between tracks.', image: '/screenshots/start-somewhere.png' },
+  { title: 'Fun for everyone', body: 'Queue voting, song wars, and randomizer tools built for streamers running a live broadcast.', image: '/screenshots/fun-for-everyone.png' },
+  { title: 'Tools for creators', body: 'Build custom visualizer configs and ship them straight into a capsule release.', image: '/screenshots/tooling-for-creators.png' },
 ]
 
 const WIDGET_PLACEHOLDERS_LG = [
-  { title: 'A new way to enjoy music', body: 'Spectralis offers advanced visualization and storytelling, with its in depth song capsules.', image: '/screenshots/capsules.png' },
-  { title: 'Entire worlds at your fingertips', body: 'Explore vast musical landscapes with our immersive album world capabilities, and developer support', image: '/screenshots/album-worlds.png' },
+  { title: 'Capsule releases', body: 'Each capsule bundles a track with signed art, lyrics, and a reactive visual timeline.', image: '/screenshots/capsules.png' },
+  { title: 'Album worlds', body: 'Ship a whole album as an interactive HTML world that creators build and control end to end.', image: '/screenshots/album-worlds.png' },
 ]
 
 const GRID_PLACEHOLDERS = [
-  { title: 'Mirror Spectrum', subtitle: 'Our flagship and most popular visualizer.', image: '/screenshots/visualizers/mirror-spectrum.jpg' },
+  { title: 'Mirror Spectrum', subtitle: 'A mirrored spectrum analyzer that reacts in real time.', image: '/screenshots/visualizers/mirror-spectrum.jpg' },
   { title: 'Spinning Disk', subtitle: 'Bring back retro with our spinning disk visualizer.', image: '/screenshots/visualizers/album-cover.jpg' },
   { title: 'Waveform', subtitle: 'Visualize your audio with our waveform display.', image: '/screenshots/visualizers/waveform.jpg' },
   { title: 'Spectrogram', subtitle: 'Analyze your favorites with our spectrogram display.', image: '/screenshots/visualizers/spectrogram.jpg' },
-  { title: 'Dancing Colors', subtitle: 'Experience vibrant visuals that dance to your music.', image: '/screenshots/visualizers/dancing-colors.jpg' },
+  { title: 'Dancing Colors', subtitle: 'Color fields that shift and pulse with the track.', image: '/screenshots/visualizers/dancing-colors.jpg' },
   { title: '3D Graph', subtitle: 'Bring your music into the 3rd dimension', image: '/screenshots/visualizers/3d-graph.jpg' },
 ]
 
@@ -33,7 +33,7 @@ function AllFeatures() {
         <h2 className="section__sub">From energetic mornings to relaxing evenings<br/>Spectralis has got your back</h2>
       </div>
       <Link to="/setup" className="btn btn--primary btn--lg feat-list__cta">
-        Get Spectralis 
+        Get Spectralis
         <Download size={15} />
       </Link>
     </section>
@@ -47,8 +47,8 @@ function Visualizers() {
     <section className="visualizers section" id="visualizers">
       <div className="feat-preview-box">
         <div className="section__head">
-          <h2 className="section__title">A complete music experience</h2>
-          <h2 className="section__sub">Spectralis comes with a variety of visualizers to enhance your music experience</h2>
+          <h2 className="section__title">Visualizers, built in</h2>
+          <h2 className="section__sub">Real-time visualizers render every track automatically, switchable without leaving the now-playing screen</h2>
         </div>
         <p className="viz-availability">
           Available on <Download size={15} className="viz-availability__icon" /> Windows and <Terminal size={15} className="viz-availability__icon" /> Linux
