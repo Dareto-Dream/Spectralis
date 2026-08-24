@@ -2900,11 +2900,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // the engine-only checks were false for the entire duration of Spotify playback and
         // auto-cycle silently never fired. HasTrack/IsPlaying already track both local and
         // Spotify playback correctly (see ApplyTrack and the Spotify state-change handler).
+        //
+        // ShowVisualizerControls (not ShowVisualizer) + IsVisualizerLocked (not IsSurfaceEmbedded):
+        // redeemed/"Special" visualizers render through the same embedded-HTML surface as real
+        // capsules (ShowEmbeddedHtml=true, ShowVisualizer=false), so gating on ShowVisualizer/
+        // IsSurfaceEmbedded froze auto-cycle solid the moment it landed on one. IsVisualizerLocked
+        // is the guard that actually means "a capsule/album-world surface owns the screen" and is
+        // untouched by picking a redeemed visualizer, so it's the right thing to stop cycling for.
         if (!AutoCycleVisualizers ||
-            !ShowVisualizer ||
+            !ShowVisualizerControls ||
             !HasTrack ||
             !IsPlaying ||
-            IsSurfaceEmbedded ||
+            IsVisualizerLocked ||
             ShowYouTubeVideo ||
             IsExporting ||
             VisualizerOptions.Count <= 1)
