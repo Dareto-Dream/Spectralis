@@ -1138,17 +1138,10 @@ code {
 
 .feat-widgets {
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  grid-template-areas:
-    "lead top"
-    "lead bottom";
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
   margin-top: 56px;
 }
-.feat-widgets > :nth-child(1) { grid-area: lead; }
-.feat-widgets > :nth-child(2) { grid-area: top; }
-.feat-widgets > :nth-child(3) { grid-area: bottom; }
-.feat-widgets > :nth-child(1) .feat-widget__image { aspect-ratio: 16 / 10; }
 
 .feat-widget {
   display: flex;
@@ -1190,7 +1183,7 @@ code {
 }
 
 @media (max-width: 768px) {
-  .feat-widgets { grid-template-columns: 1fr; grid-template-areas: "lead" "top" "bottom"; }
+  .feat-widgets { grid-template-columns: 1fr; }
 }
 
 .viz-cta__head {
