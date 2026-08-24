@@ -20,6 +20,7 @@ public sealed class FakeWebViewHost : IWebViewHost
     public void MapVirtualHost(string hostname, string folderPath) => VirtualHosts.Add((hostname, folderPath));
     public void Navigate(Uri url) => LastNavigation = url;
     public void NavigateToString(string html) => LastHtml = html;
+    public void NudgeResize() { }
 
     public Task ExecuteScriptAsync(string script)
     {
