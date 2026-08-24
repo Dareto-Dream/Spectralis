@@ -150,7 +150,6 @@ function VisualizersSection() {
       <div className="viz-head">
         <span className="viz-head__count">{VISUALIZER_COUNT}</span>
         <div className="viz-head__text">
-          <p className="viz-head__label">Visual engine</p>
           <p className="viz-head__desc">Built-in visualizer renderers, from spectrum bars to a spinning 3D sphere, switchable mid-song.</p>
         </div>
       </div>
