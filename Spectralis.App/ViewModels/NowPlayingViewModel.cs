@@ -1055,9 +1055,16 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _visualizerOptions, value);
     }
 
-    private static IReadOnlyList<VisualizerOption> BuildVisualizerOptions()
+    /// <summary>Instance method (not static) because the catalog entries it filters out —
+    /// Spinning Disk/Album Cover (RequiresAlbumArt) and Piano Roll (RequiresMidi) — depend on
+    /// the currently loaded track. Scripts/installed visualizers carry no such requirement and
+    /// are always included.</summary>
+    private IReadOnlyList<VisualizerOption> BuildVisualizerOptions()
     {
+        var hasAlbumArt = CoverArtBytes is not null;
+        var hasMidi = _spotifyState is null && _engine.IsMidiLoaded;
         var built = VisualizerCatalog.All
+            .Where(d => (!d.RequiresAlbumArt || hasAlbumArt) && (!d.RequiresMidi || hasMidi))
             .Select(d => new VisualizerOption(d.Label, d.Mode))
             .ToList();
         var scripts = ScriptedVisualizerStore.LoadAll()
@@ -1085,6 +1092,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         {
             var match = options.FirstOrDefault(o => o.Installed?.Id == d.Id);
             _selectedVisualizer = match ?? options.First(o => o.Mode == VisualizerMode.MirrorSpectrum);
+            this.RaisePropertyChanged(nameof(SelectedVisualizer));
+        }
+        else if (!options.Contains(prev))
+        {
+            // Plain catalog pick (Album Cover/Spinning Disk/Piano Roll) whose RequiresAlbumArt/
+            // RequiresMidi gate no longer holds for the current track — same fallback as above,
+            // so the picker's selection never points at an entry it no longer lists.
+            _selectedVisualizer = options.First(o => o.Mode == VisualizerMode.MirrorSpectrum);
             this.RaisePropertyChanged(nameof(SelectedVisualizer));
         }
     }
@@ -1862,6 +1877,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             CoverArtBytes = state.AlbumArtUrl is not null
                 ? await FetchSpotifyArtAsync(state.AlbumArtUrl, cts.Token)
                 : null;
+            if (!cts.IsCancellationRequested)
+            {
+                RefreshVisualizerOptions();
+            }
 
             // Only meaningful for the standalone "Play Spotify" flow, where Spotify's own
             // server-side device queue genuinely is what's next. For a queue-driven playlist
@@ -2704,6 +2723,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             ClearYouTubeVideo();
             ClearEmbeddedModules();
             this.RaisePropertyChanged(nameof(PlayPauseMenuLabel));
+            RefreshVisualizerOptions();
             return;
         }
 
@@ -2733,6 +2753,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         FormatBadge = string.Join(" / ", parts);
         this.RaisePropertyChanged(nameof(PlayPauseMenuLabel));
+        RefreshVisualizerOptions();
     }
 
     private async Task<bool> ShouldPlayWithContentWarningAsync(string path)
