@@ -59,10 +59,11 @@ public sealed class StreamerQueueRoomController : IDisposable
         finally { gate.Release(); }
     }
 
-    public async Task<SqRoom> SaveSettingsAsync(bool enabled, SqSettings settings, string? channelId, CancellationToken ct)
+    public async Task<SqRoom> SaveSettingsAsync(bool enabled, SqSettings settings, string? channelId,
+        IEnumerable<SqQueueChannel>? queueChannels, IEnumerable<SqMixSlot>? channelMixPattern, CancellationToken ct)
     {
         EnsureOwner();
-        var result = await client.PutSettingsAsync(cdnBaseUri, roomId!, ownerToken!, enabled, settings, channelId, ct);
+        var result = await client.PutSettingsAsync(cdnBaseUri, roomId!, ownerToken!, enabled, settings, channelId, queueChannels, channelMixPattern, ct);
         LastSnapshot = result;
         return result;
     }
@@ -75,10 +76,10 @@ public sealed class StreamerQueueRoomController : IDisposable
         return result;
     }
 
-    public async Task<SqAddTrackResponse> AddTrackAsync(string url, string? title, string? artist, double? durationSeconds, CancellationToken ct)
+    public async Task<SqAddTrackResponse> AddTrackAsync(string url, string? title, string? artist, double? durationSeconds, string? queueChannelId, CancellationToken ct)
     {
         EnsureOwner();
-        return await client.AddTrackAsync(cdnBaseUri, roomId!, ownerToken!, url, title, artist, durationSeconds, ct);
+        return await client.AddTrackAsync(cdnBaseUri, roomId!, ownerToken!, url, title, artist, durationSeconds, queueChannelId, ct);
     }
 
     public async Task SetStatusAsync(string submissionId, string status, CancellationToken ct)
