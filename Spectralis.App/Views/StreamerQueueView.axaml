@@ -2,7 +2,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
              x:Class="Spectralis.App.Views.StreamerQueueView"
-             x:DataType="vm:StreamerQueueViewModel">
+             x:DataType="vm:StreamerQueueViewModel"
+             x:Name="StreamerQueueRoot">
+
+  <UserControl.Styles>
+    <!-- Small "?" tooltip affordance used next to section headers that need more
+         explanation than fits in a caption line. -->
+    <Style Selector="Border.sq-help-dot">
+      <Setter Property="Width" Value="16" />
+      <Setter Property="Height" Value="16" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{StaticResource Brush.Border}" />
+    </Style>
+    <Style Selector="TextBlock.sq-help-dot-text">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
 
@@ -177,63 +195,94 @@
               <StackPanel Spacing="4">
                 <TextBlock Classes="secondary" Text="Submit URL" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                  <TextBox Text="{Binding SubmitUrl}" IsReadOnly="True" />
-                  <Button Grid.Column="1" Content="Copy" Command="{Binding CopySubmitUrlCommand}" />
+                  <TextBox Text="{Binding SubmitUrl}" IsReadOnly="True"
+                           ToolTip.Tip="The plain, general-purpose link — anyone can use this one. It always submits into your default (top) queue channel below." />
+                  <Button Grid.Column="1" Content="Copy" Command="{Binding CopySubmitUrlCommand}" ToolTip.Tip="Copy the plain submit link to the clipboard." />
                 </Grid>
               </StackPanel>
 
               <!-- Queue channels: multiple share links, ranked or mixed -->
               <Border Height="1" Background="{StaticResource Brush.Border}" />
               <StackPanel Spacing="6">
-                <TextBlock Classes="secondary" Text="Queue Channels" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="secondary" Text="Queue Channels" VerticalAlignment="Center" />
+                  <Border Classes="sq-help-dot"
+                          ToolTip.Tip="A 'channel' here is just a second link. Give viewers different links for different priority — e.g. a General link for everyone and a VIP link for subs. Reorder rows with the arrows instead of typing a number: the TOP row is both the highest priority AND the default link (the one that works with no ?ch= at all). If a track ties on priority (skip/super-skip payments), it still jumps everyone regardless of channel — channels only decide order among equal-priority tracks.">
+                    <TextBlock Classes="sq-help-dot-text" Text="?" />
+                  </Border>
+                </StackPanel>
                 <TextBlock Classes="caption secondary" TextWrapping="Wrap"
-                           Text="Send different links out for different priority. The first channel below is the default — used when a link doesn't specify one." />
+                           Text="Send different links to different people. Top row = highest priority = the default link." />
 
                 <ItemsControl ItemsSource="{Binding Channels}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:SqChannelVm">
                       <Border Background="{StaticResource Brush.Surface}" CornerRadius="6" Padding="8" Margin="0,0,0,6">
                         <StackPanel Spacing="4">
-                          <TextBlock Classes="caption secondary" Text="{Binding Id, StringFormat='id: {0}  (use this in the mix pattern)'}" />
-                          <Grid ColumnDefinitions="*,70,Auto">
-                            <TextBox Text="{Binding Name}" Watermark="Channel name" />
-                            <TextBox Grid.Column="1" Text="{Binding Priority}" Watermark="priority"
-                                     ToolTip.Tip="Higher goes first when no mix pattern covers this channel." />
-                            <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive" />
+                          <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                            <TextBox Text="{Binding Name}" Watermark="Channel name (e.g. VIP)"
+                                     ToolTip.Tip="What this lane is called — shown to you in the queue list and to viewers as a small badge on this link's page." />
+                            <Button Grid.Column="1" Content="↑" Command="{Binding MoveUpCommand}" Classes="secondary"
+                                    ToolTip.Tip="Move up = higher priority. Top row is the default link." />
+                            <Button Grid.Column="2" Content="↓" Command="{Binding MoveDownCommand}" Classes="secondary"
+                                    ToolTip.Tip="Move down = lower priority." />
+                            <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive"
+                                    ToolTip.Tip="Delete this channel. At least one must always remain." />
                           </Grid>
-                          <TextBox Text="{Binding DiscordChannelId}" Watermark="Discord channel ID (optional)" />
+                          <TextBox Text="{Binding DiscordChannelId}" Watermark="Discord channel ID (optional)"
+                                    ToolTip.Tip="Pairs this lane to a Discord channel so the bot routes posts from there into it. To get the ID: in Discord, User Settings → Advanced → turn on Developer Mode, then right-click the channel → Copy Channel ID." />
                           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                            <TextBox Text="{Binding ShareUrl}" IsReadOnly="True" FontSize="11" />
-                            <Button Grid.Column="1" Content="Copy" Command="{Binding CopyLinkCommand}" />
+                            <TextBox Text="{Binding ShareUrl}" IsReadOnly="True" FontSize="11"
+                                     ToolTip.Tip="Send this exact link to whoever should submit into this channel." />
+                            <Button Grid.Column="1" Content="Copy" Command="{Binding CopyLinkCommand}" ToolTip.Tip="Copy this channel's link to the clipboard." />
                           </Grid>
                         </StackPanel>
                       </Border>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <Button Content="Add Channel" Command="{Binding AddChannelCommand}" Classes="secondary" />
+                <Button Content="Add Channel" Command="{Binding AddChannelCommand}" Classes="secondary"
+                        ToolTip.Tip="Add another priority lane, e.g. a VIP queue. New channels start at the bottom (lowest priority)." />
               </StackPanel>
 
               <!-- Mix pattern: interleave channels instead of strict priority -->
               <StackPanel Spacing="6">
-                <TextBlock Classes="secondary" Text="Mix Pattern" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="secondary" Text="Mix Pattern" VerticalAlignment="Center" />
+                  <Border Classes="sq-help-dot"
+                          ToolTip.Tip="Optional. Without this, higher-priority channels always play before lower ones. With this, the queue instead cycles through these slots in order and repeats — e.g. 2 slots of General then 3 of VIP means every 5 tracks are 2 General, 3 VIP, 2 General, 3 VIP... A channel left out of the pattern just plays after everyone in the pattern. Add zero slots to go back to plain priority ordering.">
+                    <TextBlock Classes="sq-help-dot-text" Text="?" />
+                  </Border>
+                </StackPanel>
                 <TextBlock Classes="caption secondary" TextWrapping="Wrap"
-                           Text="Optional. Repeats these slots in order (e.g. 2x general, 3x vip) instead of ranking channels strictly by priority. Leave empty to just use priority." />
+                           Text="Optional. Interleaves channels instead of always playing the top one first — e.g. 2 General, then 3 VIP, repeat. Leave empty to just use the order above." />
 
                 <ItemsControl ItemsSource="{Binding MixPattern}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:SqMixSlotVm">
                       <Grid ColumnDefinitions="*,60,Auto,Auto,Auto" ColumnSpacing="4" Margin="0,0,0,4">
-                        <TextBox Text="{Binding ChannelId}" Watermark="channel id" />
-                        <TextBox Grid.Column="1" Text="{Binding Count}" Watermark="count" />
-                        <Button Grid.Column="2" Content="↑" Command="{Binding MoveUpCommand}" Classes="secondary" />
-                        <Button Grid.Column="3" Content="↓" Command="{Binding MoveDownCommand}" Classes="secondary" />
-                        <Button Grid.Column="4" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive" />
+                        <ComboBox ItemsSource="{Binding #StreamerQueueRoot.((vm:StreamerQueueViewModel)DataContext).Channels}"
+                                  SelectedValue="{Binding ChannelId, Mode=TwoWay}"
+                                  SelectedValueBinding="{Binding Id}"
+                                  HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="Which channel this slot pulls tracks from.">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SqChannelVm">
+                              <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBox Grid.Column="1" Text="{Binding Count}" Watermark="count"
+                                 ToolTip.Tip="How many tracks in a row to take from this channel before moving to the next slot." />
+                        <Button Grid.Column="2" Content="↑" Command="{Binding MoveUpCommand}" Classes="secondary" ToolTip.Tip="Move this slot earlier in the cycle." />
+                        <Button Grid.Column="3" Content="↓" Command="{Binding MoveDownCommand}" Classes="secondary" ToolTip.Tip="Move this slot later in the cycle." />
+                        <Button Grid.Column="4" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive" ToolTip.Tip="Delete this slot from the pattern." />
                       </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <Button Content="Add Slot" Command="{Binding AddMixSlotCommand}" Classes="secondary" />
+                <Button Content="Add Slot" Command="{Binding AddMixSlotCommand}" Classes="secondary"
+                        ToolTip.Tip="Add another slot to the repeating pattern." />
               </StackPanel>
               <Border Height="1" Background="{StaticResource Brush.Border}" />
 
