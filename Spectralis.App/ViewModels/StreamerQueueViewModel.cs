@@ -566,7 +566,12 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         {
             LastError = string.Empty;
             var settings = BuildSqSettings();
-            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, BuildQueueChannels(), BuildMixPattern(), ct);
+            // Nothing loaded into the settings panel yet (e.g. saving right after Create
+            // Room, before the first poll) — omit rather than send an empty list, which
+            // the backend rejects ("at least one queue channel required"). The room
+            // already has its default channel server-side; there's nothing to overwrite.
+            var channels = Channels.Count > 0 ? BuildQueueChannels() : null;
+            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, channels, BuildMixPattern(), ct);
             ApplyRoomSnapshot(room);
             StatusText = "Settings saved";
         }
