@@ -114,25 +114,28 @@ public sealed class SqItemVm : ViewModelBase
 
 // ── Queue channel VM (settings panel row) ─────────────────────────────────────
 
-/// <summary>One row in the "Queue Channels" settings list. The first channel in the
-/// parent's Channels collection is the implicit default lane — links with no ?ch=
-/// and Discord posts from an unmapped channel land there.</summary>
+/// <summary>One row in the "Queue Channels" settings list. Order IS priority — the top
+/// row is both the highest-priority channel and the implicit default lane (links with
+/// no ?ch=, and Discord posts from an unmapped channel, land there). Reorder with the
+/// arrow buttons instead of typing a priority number; <see cref="StreamerQueueViewModel.BuildQueueChannels"/>
+/// turns list position back into the numeric priority the backend expects.</summary>
 public sealed class SqChannelVm : ViewModelBase
 {
     private string _name;
-    private string _priority;
     private string _discordChannelId;
     private string _shareUrl = string.Empty;
 
-    public SqChannelVm(string id, string name, int priority, string? discordChannelId, Action<SqChannelVm> onRemove, Action<string> onCopyLink)
+    public SqChannelVm(string id, string name, string? discordChannelId, Action<SqChannelVm> onRemove, Action<string> onCopyLink,
+        Action<SqChannelVm> onMoveUp, Action<SqChannelVm> onMoveDown)
     {
         Id = id;
         _name = name;
-        _priority = priority.ToString();
         _discordChannelId = discordChannelId ?? string.Empty;
 
         RemoveCommand = ReactiveCommand.Create(() => onRemove(this));
         CopyLinkCommand = ReactiveCommand.Create(() => onCopyLink(ShareUrl), this.WhenAnyValue(x => x.ShareUrl, u => !string.IsNullOrEmpty(u)));
+        MoveUpCommand = ReactiveCommand.Create(() => onMoveUp(this));
+        MoveDownCommand = ReactiveCommand.Create(() => onMoveDown(this));
     }
 
     /// <summary>Slug used in the share URL (?ch=) and as the Discord pairing key. Fixed at
@@ -143,13 +146,6 @@ public sealed class SqChannelVm : ViewModelBase
     {
         get => _name;
         set => this.RaiseAndSetIfChanged(ref _name, value);
-    }
-
-    /// <summary>Higher goes first. Only matters when no mix pattern references this channel.</summary>
-    public string Priority
-    {
-        get => _priority;
-        set => this.RaiseAndSetIfChanged(ref _priority, value);
     }
 
     public string DiscordChannelId
@@ -166,6 +162,8 @@ public sealed class SqChannelVm : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveUpCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveDownCommand { get; }
 }
 
 // ── Mix pattern slot VM (settings panel row) ──────────────────────────────────
@@ -612,12 +610,19 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         double.TryParse(s, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0.0;
 
-    private List<SqQueueChannel> BuildQueueChannels() => Channels.Select(c => new SqQueueChannel(
-        Id: c.Id,
-        Name: string.IsNullOrWhiteSpace(c.Name) ? c.Id : c.Name.Trim(),
-        Priority: int.TryParse(c.Priority, out var p) ? p : 0,
-        DiscordChannelId: string.IsNullOrWhiteSpace(c.DiscordChannelId) ? null : c.DiscordChannelId.Trim()
-    )).ToList();
+    // Priority isn't typed by the user anymore — it's just list position. The top row
+    // gets the highest number so it sorts first (and read_sq_room_file's "first listed"
+    // rule makes it the default lane too — one ordered list drives both).
+    private List<SqQueueChannel> BuildQueueChannels()
+    {
+        var count = Channels.Count;
+        return Channels.Select((c, i) => new SqQueueChannel(
+            Id: c.Id,
+            Name: string.IsNullOrWhiteSpace(c.Name) ? c.Id : c.Name.Trim(),
+            Priority: count - i,
+            DiscordChannelId: string.IsNullOrWhiteSpace(c.DiscordChannelId) ? null : c.DiscordChannelId.Trim()
+        )).ToList();
+    }
 
     private List<SqMixSlot> BuildMixPattern() => MixPattern
         .Where(s => !string.IsNullOrWhiteSpace(s.ChannelId))
@@ -634,7 +639,9 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         // session's counter starting back at 1 while "channel1" already exists).
         string id;
         do { id = $"channel{++_channelSeq}"; } while (Channels.Any(c => c.Id == id));
-        Channels.Add(new SqChannelVm(id, $"Channel {Channels.Count + 1}", 0, null, RemoveChannel, CopyChannelLink));
+        // New channels start at the bottom (lowest priority) — a fresh lane shouldn't
+        // silently outrank ones the streamer already set up.
+        Channels.Add(new SqChannelVm(id, $"Channel {Channels.Count + 1}", null, RemoveChannel, CopyChannelLink, MoveChannelUp, MoveChannelDown));
         RefreshChannelShareUrls();
     }
 
@@ -649,6 +656,18 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     }
 
     private void CopyChannelLink(string url) => CopyToClipboardRequested?.Invoke(url);
+
+    private void MoveChannelUp(SqChannelVm channel)
+    {
+        var i = Channels.IndexOf(channel);
+        if (i > 0) Channels.Move(i, i - 1);
+    }
+
+    private void MoveChannelDown(SqChannelVm channel)
+    {
+        var i = Channels.IndexOf(channel);
+        if (i >= 0 && i < Channels.Count - 1) Channels.Move(i, i + 1);
+    }
 
     private void AddMixSlot()
     {
@@ -859,8 +878,10 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         }
 
         Channels.Clear();
-        foreach (var c in room.QueueChannels ?? [])
-            Channels.Add(new SqChannelVm(c.Id, c.Name, c.Priority, c.DiscordChannelId, RemoveChannel, CopyChannelLink));
+        // Sort by the server's Priority so the list visually matches actual ranking —
+        // list order IS priority here, top to bottom (see SqChannelVm).
+        foreach (var c in (room.QueueChannels ?? []).OrderByDescending(c => c.Priority))
+            Channels.Add(new SqChannelVm(c.Id, c.Name, c.DiscordChannelId, RemoveChannel, CopyChannelLink, MoveChannelUp, MoveChannelDown));
         RefreshChannelShareUrls();
 
         MixPattern.Clear();
