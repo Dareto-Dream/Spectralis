@@ -18,8 +18,12 @@ export function VisualizerStackGrid() {
           className="viz-grid__stack"
           style={{ marginTop: COLUMN_OFFSET[ci] ? `${COLUMN_OFFSET[ci] * 45}px` : 0 }}
         >
-          {col.map(({ src, title }) => (
-            <div key={src} className="viz-grid__tile" style={{ backgroundImage: `url(${src})` }}>
+          {col.map(({ src, title, tint }) => (
+            <div
+              key={src}
+              className="viz-grid__tile"
+              style={{ backgroundImage: `url(${src})`, '--tint': tint || 'transparent' }}
+            >
               <span className="viz-grid__label">{title}</span>
             </div>
           ))}

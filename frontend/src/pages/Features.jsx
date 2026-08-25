@@ -2,22 +2,22 @@ import { Link } from 'react-router-dom'
 import { Download, Terminal, Image, AudioWaveform } from 'lucide-react'
 
 const WIDGET_PLACEHOLDERS = [
-  { title: 'Easy to start listening', body: 'Get started listening to your favorite tracks in seconds with our easy-to-use interface.', image: '/screenshots/start-somewhere.png' },
-  { title: 'Fun for everyone', body: 'A suite of features for streamers to enhance their broadcasting experience.', image: '/screenshots/fun-for-everyone.png' },
-  { title: 'Tools for creators', body: 'Powerful tools to help you create and share your visualizations.', image: '/screenshots/tooling-for-creators.png' },
+  { title: 'Easy to start listening', body: 'Open your library and press play. The interface stays out of the way between tracks.', image: '/screenshots/start-somewhere.png' },
+  { title: 'Fun for everyone', body: 'Queue voting, song wars, and randomizer tools built for streamers running a live broadcast.', image: '/screenshots/fun-for-everyone.png' },
+  { title: 'Tools for creators', body: 'Build custom visualizer configs and ship them straight into a capsule release.', image: '/screenshots/tooling-for-creators.png' },
 ]
 
 const WIDGET_PLACEHOLDERS_LG = [
-  { title: 'A new way to enjoy music', body: 'Spectralis offers advanced visualization and storytelling, with its in depth song capsules.', image: '/screenshots/capsules.png' },
-  { title: 'Entire worlds at your fingertips', body: 'Explore vast musical landscapes with our immersive album world capabilities, and developer support', image: '/screenshots/album-worlds.png' },
+  { title: 'Capsule releases', body: 'Each capsule bundles a track with signed art, lyrics, and a reactive visual timeline.', image: '/screenshots/capsules.png' },
+  { title: 'Album worlds', body: 'Ship a whole album as an interactive HTML world that creators build and control end to end.', image: '/screenshots/album-worlds.png' },
 ]
 
 const GRID_PLACEHOLDERS = [
-  { title: 'Mirror Spectrum', subtitle: 'Our flagship and most popular visualizer.', image: '/screenshots/visualizers/mirror-spectrum.jpg' },
+  { title: 'Mirror Spectrum', subtitle: 'A mirrored spectrum analyzer that reacts in real time.', image: '/screenshots/visualizers/mirror-spectrum.jpg' },
   { title: 'Spinning Disk', subtitle: 'Bring back retro with our spinning disk visualizer.', image: '/screenshots/visualizers/album-cover.jpg' },
   { title: 'Waveform', subtitle: 'Visualize your audio with our waveform display.', image: '/screenshots/visualizers/waveform.jpg' },
   { title: 'Spectrogram', subtitle: 'Analyze your favorites with our spectrogram display.', image: '/screenshots/visualizers/spectrogram.jpg' },
-  { title: 'Dancing Colors', subtitle: 'Experience vibrant visuals that dance to your music.', image: '/screenshots/visualizers/dancing-colors.jpg' },
+  { title: 'Dancing Colors', subtitle: 'Color fields that shift and pulse with the track.', image: '/screenshots/visualizers/dancing-colors.jpg' },
   { title: '3D Graph', subtitle: 'Bring your music into the 3rd dimension', image: '/screenshots/visualizers/3d-graph.jpg' },
 ]
 
@@ -25,15 +25,11 @@ const GRID_PLACEHOLDERS = [
 
 function AllFeatures() {
   return (
-    <section className="features section" id="features">
-      <div className="page-head">
-        <h1 className="page-head__title">Features</h1>
-      </div>
-      <div className="section__head">
-        <h2 className="section__sub">From energetic mornings to relaxing evenings<br/>Spectralis has got your back</h2>
-      </div>
-      <Link to="/setup" className="btn btn--primary btn--lg feat-list__cta">
-        Get Spectralis 
+    <section className="features section feat-masthead" id="features">
+      <h1 className="feat-masthead__title">Features</h1>
+      <p className="feat-masthead__tagline">Everything Spectralis does, gathered on one page.</p>
+      <Link to="/setup" className="btn btn--primary btn--lg feat-masthead__cta">
+        Get Spectralis
         <Download size={15} />
       </Link>
     </section>
@@ -46,13 +42,15 @@ function Visualizers() {
   return (
     <section className="visualizers section" id="visualizers">
       <div className="feat-preview-box">
-        <div className="section__head">
-          <h2 className="section__title">A complete music experience</h2>
-          <h2 className="section__sub">Spectralis comes with a variety of visualizers to enhance your music experience</h2>
+        <div className="viz-preview-head">
+          <div>
+            <h2 className="viz-preview-head__title">Visualizers, built in</h2>
+            <p className="viz-preview-head__desc">Real-time visualizers render every track automatically, switchable without leaving the now-playing screen.</p>
+          </div>
+          <span className="viz-preview-head__os">
+            <Download size={14} /> Windows &nbsp;·&nbsp; <Terminal size={14} /> Linux
+          </span>
         </div>
-        <p className="viz-availability">
-          Available on <Download size={15} className="viz-availability__icon" /> Windows and <Terminal size={15} className="viz-availability__icon" /> Linux
-        </p>
         <div className="feat-preview">
           <video
             className="feat-preview-video"
@@ -84,13 +82,13 @@ function Visualizers() {
 
 function VisualizersCTA() {
   return (
-    <section className="viz-cta section" id="obs">
-      <div className="section__head">
-        <div className="viz-cta__icon">
-          <AudioWaveform size={28} />
+    <section className="viz-cta section" id="capsules-worlds">
+      <div className="viz-cta__head">
+        <span className="viz-cta__icon"><AudioWaveform size={22} /></span>
+        <div>
+          <h2 className="viz-cta__title">Capsule releases and album worlds</h2>
+          <p className="viz-cta__desc">Two ways artists can ship more than an MP3, plus every visualizer built into the app.</p>
         </div>
-        <h2 className="section__title">Visualizers to encourage</h2>
-        <p className="section__sub">Get Spectralis' wide range of visualizers and tools, from built-in waveforms to deep visual design tools.</p>
       </div>
       <div className="feat-widgets-lg">
         {WIDGET_PLACEHOLDERS_LG.map(({ title, body, image }) => (
@@ -122,19 +120,18 @@ function VisualizersCTA() {
 
 function GetSpectralisCTA() {
   return (
-    <section className="cta section" id="capsule">
-      <div className="cta-inner">
-        <img src="/icon.png" alt="Spectralis" className="cta-logo" />
-        <div className="cta-text">
-          <h2 className="cta-title">Get Spectralis today</h2>
-          <p className="cta-sub">See if it meets your needs</p>
-          <div className="cta-actions">
-            <a href="/#changelog" className="btn btn--ghost btn--lg">What's new</a>
-            <Link to="/setup" className="btn btn--primary btn--lg">
-              Get Spectralis
-              <Download size={16} />
-            </Link>
-          </div>
+    <section className="feat-banner section" id="get-spectralis">
+      <div className="feat-banner__inner">
+        <div>
+          <h2 className="feat-banner__title">That's the whole feature set.</h2>
+          <p className="feat-banner__sub">Free on Windows and Linux, no account required.</p>
+        </div>
+        <div className="feat-banner__actions">
+          <a href="/#changelog" className="btn btn--ghost btn--lg">What's new</a>
+          <Link to="/setup" className="btn btn--primary btn--lg">
+            Get Spectralis
+            <Download size={16} />
+          </Link>
         </div>
       </div>
     </section>
