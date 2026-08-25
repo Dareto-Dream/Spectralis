@@ -623,9 +623,12 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     private void AddChannel()
     {
-        // Ids are generated, not typed — keeps existing share links stable even if the
-        // streamer renames a channel afterwards.
-        var id = $"ch{++_channelSeq}{Guid.NewGuid():N}"[..12];
+        // A short, typeable id (not a slug of Name) so renaming a channel later doesn't
+        // break its share link or any mix pattern slots that reference it. Guarded
+        // against collisions with whatever got loaded from the room (e.g. a fresh
+        // session's counter starting back at 1 while "channel1" already exists).
+        string id;
+        do { id = $"channel{++_channelSeq}"; } while (Channels.Any(c => c.Id == id));
         Channels.Add(new SqChannelVm(id, $"Channel {Channels.Count + 1}", 0, null, RemoveChannel, CopyChannelLink));
         RefreshChannelShareUrls();
     }

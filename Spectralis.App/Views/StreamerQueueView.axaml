@@ -60,9 +60,11 @@
           <TextBlock Margin="16,8,16,4" Classes="secondary" Text="UP NEXT" FontWeight="SemiBold" />
 
           <!-- Manual add -->
-          <Grid Grid.Row="1" Margin="16,0,16,8" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+          <Grid Grid.Row="1" Margin="16,0,16,8" ColumnDefinitions="*,90,Auto" ColumnSpacing="4">
             <TextBox Text="{Binding AddToQueueUrl}" Watermark="Paste a link to add it to the back of the queue" />
-            <Button Grid.Column="1" Content="Add to Queue" Command="{Binding AddToQueueCommand}" Classes="secondary" />
+            <TextBox Grid.Column="1" Text="{Binding AddToQueueChannelId}" Watermark="channel id"
+                     ToolTip.Tip="Which queue channel to add into. Leave blank for the default channel." />
+            <Button Grid.Column="2" Content="Add to Queue" Command="{Binding AddToQueueCommand}" Classes="secondary" />
           </Grid>
 
           <ListBox Grid.Row="2" ItemsSource="{Binding QueueItems}" Margin="8,0,8,0"
@@ -77,6 +79,11 @@
                                 Background="{StaticResource Brush.Accent}"
                                 CornerRadius="3" Padding="5,2">
                           <TextBlock Classes="caption" Text="{Binding TierLabel}" Foreground="White" />
+                        </Border>
+                        <Border IsVisible="{Binding HasChannelBadge}"
+                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                                CornerRadius="3" Padding="5,2">
+                          <TextBlock Classes="caption secondary" Text="{Binding ChannelName}" />
                         </Border>
                         <TextBlock Text="{Binding Title}" FontWeight="Medium" />
                       </StackPanel>
@@ -174,6 +181,61 @@
                   <Button Grid.Column="1" Content="Copy" Command="{Binding CopySubmitUrlCommand}" />
                 </Grid>
               </StackPanel>
+
+              <!-- Queue channels: multiple share links, ranked or mixed -->
+              <Border Height="1" Background="{StaticResource Brush.Border}" />
+              <StackPanel Spacing="6">
+                <TextBlock Classes="secondary" Text="Queue Channels" />
+                <TextBlock Classes="caption secondary" TextWrapping="Wrap"
+                           Text="Send different links out for different priority. The first channel below is the default — used when a link doesn't specify one." />
+
+                <ItemsControl ItemsSource="{Binding Channels}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SqChannelVm">
+                      <Border Background="{StaticResource Brush.Surface}" CornerRadius="6" Padding="8" Margin="0,0,0,6">
+                        <StackPanel Spacing="4">
+                          <TextBlock Classes="caption secondary" Text="{Binding Id, StringFormat='id: {0}  (use this in the mix pattern)'}" />
+                          <Grid ColumnDefinitions="*,70,Auto">
+                            <TextBox Text="{Binding Name}" Watermark="Channel name" />
+                            <TextBox Grid.Column="1" Text="{Binding Priority}" Watermark="priority"
+                                     ToolTip.Tip="Higher goes first when no mix pattern covers this channel." />
+                            <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive" />
+                          </Grid>
+                          <TextBox Text="{Binding DiscordChannelId}" Watermark="Discord channel ID (optional)" />
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                            <TextBox Text="{Binding ShareUrl}" IsReadOnly="True" FontSize="11" />
+                            <Button Grid.Column="1" Content="Copy" Command="{Binding CopyLinkCommand}" />
+                          </Grid>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Add Channel" Command="{Binding AddChannelCommand}" Classes="secondary" />
+              </StackPanel>
+
+              <!-- Mix pattern: interleave channels instead of strict priority -->
+              <StackPanel Spacing="6">
+                <TextBlock Classes="secondary" Text="Mix Pattern" />
+                <TextBlock Classes="caption secondary" TextWrapping="Wrap"
+                           Text="Optional. Repeats these slots in order (e.g. 2x general, 3x vip) instead of ranking channels strictly by priority. Leave empty to just use priority." />
+
+                <ItemsControl ItemsSource="{Binding MixPattern}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SqMixSlotVm">
+                      <Grid ColumnDefinitions="*,60,Auto,Auto,Auto" ColumnSpacing="4" Margin="0,0,0,4">
+                        <TextBox Text="{Binding ChannelId}" Watermark="channel id" />
+                        <TextBox Grid.Column="1" Text="{Binding Count}" Watermark="count" />
+                        <Button Grid.Column="2" Content="↑" Command="{Binding MoveUpCommand}" Classes="secondary" />
+                        <Button Grid.Column="3" Content="↓" Command="{Binding MoveDownCommand}" Classes="secondary" />
+                        <Button Grid.Column="4" Content="Remove" Command="{Binding RemoveCommand}" Classes="destructive" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Add Slot" Command="{Binding AddMixSlotCommand}" Classes="secondary" />
+              </StackPanel>
+              <Border Height="1" Background="{StaticResource Brush.Border}" />
 
               <!-- Discord pairing -->
               <StackPanel Spacing="4">
