@@ -36,19 +36,32 @@ export const SCREENSHOTS = [
   { src: '/screenshots/song-wars.png',       title: 'Song Wars',       body: 'Live bracket voting between tracks.' },
 ]
 
+// Accent colors pulled straight from AppThemeService.cs (AppThemeAccent primaries) —
+// same set the desktop app themes itself with, not a made-up web palette.
+export const APP_ACCENTS = {
+  violet: '#a882f2',
+  ocean: '#5ca3ff',
+  rose: '#e78aa7',
+  sunset: '#fc8444',
+  cyan: '#44cade',
+  gold: '#e8c03a',
+}
+
 // Real in-app captures of every built-in visualizer, Idle state.
+// A few carry a `tint` (one of the app's real theme accents) so the grid
+// doesn't read as one flat stock-photo wall.
 export const VISUALIZER_SHOTS = [
   { src: '/screenshots/visualizers/radial-spectrum.jpg', title: 'Radial Spectrum' },
-  { src: '/screenshots/visualizers/mirror-spectrum.jpg',  title: 'Mirror Spectrum' },
-  { src: '/screenshots/visualizers/waveform.jpg',         title: 'Waveform' },
+  { src: '/screenshots/visualizers/mirror-spectrum.jpg',  title: 'Mirror Spectrum', tint: APP_ACCENTS.violet },
+  { src: '/screenshots/visualizers/waveform.jpg',         title: 'Waveform', tint: APP_ACCENTS.ocean },
   { src: '/screenshots/visualizers/spectrum-wave.jpg',    title: 'Spectrum Wave' },
   { src: '/screenshots/visualizers/spectrum-bars.jpg',    title: 'Spectrum' },
-  { src: '/screenshots/visualizers/vu-meter.jpg',         title: 'VU Meter' },
+  { src: '/screenshots/visualizers/vu-meter.jpg',         title: 'VU Meter', tint: APP_ACCENTS.gold },
   { src: '/screenshots/visualizers/loudness-meter.jpg',   title: 'Loudness Meter' },
   { src: '/screenshots/visualizers/stereometer.jpg',      title: 'Stereometer' },
-  { src: '/screenshots/visualizers/spectrogram.jpg',      title: 'Spectrogram' },
-  { src: '/screenshots/visualizers/dancing-colors.jpg',   title: 'Dancing Colors' },
+  { src: '/screenshots/visualizers/spectrogram.jpg',      title: 'Spectrogram', tint: APP_ACCENTS.sunset },
+  { src: '/screenshots/visualizers/dancing-colors.jpg',   title: 'Dancing Colors', tint: APP_ACCENTS.rose },
   { src: '/screenshots/visualizers/3d-graph.jpg',         title: '3D Graph' },
-  { src: '/screenshots/visualizers/3d-sphere.jpg',        title: '3D Sphere' },
+  { src: '/screenshots/visualizers/3d-sphere.jpg',        title: '3D Sphere', tint: APP_ACCENTS.cyan },
   { src: '/screenshots/visualizers/album-cover.jpg',      title: 'Album Cover' },
 ]

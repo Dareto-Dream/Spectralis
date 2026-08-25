@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Terminal, Apple, ArrowRight, GitFork, Sparkles } from 'lucide-react'
-import { SCREENSHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
+import { SCREENSHOTS, VISUALIZER_SHOTS, CHANGELOG_URL, CHANGELOG_ICONS } from '../data/site.jsx'
 import { CommunityBar } from '../components/CommunityBar.jsx'
 import { VisualizerStackGrid } from '../components/VisualizerStackGrid.jsx'
+
+const VISUALIZER_COUNT = VISUALIZER_SHOTS.filter(({ title }) => title !== 'Album Cover').length
 
 // ── hero (+ video) ───────────────────────────────────────────────────────────
 
@@ -15,8 +17,9 @@ function Hero() {
         <img src="/icon.png" alt="Spectralis" className="hero__logo" />
         <h1 className="hero__title">Spectralis</h1>
         <p className="hero__sub">
-          A desktop audio player with real-time visualizers, synced lyrics,
-          signed capsule releases, and a live OBS overlay server built in.
+          A desktop audio player that renders real-time visualizers, syncs lyrics
+          as they play, runs its own OBS overlay server, and reads signed capsule
+          releases from artists shipping more than an MP3.
         </p>
         <div className="hero__actions">
           {/* TODO: point at slugged update pages (e.g. /updates/:slug) once they exist, instead of #changelog */}
@@ -48,18 +51,16 @@ function Hero() {
 
 // ── downloads ────────────────────────────────────────────────────────────────
 
-const DOWNLOAD_PITCH = [
+const DOWNLOAD_LEAD = 'Point it at your library and go. Visualizers, lyrics sync, and capsule playback are already switched on the first time you open the app.'
+
+const DOWNLOAD_SPECS = [
   {
-    title: 'Start listening today',
-    body: 'Point it at your library and go. Real-time visualizers, synced lyrics, and capsule releases all work the moment you open the app — no setup, no config.',
+    label: 'In the box',
+    body: 'All 15 built-in visualizer renderers, the OBS overlay server, and signed capsule support. None of it is a separate plugin.',
   },
   {
-    title: 'As deep as your library',
-    body: '15 built-in visualizer renderers, a live OBS overlay server, and signed capsule releases — all bundled in, nothing to hunt down or install separately.',
-  },
-  {
-    title: 'Free updates, for life',
-    body: 'No sign-in, no license key, no subscription. Every update and every new feature ships free, forever.',
+    label: 'Updates',
+    body: 'Every release ships free, forever, with no account, purchase, or key standing in the way.',
   },
 ]
 
@@ -68,16 +69,17 @@ function DownloadsSection() {
     <section className="section" id="downloads">
       <div className="dl-split">
         <div className="dl-split__pitch">
-          <span className="section__label">Get it</span>
-          <h2 className="section__title">Download free.</h2>
-          <div className="dl-pitch">
-            {DOWNLOAD_PITCH.map(({ title, body }) => (
-              <div className="dl-pitch__item" key={title}>
-                <h3 className="dl-pitch__title">{title}</h3>
-                <p className="dl-pitch__body">{body}</p>
+          <span className="dl-pitch__eyebrow">Get it</span>
+          <h2 className="dl-pitch__headline">Download free.</h2>
+          <p className="dl-pitch__lead">{DOWNLOAD_LEAD}</p>
+          <dl className="dl-specs">
+            {DOWNLOAD_SPECS.map(({ label, body }) => (
+              <div className="dl-specs__row" key={label}>
+                <dt className="dl-specs__label">{label}</dt>
+                <dd className="dl-specs__body">{body}</dd>
               </div>
             ))}
-          </div>
+          </dl>
         </div>
 
         <div className="dl-split__os">
@@ -117,22 +119,24 @@ function DownloadsSection() {
 // ── see what's inside ────────────────────────────────────────────────────────
 
 function InsideSection() {
-  const [{ src, title }] = SCREENSHOTS
+  const [{ src, title, body }] = SCREENSHOTS
   return (
     <section className="shots section" id="screenshots">
       <div className="shots__box">
-        <div className="section__head">
-          <span className="section__label">In the app</span>
-          <h2 className="section__title">See what's inside.</h2>
-          <p className="section__sub">Visualizers, synced lyrics, capsule releases, streamer tools — all of it in the app, all of it free, and there's more on the way.</p>
+        <div className="shots__bar">
+          <span className="shots__dot" style={{ background: '#ef4444' }} />
+          <span className="shots__dot" style={{ background: '#eab308' }} />
+          <span className="shots__dot" style={{ background: '#22c55e' }} />
+          <code className="shots__bar-name">{src.split('/').pop()}</code>
+          <Link to="/features" className="shots__bar-link">
+            All Features
+            <ArrowRight size={13} />
+          </Link>
         </div>
-        <Link to="/features" className="btn btn--ghost section__cta shots__cta">
-          All Features
-          <ArrowRight size={14} />
-        </Link>
         <figure className="shots__shot">
           <img src={src} alt={title} loading="lazy" />
         </figure>
+        <p className="shots__caption">{body}</p>
       </div>
     </section>
   )
@@ -143,10 +147,11 @@ function InsideSection() {
 function VisualizersSection() {
   return (
     <section className="visualizers section" id="visualizers">
-      <div className="section__head">
-        <span className="section__label">Visual engine</span>
-        <h2 className="section__title">Top-tier visuals</h2>
-        <p className="section__sub">All of your favorite visualizers in one app.</p>
+      <div className="viz-head">
+        <span className="viz-head__count">{VISUALIZER_COUNT}</span>
+        <div className="viz-head__text">
+          <p className="viz-head__desc">Built-in visualizer renderers, from spectrum bars to a spinning 3D sphere, switchable mid-song.</p>
+        </div>
       </div>
       <VisualizerStackGrid />
     </section>
@@ -178,11 +183,7 @@ function ChangelogSection() {
 
   return (
     <section className="changelog section" id="changelog">
-      <div className="section__head">
-        <span className="section__label">Changelog</span>
-        <h2 className="section__title">What's new.</h2>
-        <p className="section__sub">Every release, from patch notes to major features.</p>
-      </div>
+      <span className="changelog-eyebrow">Changelog</span>
 
       {loadError && (
         <p className="changelog-status">
