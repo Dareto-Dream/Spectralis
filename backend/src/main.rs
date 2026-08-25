@@ -4335,3 +4335,157 @@ fn urlencoded(s: &str) -> String {
         _ => format!("%{:02X}", c as u32),
     }).collect()
 }
+
+#[cfg(test)]
+mod sq_channel_tests {
+    use super::*;
+
+    fn room_with(channels: Value, pattern: Value) -> Value {
+        json!({ "queueChannels": channels, "channelMixPattern": pattern })
+    }
+
+    fn sub(id: &str, tier: &str, channel: &str, ts: &str) -> Value {
+        json!({
+            "id": id, "tier": tier, "queueChannelId": channel,
+            "submittedAtUtc": ts, "tierChangedAtUtc": ts
+        })
+    }
+
+    fn ids(items: &[Value]) -> Vec<String> {
+        items.iter().map(|s| s.get("id").and_then(Value::as_str).unwrap().to_string()).collect()
+    }
+
+    #[test]
+    fn no_pattern_sorts_by_channel_priority_then_fifo() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:01Z"),
+            sub("g2", "normal", "general", "2024-01-01T00:00:02Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        assert_eq!(ids(&items), vec!["v1", "g1", "g2"]);
+    }
+
+    #[test]
+    fn paid_tier_still_dominates_every_channel() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        let mut items = vec![
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("g_skip", "skip", "general", "2024-01-01T00:00:01Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        assert_eq!(ids(&items), vec!["g_skip", "v1"]);
+    }
+
+    #[test]
+    fn mix_pattern_interleaves_two_general_three_vip() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            json!([{ "channelId": "general", "count": 2 }, { "channelId": "vip", "count": 3 }]),
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("g2", "normal", "general", "2024-01-01T00:00:01Z"),
+            sub("g3", "normal", "general", "2024-01-01T00:00:02Z"),
+            sub("g4", "normal", "general", "2024-01-01T00:00:03Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("v2", "normal", "vip", "2024-01-01T00:00:01Z"),
+            sub("v3", "normal", "vip", "2024-01-01T00:00:02Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        // 2 general, 3 vip (all of them), then remaining general in FIFO.
+        assert_eq!(ids(&items), vec!["g1", "g2", "v1", "v2", "v3", "g3", "g4"]);
+    }
+
+    #[test]
+    fn mix_pattern_channel_not_in_pattern_flushes_after_by_priority() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null },
+                { "id": "mod", "name": "Mod", "priority": 5, "discordChannelId": null }
+            ]),
+            json!([{ "channelId": "general", "count": 1 }, { "channelId": "vip", "count": 1 }]),
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("m1", "normal", "mod", "2024-01-01T00:00:00Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        // pattern drains general+vip first, "mod" was never referenced by the pattern
+        // so it flushes at the end.
+        assert_eq!(ids(&items), vec!["g1", "v1", "m1"]);
+    }
+
+    #[test]
+    fn default_channel_is_first_listed() {
+        let room = room_with(
+            json!([
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null },
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        assert_eq!(sq_default_channel_id(&room), "vip");
+    }
+
+    #[test]
+    fn resolve_submit_channel_prefers_explicit_then_discord_then_default() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": "555" },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": "999" }
+            ]),
+            Value::Null,
+        );
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "queueChannelId": "vip" })).unwrap(),
+            "vip"
+        );
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "discordChannelId": "999" })).unwrap(),
+            "vip"
+        );
+        // Unmapped Discord channel silently falls back to the default rather than erroring.
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "discordChannelId": "111" })).unwrap(),
+            "general"
+        );
+        assert_eq!(sq_resolve_submit_channel(&room, &json!({})).unwrap(), "general");
+        assert!(sq_resolve_submit_channel(&room, &json!({ "queueChannelId": "nope" })).is_err());
+    }
+
+    #[test]
+    fn normalize_mix_pattern_drops_slots_for_deleted_channels() {
+        let channels = json!([{ "id": "general", "name": "General", "priority": 0, "discordChannelId": null }]);
+        let pattern = json!([{ "channelId": "general", "count": 2 }, { "channelId": "vip", "count": 3 }]);
+        let normalized = sq_normalize_mix_pattern(&pattern, &channels).unwrap();
+        assert_eq!(normalized, json!([{ "channelId": "general", "count": 2 }]));
+    }
+
+    #[test]
+    fn normalize_queue_channels_rejects_duplicate_ids() {
+        let channels = json!([
+            { "id": "vip", "name": "VIP", "priority": 0 },
+            { "id": "VIP", "name": "VIP again", "priority": 0 }
+        ]);
+        assert!(sq_normalize_queue_channels(&channels).is_err());
+    }
+}
