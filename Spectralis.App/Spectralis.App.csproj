@@ -5,7 +5,11 @@
     <!-- Windows TFM carries the WinRT projections for SMTC; plain net8.0 serves Linux/macOS. -->
     <TargetFrameworks>net8.0-windows10.0.19041.0;net8.0</TargetFrameworks>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
-    <!-- The WebView package injects linux/osx RIDs; the windows TFM only ships for win. -->
+    <!-- The project is multitargeted; allow the Windows target to be evaluated during
+         restore/build on macOS and Linux. -->
+    <EnableWindowsTargeting Condition="$([MSBuild]::IsOSPlatform('Windows')) != 'true'">true</EnableWindowsTargeting>
+    <!-- CefGlue's pinned macOS redistribution currently contains x64 binaries only. -->
+    <RuntimeIdentifier Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</RuntimeIdentifier>
     <RuntimeIdentifiers Condition="$(TargetFramework.Contains('-windows'))">win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,7 +20,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <GeneratedApplicationIcon>$(BaseIntermediateOutputPath)generated\icon.ico</GeneratedApplicationIcon>
-    <ApplicationIcon>$(GeneratedApplicationIcon)</ApplicationIcon>
+    <ApplicationIcon Condition="$([MSBuild]::IsOsPlatform('Windows'))">$(GeneratedApplicationIcon)</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Bake client IDs/secrets from the build environment into the assembly so
@@ -87,6 +91,17 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
   </ItemGroup>
+
+  <!-- CefGlue.Common expects these files to already exist in $(OutDir) when its
+       macOS copy items run. Stage them first from the restored CEF package. -->
+  <Target Name="StageCefMacOSNativeAssets"
+          BeforeTargets="PrepareForBuild;Publish"
+          Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">
+    <Copy
+      SourceFiles="$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libEGL.dylib;$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libGLESv2.dylib;$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libvk_swiftshader.dylib"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
 
   <Target Name="GenerateApplicationIcon" BeforeTargets="GenerateAvaloniaResources;PrepareResources" Inputs="..\Assets\icon.png" Outputs="$(GeneratedApplicationIcon)" Condition="$([MSBuild]::IsOsPlatform('Windows'))">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build\Generate-Icon.ps1&quot; -Source &quot;$(MSBuildProjectDirectory)\..\Assets\icon.png&quot; -Destination &quot;$(MSBuildProjectDirectory)\$(GeneratedApplicationIcon)&quot;" />
