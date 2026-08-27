@@ -1,16 +1,11 @@
 # Spectralis
+Spectralis is an all inclusive cross-platform music runtime built with AvaloniaUI and ReactiveUI on .NET 8. 
 
-Spectralis is a cross-platform desktop music runtime built with AvaloniaUI and
-ReactiveUI on .NET 8. It is not a basic audio player — tracks can carry rich
-embedded experiences: signed capsules, interactive album worlds, reactive
-timelines, synced annotated lyrics, and live visualizers, alongside streaming
-integrations (Shared Play rooms, OBS overlays, Discord Rich Presence).
+Spectralis is built around the core philosophy that every song is not just some audio you can listen to but a full embedded experience via signed capsules, interactive album worlds, reactive timelines, synced annotated lyrics, and live visualizers. Streaming integrations aid in sharing this experience with others through Shared Play rooms, OBS overlays, and a Discord Rich Presence.
 
-The original Windows-only WinForms app remains in the repository as the feature
-reference during the migration; see
-[docs/legacy-winforms.md](docs/legacy-winforms.md).
+I am hella lazy so the legacy windows-only winforms app remains in the repo as a feature reference during migration periods; see [docs/legacy-winforms.md](docs/legacy-winforms.md).
 
-## Repository layout
+## Repository layout (Thanks claude for the table)
 
 | Path | What it is |
 |---|---|
@@ -26,29 +21,23 @@ reference during the migration; see
 | [`Assets/`](Assets/), `yt-dlp.exe`, `ffmpeg.exe`, [`build/`](build/) | Shared runtime assets and build helpers used by both apps |
 
 ## Features
-
-- Plays common audio formats including `mp3`, `wav`, `flac`, `ogg`, `opus`, `m4a`, `aac`, `midi`, `kar`, `wma`, `webm`, `mp4 audio`, `aiff`, and more through direct readers, SoundFont synthesis, and system codecs.
-- Reads track metadata with title, artist, album, and cover art extraction; SQLite library with watched folders, startup auto-scan, live add/remove/rename watching, legacy filter modes, live search, and sortable columns.
-- Play queue with shuffle, repeat (off/all/one), auto-advance, right-side queue panel, playlist save/export paths, and mini player window.
-- Remembers the main window size, position, maximized state, and safely restores it onto a visible monitor.
-- Supports synced lyrics from sidecar `.lrc` files and embedded LRC text, with contextual annotations via `.lrc.json` sidecars (Genius-style).
-- Includes a Lyrics Timing Studio for tapping plain lyric lines to playback and exporting `.lrc` sidecars.
-- Ships eleven built-in visualizers (Spectrum, Mirror Spectrum, Waveform, Spinning Disk, Radial Spectrum, Oscilloscope, VU Meter, Spectrum Wave, 3D Graph, Dancing Colors, 3D Sphere) rendered through a toolkit-agnostic canvas at a 60 fps budget.
-- Supports track-reactive cinematic metadata via `.spectralis-reactive.json` sidecars — section tracking, timeline events, eased parameter transitions synchronized to playback.
-- Opens signed `.spectralis` capsules — Ed25519-verified artist packages with creator trust, package metadata display, and audio fallback playback. Capsules can carry a story: either the built-in click-through pager or a fully custom creator-authored HTML page with the same `window.spectral` playback bridge album worlds get. See [docs/formats/spectralis-capsule.md](docs/formats/spectralis-capsule.md).
-- Recognizes signed `.spectral` album packages: interactive HTML "world" map (Super Mario World-style level select, liner notes page, branching narrative — creator's choice) with a JS bridge for playback control, track stats, and bookmarks, falling back to a plain tracklist when no world is declared. See [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md).
-- Streamer Queue: a standalone streamer request queue (link/upload submissions, skip/super-skip priority tiers, Stripe pay-to-skip, Discord bot integration for `/request`, `/skip`, `/queue`) — separate from Shared Play, its own rooms and owner tokens.
-- Serves a live OBS overlay at `http://127.0.0.1:5128/obs/{token}` with layout presets, SSE state push, artwork cache-busting, and current/next lyric lines.
-- Publishes Discord Rich Presence with a download button and a Listen Together button during Shared Play.
-- Shared Play: host a room so listeners follow along in the browser in sync, or join someone else's room as a listener from the desktop app itself via a `spectralis://shared-play/join` link ("Open in App" on the web player) — polled, drift-corrected playback sync against the host.
-- Loopback-capture visualizer seam with WASAPI (Windows), PulseAudio/PipeWire (Linux), and macOS backends.
+- Plays a wide range of audio formats including `mp3`, `wav`, `flac`, `ogg`, `opus`, `m4a`, `aac`, `midi`, `kar`, `wma`, `webm`, `mp4 audio`, `aiff`, and more through readers, SF2, and system codecs.
+- Reads track metadata such as the title, artist, album, and cover art; SQLite library with watched folders, auto-scanning, live edit watching, legacy filters, live search, and sortable columns.
+- Queue songs with auto-advancing on the right side queue panel, export to playlists, control queue with shuffle and repeat toggles (off/all/one).
+- The app remembers main window size, postition, maximized state, to be restored onto a visible montior
+- Synced lyrics pulled from a `.lrc` file and embedded lrc text, include annotations via `.lrc.json` sidecars (Genius-style).
+- Includes a Lyric Timing Studio to aid in creating and exporting `.lrc` sidecars
+- Ships eleven built-in visualizers (Spectrum, Mirror Spectrum, Waveform, Spinning Disk, Radial Spectrum, Oscilloscope, VU Meter, Spectrum Wave, 3D Graph, Dancing Colors, 3D Sphere) rendered on a dynamic canvas at a crisp 60 fps
+- Supports cinemtic metadata via `.spectralis-reactive.json` sidecars for section tracking, timeline events, and parameter transitions synced to playback
+- Opens signed `.spectralis` capsules, which are Ed25519-verified artist packages that contain creator trust, package metadata display, and audio fallback playback. Spectralis 5.4.0+ supports stories: either a built-in click-through pager or a fully custom creator-authored HTML page with the same `window.spectral` playback hook album worlds get. See [docs/formats/spectralis-capsule.md](docs/formats/spectralis-capsule.md).
+- Recognizes signed `.spectral` album packages, whic are interactive HTML "world" maps (Super Mario World-style level select, liner notes page, branching narrative — creator's choice) with a JS hook for playback control, track stats, and bookmarks, falling back to a plain tracklist when no world is defined. See [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md).
+- Streamer Queue, a standaone streamer request queue, featuring link/upload submissions, skip/super-skip priority tiers, stripe pay-to-skip, Discord bot integration for `/request`, `/skip`, `/queue` - seperate from Shared Play, with its own rooms and owner tokens
+- live OBS overlay at `http://127.0.0.1:5128/obs/{token}` with layout presets, SSE state push, artwork cache-busting, and current/next lyric lines
+- Integrates with Discord via a Discorp Rich Presence with a download button and a Listen Together button during Shared Play.
+- DRP idle state showing favorite tracks and hours spent listening
+- Loopback-capture visualizer seam with WASAPI on windows, PulseAudio/PipeWire on linux, and macOS backends.
 - Registers as the default app for supported audio extensions and the `spectralis://` protocol; drag-and-drop of files, folders, and capsules.
 - One-time import of the legacy WinForms library (fresh disk rescan, migration log).
-
-The detailed migration status — what is live in the Avalonia app versus still
-porting from the legacy feature set (Shared Play sessions, Spotify, full album
-worlds, tray behavior, and creator/export tooling) — is tracked in
-[docs/feature-gap.md](docs/feature-gap.md).
 
 ## Setup
 
@@ -72,8 +61,7 @@ dotnet run --project .\Spectralis.App -- "C:\path\to\track.mp3"
 
 ### Publish a local app build
 
-The quickest way to get a runnable executable without creating an installer
-package (self-contained `win-x64` build in `publish-normal/`):
+The easiest way to get an executable without creating an installer package (contained `win-x64` build in `publish-normal/`):
 
 ```powershell
 .\setup.ps1
@@ -82,29 +70,29 @@ package (self-contained `win-x64` build in `publish-normal/`):
 
 ### Tests
 
+For the full suite including performance benchmarks
 ```powershell
-dotnet test .\Spectralis.Tests                 # full suite incl. performance benchmarks
+dotnet test .\Spectralis.Tests 
+```
+or for specific tests
+```powershell
 dotnet test .\Spectralis.Tests --filter "FullyQualifiedName!~Performance"
 ```
 
 ### Discord Rich Presence
 
-Discord RPC needs a Discord application/client ID. Set it before running or building:
+Dicord RPC requires a Discord application/client ID, get one [here](https://discord.com/developers/applications). Set it before running or building:
 
 ```powershell
 $env:SPECTRALIS_DISCORD_CLIENT_ID="your Discord application ID"
 dotnet run --project .\Spectralis.App
 ```
 
-The activity always includes a Spectralis download button; when Shared Play is
-active and a session link is ready, a Listen Together button opens the browser
-player.
+The activity always includes a Spectralis download button, if Shared Play is active and a session link is ready, a Listen Together button opens the browser player.
 
 ### Build release packages
 
-Every release must bake in the Spotify and Discord client IDs — without them
-those integrations are silently dead for anyone who installs the build. Set
-both before running any release script (the scripts refuse to run otherwise):
+Releases require spotify and Discord client IDs baked in, without them the integrations will remain silently dead for anyone who installs the build. Set both before running any of the release scripts (they will refuse to run):
 
 ```powershell
 $env:SPECTRALIS_SPOTIFY_CLIENT_ID="your Spotify app client ID"
@@ -126,8 +114,7 @@ $env:SPECTRALIS_DISCORD_CLIENT_ID="your Discord application ID"
 ./Spectralis.Installer/Mac/build-dmg.sh 2.0.0
 ```
 
-For public Windows distribution, sign the artifacts — unsigned installers are
-much more likely to be flagged by reputation-based endpoint tools:
+For windows distribution, sign the artifacts as unsigned installers are far more likely to get flagged by reputation based endpoint tools:
 
 ```powershell
 $env:SPECTRALIS_SIGNTOOL_PARAMS='/a /fd sha256 /tr http://timestamp.digicert.com /td sha256'
@@ -136,11 +123,7 @@ $env:SPECTRALIS_SIGNTOOL_PARAMS='/a /fd sha256 /tr http://timestamp.digicert.com
 
 ### Shared Play backend
 
-The repo includes a Rust backend in [`backend/`](backend/) for Shared Play and
-Discord Listen Together. Production is hosted at
-`https://audioplayer-production-5b83.up.railway.app`; it serves the session/
-state/queue/presence/reaction/channel/package endpoints and the browser player
-from the same origin:
+This repo has a Rust backend in [`backend`](backend/) or Shared Play and Listen Together. Production is hosted at `https://audioplayer-production-5b83.up.railway.app` and it serves the session/state/queue/presence/reaction/channel/package endpoints along with the browser player from the same origin:
 
 ```powershell
 cargo run --manifest-path .\backend\Cargo.toml
