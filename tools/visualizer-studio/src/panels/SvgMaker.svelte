@@ -143,11 +143,13 @@
 
 <div class="svgMaker">
   <div class="toolbar">
-    {#each TOOLS as t (t.id)}
-      <button class="icon" class:active={tool === t.id} title={t.label} aria-label={t.label} onclick={() => (tool = t.id)}>
-        <t.icon size={14} />
-      </button>
-    {/each}
+    <div class="toolGroup">
+      {#each TOOLS as t (t.id)}
+        <button class="icon" class:active={tool === t.id} title={t.label} aria-label={t.label} onclick={() => (tool = t.id)}>
+          <t.icon size={14} />
+        </button>
+      {/each}
+    </div>
     <span class="sep"></span>
     <label class="dim">W<input type="number" min="8" max="2048" bind:value={width} /></label>
     <label class="dim">H<input type="number" min="8" max="2048" bind:value={height} /></label>
@@ -266,8 +268,15 @@
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
   }
-  .toolbar button.icon.active {
+  .toolGroup {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
     background: var(--bg3);
+    border-radius: 4px;
+  }
+  .toolbar button.icon.active {
+    background: var(--bg4);
     color: var(--accent);
   }
   .sep {

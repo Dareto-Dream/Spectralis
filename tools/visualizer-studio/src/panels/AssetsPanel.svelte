@@ -69,6 +69,7 @@
         <button class="small ghost" class:active={kindFilter === id} onclick={() => (kindFilter = id as AssetKind | 'all')}>{label}</button>
       {/each}
     </div>
+    <span class="sep"></span>
     <span class="spacer"></span>
     <div class="search">
       <Search size={12} />
@@ -124,7 +125,7 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     padding: 6px 8px;
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
