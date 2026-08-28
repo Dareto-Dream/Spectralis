@@ -1,20 +1,34 @@
 <script lang="ts">
+  import type { ProjectStore } from '../state/project.svelte';
   import { assetLibrary } from '../state/assetLibrary.svelte';
   import { dockManager } from './dockManager.svelte';
   import { dropZone } from '../lib/dropZone';
   import { startAssetDrag } from '../lib/dragAsset';
   import { toast } from '../state/toast.svelte';
+  import { TEMPLATES } from '../lib/templates';
+  import { loadTemplateIntoStore } from '../lib/projectImport';
+  import { uiState } from '../state/uiState.svelte';
   import type { AssetKind } from '../types/asset';
   import Upload from '@lucide/svelte/icons/upload';
   import FileCode from '@lucide/svelte/icons/file-code';
   import Search from '@lucide/svelte/icons/search';
   import Image from '@lucide/svelte/icons/image';
   import Music from '@lucide/svelte/icons/music';
+  import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+  import ScrollText from '@lucide/svelte/icons/scroll-text';
   import X from '@lucide/svelte/icons/x';
+
+  // `store` is only needed for the Templates category (loading a full starter
+  // project replaces store.project) — every other asset kind here is
+  // independent of any one project.
+  let { store }: { store?: ProjectStore } = $props();
 
   let fileInput: HTMLInputElement | undefined = $state();
   let query = $state('');
-  let kindFilter: AssetKind | 'all' = $state('all');
+  // 'template' is not an AssetKind — full-project starters (lib/templates.ts)
+  // aren't assets, but this is where anything preset-shaped belongs instead
+  // of being silently applied on load (see App.svelte's blank-boot comment).
+  let kindFilter: AssetKind | 'all' | 'template' = $state('all');
   let renamingId: string | null = $state(null);
   let renameValue = $state('');
 
@@ -23,6 +37,24 @@
       (a) => (kindFilter === 'all' || a.kind === kindFilter) && a.name.toLowerCase().includes(query.toLowerCase())
     )
   );
+  const filteredTemplates = $derived(TEMPLATES.filter((t) => t.label.toLowerCase().includes(query.toLowerCase())));
+
+  async function onLoadTemplate(id: string) {
+    if (!store) return;
+    const tpl = TEMPLATES.find((t) => t.id === id);
+    if (tpl) await loadTemplateIntoStore(store, tpl);
+  }
+
+  function onNewScript() {
+    const entry = assetLibrary.addScript(`script-${assetLibrary.assets.filter((a) => a.kind === 'script').length + 1}`);
+    kindFilter = 'script';
+    uiState.editingScriptAssetId = entry.id;
+  }
+
+  function onCardActivate(a: (typeof assetLibrary.assets)[number]) {
+    if (a.kind === 'script') uiState.editingScriptAssetId = a.id;
+    else startRename(a.id, a.name);
+  }
 
   async function addFiles(files: FileList | File[]) {
     for (const f of Array.from(files)) await assetLibrary.addFile(f);
@@ -63,10 +95,11 @@
     <button class="small ghost" onclick={() => fileInput?.click()}><Upload size={12} /> Add Asset</button>
     <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
     <button class="small ghost" onclick={() => dockManager.focusOrOpen('svgmaker')}><FileCode size={12} /> New SVG</button>
+    <button class="small ghost" onclick={onNewScript}><ScrollText size={12} /> New Script</button>
     <span class="sep"></span>
     <div class="kindFilter">
-      {#each [['all', 'All'], ['image', 'Image'], ['audio', 'Audio'], ['svg', 'SVG']] as [id, label] (id)}
-        <button class="small ghost" class:active={kindFilter === id} onclick={() => (kindFilter = id as AssetKind | 'all')}>{label}</button>
+      {#each [['all', 'All'], ['image', 'Image'], ['audio', 'Audio'], ['svg', 'SVG'], ['script', 'Scripts'], ['template', 'Templates']] as [id, label] (id)}
+        <button class="small ghost" class:active={kindFilter === id} onclick={() => (kindFilter = id as AssetKind | 'all' | 'template')}>{label}</button>
       {/each}
     </div>
     <span class="sep"></span>
@@ -77,7 +110,19 @@
     </div>
   </div>
   <div class="grid">
-    {#if !assetLibrary.assets.length}
+    {#if kindFilter === 'template'}
+      {#if !filteredTemplates.length}
+        <p class="empty">Nothing matches.</p>
+      {:else}
+        {#each filteredTemplates as t (t.id)}
+          <button class="card templateCard" onclick={() => onLoadTemplate(t.id)} title={t.hint} disabled={!store}>
+            <div class="thumb"><LayoutTemplate size={22} /></div>
+            <span class="name">{t.label}</span>
+            <span class="size">{t.hint}</span>
+          </button>
+        {/each}
+      {/if}
+    {:else if !assetLibrary.assets.length}
       <p class="empty">No assets yet. Drop files here, use "Add Asset", or save something from the SVG Maker.</p>
     {:else if !filtered.length}
       <p class="empty">Nothing matches.</p>
@@ -88,6 +133,8 @@
           <div class="thumb">
             {#if a.kind === 'audio'}
               <Music size={22} />
+            {:else if a.kind === 'script'}
+              <ScrollText size={22} />
             {:else}
               <img src={a.dataUrl} alt={a.name} />
             {/if}
@@ -104,7 +151,13 @@
               }}
             />
           {:else}
-            <button class="name" ondblclick={() => startRename(a.id, a.name)} title="Double-click to rename">{a.name}</button>
+            <button
+              class="name"
+              ondblclick={() => onCardActivate(a)}
+              title={a.kind === 'script' ? 'Double-click to edit' : 'Double-click to rename'}
+            >
+              {a.name}
+            </button>
           {/if}
           <span class="size">{fmtSize(a.size)}</span>
           <button class="icon ghost danger remove" title="Remove" aria-label={`Remove ${a.name}`} onclick={() => assetLibrary.remove(a.id)}>
@@ -236,5 +289,18 @@
     height: 16px;
     opacity: 0;
     background: var(--bg1);
+  }
+  .templateCard {
+    background: none;
+    color: inherit;
+  }
+  .templateCard .size {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+  }
+  .templateCard:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

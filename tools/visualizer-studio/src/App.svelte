@@ -12,21 +12,24 @@
   import HelpModal from './panels/HelpModal.svelte';
   import SettingsModal from './panels/SettingsModal.svelte';
   import AboutModal from './panels/AboutModal.svelte';
+  import ScriptEditorModal from './panels/ScriptEditorModal.svelte';
   import AutosaveBanner from './panels/AutosaveBanner.svelte';
-  import { TEMPLATES } from './lib/templates';
   import { createGlobalKeymap } from './lib/keymap';
   import { autosave } from './state/autosave.svelte';
   import { themeSettings } from './state/theme.svelte';
   import { uiState } from './state/uiState.svelte';
 
+  // Always boots blank now — the old "Neon Edit" starter project used to load
+  // silently on cold start, which is exactly the kind of implicit preset the
+  // Templates rework moved into Assets > Templates instead (pick one
+  // deliberately from there, via store.loadProject(tpl.build())).
   const store = new ProjectStore();
-  store.loadProject(TEMPLATES[0].build());
   const audio = new AudioState();
   const assets = new AssetsState();
 
   themeSettings.apply();
 
-  const onKeyDown = createGlobalKeymap(store, () => (uiState.helpOpen = true));
+  const onKeyDown = createGlobalKeymap(store, audio, assets, () => (uiState.helpOpen = true));
 
   // Debounce-write to localStorage on every committed edit — see AutosaveManager
   // for why this is a safety net, not a replacement for Save Project.
@@ -60,6 +63,7 @@
 <HelpModal open={uiState.helpOpen} onClose={() => (uiState.helpOpen = false)} />
 <SettingsModal open={uiState.settingsOpen} onClose={() => (uiState.settingsOpen = false)} />
 <AboutModal open={uiState.aboutOpen} onClose={() => (uiState.aboutOpen = false)} />
+<ScriptEditorModal />
 
 <style>
   .app {
