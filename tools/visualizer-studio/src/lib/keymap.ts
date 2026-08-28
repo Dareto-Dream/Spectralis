@@ -7,6 +7,38 @@ import { deleteSelection } from './deleteSelection';
 
 const FRAME = 1 / 30;
 
+export type ShortcutCategory = 'Playback' | 'Editing' | 'Selection' | 'View' | 'General';
+
+export interface ShortcutEntry {
+  keys: string;
+  description: string;
+  category: ShortcutCategory;
+}
+
+// Single source of truth for the Help modal — kept in this file so the list
+// can't drift from createGlobalKeymap below without someone noticing the diff.
+export const SHORTCUTS: ShortcutEntry[] = [
+  { keys: 'Space', description: 'Play / Pause', category: 'Playback' },
+  { keys: '← / →', description: 'Nudge playhead (or selected keyframes) by 1 frame', category: 'Playback' },
+  { keys: 'Shift+← / Shift+→', description: 'Nudge by 1 second', category: 'Playback' },
+  { keys: '[ / ]', description: 'Set selected section start/end to playhead', category: 'Playback' },
+  { keys: 'Ctrl+Z / Ctrl+Shift+Z', description: 'Undo / Redo', category: 'Editing' },
+  { keys: 'Delete / Backspace', description: 'Delete selected keyframe(s) or layer', category: 'Editing' },
+  { keys: 'Ctrl+D', description: 'Duplicate selected layer', category: 'Editing' },
+  { keys: 'Ctrl+C / Ctrl+V', description: 'Copy / Paste keyframes at playhead', category: 'Editing' },
+  { keys: 'Ctrl+Shift+V', description: 'Paste keyframes at original times', category: 'Editing' },
+  { keys: 'F2', description: 'Rename selected layer', category: 'Editing' },
+  { keys: 'Ctrl+A', description: 'Select all keyframes in the active track', category: 'Selection' },
+  { keys: '↑ / ↓', description: 'Move layer selection up/down the list', category: 'Selection' },
+  { keys: 'Escape', description: 'Clear selection', category: 'Selection' },
+  { keys: '+ / -', description: 'Timeline zoom in/out', category: 'View' },
+  { keys: 'Double-click a lane', description: 'Add a keyframe at that time', category: 'View' },
+  { keys: 'Scroll wheel over timeline', description: 'Zoom, anchored at cursor', category: 'View' },
+  { keys: 'Right-click keyframe/section/layer', description: 'Context menu', category: 'View' },
+  { keys: 'Ctrl+S', description: 'Save project', category: 'General' },
+  { keys: '?', description: 'Show this help', category: 'General' },
+];
+
 function isTextInput(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   const tag = el.tagName;
