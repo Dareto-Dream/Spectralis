@@ -6,6 +6,17 @@
   import type { AssetEntry } from '../types/asset';
   import X from '@lucide/svelte/icons/x';
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+
+  // Advanced mode (plan: "there is an advanced mode making it look more like
+  // the normal capsule workspace") restructures the page list into a
+  // List + Inspector pair — same shape as Capsule's Layers+Inspector — with
+  // a per-page hue accent field basic mode has no room for. It's an
+  // authoring-only convenience for now (see StoryPage.hue's comment); the
+  // exported HTML contract is unchanged either way.
+  let advancedMode = $state(false);
+  let selectedPageId: string | null = $state(null);
+  const selectedPage = $derived(storyStore.pages.find((p) => p.id === selectedPageId) ?? null);
 
   async function copy(text: string, label: string) {
     await navigator.clipboard.writeText(text);
@@ -35,8 +46,13 @@
   }
 </script>
 
-<div class="builderGrid">
+<div class="builderGrid" class:advanced={advancedMode}>
   <div class="col">
+    <div class="modeToggle">
+      <button class="small ghost" class:active={advancedMode} onclick={() => (advancedMode = !advancedMode)}>
+        <Sparkles size={12} /> Advanced Mode
+      </button>
+    </div>
     <fieldset>
       <legend>Narrator</legend>
       <label class="field"><span>Name</span><input bind:value={storyStore.meta.name} /></label>
@@ -52,24 +68,86 @@
       <label class="field"><span>Typewriter ms/char</span><input type="number" bind:value={storyStore.meta.charMs} /></label>
       <label class="field"><span>Accent hue</span><input type="number" min="0" max="360" bind:value={storyStore.meta.hue} /></label>
     </fieldset>
-    <fieldset>
-      <legend>Pages <span class="hintInline">— drag rows to reorder</span></legend>
-      {#each storyStore.pages as page, i (page.id)}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="pageRow" draggable="true" ondragstart={() => onDragStart(i)} ondragover={onDragOver} ondrop={() => onDropRow(i)}>
-          <span class="grip" title="Drag to reorder"><GripVertical size={13} /></span>
-          <input class="speaker" placeholder="Speaker (defaults to narrator)" bind:value={page.speaker} />
-          <textarea placeholder="Page text" bind:value={page.text}></textarea>
-          <button class="icon ghost danger" title="Remove page" aria-label={`Remove page ${i + 1}`} onclick={() => storyStore.removePage(i)}><X size={13} /></button>
-        </div>
-      {/each}
-      <button class="small" onclick={() => storyStore.addPage()}>+ Add Page</button>
-    </fieldset>
+
+    {#if !advancedMode}
+      <fieldset>
+        <legend>Pages <span class="hintInline">— drag rows to reorder</span></legend>
+        {#each storyStore.pages as page, i (page.id)}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="pageRow" draggable="true" ondragstart={() => onDragStart(i)} ondragover={onDragOver} ondrop={() => onDropRow(i)}>
+            <span class="grip" title="Drag to reorder"><GripVertical size={13} /></span>
+            <input class="speaker" placeholder="Speaker (defaults to narrator)" bind:value={page.speaker} />
+            <textarea placeholder="Page text" bind:value={page.text}></textarea>
+            <button class="icon ghost danger" title="Remove page" aria-label={`Remove page ${i + 1}`} onclick={() => storyStore.removePage(i)}><X size={13} /></button>
+          </div>
+        {/each}
+        <button class="small" onclick={() => storyStore.addPage()}>+ Add Page</button>
+      </fieldset>
+    {/if}
+
     <div class="exportList">
       <button class="primary small" onclick={() => storyStore.generate()}>Generate Story Files</button>
       {#if storyStore.outHtml}<button class="small" onclick={() => storyStore.download()}>Download Both</button>{/if}
     </div>
   </div>
+
+  {#if advancedMode}
+    <div class="col pageList">
+      <h3>Pages</h3>
+      {#each storyStore.pages as page, i (page.id)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <button
+          class="pageListRow"
+          class:selected={selectedPageId === page.id}
+          draggable="true"
+          ondragstart={() => onDragStart(i)}
+          ondragover={onDragOver}
+          ondrop={() => onDropRow(i)}
+          onclick={() => (selectedPageId = page.id)}
+        >
+          <span class="grip"><GripVertical size={12} /></span>
+          {#if page.hue !== undefined}<span class="hueDot" style="background: hsl({page.hue}, 70%, 55%)"></span>{/if}
+          <span class="rowLabel">{i + 1}. {page.speaker || '(narrator)'} — {page.text.slice(0, 24) || '(empty)'}</span>
+        </button>
+      {/each}
+      <button class="small" onclick={() => (selectedPageId = storyStore.addPage().id)}>+ Add Page</button>
+    </div>
+
+    <div class="col pageInspector">
+      <h3>Page Inspector</h3>
+      {#if !selectedPage}
+        <p class="hintInline">Select a page on the left.</p>
+      {:else}
+        <label class="field stacked"><span>Speaker</span><input bind:value={selectedPage.speaker} placeholder="(defaults to narrator)" /></label>
+        <label class="field stacked"><span>Text</span><textarea class="fullText" bind:value={selectedPage.text}></textarea></label>
+        <label class="field">
+          <span>Accent hue override</span>
+          <input
+            type="number"
+            min="0"
+            max="360"
+            value={selectedPage.hue ?? ''}
+            placeholder={String(storyStore.meta.hue)}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              selectedPage.hue = v === '' ? undefined : Math.max(0, Math.min(360, parseInt(v, 10) || 0));
+            }}
+          />
+        </label>
+        <button
+          class="small ghost danger"
+          onclick={() => {
+            const idx = storyStore.pages.findIndex((p) => p.id === selectedPage!.id);
+            if (idx >= 0) storyStore.removePage(idx);
+            selectedPageId = null;
+          }}
+        >
+          <X size={12} /> Delete Page
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   <div class="col">
     <h3>Preview</h3>
     <div class="previewFrame">
@@ -97,6 +175,75 @@
     height: 100%;
     overflow-y: auto;
     color: var(--dim);
+    font: 11px var(--mono);
+  }
+  .builderGrid.advanced {
+    /* narrator/toggle | page list | page inspector | preview — same
+       list+inspector+preview shape as Capsule's Layers/Inspector/Preview. */
+    grid-template-columns: 260px 220px 260px 1fr;
+  }
+  .modeToggle {
+    display: flex;
+    margin-bottom: 8px;
+  }
+  .modeToggle button.active {
+    background: var(--bg3);
+    color: var(--accent);
+  }
+  .pageList,
+  .pageInspector {
+    background: var(--bg1);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-self: start;
+  }
+  .pageListRow {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    text-align: left;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 4px 6px;
+    color: var(--dim);
+    font: 10px var(--mono);
+  }
+  .pageListRow:hover {
+    background: var(--bg2);
+  }
+  .pageListRow.selected {
+    background: var(--bg3);
+    border-color: var(--line2);
+    color: var(--text);
+  }
+  .hueDot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .rowLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .field.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+  }
+  .field.stacked input,
+  .fullText {
+    width: 100%;
+  }
+  .fullText {
+    min-height: 100px;
+    resize: vertical;
     font: 11px var(--mono);
   }
   fieldset {
