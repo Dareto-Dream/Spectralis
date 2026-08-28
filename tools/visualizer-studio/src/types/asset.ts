@@ -11,6 +11,10 @@ export interface AssetEntry {
   dataUrl: string;
   size: number;
   createdAt: number;
+  // Electron build only — real fs path, set when this entry came from a File
+  // window.native could resolve (see assetLibrary.svelte.ts). Lets the export
+  // pipeline fs.copyFile the real bytes instead of re-reading a data: URL.
+  path?: string;
 }
 
 // The custom drag mime used to move an asset FROM the Assets docker onto a

@@ -42,7 +42,7 @@
       toast.push('error', 'Drop an image or SVG asset onto the cover slot');
       return;
     }
-    assets.setCoverFromAsset(entry.name, entry.dataUrl);
+    assets.setCoverFromAsset(entry.name, entry.dataUrl, entry.path);
   }
 </script>
 

@@ -29,7 +29,11 @@ export class AssetLibrary {
   assets: AssetEntry[] = $state([]);
 
   async addFile(file: File): Promise<AssetEntry> {
-    const dataUrl = await readAsDataUrl(file);
+    // Native build: skip the base64 round-trip entirely (this is the whole
+    // point — a dragged-in audio file can be tens of MB, see the comment
+    // above) and point straight at the real file via a file:// URL instead.
+    const path = window.native?.getPathForFile(file);
+    const dataUrl = path ? window.native!.toFileUrl(path) : await readAsDataUrl(file);
     const entry: AssetEntry = {
       id: crypto.randomUUID(),
       name: file.name,
@@ -38,6 +42,7 @@ export class AssetLibrary {
       dataUrl,
       size: file.size,
       createdAt: Date.now(),
+      path,
     };
     this.assets.push(entry);
     return entry;
