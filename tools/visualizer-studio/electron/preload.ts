@@ -25,4 +25,11 @@ contextBridge.exposeInMainWorld('native', {
   sha256File: (path: string) => ipcRenderer.invoke('hash:sha256File', path) as Promise<string>,
   chooseExportDir: (defaultName: string) => ipcRenderer.invoke('dialog:chooseExportDir', defaultName) as Promise<string | null>,
   writeExport: (payload: unknown) => ipcRenderer.invoke('export:write', payload) as Promise<{ ok: boolean; dir: string }>,
+  getStudioRoot: () => ipcRenderer.invoke('paths:studioRoot') as Promise<string>,
+  saveFileDialog: (opts: { defaultPath: string; filters: { name: string; extensions: string[] }[] }) =>
+    ipcRenderer.invoke('dialog:saveFile', opts) as Promise<string | null>,
+  openFileDialog: (opts: { defaultPath?: string; filters: { name: string; extensions: string[] }[] }) =>
+    ipcRenderer.invoke('dialog:openFile', opts) as Promise<string | null>,
+  writeBinaryFile: (filePath: string, data: ArrayBuffer) => ipcRenderer.invoke('fs:writeBinary', filePath, data) as Promise<{ ok: boolean }>,
+  readBinaryFile: (filePath: string) => ipcRenderer.invoke('fs:readBinary', filePath) as Promise<ArrayBuffer>,
 });

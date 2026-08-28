@@ -64,6 +64,63 @@ ipcMain.handle('hash:sha256File', (_event, filePath: string) => {
   });
 });
 
+// Documents/<productName>/{Projects,Assets,Templates,Scripts} — created once
+// on launch (recursive mkdir is a no-op if it's already there) so native
+// Save/Open dialogs have somewhere sensible to default into. Browser build
+// has no equivalent — window.native is undefined there, same feature-detect
+// as every other native-only path in this codebase.
+const STUDIO_ROOT = path.join(app.getPath('documents'), 'Spectralis Visualizer Studio');
+const STUDIO_SUBFOLDERS = ['Projects', 'Assets', 'Templates', 'Scripts'];
+
+async function ensureStudioScaffold() {
+  for (const sub of STUDIO_SUBFOLDERS) {
+    await fs.promises.mkdir(path.join(STUDIO_ROOT, sub), { recursive: true });
+  }
+}
+
+ipcMain.handle('paths:studioRoot', async () => {
+  await ensureStudioScaffold();
+  return STUDIO_ROOT;
+});
+
+interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+// Generic save/open dialogs + binary read/write, used by the .spectralis/
+// .spectral project format (native path — the browser build falls back to
+// Blob download / <input type=file>, see src/lib/downloadText.ts).
+ipcMain.handle('dialog:saveFile', async (_event, opts: { defaultPath: string; filters: DialogFilter[] }) => {
+  const win = BrowserWindow.getFocusedWindow() ?? undefined;
+  const result = win
+    ? await dialog.showSaveDialog(win, { defaultPath: opts.defaultPath, filters: opts.filters })
+    : await dialog.showSaveDialog({ defaultPath: opts.defaultPath, filters: opts.filters });
+  return result.canceled || !result.filePath ? null : result.filePath;
+});
+
+ipcMain.handle('dialog:openFile', async (_event, opts: { defaultPath?: string; filters: DialogFilter[] }) => {
+  const win = BrowserWindow.getFocusedWindow() ?? undefined;
+  const dialogOpts = { defaultPath: opts.defaultPath, filters: opts.filters, properties: ['openFile'] as Array<'openFile'> };
+  const result = win ? await dialog.showOpenDialog(win, dialogOpts) : await dialog.showOpenDialog(dialogOpts);
+  return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+});
+
+ipcMain.handle('fs:writeBinary', async (_event, filePath: string, data: ArrayBuffer) => {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, Buffer.from(data));
+  return { ok: true };
+});
+
+ipcMain.handle('fs:readBinary', async (_event, filePath: string) => {
+  const buf = await fs.promises.readFile(filePath);
+  // structuredClone-friendly: ipcRenderer.invoke can return a Buffer, but the
+  // renderer sees it as a plain Uint8Array-shaped object over IPC anyway —
+  // returning the underlying ArrayBuffer slice keeps the renderer-side type
+  // (Uint8Array(bytes.buffer)) unambiguous.
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+});
+
 interface WriteExportPayload {
   dir: string;
   files: { name: string; content: string }[];
@@ -96,6 +153,7 @@ ipcMain.handle('export:write', async (_event, payload: WriteExportPayload) => {
 });
 
 app.whenReady().then(() => {
+  void ensureStudioScaffold();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

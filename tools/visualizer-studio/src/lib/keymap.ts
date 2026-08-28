@@ -1,4 +1,6 @@
 import type { ProjectStore } from '../state/project.svelte';
+import type { AudioState } from '../state/audio.svelte';
+import type { AssetsState } from '../state/assets.svelte';
 import { copyKeyframes, pasteAtPlayhead, pasteAtOriginalTimes, hasClipboard } from '../timeline/clipboard';
 import { closeContextMenu, contextMenuState } from '../timeline/contextMenu.svelte';
 import { confirmModalState } from '../state/confirmModal.svelte';
@@ -48,7 +50,7 @@ function isTextInput(el: EventTarget | null): boolean {
 // Single global handler, registered once in App.svelte. Early-returns while a
 // text input has focus — the shortcuts here are all single-key or Ctrl-combo,
 // so anything that would collide with normal typing gets skipped entirely.
-export function createGlobalKeymap(store: ProjectStore, openHelp: () => void) {
+export function createGlobalKeymap(store: ProjectStore, audio: AudioState, assets: AssetsState, openHelp: () => void) {
   return function onKeyDown(e: KeyboardEvent) {
     // Modals/menus own Escape/Enter while they're open — don't double-handle.
     if (confirmModalState.request || contextMenuState.request) {
@@ -67,7 +69,7 @@ export function createGlobalKeymap(store: ProjectStore, openHelp: () => void) {
     }
     if (mod && e.key.toLowerCase() === 's') {
       e.preventDefault(); // prevents the browser's Save-page dialog
-      saveProjectFile(store);
+      saveProjectFile(store, audio, assets);
       return;
     }
     if (typing) return;

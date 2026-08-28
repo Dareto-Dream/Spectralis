@@ -9,6 +9,25 @@ export function downloadText(filename: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
+// Browser-build fallback for saving a .spectralis/.spectral file — the same
+// bytes the native build writes via fs, just delivered as a download since
+// there's no filesystem to write to directly.
+export function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/octet-stream') {
+  // TS's DOM lib types Uint8Array as generic over ArrayBufferLike (which
+  // includes SharedArrayBuffer), but BlobPart only accepts a view backed by a
+  // real ArrayBuffer — our bytes are always freshly allocated by
+  // src/format/riff.ts, never shared, so this is a type-system gap, not a
+  // real runtime concern.
+  const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
 // For binary assets (cover images) that already live in memory as a data:
 // URL — no Blob needed, the data: URL is already a valid <a href>.
 export function downloadDataUrl(filename: string, dataUrl: string) {

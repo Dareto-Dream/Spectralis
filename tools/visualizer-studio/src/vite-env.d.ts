@@ -17,5 +17,10 @@ interface Window {
       audioSourcePath: string | null;
       audioDestName: string | null;
     }): Promise<{ ok: boolean; dir: string }>;
+    getStudioRoot(): Promise<string>;
+    saveFileDialog(opts: { defaultPath: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
+    openFileDialog(opts: { defaultPath?: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
+    writeBinaryFile(filePath: string, data: ArrayBuffer): Promise<{ ok: boolean }>;
+    readBinaryFile(filePath: string): Promise<ArrayBuffer>;
   };
 }
