@@ -28,6 +28,26 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // App.svelte's onBeforeUnload calls preventDefault() when there are
+  // uncommitted changes — in a real browser that pops the native "leave
+  // site?" confirmation, but Electron just silently blocks the close with
+  // no dialog at all, which is exactly why the close button/Alt+F4 stopped
+  // doing anything. This is the documented fix: electron fires
+  // will-prevent-unload instead of showing anything itself, and it's on us
+  // to ask and then call event.preventDefault() to actually let it close.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Quit Without Saving', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Unsaved changes',
+      message: 'You have unsaved changes in Visualizer Studio.',
+      detail: 'Quit anyway? Autosave keeps a recovery copy, but Save Project is safer.',
+    });
+    if (choice === 0) event.preventDefault();
+  });
 }
 
 // Streamed over fs.createReadStream so the whole audio file is never resident
