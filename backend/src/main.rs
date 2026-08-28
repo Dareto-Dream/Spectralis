@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -2853,6 +2853,10 @@ async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, App
     if room.get("acceptingSubmissions").is_none() {
         room["acceptingSubmissions"] = json!(true);
     }
+    // Rooms created before multi-channel queuing default to a single "General" lane.
+    if room.get("queueChannels").and_then(Value::as_array).map(|a| a.is_empty()).unwrap_or(true) {
+        room["queueChannels"] = sq_default_queue_channels();
+    }
     Ok(room)
 }
 
@@ -2872,6 +2876,142 @@ fn sq_owner_token_valid(room: &Value, token: &str) -> bool {
 fn sq_bot_token_valid(room: &Value, token: &str) -> bool {
     let stored = room.get("discordBotToken").and_then(Value::as_str).unwrap_or("");
     !stored.is_empty() && stored == token
+}
+
+// ── Queue channels (multi-link priority lanes) ────────────────────────────────
+// A room can define several named "queue channels" (e.g. General, VIP) that the
+// streamer sends out as separate links; each can also be paired to a Discord
+// channel so a bot posting there routes into the right lane. This is orthogonal
+// to paid tiers (skip/super_skip) — a paid skip still jumps every channel.
+
+fn clean_lane_id(value: &str) -> Result<String, AppError> {
+    let cleaned: String = value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(40)
+        .collect();
+    if cleaned.is_empty() {
+        Err(AppError::bad_request("Queue channel id was empty."))
+    } else {
+        Ok(cleaned)
+    }
+}
+
+fn clean_discord_channel_id(value: &str) -> Option<String> {
+    let cleaned: String = value.trim().chars().filter(|c| c.is_ascii_digit()).take(32).collect();
+    if cleaned.is_empty() { None } else { Some(cleaned) }
+}
+
+fn sq_default_queue_channels() -> Value {
+    json!([{ "id": "general", "name": "General", "priority": 0, "discordChannelId": null }])
+}
+
+fn sq_default_channel_id(room: &Value) -> String {
+    room.get("queueChannels")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("id").and_then(Value::as_str))
+        .unwrap_or("general")
+        .to_string()
+}
+
+fn sq_channel_exists(room: &Value, id: &str) -> bool {
+    room.get("queueChannels")
+        .and_then(Value::as_array)
+        .is_some_and(|a| a.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id)))
+}
+
+fn sq_channel_priority(room: &Value, channel_id: &str) -> i64 {
+    room.get("queueChannels")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|c| c.get("id").and_then(Value::as_str) == Some(channel_id)))
+        .and_then(|c| c.get("priority").and_then(Value::as_i64))
+        .unwrap_or(0)
+}
+
+fn sq_resolve_discord_channel(room: &Value, discord_channel_id: &str) -> Option<String> {
+    room.get("queueChannels")?
+        .as_array()?
+        .iter()
+        .find(|c| c.get("discordChannelId").and_then(Value::as_str) == Some(discord_channel_id))
+        .and_then(|c| c.get("id").and_then(Value::as_str))
+        .map(ToOwned::to_owned)
+}
+
+/// Resolves the queue channel a new submission lands in. An explicit `queueChannelId`
+/// (from a channel-specific share link) wins; otherwise a `discordChannelId` (from the
+/// Discord bot) is mapped through the room's configured pairings; otherwise it falls
+/// back to the room's default (first-listed) channel so unlabeled submissions still work.
+fn sq_resolve_submit_channel(room: &Value, payload: &Value) -> Result<String, AppError> {
+    if let Some(explicit) = payload.get("queueChannelId").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+        let cleaned = clean_lane_id(explicit)?;
+        if !sq_channel_exists(room, &cleaned) {
+            return Err(AppError::bad_request("Unknown queue channel."));
+        }
+        return Ok(cleaned);
+    }
+    if let Some(discord_id) = payload.get("discordChannelId").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+        if let Some(cleaned) = clean_discord_channel_id(discord_id) {
+            if let Some(mapped) = sq_resolve_discord_channel(room, &cleaned) {
+                return Ok(mapped);
+            }
+        }
+    }
+    Ok(sq_default_channel_id(room))
+}
+
+fn sq_normalize_queue_channels(incoming: &Value) -> Result<Value, AppError> {
+    let arr = incoming.as_array().ok_or_else(|| AppError::bad_request("queueChannels must be an array."))?;
+    if arr.is_empty() {
+        return Err(AppError::bad_request("At least one queue channel is required."));
+    }
+    if arr.len() > 12 {
+        return Err(AppError::bad_request("Too many queue channels (max 12)."));
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(arr.len());
+    for c in arr {
+        let raw_id = c.get("id").and_then(Value::as_str).unwrap_or("");
+        let id = clean_lane_id(raw_id)?;
+        if !seen.insert(id.clone()) {
+            return Err(AppError::bad_request("Duplicate queue channel id."));
+        }
+        let name = c.get("name").and_then(Value::as_str)
+            .and_then(|n| clean_short_text(n, 40))
+            .unwrap_or_else(|| id.clone());
+        let priority = c.get("priority").and_then(Value::as_i64).unwrap_or(0).clamp(-1000, 1000);
+        let discord_channel_id = c.get("discordChannelId").and_then(Value::as_str).and_then(clean_discord_channel_id);
+        out.push(json!({ "id": id, "name": name, "priority": priority, "discordChannelId": discord_channel_id }));
+    }
+    Ok(json!(out))
+}
+
+/// Validates a mix pattern against a channel set, silently dropping any slot that
+/// references a channel id that no longer exists (e.g. the streamer just deleted that
+/// channel in the same settings save) rather than failing the whole request.
+fn sq_normalize_mix_pattern(incoming: &Value, channels: &Value) -> Result<Value, AppError> {
+    if incoming.is_null() {
+        return Ok(Value::Null);
+    }
+    let arr = incoming.as_array().ok_or_else(|| AppError::bad_request("channelMixPattern must be an array or null."))?;
+    if arr.len() > 40 {
+        return Err(AppError::bad_request("Mix pattern is too long (max 40 slots)."));
+    }
+    let valid_ids: HashSet<String> = channels.as_array().into_iter().flatten()
+        .filter_map(|c| c.get("id").and_then(Value::as_str).map(ToOwned::to_owned))
+        .collect();
+    let mut out = Vec::with_capacity(arr.len());
+    for slot in arr {
+        let channel_id = match slot.get("channelId").and_then(Value::as_str) {
+            Some(id) if valid_ids.contains(id) => id.to_string(),
+            _ => continue,
+        };
+        let count = slot.get("count").and_then(Value::as_i64).unwrap_or(1).clamp(1, 50);
+        out.push(json!({ "channelId": channel_id, "count": count }));
+    }
+    if out.is_empty() { Ok(Value::Null) } else { Ok(json!(out)) }
 }
 
 // ── Fingerprint scoring ───────────────────────────────────────────────────────
@@ -2990,24 +3130,91 @@ fn sq_tier_rank(tier: &str) -> u8 {
     }
 }
 
-fn sq_sort_by_priority(items: &mut Vec<Value>) {
-    items.sort_by(|a, b| {
-        let ta = sq_tier_rank(a.get("tier").and_then(Value::as_str).unwrap_or("normal"));
-        let tb = sq_tier_rank(b.get("tier").and_then(Value::as_str).unwrap_or("normal"));
-        if ta != tb {
-            return tb.cmp(&ta); // higher tier first
+fn sq_fifo_ts(item: &Value) -> String {
+    item.get("tierChangedAtUtc")
+        .or_else(|| item.get("submittedAtUtc"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn sq_item_channel_id(item: &Value, room: &Value) -> String {
+    item.get("queueChannelId")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| sq_default_channel_id(room))
+}
+
+/// Orders one tier's worth of submissions across queue channels. With no mix pattern
+/// configured, channels are simply ranked by priority (VIP above General). With a
+/// pattern (e.g. 2 General, 3 VIP, repeat), items are pulled round-robin per the
+/// pattern's slot sizes; anything left over (a channel not in the pattern, or one the
+/// pattern already drained) is appended in priority order.
+fn sq_channel_merge(items: Vec<Value>, room: &Value) -> Vec<Value> {
+    let mut by_channel: HashMap<String, Vec<Value>> = HashMap::new();
+    for item in items {
+        by_channel.entry(sq_item_channel_id(&item, room)).or_default().push(item);
+    }
+    for bucket in by_channel.values_mut() {
+        bucket.sort_by(|a, b| sq_fifo_ts(a).cmp(&sq_fifo_ts(b)));
+    }
+
+    let mut result = Vec::new();
+    if let Some(pattern) = room.get("channelMixPattern").and_then(Value::as_array).filter(|p| !p.is_empty()) {
+        let mut slot_idx = 0usize;
+        let mut progressed_this_cycle = false;
+        loop {
+            let total_left: usize = by_channel.values().map(Vec::len).sum();
+            if total_left == 0 {
+                break;
+            }
+            let slot = &pattern[slot_idx % pattern.len()];
+            let channel_id = slot.get("channelId").and_then(Value::as_str).unwrap_or("");
+            let count = slot.get("count").and_then(Value::as_i64).unwrap_or(1).clamp(1, 50) as usize;
+            if let Some(queue) = by_channel.get_mut(channel_id) {
+                let take = count.min(queue.len());
+                if take > 0 {
+                    result.extend(queue.drain(0..take));
+                    progressed_this_cycle = true;
+                }
+            }
+            slot_idx += 1;
+            if slot_idx % pattern.len() == 0 {
+                // A full lap with nothing pulled means the pattern's channels are all
+                // drained — whatever remains lives in channels outside the pattern, so
+                // stop cycling and let the priority-sorted flush below handle them.
+                if !progressed_this_cycle {
+                    break;
+                }
+                progressed_this_cycle = false;
+            }
         }
-        // Within same tier: FIFO by tierChangedAtUtc (or submittedAtUtc for normal)
-        let ts_a = a.get("tierChangedAtUtc")
-            .or_else(|| a.get("submittedAtUtc"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let ts_b = b.get("tierChangedAtUtc")
-            .or_else(|| b.get("submittedAtUtc"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        ts_a.cmp(ts_b)
+    }
+
+    let mut leftover: Vec<Value> = by_channel.into_values().flatten().collect();
+    leftover.sort_by(|a, b| {
+        let pa = sq_channel_priority(room, &sq_item_channel_id(a, room));
+        let pb = sq_channel_priority(room, &sq_item_channel_id(b, room));
+        if pa != pb {
+            return pb.cmp(&pa); // higher priority first
+        }
+        sq_fifo_ts(a).cmp(&sq_fifo_ts(b))
     });
+    result.extend(leftover);
+    result
+}
+
+fn sq_priority_sort_full(items: &mut Vec<Value>, room: &Value) {
+    // Bucket by paid tier first — a skip/super-skip still jumps every channel — then
+    // resolve channel priority/mixing within each tier bucket independently.
+    let mut buckets: [Vec<Value>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for item in items.drain(..) {
+        let rank = sq_tier_rank(item.get("tier").and_then(Value::as_str).unwrap_or("normal"));
+        buckets[2 - rank as usize].push(item);
+    }
+    for bucket in buckets {
+        items.extend(sq_channel_merge(bucket, room));
+    }
 }
 
 fn sq_ordered_queue(room: &Value) -> Vec<Value> {
@@ -3059,12 +3266,12 @@ fn sq_ordered_queue(room: &Value) -> Vec<Value> {
             })
             .cloned()
             .collect();
-        sq_sort_by_priority(&mut unordered);
+        sq_priority_sort_full(&mut unordered, room);
         manual.extend(unordered);
         return manual;
     }
 
-    sq_sort_by_priority(&mut active);
+    sq_priority_sort_full(&mut active, room);
     active
 }
 
@@ -3139,6 +3346,8 @@ async fn post_sq_create_room(
             "superSkip": { "enabled": false, "amount": 10.0, "currency": "USD" }
         },
         "channelId": &room_id,
+        "queueChannels": sq_default_queue_channels(),
+        "channelMixPattern": null,
         "nowPlayingId": null,
         "nowPlayingTier": null,
         "manualOrderIds": null,
@@ -3198,6 +3407,12 @@ async fn get_sq_room(
         let now_playing_title = now_playing_sub.and_then(|s| s.get("title")).cloned().unwrap_or(Value::Null);
         let now_playing_artist = now_playing_sub.and_then(|s| s.get("artist")).cloned().unwrap_or(Value::Null);
         let accepting_submissions = room.get("acceptingSubmissions").and_then(Value::as_bool).unwrap_or(true);
+        // Names only — discordChannelId/priority stay owner/bot-only, viewers just need
+        // to know which lane a channel-specific link ("?ch=vip") drops them into.
+        let public_channels: Vec<Value> = room.get("queueChannels").and_then(Value::as_array).cloned().unwrap_or_default()
+            .into_iter()
+            .map(|c| json!({ "id": c.get("id"), "name": c.get("name") }))
+            .collect();
         Ok(Json(json!({
             "roomId": room.get("roomId"),
             "enabled": true,
@@ -3206,6 +3421,7 @@ async fn get_sq_room(
             "stripePublishableKey": stripe_pk,
             "activeCount": active_count,
             "queueLength": ordered.len(),
+            "queueChannels": public_channels,
             "nowPlayingId": now_playing_id,
             "nowPlayingTier": now_playing_tier,
             "nowPlayingTitle": now_playing_title,
@@ -3240,7 +3456,9 @@ async fn put_sq_settings(
     if is_bot
         && (payload.get("enabled").is_some()
             || payload.get("channelId").is_some()
-            || payload.get("settings").is_some())
+            || payload.get("settings").is_some()
+            || payload.get("queueChannels").is_some()
+            || payload.get("channelMixPattern").is_some())
     {
         return Err(AppError::forbidden("A Discord bot token can only open or close the queue."));
     }
@@ -3254,6 +3472,17 @@ async fn put_sq_settings(
         }
         if let Some(settings) = payload.get("settings") {
             room["settings"] = sq_normalize_settings(settings, &room["settings"].clone());
+        }
+        if let Some(channels) = payload.get("queueChannels") {
+            room["queueChannels"] = sq_normalize_queue_channels(channels)?;
+        }
+        if let Some(pattern) = payload.get("channelMixPattern") {
+            room["channelMixPattern"] = sq_normalize_mix_pattern(pattern, &room["queueChannels"])?;
+        }
+        // Keep any previously-saved pattern consistent with whatever channel set this
+        // call ends up with, even if only queueChannels (and not the pattern) changed.
+        if !room["channelMixPattern"].is_null() {
+            room["channelMixPattern"] = sq_normalize_mix_pattern(&room["channelMixPattern"].clone(), &room["queueChannels"])?;
         }
     }
     if let Some(v) = payload.get("acceptingSubmissions").and_then(Value::as_bool) {
@@ -3404,6 +3633,7 @@ async fn post_sq_submit(
     let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
     let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
     let duration_seconds = payload.get("durationSeconds").and_then(Value::as_f64);
+    let queue_channel_id = sq_resolve_submit_channel(&room, &payload)?;
 
     // Enforce queue length
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
@@ -3476,6 +3706,7 @@ async fn post_sq_submit(
         let sub = json!({
             "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
             "url": url, "sourceKind": "link", "tier": valid_tier, "tierChangedAtUtc": &now,
+            "queueChannelId": &queue_channel_id,
             "status": "awaiting_payment", "paymentStatus": "pending", "paymentIntentId": &pi_id,
             "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
             "_fp": &fp
@@ -3490,6 +3721,7 @@ async fn post_sq_submit(
     let sub = json!({
         "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
         "url": url, "sourceKind": "link", "tier": valid_tier, "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": initial_status, "paymentStatus": "none", "paymentIntentId": null,
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": &fp
@@ -3536,6 +3768,8 @@ async fn post_sq_upload(
     let mut artist: Option<String> = None;
     let mut duration_seconds: Option<f64> = None;
     let mut tier = "normal".to_string();
+    let mut queue_channel_id_field = String::new();
+    let mut discord_channel_id_field = String::new();
     let mut fp_cookie = String::new();
     let mut fp_ua = String::new();
     let mut fp_screen = String::new();
@@ -3568,6 +3802,8 @@ async fn post_sq_upload(
             "tier" => {
                 if let Ok(v) = field.text().await { tier = v.trim().to_string(); }
             }
+            "queueChannelId" => { if let Ok(v) = field.text().await { queue_channel_id_field = v; } }
+            "discordChannelId" => { if let Ok(v) = field.text().await { discord_channel_id_field = v; } }
             "fpCookie" => { if let Ok(v) = field.text().await { fp_cookie = v; } }
             "fpUa" => { if let Ok(v) = field.text().await { fp_ua = v; } }
             "fpScreen" => { if let Ok(v) = field.text().await { fp_screen = v; } }
@@ -3611,6 +3847,15 @@ async fn post_sq_upload(
     }
 
     let mut room = read_sq_room_file(&state, &id).await?;
+    let queue_channel_id = match sq_resolve_submit_channel(&room, &json!({
+        "queueChannelId": queue_channel_id_field, "discordChannelId": discord_channel_id_field
+    })) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = fs::remove_file(&upload_path).await;
+            return Err(e);
+        }
+    };
     let active_count = room.get("submissions").and_then(Value::as_array).map(|a| {
         a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
     }).unwrap_or(0);
@@ -3633,6 +3878,7 @@ async fn post_sq_upload(
         "id": &sub_id, "displayName": &display_name, "title": title, "artist": artist,
         "url": null, "fileId": &file_id, "fileName": stored_name, "sourceKind": "upload",
         "tier": valid_tier, "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": initial_status, "paymentStatus": "none", "paymentIntentId": null,
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": &fp
@@ -3835,6 +4081,7 @@ async fn post_sq_add_track(
     let title = clean_short_text(payload.get("title").and_then(Value::as_str).unwrap_or(""), 120);
     let artist = clean_short_text(payload.get("artist").and_then(Value::as_str).unwrap_or(""), 120);
     let duration_seconds = payload.get("durationSeconds").and_then(Value::as_f64);
+    let queue_channel_id = sq_resolve_submit_channel(&room, &payload)?;
 
     let sub_id = uuid::Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
@@ -3842,6 +4089,7 @@ async fn post_sq_add_track(
         "id": &sub_id, "displayName": "Streamer", "title": title, "artist": artist,
         "url": url, "fileId": null, "fileName": null, "sourceKind": "link",
         "tier": "normal", "tierChangedAtUtc": &now,
+        "queueChannelId": &queue_channel_id,
         "status": "queued", "paymentStatus": "none",
         "durationSeconds": duration_seconds, "submittedAtUtc": &now, "editedAtUtc": null,
         "_fp": {}
@@ -4086,4 +4334,158 @@ fn urlencoded(s: &str) -> String {
         'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
         _ => format!("%{:02X}", c as u32),
     }).collect()
+}
+
+#[cfg(test)]
+mod sq_channel_tests {
+    use super::*;
+
+    fn room_with(channels: Value, pattern: Value) -> Value {
+        json!({ "queueChannels": channels, "channelMixPattern": pattern })
+    }
+
+    fn sub(id: &str, tier: &str, channel: &str, ts: &str) -> Value {
+        json!({
+            "id": id, "tier": tier, "queueChannelId": channel,
+            "submittedAtUtc": ts, "tierChangedAtUtc": ts
+        })
+    }
+
+    fn ids(items: &[Value]) -> Vec<String> {
+        items.iter().map(|s| s.get("id").and_then(Value::as_str).unwrap().to_string()).collect()
+    }
+
+    #[test]
+    fn no_pattern_sorts_by_channel_priority_then_fifo() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:01Z"),
+            sub("g2", "normal", "general", "2024-01-01T00:00:02Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        assert_eq!(ids(&items), vec!["v1", "g1", "g2"]);
+    }
+
+    #[test]
+    fn paid_tier_still_dominates_every_channel() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        let mut items = vec![
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("g_skip", "skip", "general", "2024-01-01T00:00:01Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        assert_eq!(ids(&items), vec!["g_skip", "v1"]);
+    }
+
+    #[test]
+    fn mix_pattern_interleaves_two_general_three_vip() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null }
+            ]),
+            json!([{ "channelId": "general", "count": 2 }, { "channelId": "vip", "count": 3 }]),
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("g2", "normal", "general", "2024-01-01T00:00:01Z"),
+            sub("g3", "normal", "general", "2024-01-01T00:00:02Z"),
+            sub("g4", "normal", "general", "2024-01-01T00:00:03Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("v2", "normal", "vip", "2024-01-01T00:00:01Z"),
+            sub("v3", "normal", "vip", "2024-01-01T00:00:02Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        // 2 general, 3 vip (all of them), then remaining general in FIFO.
+        assert_eq!(ids(&items), vec!["g1", "g2", "v1", "v2", "v3", "g3", "g4"]);
+    }
+
+    #[test]
+    fn mix_pattern_channel_not_in_pattern_flushes_after_by_priority() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null },
+                { "id": "mod", "name": "Mod", "priority": 5, "discordChannelId": null }
+            ]),
+            json!([{ "channelId": "general", "count": 1 }, { "channelId": "vip", "count": 1 }]),
+        );
+        let mut items = vec![
+            sub("g1", "normal", "general", "2024-01-01T00:00:00Z"),
+            sub("v1", "normal", "vip", "2024-01-01T00:00:00Z"),
+            sub("m1", "normal", "mod", "2024-01-01T00:00:00Z"),
+        ];
+        sq_priority_sort_full(&mut items, &room);
+        // pattern drains general+vip first, "mod" was never referenced by the pattern
+        // so it flushes at the end.
+        assert_eq!(ids(&items), vec!["g1", "v1", "m1"]);
+    }
+
+    #[test]
+    fn default_channel_is_first_listed() {
+        let room = room_with(
+            json!([
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": null },
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": null }
+            ]),
+            Value::Null,
+        );
+        assert_eq!(sq_default_channel_id(&room), "vip");
+    }
+
+    #[test]
+    fn resolve_submit_channel_prefers_explicit_then_discord_then_default() {
+        let room = room_with(
+            json!([
+                { "id": "general", "name": "General", "priority": 0, "discordChannelId": "555" },
+                { "id": "vip", "name": "VIP", "priority": 10, "discordChannelId": "999" }
+            ]),
+            Value::Null,
+        );
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "queueChannelId": "vip" })).unwrap(),
+            "vip"
+        );
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "discordChannelId": "999" })).unwrap(),
+            "vip"
+        );
+        // Unmapped Discord channel silently falls back to the default rather than erroring.
+        assert_eq!(
+            sq_resolve_submit_channel(&room, &json!({ "discordChannelId": "111" })).unwrap(),
+            "general"
+        );
+        assert_eq!(sq_resolve_submit_channel(&room, &json!({})).unwrap(), "general");
+        assert!(sq_resolve_submit_channel(&room, &json!({ "queueChannelId": "nope" })).is_err());
+    }
+
+    #[test]
+    fn normalize_mix_pattern_drops_slots_for_deleted_channels() {
+        let channels = json!([{ "id": "general", "name": "General", "priority": 0, "discordChannelId": null }]);
+        let pattern = json!([{ "channelId": "general", "count": 2 }, { "channelId": "vip", "count": 3 }]);
+        let normalized = sq_normalize_mix_pattern(&pattern, &channels).unwrap();
+        assert_eq!(normalized, json!([{ "channelId": "general", "count": 2 }]));
+    }
+
+    #[test]
+    fn normalize_queue_channels_rejects_duplicate_ids() {
+        let channels = json!([
+            { "id": "vip", "name": "VIP", "priority": 0 },
+            { "id": "VIP", "name": "VIP again", "priority": 0 }
+        ]);
+        assert!(sq_normalize_queue_channels(&channels).is_err());
+    }
 }

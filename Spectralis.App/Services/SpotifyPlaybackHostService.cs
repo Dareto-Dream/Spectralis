@@ -277,11 +277,12 @@ public sealed class SpotifyPlaybackHostService
                     AppLogPaths.AppendTimestamped(SpotifyLogPath, $"[SDK error] kind={errorKind} message={errorMessage}");
                     _statusMessage = errorKind switch
                     {
-                        "initialization_error" => "Spotify in-app playback unavailable",
-                        "authentication_error" => "Spotify needs to be linked again — re-link in Settings → Integrations",
-                        "account_error"        => "Spotify Premium is required",
-                        "autoplay_failed"      => "Press Play Spotify to start playback",
-                        _                      => string.IsNullOrWhiteSpace(errorMessage) ? "Spotify player error" : $"Spotify: {errorMessage}"
+                        "initialization_error"  => "Spotify in-app playback unavailable",
+                        "authentication_error"  => "Spotify needs to be linked again — re-link in Settings → Integrations",
+                        "account_error"         => "Spotify Premium is required",
+                        "autoplay_failed"       => "Press Play Spotify to start playback",
+                        "token_refresh_failed"  => "Spotify session expired — re-link in Settings → Integrations",
+                        _                       => string.IsNullOrWhiteSpace(errorMessage) ? "Spotify player error" : $"Spotify: {errorMessage}"
                     };
                     _initError = true;
                     break;
@@ -307,6 +308,11 @@ public sealed class SpotifyPlaybackHostService
             }
             else
             {
+                // Nothing will ever call provideToken() for this request (refresh token is
+                // gone/revoked) — without this, the SDK's getOAuthToken callback hangs forever
+                // and EnsureDeviceReadyAsync just burns its whole 12s timeout before giving up.
+                // Tell the page to give up now so the real reason surfaces immediately.
+                await _host.ExecuteScriptAsync("window.spotifyTokenRequestFailed && window.spotifyTokenRequestFailed()");
                 AppLogPaths.AppendTimestamped(SpotifyLogPath, "token_request failed: no fresh token");
             }
         }
@@ -361,20 +367,20 @@ public sealed class SpotifyPlaybackHostService
                 const player = new Spotify.Player({
                     name: 'Spectralis',
                     getOAuthToken: cb => {
-                        let completed = false;
+                        // No stale-token fallback here on purpose: the SDK only calls this again
+                        // once its current token has actually expired, which (after the app has
+                        // been open ~55min) requires a real network refresh — a round trip that
+                        // routinely takes longer than a short client-side timeout would allow.
+                        // A fallback to window.spotifyToken in that window hands the SDK back the
+                        // very token it just rejected, which is how playback got stuck waiting on
+                        // a device that can never finish authenticating. provideToken() is the
+                        // only path that resolves this callback, however long the refresh takes.
                         window.pendingTokenCb = t => {
-                            if (completed) return;
-                            completed = true;
+                            window.pendingTokenCb = null;
                             window.spotifyToken = t;
                             cb(t);
                         };
                         post({type:'token_request'});
-                        window.setTimeout(() => {
-                            if (!completed && window.spotifyToken) {
-                                completed = true;
-                                cb(window.spotifyToken);
-                            }
-                        }, 750);
                     },
                     volume: 1.0
                 });
@@ -415,6 +421,10 @@ public sealed class SpotifyPlaybackHostService
                 const pending = window.pendingTokenCb;
                 window.pendingTokenCb = null;
                 if (pending) pending(t);
+            };
+            window.spotifyTokenRequestFailed = () => {
+                window.pendingTokenCb = null;
+                postError('token_refresh_failed', 'Spotify session expired');
             };
             </script>
             </body></html>
