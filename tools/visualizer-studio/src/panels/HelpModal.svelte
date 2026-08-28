@@ -1,29 +1,25 @@
 <script lang="ts">
   import { focusTrap } from '../lib/focusTrap';
+  import { SHORTCUTS, type ShortcutCategory } from '../lib/keymap';
+  import Search from '@lucide/svelte/icons/search';
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
-  const SHORTCUTS: [string, string][] = [
-    ['Space', 'Play / Pause'],
-    ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / Redo'],
-    ['Delete / Backspace', 'Delete selected keyframe(s) or layer'],
-    ['Ctrl+C / Ctrl+V', 'Copy / Paste keyframes at playhead'],
-    ['Ctrl+Shift+V', 'Paste keyframes at original times'],
-    ['Ctrl+A', 'Select all keyframes in the active track'],
-    ['Ctrl+D', 'Duplicate selected layer'],
-    ['F2', 'Rename selected layer'],
-    ['Escape', 'Clear selection'],
-    ['← / →', 'Nudge playhead (or selected keyframes) by 1 frame'],
-    ['Shift+← / Shift+→', 'Nudge by 1 second'],
-    ['↑ / ↓', 'Move layer selection up/down the list'],
-    ['[ / ]', 'Set selected section start/end to playhead'],
-    ['+ / -', 'Timeline zoom in/out'],
-    ['Ctrl+S', 'Save project'],
-    ['Double-click a lane', 'Add a keyframe at that time'],
-    ['Scroll wheel over timeline', 'Zoom, anchored at cursor'],
-    ['Right-click keyframe/section/layer', 'Context menu'],
-    ['?', 'Show this help'],
-  ];
+  const CATEGORIES: ShortcutCategory[] = ['Playback', 'Editing', 'Selection', 'View', 'General'];
+
+  let query = $state('');
+  let activeCategory: ShortcutCategory | 'all' = $state('all');
+
+  const filtered = $derived(
+    SHORTCUTS.filter(
+      (s) =>
+        (activeCategory === 'all' || s.category === activeCategory) &&
+        (s.keys.toLowerCase().includes(query.toLowerCase()) || s.description.toLowerCase().includes(query.toLowerCase()))
+    )
+  );
+  const grouped = $derived(
+    CATEGORIES.map((cat) => ({ cat, items: filtered.filter((s) => s.category === cat) })).filter((g) => g.items.length)
+  );
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onClose();
@@ -36,12 +32,38 @@
   <div class="scrim" onclick={onClose}>
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={onKeydown} use:focusTrap>
       <h3>Keyboard Shortcuts</h3>
-      <div class="shortcuts">
-        {#each SHORTCUTS as [key, desc] (key)}
-          <span class="key">{key}</span>
-          <span class="desc">{desc}</span>
-        {/each}
+
+      <div class="toolbar">
+        <div class="catFilter">
+          <button class="small ghost" class:active={activeCategory === 'all'} onclick={() => (activeCategory = 'all')}>All</button>
+          {#each CATEGORIES as cat (cat)}
+            <button class="small ghost" class:active={activeCategory === cat} onclick={() => (activeCategory = cat)}>{cat}</button>
+          {/each}
+        </div>
+        <div class="search">
+          <Search size={12} />
+          <input type="text" placeholder="filter…" bind:value={query} />
+        </div>
       </div>
+
+      <div class="groups">
+        {#if !grouped.length}
+          <p class="empty">Nothing matches.</p>
+        {:else}
+          {#each grouped as g (g.cat)}
+            <section>
+              <h4>{g.cat}</h4>
+              <div class="shortcuts">
+                {#each g.items as s (s.keys + s.description)}
+                  <span class="key">{s.keys}</span>
+                  <span class="desc">{s.description}</span>
+                {/each}
+              </div>
+            </section>
+          {/each}
+        {/if}
+      </div>
+
       <button class="primary" onclick={onClose}>Close</button>
     </div>
   </div>
@@ -73,12 +95,56 @@
     font-size: 14px;
     color: var(--text);
   }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .catFilter {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+  }
+  .catFilter button.active {
+    background: var(--bg3);
+    color: var(--accent);
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--dim2);
+    margin-left: auto;
+  }
+  .search input {
+    width: 140px;
+  }
+  .groups {
+    margin-bottom: 16px;
+  }
+  section {
+    margin-bottom: 14px;
+  }
+  section h4 {
+    margin: 0 0 8px;
+    font: 10px var(--mono);
+    color: var(--dim2);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .empty {
+    padding: 20px;
+    text-align: center;
+    font: 11px var(--mono);
+    color: var(--dim2);
+  }
   .shortcuts {
     display: grid;
     grid-template-columns: max-content 1fr;
     column-gap: 18px;
     row-gap: 6px;
-    margin-bottom: 16px;
     align-items: baseline;
   }
   .key {
