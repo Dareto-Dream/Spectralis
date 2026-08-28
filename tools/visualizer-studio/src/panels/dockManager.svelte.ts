@@ -27,6 +27,10 @@ interface DockHost {
 
 class DockManager {
   openPanelIds: Set<string> = $state(new Set());
+  // Which panel is frontmost in its tab group — World/Story/SVG Maker share a
+  // group with Preview (see POSITION_CHAIN in DockviewLayout.svelte), so this
+  // is how ActionBar knows which of Studio/World/Story to highlight.
+  activePanelId: string | null = $state(null);
   private host: DockHost | null = null;
 
   register(host: DockHost, initialOpenIds: Iterable<string>) {
@@ -40,6 +44,10 @@ class DockManager {
 
   sync(openIds: Iterable<string>) {
     this.openPanelIds = new Set(openIds);
+  }
+
+  setActivePanel(id: string | null) {
+    this.activePanelId = id;
   }
 
   isOpen(id: DockPanelId): boolean {

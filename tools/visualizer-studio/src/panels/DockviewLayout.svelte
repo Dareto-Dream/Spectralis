@@ -131,6 +131,9 @@
     dv.api.onDidAddPanel(syncOpenIds);
     dv.api.onDidRemovePanel(syncOpenIds);
 
+    dockManager.setActivePanel(dv.api.activePanel?.id ?? null);
+    dv.api.onDidActivePanelChange((panel) => dockManager.setActivePanel(panel?.id ?? null));
+
     dv.onDidLayoutChange(() => {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
