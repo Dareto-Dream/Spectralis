@@ -1,4 +1,5 @@
 using System.Reflection;
+using Avalonia.Threading;
 using Spectralis.App.Services;
 using Spectralis.Core.Platform;
 using WebViewControl;
@@ -70,6 +71,35 @@ public sealed class CefGlueWebViewHost : IWebViewHost
     {
         _webView.ExecuteScript(script);
         return Task.CompletedTask;
+    }
+
+    public void NudgeResize()
+    {
+        // CEF's OSR WasResized()/GetViewRect() round-trip can miss an instant, single-jump
+        // resize (window maximize/restore) and settle on the pre-resize frame — see
+        // https://bitbucket.org/chromiumembedded/cef/issues/2864. A manual drag-resize sends
+        // many resize notifications so it self-corrects; a maximize toggle sends one. Forcing
+        // two distinct real pixel sizes (not just an invalidate, which can coalesce to the same
+        // size) reliably kicks it into repainting at the correct size.
+        var width = _webView.Bounds.Width;
+        var height = _webView.Bounds.Height;
+        if (width <= 1 || height <= 1)
+        {
+            return;
+        }
+
+        _webView.Width = width - 1;
+        _webView.Height = height;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _webView.Width = double.NaN;
+            _webView.Height = double.NaN;
+        }, DispatcherPriority.Background);
     }
 
     private void OnLoadFailed(string url, int errorCode, string frameName)

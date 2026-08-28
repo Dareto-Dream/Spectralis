@@ -141,7 +141,10 @@
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
 
-      <!-- Artwork, visualizer, and YouTube span both rows so the controls bar overlays them -->
+      <!-- Artwork and visualizer span both rows so the controls bar overlays them — safe for
+           these two since they're plain Avalonia-rendered content (Image / VisualizerHostControl),
+           unlike the WebView-hosted surfaces below which paint over row 1 regardless of XAML
+           z-order if given the same RowSpan. -->
       <Panel Grid.Row="0" Grid.RowSpan="2">
 
         <Panel IsVisible="{Binding ShowArtworkSurface}">
@@ -174,10 +177,6 @@
                      IsHitTestVisible="False" />
         </Panel>
 
-        <Panel IsVisible="{Binding ShowYouTubeVideo}" Background="Black">
-          <ContentControl x:Name="YouTubeVideoHost" />
-        </Panel>
-
         <!-- Gradient vignette for overlay modes — not hit-testable -->
         <Border VerticalAlignment="Bottom" Height="200" IsHitTestVisible="False">
           <Border.Background>
@@ -194,6 +193,13 @@
       <!-- HTML surface in Row 0 only — controls sit in Row 1 below, nothing is clipped -->
       <Panel Grid.Row="0" IsVisible="{Binding ShowEmbeddedHtmlSurface}" Background="Black">
         <ContentControl x:Name="EmbeddedHtmlHost" />
+      </Panel>
+
+      <!-- YouTube surface in Row 0 only — same reason as the HTML surface above: this is a
+           WebView, and giving it RowSpan="2" like the plain-rendered artwork/visualizer panel
+           covers the Row 1 controls bar regardless of XAML z-order. -->
+      <Panel Grid.Row="0" IsVisible="{Binding ShowYouTubeVideo}" Background="Black">
+        <ContentControl x:Name="YouTubeVideoHost" />
       </Panel>
 
       <!-- Exit button: top-right overlay, spans both rows -->
