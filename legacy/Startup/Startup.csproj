@@ -15,7 +15,7 @@
     <DiscordApplicationId Condition="'$(DiscordApplicationId)' == ''">$([System.Environment]::GetEnvironmentVariable('SPECTRALIS_DISCORD_CLIENT_ID'))</DiscordApplicationId>
     <SpotifyClientId Condition="'$(SpotifyClientId)' == ''">$([System.Environment]::GetEnvironmentVariable('SPECTRALIS_SPOTIFY_CLIENT_ID'))</SpotifyClientId>
     <GeneratedApplicationIcon>$(BaseIntermediateOutputPath)generated\icon.ico</GeneratedApplicationIcon>
-    <ApplicationIcon>$(GeneratedApplicationIcon)</ApplicationIcon>
+    <ApplicationIcon Condition="$([MSBuild]::IsOsPlatform('Windows'))">$(GeneratedApplicationIcon)</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -38,7 +38,7 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="GenerateApplicationIcon" BeforeTargets="PrepareResources" Inputs="..\..\Assets\icon.png" Outputs="$(GeneratedApplicationIcon)">
+  <Target Name="GenerateApplicationIcon" BeforeTargets="PrepareResources" Inputs="..\..\Assets\icon.png" Outputs="$(GeneratedApplicationIcon)" Condition="$([MSBuild]::IsOsPlatform('Windows'))">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\build\Generate-Icon.ps1&quot; -Source &quot;$(MSBuildProjectDirectory)\..\..\Assets\icon.png&quot; -Destination &quot;$(MSBuildProjectDirectory)\$(GeneratedApplicationIcon)&quot;" />
   </Target>
 

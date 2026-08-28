@@ -595,6 +595,32 @@ public sealed class AudioEngine : IDisposable
             throw new NotSupportedException("The selected audio file could not be decoded by its direct reader.", directReaderException);
         }
 
+        // Media Foundation is a Windows component. Off Windows the bundled ffmpeg is
+        // the general-purpose decoder — without it nothing here could open the m4a and
+        // webm that yt-dlp returns for YouTube.
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                formatName = GetContainerLabel(extension, "FFmpeg");
+                return FfmpegWaveStream.Open(path);
+            }
+            catch (Exception ffmpegException)
+            {
+                try
+                {
+                    formatName = GetContainerLabel(extension, "NAudio fallback");
+                    return new AudioFileReader(path);
+                }
+                catch (Exception fallbackException)
+                {
+                    throw new NotSupportedException(
+                        "The selected audio file could not be opened. Playing this format needs the bundled FFmpeg, which is missing or could not decode it.",
+                        new AggregateException(ffmpegException, fallbackException));
+                }
+            }
+        }
+
         try
         {
             formatName = GetContainerLabel(extension, "Windows codec");

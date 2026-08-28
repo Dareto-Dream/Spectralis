@@ -5,11 +5,12 @@
     <!-- Windows TFM carries the WinRT projections for SMTC; plain net8.0 serves Linux/macOS. -->
     <TargetFrameworks>net8.0-windows10.0.19041.0;net8.0</TargetFrameworks>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
-    <!-- The project is multitargeted; allow the Windows target to be evaluated during
-         restore/build on macOS and Linux. -->
-    <EnableWindowsTargeting Condition="$([MSBuild]::IsOSPlatform('Windows')) != 'true'">true</EnableWindowsTargeting>
     <!-- CefGlue's pinned macOS redistribution currently contains x64 binaries only. -->
     <RuntimeIdentifier Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</RuntimeIdentifier>
+    <!-- That RID is here to resolve CEF's native assets, not to constrain the
+         managed output: left alone it stamps the assembly x86-64, and then the
+         arm64 test host cannot load it. The apphost stays x64 either way. -->
+    <PlatformTarget Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">AnyCPU</PlatformTarget>
     <RuntimeIdentifiers Condition="$(TargetFramework.Contains('-windows'))">win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -40,6 +41,18 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- Which OS's helper binaries to bundle. The RuntimeIdentifier decides when one
+       is set, because release builds cross-publish (Linux is built from Windows);
+       otherwise fall back to the build host. -->
+  <PropertyGroup>
+    <SpectralisHelperOs Condition="$(TargetFramework.Contains('-windows'))">win</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('osx'))">osx</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('linux'))">linux</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">win</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">osx</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == ''">linux</SpectralisHelperOs>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.2" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
@@ -65,19 +78,27 @@
     <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Windows-only payloads: cross-publishing net8.0 (Linux/macOS) from a
-         Windows host would otherwise still bundle these Win32 binaries in,
-         and the app would find+exec them as if they were the real thing. -->
-    <Content Include="..\yt-dlp.exe" Link="yt-dlp.exe" Condition="Exists('..\yt-dlp.exe') And '$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
+    <!-- Helper executables, one OS's set per build. Picking by $(TargetFramework)
+         alone used to lump macOS in with Linux, so mac builds shipped Linux ELF
+         binaries and every yt-dlp/ffmpeg launch died with "Exec format error".
+         The output names stay extensionless off Windows because that is what
+         YtDlpService/VideoExportEngine look for. -->
+    <Content Include="..\yt-dlp.exe" Link="yt-dlp.exe" Condition="'$(SpectralisHelperOs)' == 'win' And Exists('..\yt-dlp.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\ffmpeg.exe" Link="ffmpeg.exe" Condition="Exists('..\ffmpeg.exe') And '$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
+    <Content Include="..\ffmpeg.exe" Link="ffmpeg.exe" Condition="'$(SpectralisHelperOs)' == 'win' And Exists('..\ffmpeg.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\yt-dlp" Link="yt-dlp" Condition="Exists('..\yt-dlp') And '$(TargetFramework)' == 'net8.0'">
+    <Content Include="..\yt-dlp" Link="yt-dlp" Condition="'$(SpectralisHelperOs)' == 'linux' And Exists('..\yt-dlp')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\ffmpeg" Link="ffmpeg" Condition="Exists('..\ffmpeg') And '$(TargetFramework)' == 'net8.0'">
+    <Content Include="..\ffmpeg" Link="ffmpeg" Condition="'$(SpectralisHelperOs)' == 'linux' And Exists('..\ffmpeg')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\yt-dlp-osx" Link="yt-dlp" Condition="'$(SpectralisHelperOs)' == 'osx' And Exists('..\yt-dlp-osx')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\ffmpeg-osx" Link="ffmpeg" Condition="'$(SpectralisHelperOs)' == 'osx' And Exists('..\ffmpeg-osx')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\docs\legal\**\*.md" Link="docs\legal\%(RecursiveDir)%(Filename)%(Extension)">
@@ -91,17 +112,6 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
   </ItemGroup>
-
-  <!-- CefGlue.Common expects these files to already exist in $(OutDir) when its
-       macOS copy items run. Stage them first from the restored CEF package. -->
-  <Target Name="StageCefMacOSNativeAssets"
-          BeforeTargets="PrepareForBuild;Publish"
-          Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">
-    <Copy
-      SourceFiles="$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libEGL.dylib;$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libGLESv2.dylib;$(NuGetPackageRoot)cef.redist.osx64\120.1.8\CEF\libvk_swiftshader.dylib"
-      DestinationFolder="$(OutDir)"
-      SkipUnchangedFiles="true" />
-  </Target>
 
   <Target Name="GenerateApplicationIcon" BeforeTargets="GenerateAvaloniaResources;PrepareResources" Inputs="..\Assets\icon.png" Outputs="$(GeneratedApplicationIcon)" Condition="$([MSBuild]::IsOsPlatform('Windows'))">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build\Generate-Icon.ps1&quot; -Source &quot;$(MSBuildProjectDirectory)\..\Assets\icon.png&quot; -Destination &quot;$(MSBuildProjectDirectory)\$(GeneratedApplicationIcon)&quot;" />
