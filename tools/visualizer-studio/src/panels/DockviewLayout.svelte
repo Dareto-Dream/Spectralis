@@ -22,12 +22,11 @@
   let dv: DockviewComponent | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Bumped to v3 for the unified workspace redesign (World/Story/Assets/Script
-  // Console/SVG Maker folded into the same dockview instance as Studio's own
-  // panels, menu bar replacing the old per-workspace toolbar) — a v2 save from
-  // before that redesign only knows about 4 panel ids and would otherwise mask
-  // the new default arrangement on next load.
-  const LAYOUT_KEY = 'visualizer-studio:layout:v3';
+  // Bumped to v4: Assets now tabs with Timeline instead of stacking full-width
+  // below it (was eating too much vertical space for two panels people mostly
+  // use one-at-a-time), and the properties rail is narrower by default — a v3
+  // save would otherwise pin the old heavier arrangement back on next load.
+  const LAYOUT_KEY = 'visualizer-studio:layout:v4';
 
   const DEFAULT_OPEN: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets'];
 
@@ -35,16 +34,18 @@
   // picks the first still-open candidate to dock against, so the intended
   // arrangement re-forms itself regardless of what's currently open. Preview/
   // Timeline form the main column; Inspector/Layers the properties rail;
-  // Assets pins full-width at the bottom; World/Story/SVG Maker join Preview
-  // as alternate "viewport" tabs; Script Console joins Assets as a fellow
-  // utility panel — each one is its own dockable viewport that can be opened
-  // independently rather than a hard-coded tab switcher.
+  // Assets tabs alongside Timeline instead of stacking below it — the two are
+  // mostly used one-at-a-time, so a tab costs no vertical space; World/Story/
+  // SVG Maker join Preview as alternate "viewport" tabs; Script Console joins
+  // the Timeline/Assets group as a fellow utility panel — each one is its own
+  // dockable viewport that can be opened independently rather than a
+  // hard-coded tab switcher.
   const POSITION_CHAIN: Record<DockPanelId, { direction: 'right' | 'below' | 'within'; candidates: DockPanelId[] } | null> = {
     preview: null,
     timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers', 'assets'] },
     inspector: { direction: 'right', candidates: ['preview', 'timeline', 'layers'] },
     layers: { direction: 'below', candidates: ['inspector', 'preview', 'timeline'] },
-    assets: { direction: 'below', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
+    assets: { direction: 'within', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
     world: { direction: 'within', candidates: ['preview', 'timeline', 'inspector'] },
     story: { direction: 'within', candidates: ['preview', 'world', 'timeline'] },
     svgmaker: { direction: 'within', candidates: ['preview', 'world', 'story'] },
@@ -64,8 +65,7 @@
     if (!dv || dv.api.getPanel(id)) return;
     dv.addPanel({ id, component: id, title: DOCK_PANEL_TITLES[id], position: positionFor(id) });
     if (id === 'timeline') dv.api.getPanel('timeline')?.api.setSize({ height: 260 });
-    if (id === 'assets') dv.api.getPanel('assets')?.api.setSize({ height: 220 });
-    if (id === 'inspector' || id === 'layers') dv.api.getPanel(id)?.api.setSize({ width: 360 });
+    if (id === 'inspector' || id === 'layers') dv.api.getPanel(id)?.api.setSize({ width: 280 });
   }
 
   function addDefaultPanels() {
