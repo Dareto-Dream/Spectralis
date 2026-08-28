@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ProjectStore } from '../state/project.svelte';
   import { confirmDialog } from '../state/confirmModal.svelte';
+  import HueSlider from './HueSlider.svelte';
 
   let { store }: { store: ProjectStore } = $props();
 
@@ -34,8 +35,16 @@
     <label class="field"><span>Label</span><input value={section.label} onchange={(e) => store.updateSection(section.id, { label: (e.target as HTMLInputElement).value })} /></label>
     <label class="field"><span>Start</span><input type="number" step="0.1" value={section.start} onchange={(e) => num('start', e)} /></label>
     <label class="field"><span>End</span><input type="number" step="0.1" value={section.end} onchange={(e) => num('end', e)} /></label>
-    <label class="field"><span>Hue</span><input type="number" step="1" value={section.hue} onchange={(e) => num('hue', e)} /></label>
-    <label class="field"><span>Hue 2</span><input type="number" step="1" value={section.hue2} onchange={(e) => num('hue2', e)} /></label>
+    <label class="field">
+      <span>Hue</span>
+      <input type="number" step="1" value={section.hue} onchange={(e) => num('hue', e)} />
+      <HueSlider value={section.hue} onChange={(v) => store.updateSection(section.id, { hue: v })} />
+    </label>
+    <label class="field">
+      <span>Hue 2</span>
+      <input type="number" step="1" value={section.hue2} onchange={(e) => num('hue2', e)} />
+      <HueSlider value={section.hue2} onChange={(v) => store.updateSection(section.id, { hue2: v })} />
+    </label>
     <label class="field"><span>Intensity</span><input type="number" step="0.05" min="0" max="1" value={section.intensity} onchange={(e) => num('intensity', e)} /></label>
     <label class="checkField" title="Reference-style: no lyrics render during this section">
       <input type="checkbox" checked={section.noLyrics} onchange={(e) => store.updateSection(section.id, { noLyrics: (e.target as HTMLInputElement).checked })} />
