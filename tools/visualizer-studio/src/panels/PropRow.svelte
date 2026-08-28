@@ -2,11 +2,16 @@
   import type { AnimKey, AnyLayer } from '../types/project';
   import type { ProjectStore } from '../state/project.svelte';
   import { scrubbable } from '../lib/scrubbableNumber';
+  import { spatialSnapTargets } from '../preview/spatialSnapping';
   import Timer from '@lucide/svelte/icons/timer';
 
   let { store, layer, propKey, label }: { store: ProjectStore; layer: AnyLayer; propKey: AnimKey; label: string } = $props();
 
   const keyframed = $derived(layer.tracks[propKey].length > 0);
+  // Spatial snap (canvas center/edges/thirds + other layers' positions) only
+  // makes sense for x/y — scale/rotation/opacity/hue have no equivalent
+  // "line up with" targets. See preview/spatialSnapping.ts.
+  const isPositionAxis = $derived(propKey === 'x' || propKey === 'y');
 
   function onStaticChange(e: Event) {
     const v = parseFloat((e.target as HTMLInputElement).value);
@@ -43,6 +48,7 @@
         onChange: (v: number) => (layer.statics[propKey] = v),
         onCommit: () => store.commit(),
         onClick: selectTrack,
+        snapTargets: isPositionAxis ? () => spatialSnapTargets(store.project, propKey as 'x' | 'y', layer.id, store.playhead) : undefined,
       }}
     >
       {label}

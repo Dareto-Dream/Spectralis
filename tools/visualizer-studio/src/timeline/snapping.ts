@@ -17,6 +17,25 @@ export function snap(t: number, targets: number[], pxPerSec: number, tolerancePx
   return best;
 }
 
+// Spatial counterpart to `snap()` above — same "nearest target within
+// tolerance, else unchanged" shape, just directly in value-space instead of
+// pixels-per-second. Used by scrubbableNumber.ts while dragging a layer's x/y
+// field: "hold"-ease keyframes already give a snap-in-TIME for free, this is
+// the snap-in-SPACE equivalent, reusing the same nearest-target math rather
+// than duplicating it.
+export function snapValue(v: number, targets: number[], tolerance = 4): number {
+  let best = v;
+  let bestDist = tolerance;
+  for (const target of targets) {
+    const d = Math.abs(target - v);
+    if (d <= bestDist) {
+      bestDist = d;
+      best = target;
+    }
+  }
+  return best;
+}
+
 export function snapTargets(project: Project, playhead: number, excludeKeyframeIds: ReadonlySet<string> = new Set()): number[] {
   const targets: number[] = [playhead];
   for (const sec of project.sections) targets.push(sec.start, sec.end);

@@ -283,3 +283,57 @@ describe('AutosaveManager', () => {
     expect(a.readSaved()).toBeNull();
   });
 });
+
+describe('ProjectStore visibility keyframing', () => {
+  it('a fresh layer has no visibleTrack, so evalVisible falls back to the static flag', () => {
+    const store = new ProjectStore();
+    const layer = store.addLayer('orb');
+    expect(store.isVisibilityKeyframed(layer.id)).toBe(false);
+    expect(layer.visibleTrack).toEqual([]);
+  });
+
+  it('toggleVisibilityKeyframing seeds one keyframe at t:0 holding the current static value', () => {
+    const store = new ProjectStore();
+    const layer = store.addLayer('orb');
+    layer.visible = false;
+    store.toggleVisibilityKeyframing(layer.id);
+    expect(store.isVisibilityKeyframed(layer.id)).toBe(true);
+    expect(layer.visibleTrack).toEqual([{ id: layer.visibleTrack![0].id, t: 0, v: false }]);
+  });
+
+  it('addVisibilityToggleAtPlayhead seeds at t:0 on first use, then adds toggles at the playhead, kept sorted', () => {
+    const store = new ProjectStore();
+    const layer = store.addLayer('orb');
+    layer.visible = true;
+    store.addVisibilityToggleAtPlayhead(layer.id); // not yet keyframed: seeds t:0 with the OPPOSITE of the static value
+    expect(layer.visibleTrack).toEqual([{ id: layer.visibleTrack![0].id, t: 0, v: false }]);
+
+    store.playhead = 5;
+    store.addVisibilityToggleAtPlayhead(layer.id); // already keyframed: adds a toggle AT the playhead instead of re-seeding
+    expect(layer.visibleTrack!.map((k) => ({ t: k.t, v: k.v }))).toEqual([
+      { t: 0, v: false },
+      { t: 5, v: true },
+    ]);
+  });
+
+  it('disabling visibility keyframing folds the value AT THE PLAYHEAD back into the static flag', () => {
+    const store = new ProjectStore();
+    const layer = store.addLayer('orb');
+    layer.visible = true;
+    store.toggleVisibilityKeyframing(layer.id); // seeds [{t:0, v:true}]
+    store.playhead = 5;
+    layer.visibleTrack!.push({ id: 'kf2', t: 3, v: false });
+    store.toggleVisibilityKeyframing(layer.id); // disable — should fold in the value at t=5 (last kf at/before 5 is t=3 -> false)
+    expect(layer.visible).toBe(false);
+    expect(layer.visibleTrack).toEqual([]);
+  });
+
+  it('duplicateLayer gives the clone fresh visibility-keyframe ids, not shared ones', () => {
+    const store = new ProjectStore();
+    const layer = store.addLayer('orb');
+    store.toggleVisibilityKeyframing(layer.id);
+    const clone = store.duplicateLayer(layer.id);
+    expect(clone!.visibleTrack![0].id).not.toBe(layer.visibleTrack![0].id);
+    expect(clone!.visibleTrack![0].v).toBe(layer.visibleTrack![0].v);
+  });
+});

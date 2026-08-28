@@ -6,7 +6,14 @@
   import { fmtTime } from '../lib/fmtTime';
   import { sectionAt } from '../core/render.js';
 
-  let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
+  // `readonly` is currently a no-op — this canvas has never had pointer
+  // handlers for editing (layer position is edited via the Inspector's
+  // scrubbable x/y fields, not canvas dragging), so there's nothing to
+  // disable yet. It exists so a future interactive-editing pass on this
+  // canvas has an explicit switch to gate itself on, instead of needing to
+  // thread a new prop through every mount site (Capsule's workspace viewport
+  // vs. Capsule/World's dedicated read-only Preview viewport) at that point.
+  let { store, audio, readonly = false }: { store: ProjectStore; audio: AudioState; readonly?: boolean } = $props();
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;

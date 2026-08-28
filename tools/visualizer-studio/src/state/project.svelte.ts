@@ -1,6 +1,6 @@
 import type { AnimKey, AnyLayer, Ease, Layer, LayerType, Project, ProjectMeta, Section } from '../types/project';
 import { evalTrack } from '../core/ease.js';
-import { sectionAt } from '../core/render.js';
+import { sectionAt, evalVisible } from '../core/render.js';
 import { newLayer, newKeyframeId, newProject as createNewProject } from './factories';
 import { HistoryStack } from './history.svelte';
 import { SelectionState } from './selection.svelte';
@@ -134,6 +134,7 @@ export class ProjectStore {
     for (const key of Object.keys(clone.tracks) as AnimKey[]) {
       clone.tracks[key] = clone.tracks[key].map((kf) => ({ ...kf, id: newKeyframeId() }));
     }
+    if (clone.visibleTrack) clone.visibleTrack = clone.visibleTrack.map((kf) => ({ ...kf, id: newKeyframeId() }));
     this.project.layers.splice(srcIdx + 1, 0, clone);
     const reactive = this.project.layers[srcIdx + 1];
     this.selection.selectLayer(reactive.id);
@@ -166,6 +167,50 @@ export class ProjectStore {
     const layer = this.project.layers.find((l) => l.id === id);
     if (!layer) return;
     layer.visible = !layer.visible;
+    this.commit();
+  }
+
+  // ---- visibility keyframing (mirrors toggleKeyframing/addKeyframeAt for
+  // the numeric ANIM_KEYS tracks, but for the separate boolean visibleTrack) ----
+  isVisibilityKeyframed(layerId: string): boolean {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    return !!layer?.visibleTrack?.length;
+  }
+
+  // Enabling seeds one keyframe at t:0 holding the current static value —
+  // same convention as toggleKeyframing. Disabling folds the value AT THE
+  // CURRENT PLAYHEAD back into the static flag so turning it off doesn't
+  // change what's on screen right now.
+  toggleVisibilityKeyframing(layerId: string) {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    if (layer.visibleTrack?.length) {
+      layer.visible = evalVisible(layer, this.playhead);
+      layer.visibleTrack = [];
+    } else {
+      layer.visibleTrack = [{ id: newKeyframeId(), t: 0, v: layer.visible }];
+    }
+    this.commit();
+  }
+
+  // Backs the Inspector's "+Key (toggle) at playhead" button — adds a
+  // keyframe that flips whatever the evaluated visibility is right now.
+  // Seeds at t:0 if this is the first keyframe (mirrors toggleKeyframing's
+  // seed convention), otherwise adds at the playhead like a normal track.
+  addVisibilityToggleAtPlayhead(layerId: string) {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const track = layer.visibleTrack ?? [];
+    const current = track.length ? evalVisible(layer, this.playhead) : layer.visible;
+    const next = { id: newKeyframeId(), t: track.length ? this.playhead : 0, v: !current };
+    layer.visibleTrack = [...track, next].sort((a, b) => a.t - b.t);
+    this.commit();
+  }
+
+  deleteVisibilityKeyframe(layerId: string, keyframeId: string) {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    if (!layer?.visibleTrack) return;
+    layer.visibleTrack = layer.visibleTrack.filter((kf) => kf.id !== keyframeId);
     this.commit();
   }
 

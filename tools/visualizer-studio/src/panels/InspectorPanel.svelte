@@ -10,6 +10,7 @@
   import EyeOff from '@lucide/svelte/icons/eye-off';
   import Lock from '@lucide/svelte/icons/lock';
   import Unlock from '@lucide/svelte/icons/unlock';
+  import Timer from '@lucide/svelte/icons/timer';
 
   let { store }: { store: ProjectStore } = $props();
 
@@ -76,6 +77,23 @@
       </button>
     </div>
 
+    <div class="visRow">
+      <button
+        class="kbtn"
+        class:on={store.isVisibilityKeyframed(layer.id)}
+        title={store.isVisibilityKeyframed(layer.id) ? 'Visibility is keyframed — click to disable' : 'Enable show/hide keyframing'}
+        aria-label={store.isVisibilityKeyframed(layer.id) ? 'Visibility keyframed, click to disable' : 'Enable show/hide keyframing'}
+        onclick={() => store.toggleVisibilityKeyframing(layer.id)}
+      >
+        <Timer size={12} />
+      </button>
+      <span class="visLabel">Visibility</span>
+      {#if store.isVisibilityKeyframed(layer.id)}
+        <span class="kfCount">{layer.visibleTrack?.length ?? 0} keys</span>
+        <button class="small" title="Add a show/hide toggle at playhead" onclick={() => store.addVisibilityToggleAtPlayhead(layer.id)}>+Key</button>
+      {/if}
+    </div>
+
     <div class="props">
       {#each ANIM_KEYS as key (key)}
         <PropRow {store} {layer} propKey={key} label={LABELS[key]} />
@@ -126,6 +144,36 @@
   .iconBtn.on {
     background: var(--accent2);
     color: #1a1400;
+  }
+  .visRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+  }
+  .visLabel {
+    flex: 1;
+    font: 11px var(--mono);
+    color: var(--text);
+  }
+  .kbtn {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--dim);
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    justify-content: center;
+  }
+  .kbtn.on {
+    background: var(--accent2);
+    color: #1a1400;
+    border-color: var(--accent2);
+  }
+  .kfCount {
+    font: 10px var(--mono);
+    color: var(--accent);
   }
   .props {
     display: flex;

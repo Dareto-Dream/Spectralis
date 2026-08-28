@@ -30,6 +30,7 @@ export function newLayer<T extends LayerType>(type: T): Layer<T> {
     tracks: emptyTracks(),
     statics: defaultStatics(),
     params: def.defaultParams(),
+    visibleTrack: [],
   } as Layer<T>;
 }
 

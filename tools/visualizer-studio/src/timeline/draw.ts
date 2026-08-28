@@ -180,6 +180,17 @@ function drawOverview(p: DrawTimelineParams) {
         ctx.fillRect(x - 1, y + layout.rowH / 2 - 1, 2, 2);
       }
     }
+    // Show/hide keyframes render as small hollow ticks in a distinct color —
+    // visually separate from the filled numeric-track dots above, since a
+    // visibility keyframe is a completely different kind of thing (a snap,
+    // not a value on a curve).
+    if (layer.visibleTrack?.length) {
+      ctx.strokeStyle = COLORS.accent2;
+      for (const kf of layer.visibleTrack) {
+        const x = xOf(p, kf.t);
+        ctx.strokeRect(x - 1.5, y + 1, 3, layout.rowH - 2);
+      }
+    }
   });
   ctx.restore();
 }

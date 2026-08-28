@@ -9,6 +9,16 @@ export interface Keyframe {
 }
 export type Track = Keyframe[];
 
+// Show/hide keyframes — a boolean can't tween, so this is a separate, simpler
+// shape from Keyframe/Track rather than another `ease` value on the numeric
+// model. "Hold" semantics only: the layer's visibility at any time is
+// whichever keyframe's `v` is most recent at/before that time.
+export interface VisibilityKeyframe {
+  id: string;
+  t: number;
+  v: boolean;
+}
+
 export const ANIM_KEYS = ['x', 'y', 'scale', 'rotation', 'opacity', 'hueA', 'hueB'] as const;
 export type AnimKey = (typeof ANIM_KEYS)[number];
 export type Tracks = Record<AnimKey, Track>;
@@ -55,6 +65,11 @@ export interface Layer<T extends LayerType = LayerType> {
   tracks: Tracks;
   statics: Statics;
   params: LayerParamsByType[T];
+  // Optional (not present in pre-QoL saves) — animatable show/hide. Empty or
+  // absent means "use the static `visible` flag above", so old saves need no
+  // migration, same convention as `locked`. Read via evalVisible() in
+  // core/render.js wherever `layer.visible` used to be read directly.
+  visibleTrack?: VisibilityKeyframe[];
 }
 // A distributed union (one concrete Layer<T> per branch), NOT Layer<LayerType> —
 // the latter collapses `type`/`params` into a single non-discriminated shape, so

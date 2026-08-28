@@ -1,3 +1,5 @@
+import { snapValue } from '../timeline/snapping';
+
 // The single most recognizable AE-specific interaction (plan QoL §I): click-
 // drag horizontally on a numeric field's LABEL (not the input itself, so text
 // selection/typing in the input is never fought with) scrubs its value.
@@ -19,6 +21,13 @@ export interface ScrubbableOptions {
   onChange: (v: number) => void;
   onCommit: () => void;
   onClick?: () => void;
+  // Optional spatial snap (x/y fields only, see preview/spatialSnapping.ts) —
+  // called fresh on every move so it reflects the CURRENT playhead/other-
+  // layer positions, not a value frozen at drag start. `hold`-ease keyframes
+  // already give a snap-in-TIME for free; this is the snap-in-SPACE
+  // equivalent, applied to the live-dragged value before onChange fires.
+  snapTargets?: () => number[];
+  snapTolerance?: number;
 }
 
 const MOVE_THRESHOLD_PX = 3;
@@ -58,7 +67,13 @@ export function scrubbable(node: HTMLElement, opts: ScrubbableOptions) {
     node.classList.add('scrubbing');
     const base = current.step ?? 1;
     const mult = e.shiftKey ? 10 : e.altKey ? 0.1 : 1;
-    const next = clamp(startValue + Math.round(dx / PX_PER_STEP) * base * mult);
+    let next = clamp(startValue + Math.round(dx / PX_PER_STEP) * base * mult);
+    // Shift is already claimed for the coarse-step multiplier above, so snap
+    // has no "hold to disable" modifier this pass — it's tolerance-gated
+    // (snapValue only moves the value when already within a few px-equivalent
+    // units) rather than a hard magnet, same tradeoff the timeline's own
+    // Snap checkbox makes.
+    if (current.snapTargets) next = snapValue(next, current.snapTargets(), current.snapTolerance);
     current.onChange(next);
   }
 

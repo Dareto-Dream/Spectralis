@@ -33,11 +33,25 @@ export function drawSectionWash(ctx, W, H, sec) {
   ctx.restore();
 }
 
+// Show/hide keyframes (Layer.visibleTrack) are "hold" semantics only — no
+// easing, a boolean can't tween. Empty/absent track = fall back to the
+// static `layer.visible` flag, so old saves render exactly as before.
+export function evalVisible(layer, t) {
+  const track = layer.visibleTrack;
+  if (!track || !track.length) return layer.visible;
+  let value = track[0].v;
+  for (const kf of track) {
+    if (kf.t > t) break;
+    value = kf.v;
+  }
+  return value;
+}
+
 // `getLyricWords(layer)` replaces the old hardcoded `layer.params.words` read so the
 // same render path works for both the live editor (words live on the layer) and the
 // exported capsule driver (words come from a separately embedded LYRIC_WORDS blob).
 export function renderLayerAt(ctx, layer, t, W, H, nowMs, beatFlash, getLyricWords, sections) {
-  if (!layer.visible) return;
+  if (!evalVisible(layer, t)) return;
   const x = evalTrack(layer.tracks.x, t, layer.statics.x) * (W / 270);
   const y = evalTrack(layer.tracks.y, t, layer.statics.y) * (H / 480);
   const scale = evalTrack(layer.tracks.scale, t, layer.statics.scale);
