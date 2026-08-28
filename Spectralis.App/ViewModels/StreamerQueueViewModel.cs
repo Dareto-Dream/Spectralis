@@ -16,6 +16,7 @@ public sealed class SqItemVm : ViewModelBase
     private string? _artist;
 
     public SqItemVm(SqSubmission sub,
+        string? channelName,
         Action<string> onApprove,
         Action<string> onReject,
         Action<string> onDelete,
@@ -33,6 +34,8 @@ public sealed class SqItemVm : ViewModelBase
         Url = sub.Url;
         FileId = sub.FileId;
         FileName = sub.FileName;
+        QueueChannelId = sub.QueueChannelId;
+        ChannelName = channelName;
         _isPending = sub.Status == SqStatus.Pending;
 
         ApproveCommand      = ReactiveCommand.Create(() => onApprove(Id), this.WhenAnyValue(x => x.IsPending));
@@ -69,6 +72,12 @@ public sealed class SqItemVm : ViewModelBase
     public string? Url { get; }
     public string? FileId { get; }
     public string? FileName { get; }
+    public string? QueueChannelId { get; }
+
+    /// <summary>Resolved from the room's channel list at construction time — null once the
+    /// channel that produced this submission no longer exists (e.g. streamer deleted it).</summary>
+    public string? ChannelName { get; }
+    public bool HasChannelBadge => !string.IsNullOrWhiteSpace(ChannelName);
 
     public bool IsPending
     {
@@ -103,6 +112,97 @@ public sealed class SqItemVm : ViewModelBase
     public ReactiveCommand<Unit, Unit> MarkNotPlayedCommand { get; }
 }
 
+// ── Queue channel VM (settings panel row) ─────────────────────────────────────
+
+/// <summary>One row in the "Queue Channels" settings list. Order IS priority — the top
+/// row is both the highest-priority channel and the implicit default lane (links with
+/// no ?ch=, and Discord posts from an unmapped channel, land there). Reorder with the
+/// arrow buttons instead of typing a priority number; <see cref="StreamerQueueViewModel.BuildQueueChannels"/>
+/// turns list position back into the numeric priority the backend expects.</summary>
+public sealed class SqChannelVm : ViewModelBase
+{
+    private string _name;
+    private string _discordChannelId;
+    private string _shareUrl = string.Empty;
+
+    public SqChannelVm(string id, string name, string? discordChannelId, Action<SqChannelVm> onRemove, Action<string> onCopyLink,
+        Action<SqChannelVm> onMoveUp, Action<SqChannelVm> onMoveDown)
+    {
+        Id = id;
+        _name = name;
+        _discordChannelId = discordChannelId ?? string.Empty;
+
+        RemoveCommand = ReactiveCommand.Create(() => onRemove(this));
+        CopyLinkCommand = ReactiveCommand.Create(() => onCopyLink(ShareUrl), this.WhenAnyValue(x => x.ShareUrl, u => !string.IsNullOrEmpty(u)));
+        MoveUpCommand = ReactiveCommand.Create(() => onMoveUp(this));
+        MoveDownCommand = ReactiveCommand.Create(() => onMoveDown(this));
+    }
+
+    /// <summary>Slug used in the share URL (?ch=) and as the Discord pairing key. Fixed at
+    /// creation — renaming is just the display Name, not the id, so existing links keep working.</summary>
+    public string Id { get; }
+
+    public string Name
+    {
+        get => _name;
+        set => this.RaiseAndSetIfChanged(ref _name, value);
+    }
+
+    public string DiscordChannelId
+    {
+        get => _discordChannelId;
+        set => this.RaiseAndSetIfChanged(ref _discordChannelId, value);
+    }
+
+    public string ShareUrl
+    {
+        get => _shareUrl;
+        set => this.RaiseAndSetIfChanged(ref _shareUrl, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveUpCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveDownCommand { get; }
+}
+
+// ── Mix pattern slot VM (settings panel row) ──────────────────────────────────
+
+/// <summary>One slot in the repeating mix cycle (e.g. "2 x general", "3 x vip"). An empty
+/// pattern means "no mixing" — channels just sort by Priority instead.</summary>
+public sealed class SqMixSlotVm : ViewModelBase
+{
+    private string _channelId;
+    private string _count;
+
+    public SqMixSlotVm(string channelId, int count, Action<SqMixSlotVm> onRemove, Action<SqMixSlotVm> onMoveUp, Action<SqMixSlotVm> onMoveDown)
+    {
+        _channelId = channelId;
+        _count = count.ToString();
+        RemoveCommand = ReactiveCommand.Create(() => onRemove(this));
+        MoveUpCommand = ReactiveCommand.Create(() => onMoveUp(this));
+        MoveDownCommand = ReactiveCommand.Create(() => onMoveDown(this));
+    }
+
+    /// <summary>Must match an <see cref="SqChannelVm"/> id. Typed rather than picked from a
+    /// dropdown — keeps this row independent of channel-list wiring.</summary>
+    public string ChannelId
+    {
+        get => _channelId;
+        set => this.RaiseAndSetIfChanged(ref _channelId, value);
+    }
+
+    public string Count
+    {
+        get => _count;
+        set => this.RaiseAndSetIfChanged(ref _count, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveUpCommand { get; }
+    public ReactiveCommand<Unit, Unit> MoveDownCommand { get; }
+}
+
 // ── Main ViewModel ────────────────────────────────────────────────────────────
 
 public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
@@ -120,6 +220,10 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, (string? Title, string? Artist)> _scrapedMetadata = new();
     private readonly HashSet<string> _scrapeInFlight = new();
     private readonly SemaphoreSlim _scrapeGate = new(2);
+
+    /// <summary>Channel id -> display name, refreshed every poll (unlike the editable
+    /// <see cref="Channels"/> settings rows) purely so queue items can show a lane badge.</summary>
+    private readonly Dictionary<string, string> _channelNames = new();
 
     // ── State ─────────────────────────────────────────────────────────────────
     private bool _hasRoom;
@@ -149,6 +253,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private bool _stripeConnected;
     private string _stripeStatus = "Not connected";
     private string _discordPinDisplay = string.Empty;
+    private string _addToQueueChannelId = string.Empty;
+    private int _channelSeq;
 
     private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
     private AppSettings? _settings;
@@ -169,6 +275,9 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
         AddToQueueCommand      = ReactiveCommand.CreateFromTask(AddToQueueAsync,
             this.WhenAnyValue(x => x.AddToQueueUrl, x => x.IsOwner, (u, owner) => owner && !string.IsNullOrWhiteSpace(u)));
+        AddChannelCommand      = ReactiveCommand.Create(AddChannel, isOwner);
+        AddMixSlotCommand      = ReactiveCommand.Create(AddMixSlot,
+            this.WhenAnyValue(x => x.IsOwner, x => x.Channels.Count, (owner, count) => owner && count > 0));
     }
 
     public void Dispose()
@@ -188,6 +297,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
     public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToQueueCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddChannelCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddMixSlotCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
     public event Action<string>? OpenUrlRequested;
@@ -358,10 +469,26 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _addToQueueUrl, value);
     }
 
+    /// <summary>Which queue channel a manual "Add to Queue" lands in. Empty means the
+    /// room's default (first-listed) channel.</summary>
+    public string AddToQueueChannelId
+    {
+        get => _addToQueueChannelId;
+        set => this.RaiseAndSetIfChanged(ref _addToQueueChannelId, value);
+    }
+
     public ObservableCollection<SqItemVm> QueueItems { get; } = [];
     public ObservableCollection<SqItemVm> PendingItems { get; } = [];
     public ObservableCollection<SqItemVm> HistoryItems { get; } = [];
     public SqItemVm? NowPlayingItem { get; private set; }
+
+    /// <summary>Settings-panel rows for the room's queue channels. The first row is the
+    /// implicit default lane (see <see cref="SqChannelVm"/>).</summary>
+    public ObservableCollection<SqChannelVm> Channels { get; } = [];
+
+    /// <summary>Settings-panel rows for the mix pattern. Empty means "no mixing" —
+    /// channels just sort by <see cref="SqChannelVm.Priority"/>.</summary>
+    public ObservableCollection<SqMixSlotVm> MixPattern { get; } = [];
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -420,7 +547,8 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         try
         {
             LastError = string.Empty;
-            await _controller.AddTrackAsync(AddToQueueUrl.Trim(), null, null, null, ct);
+            var channelId = string.IsNullOrWhiteSpace(AddToQueueChannelId) ? null : AddToQueueChannelId.Trim();
+            await _controller.AddTrackAsync(AddToQueueUrl.Trim(), null, null, null, channelId, ct);
             AddToQueueUrl = string.Empty;
             await PollOnceAsync();
         }
@@ -436,7 +564,12 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         {
             LastError = string.Empty;
             var settings = BuildSqSettings();
-            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, ct);
+            // Nothing loaded into the settings panel yet (e.g. saving right after Create
+            // Room, before the first poll) — omit rather than send an empty list, which
+            // the backend rejects ("at least one queue channel required"). The room
+            // already has its default channel server-side; there's nothing to overwrite.
+            var channels = Channels.Count > 0 ? BuildQueueChannels() : null;
+            var room = await _controller.SaveSettingsAsync(SqEnabled, settings, null, channels, BuildMixPattern(), ct);
             ApplyRoomSnapshot(room);
             StatusText = "Settings saved";
         }
@@ -476,6 +609,93 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private static double ParseAmount(string s) =>
         double.TryParse(s, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0.0;
+
+    // Priority isn't typed by the user anymore — it's just list position. The top row
+    // gets the highest number so it sorts first (and read_sq_room_file's "first listed"
+    // rule makes it the default lane too — one ordered list drives both).
+    private List<SqQueueChannel> BuildQueueChannels()
+    {
+        var count = Channels.Count;
+        return Channels.Select((c, i) => new SqQueueChannel(
+            Id: c.Id,
+            Name: string.IsNullOrWhiteSpace(c.Name) ? c.Id : c.Name.Trim(),
+            Priority: count - i,
+            DiscordChannelId: string.IsNullOrWhiteSpace(c.DiscordChannelId) ? null : c.DiscordChannelId.Trim()
+        )).ToList();
+    }
+
+    private List<SqMixSlot> BuildMixPattern() => MixPattern
+        .Where(s => !string.IsNullOrWhiteSpace(s.ChannelId))
+        .Select(s => new SqMixSlot(s.ChannelId.Trim(), int.TryParse(s.Count, out var c) ? Math.Max(1, c) : 1))
+        .ToList();
+
+    // ── Queue channel management ─────────────────────────────────────────────
+
+    private void AddChannel()
+    {
+        // A short, typeable id (not a slug of Name) so renaming a channel later doesn't
+        // break its share link or any mix pattern slots that reference it. Guarded
+        // against collisions with whatever got loaded from the room (e.g. a fresh
+        // session's counter starting back at 1 while "channel1" already exists).
+        string id;
+        do { id = $"channel{++_channelSeq}"; } while (Channels.Any(c => c.Id == id));
+        // New channels start at the bottom (lowest priority) — a fresh lane shouldn't
+        // silently outrank ones the streamer already set up.
+        Channels.Add(new SqChannelVm(id, $"Channel {Channels.Count + 1}", null, RemoveChannel, CopyChannelLink, MoveChannelUp, MoveChannelDown));
+        RefreshChannelShareUrls();
+    }
+
+    private void RemoveChannel(SqChannelVm channel)
+    {
+        // At least one channel must always exist — it's the default lane for links/bot
+        // posts that don't specify one.
+        if (Channels.Count <= 1) return;
+        Channels.Remove(channel);
+        foreach (var slot in MixPattern.Where(s => s.ChannelId == channel.Id).ToList())
+            MixPattern.Remove(slot);
+    }
+
+    private void CopyChannelLink(string url) => CopyToClipboardRequested?.Invoke(url);
+
+    private void MoveChannelUp(SqChannelVm channel)
+    {
+        var i = Channels.IndexOf(channel);
+        if (i > 0) Channels.Move(i, i - 1);
+    }
+
+    private void MoveChannelDown(SqChannelVm channel)
+    {
+        var i = Channels.IndexOf(channel);
+        if (i >= 0 && i < Channels.Count - 1) Channels.Move(i, i + 1);
+    }
+
+    private void AddMixSlot()
+    {
+        if (Channels.Count == 0) return;
+        MixPattern.Add(new SqMixSlotVm(Channels[0].Id, 1, RemoveMixSlot, MoveMixSlotUp, MoveMixSlotDown));
+    }
+
+    private void RemoveMixSlot(SqMixSlotVm slot) => MixPattern.Remove(slot);
+
+    private void MoveMixSlotUp(SqMixSlotVm slot)
+    {
+        var i = MixPattern.IndexOf(slot);
+        if (i > 0) MixPattern.Move(i, i - 1);
+    }
+
+    private void MoveMixSlotDown(SqMixSlotVm slot)
+    {
+        var i = MixPattern.IndexOf(slot);
+        if (i >= 0 && i < MixPattern.Count - 1) MixPattern.Move(i, i + 1);
+    }
+
+    private void RefreshChannelShareUrls()
+    {
+        if (string.IsNullOrWhiteSpace(RoomId)) return;
+        var baseUrl = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
+        foreach (var channel in Channels)
+            channel.ShareUrl = $"{baseUrl}/spectralis/web-share/sq.html?room={Uri.EscapeDataString(RoomId)}&ch={Uri.EscapeDataString(channel.Id)}";
+    }
 
     // ── Queue actions ─────────────────────────────────────────────────────────
 
@@ -657,6 +877,17 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
             SuperSkipFeeAmount = s.SuperSkip.Amount.ToString("F2");
         }
 
+        Channels.Clear();
+        // Sort by the server's Priority so the list visually matches actual ranking —
+        // list order IS priority here, top to bottom (see SqChannelVm).
+        foreach (var c in (room.QueueChannels ?? []).OrderByDescending(c => c.Priority))
+            Channels.Add(new SqChannelVm(c.Id, c.Name, c.DiscordChannelId, RemoveChannel, CopyChannelLink, MoveChannelUp, MoveChannelDown));
+        RefreshChannelShareUrls();
+
+        MixPattern.Clear();
+        foreach (var slot in room.ChannelMixPattern ?? [])
+            MixPattern.Add(new SqMixSlotVm(slot.ChannelId, slot.Count, RemoveMixSlot, MoveMixSlotUp, MoveMixSlotDown));
+
         ApplyQueueSnapshot(room);
     }
 
@@ -665,6 +896,10 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private void ApplyQueueSnapshot(SqRoom room)
     {
         AcceptingSubmissions = room.AcceptingSubmissions;
+
+        _channelNames.Clear();
+        foreach (var c in room.QueueChannels ?? [])
+            _channelNames[c.Id] = c.Name;
 
         var nowTier = room.NowPlayingTier;
         IsP2wActive = nowTier is "skip" or "super_skip";
@@ -712,7 +947,11 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     private SqItemVm MakeSqItemVm(SqSubmission sub)
     {
-        var item = new SqItemVm(sub,
+        // Badge is only useful once there's more than one lane to distinguish.
+        var channelName = _channelNames.Count > 1 && sub.QueueChannelId is { } cid && _channelNames.TryGetValue(cid, out var name)
+            ? name : null;
+
+        var item = new SqItemVm(sub, channelName,
             id => _ = ApproveAsync(id),
             id => _ = RejectAsync(id),
             id => _ = DeleteAsync(id),

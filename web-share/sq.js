@@ -4,6 +4,9 @@
 
 const params  = new URLSearchParams(window.location.search);
 const ROOM_ID = (params.get('room') || '').trim().replace(/[^A-Za-z0-9\-]/g, '').slice(0, 40);
+// Which queue channel this link submits into (?ch=vip). Empty means the room's
+// default (first-listed) channel — the backend resolves that server-side.
+const LANE_ID = (params.get('ch') || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '').slice(0, 40);
 const BASE    = window.location.origin;
 
 const $  = id => document.getElementById(id);
@@ -73,6 +76,8 @@ async function bootstrap() {
     badge.hidden = false;
   }
 
+  updateChannelBadge();
+
   if (roomData.stripePublishableKey && typeof Stripe !== 'undefined') {
     stripeClient = Stripe(roomData.stripePublishableKey);
   }
@@ -92,7 +97,23 @@ async function pollRoom() {
     roomData = await apiFetch(`/streamer-queue/v1/rooms/${ROOM_ID}`);
     updateNowPlaying();
     renderSettings();
+    updateChannelBadge();
   } catch { /* non-fatal */ }
+}
+
+// ─── Queue channel badge ──────────────────────────────────────────────────────
+// Only shown once there's actually more than one channel to distinguish — a
+// single-channel room has nothing worth labeling.
+
+function updateChannelBadge() {
+  const channels = roomData.queueChannels || [];
+  const match = LANE_ID && channels.find(c => c.id === LANE_ID);
+  if (match && channels.length > 1) {
+    setText('channelBadge', match.name);
+    show('channelBadge');
+  } else {
+    hide('channelBadge');
+  }
 }
 
 // ─── Settings rendering ───────────────────────────────────────────────────────
@@ -379,6 +400,7 @@ async function submitLink(tier, ids = {}) {
     artist: ($('inputArtist') || {}).value || null,
     durationSeconds: null,
     tier,
+    queueChannelId: LANE_ID,
     ...fp,
   };
 
@@ -440,6 +462,7 @@ async function submitUpload(tier) {
   form.append('title', $('uploadTitle').value || '');
   form.append('artist', $('uploadArtist').value || '');
   form.append('tier', tier);
+  form.append('queueChannelId', LANE_ID);
   form.append('fpCookie', fp.fpCookie);
   form.append('fpUa', fp.fpUa);
   form.append('fpScreen', fp.fpScreen);

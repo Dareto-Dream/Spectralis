@@ -285,6 +285,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// entry point. Next/Previous/auto-advance must stay Queue-driven in that case instead of
     /// deferring to Spotify's own context queue, since the next Queue entry may be a local file.</summary>
     private bool _queueDrivenSpotifyTrack;
+    /// <summary>True from the moment a Stop is requested until the next Spotify play command
+    /// fires. StopSpotifyPlayback's PauseAsync call is fire-and-forget, and the SDK still reports
+    /// a player_state_changed event once that pause actually lands — without this guard, that late
+    /// event reaches ApplySpotifyStateAsync after ResetPlaybackSession has already cleared
+    /// everything and resurrects _spotifyState/HasTrack, making Stop look like it needs pressing
+    /// twice (the first press "undoes itself"; the second sticks only because no further event
+    /// arrives after an already-paused player).</summary>
+    private bool _spotifyStopRequested;
     private CancellationTokenSource? _spotifyArtCts;
     private double _spotifyPositionMs;
     private double _spotifyDurationMs;
@@ -990,6 +998,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _spotifyStopRequested = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await _spotifyHost.PlayUriAsync(trackUri);
         RemoteStatus = started ? "Spotify playback requested" : _spotifyHost.StatusMessage ?? "Spotify playback failed";
@@ -1046,9 +1055,16 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _visualizerOptions, value);
     }
 
-    private static IReadOnlyList<VisualizerOption> BuildVisualizerOptions()
+    /// <summary>Instance method (not static) because the catalog entries it filters out —
+    /// Spinning Disk/Album Cover (RequiresAlbumArt) and Piano Roll (RequiresMidi) — depend on
+    /// the currently loaded track. Scripts/installed visualizers carry no such requirement and
+    /// are always included.</summary>
+    private IReadOnlyList<VisualizerOption> BuildVisualizerOptions()
     {
+        var hasAlbumArt = CoverArtBytes is not null;
+        var hasMidi = _spotifyState is null && _engine.IsMidiLoaded;
         var built = VisualizerCatalog.All
+            .Where(d => (!d.RequiresAlbumArt || hasAlbumArt) && (!d.RequiresMidi || hasMidi))
             .Select(d => new VisualizerOption(d.Label, d.Mode))
             .ToList();
         var scripts = ScriptedVisualizerStore.LoadAll()
@@ -1076,6 +1092,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         {
             var match = options.FirstOrDefault(o => o.Installed?.Id == d.Id);
             _selectedVisualizer = match ?? options.First(o => o.Mode == VisualizerMode.MirrorSpectrum);
+            this.RaisePropertyChanged(nameof(SelectedVisualizer));
+        }
+        else if (!options.Contains(prev))
+        {
+            // Plain catalog pick (Album Cover/Spinning Disk/Piano Roll) whose RequiresAlbumArt/
+            // RequiresMidi gate no longer holds for the current track — same fallback as above,
+            // so the picker's selection never points at an entry it no longer lists.
+            _selectedVisualizer = options.First(o => o.Mode == VisualizerMode.MirrorSpectrum);
             this.RaisePropertyChanged(nameof(SelectedVisualizer));
         }
     }
@@ -1798,6 +1822,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
+        // Late player_state_changed event from a pause issued by a since-completed Stop — see
+        // _spotifyStopRequested. Applying it would resurrect the session Stop just cleared.
+        if (_spotifyStopRequested)
+        {
+            return;
+        }
+
         // A single-uri PlayUriAsync call gives Spotify no context to fall through to, so the SDK
         // never reports a distinct "ended"/no-track state the way OnSpotifyPlaybackStopped
         // expects — it just reports the same track paused at (or basically at) its own duration.
@@ -1841,11 +1872,27 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // Fetch art and lyrics only on track changes
         if (isNewTrack)
         {
+            // Spotify (standalone "Play Spotify" and queue-driven mixed-source playlists alike)
+            // never touches the local engine, so it was invisible to both scrobbling and Discord's
+            // idle-activity stats — both are driven off Engine-only signals elsewhere. This event
+            // is the same one Suno/BandLab/YouTube/SoundCloud already use to drive scrobbling
+            // (see its doc comment), so Spotify plugs into the exact same downstream path.
+            RemoteTrackLoaded?.Invoke(
+                $"spotify:{state.TrackId}",
+                state.Name,
+                state.Artist,
+                state.Album,
+                state.DurationMs / 1000.0);
+
             _spotifyArtCts?.Cancel();
             var cts = _spotifyArtCts = new CancellationTokenSource();
             CoverArtBytes = state.AlbumArtUrl is not null
                 ? await FetchSpotifyArtAsync(state.AlbumArtUrl, cts.Token)
                 : null;
+            if (!cts.IsCancellationRequested)
+            {
+                RefreshVisualizerOptions();
+            }
 
             // Only meaningful for the standalone "Play Spotify" flow, where Spotify's own
             // server-side device queue genuinely is what's next. For a queue-driven playlist
@@ -1944,6 +1991,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
 
         _queueDrivenSpotifyTrack = false;
+        _spotifyStopRequested = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await SpotifyHost.PlayAsync();
         RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
@@ -2654,6 +2702,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        _spotifyStopRequested = true;
         _ = _spotifyHost?.StopAsync();
         _spotifyState = null;
         _queueDrivenSpotifyTrack = false;
@@ -2686,6 +2735,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             ClearYouTubeVideo();
             ClearEmbeddedModules();
             this.RaisePropertyChanged(nameof(PlayPauseMenuLabel));
+            RefreshVisualizerOptions();
             return;
         }
 
@@ -2715,6 +2765,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         FormatBadge = string.Join(" / ", parts);
         this.RaisePropertyChanged(nameof(PlayPauseMenuLabel));
+        RefreshVisualizerOptions();
     }
 
     private async Task<bool> ShouldPlayWithContentWarningAsync(string path)
@@ -2900,11 +2951,18 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // the engine-only checks were false for the entire duration of Spotify playback and
         // auto-cycle silently never fired. HasTrack/IsPlaying already track both local and
         // Spotify playback correctly (see ApplyTrack and the Spotify state-change handler).
+        //
+        // ShowVisualizerControls (not ShowVisualizer) + IsVisualizerLocked (not IsSurfaceEmbedded):
+        // redeemed/"Special" visualizers render through the same embedded-HTML surface as real
+        // capsules (ShowEmbeddedHtml=true, ShowVisualizer=false), so gating on ShowVisualizer/
+        // IsSurfaceEmbedded froze auto-cycle solid the moment it landed on one. IsVisualizerLocked
+        // is the guard that actually means "a capsule/album-world surface owns the screen" and is
+        // untouched by picking a redeemed visualizer, so it's the right thing to stop cycling for.
         if (!AutoCycleVisualizers ||
-            !ShowVisualizer ||
+            !ShowVisualizerControls ||
             !HasTrack ||
             !IsPlaying ||
-            IsSurfaceEmbedded ||
+            IsVisualizerLocked ||
             ShowYouTubeVideo ||
             IsExporting ||
             VisualizerOptions.Count <= 1)

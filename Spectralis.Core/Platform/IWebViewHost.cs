@@ -18,6 +18,13 @@ public interface IWebViewHost : IDisposable
 
     Task ExecuteScriptAsync(string script);
 
+    /// <summary>Forces the browser to re-sync its paint size to the host control's current
+    /// bounds. Needed after an instant, single-jump resize (window maximize/restore) — both
+    /// CEF's OSR WasResized()/GetViewRect() round-trip and WebView2's NativeControlHost bounds
+    /// sync can race and settle on a stale size when there's no follow-up resize event to
+    /// nudge them, unlike a manual drag-resize which sends many.</summary>
+    void NudgeResize();
+
     /// <summary>Raised for each postMessage payload from page script. The payload is
     /// untrusted; consumers must validate before acting.</summary>
     event EventHandler<string>? MessageReceived;
