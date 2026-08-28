@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { WorldStore } from '../src/state/world.svelte';
 import { StoryStore } from '../src/state/story.svelte';
 import { AssetLibrary } from '../src/state/assetLibrary.svelte';
+import { NodeWorldStore } from '../src/state/nodeWorld.svelte';
 import { serializeSvgDocument, type Shape } from '../src/lib/svgShapes';
 import { runScript } from '../src/lib/scriptRun';
+import { buildNodeElement, runNodeScript, applyNodeTransform } from '../src/core/nodeRender.js';
 
 describe('WorldStore', () => {
   it('addTrack auto-numbers id/title/audio/cover from the current track count', () => {
@@ -133,5 +135,110 @@ describe('scriptRun.runScript', () => {
     const result = runScript('throw new Error("boom")', {});
     expect(result.ok).toBe(false);
     expect(result.error).toContain('boom');
+  });
+});
+
+describe('NodeWorldStore', () => {
+  it('addNode(null) creates a root node and selects it', () => {
+    const w = new NodeWorldStore();
+    const node = w.addNode(null);
+    expect(w.roots).toEqual([node]);
+    expect(w.selectedId).toBe(node.id);
+  });
+
+  it('addNode(parentId) nests the new node inside the parent, not the roots array', () => {
+    const w = new NodeWorldStore();
+    const parent = w.addNode(null);
+    const child = w.addNode(parent.id);
+    expect(w.roots).toEqual([parent]);
+    expect(parent.children).toEqual([child]);
+  });
+
+  it('deleteNode removes exactly that node, wherever it lives in the tree', () => {
+    const w = new NodeWorldStore();
+    const parent = w.addNode(null);
+    const child = w.addNode(parent.id);
+    w.deleteNode(child.id);
+    expect(parent.children).toEqual([]);
+    expect(w.findNode(child.id)).toBeNull();
+  });
+
+  it('duplicateNode clones with fresh ids (including nested children) and inserts right after the original', () => {
+    const w = new NodeWorldStore();
+    const parent = w.addNode(null);
+    const child = w.addNode(parent.id);
+    child.assetIds.push('asset-1');
+    const clone = w.duplicateNode(parent.id)!;
+    expect(w.roots.map((n) => n.id)).toEqual([parent.id, clone.id]);
+    expect(clone.id).not.toBe(parent.id);
+    expect(clone.children[0].id).not.toBe(child.id);
+    expect(clone.children[0].assetIds).toEqual(['asset-1']);
+  });
+
+  it('toggleAsset/toggleScript add on first call and remove on second', () => {
+    const w = new NodeWorldStore();
+    const node = w.addNode(null);
+    w.toggleAsset(node.id, 'img-1');
+    expect(node.assetIds).toEqual(['img-1']);
+    w.toggleAsset(node.id, 'img-1');
+    expect(node.assetIds).toEqual([]);
+  });
+
+  it('updateTransform patches only the given fields', () => {
+    const w = new NodeWorldStore();
+    const node = w.addNode(null);
+    w.updateTransform(node.id, { x: 42 });
+    expect(node.x).toBe(42);
+    expect(node.y).toBe(0);
+  });
+});
+
+describe('core/nodeRender.js', () => {
+  it('buildNodeElement renders the node id, label text, and nested children as real DOM', () => {
+    const tree = {
+      id: 'n1',
+      name: 'Parent',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scale: 1,
+      assetIds: [],
+      scriptIds: [],
+      spritesheet: null,
+      children: [{ id: 'n2', name: 'Child', x: 5, y: 5, rotation: 0, scale: 1, assetIds: [], scriptIds: [], spritesheet: null, children: [] }],
+    };
+    const el = buildNodeElement(tree, () => null, () => null, document);
+    expect(el.dataset.nodeId).toBe('n1');
+    expect(el.querySelector('.sp-node-label')?.textContent).toBe('Parent');
+    const childEl = el.querySelector('[data-node-id="n2"]');
+    expect(childEl?.querySelector('.sp-node-label')?.textContent).toBe('Child');
+  });
+
+  it("a node with an attached script gets its hover handler wired and reacts to mouseenter/mouseleave", () => {
+    const node = { id: 'n1', name: 'Hoverable', x: 0, y: 0, rotation: 0, scale: 1, assetIds: [], scriptIds: ['script-1'], spritesheet: null, children: [] };
+    const script = "on('hover', (node) => { node.scale = 2; }); on('unhover', (node) => { node.scale = 1; });";
+    const el = buildNodeElement(node, () => null, (id) => (id === 'script-1' ? script : null), document);
+    expect(node.scale).toBe(1);
+    el.dispatchEvent(new Event('mouseenter'));
+    expect(node.scale).toBe(2);
+    el.dispatchEvent(new Event('mouseleave'));
+    expect(node.scale).toBe(1);
+  });
+
+  it('runNodeScript executes code with exactly `node` and `on` bound', () => {
+    const calls: [string, () => number][] = [];
+    const on = (event: string, handler: () => number) => calls.push([event, handler]);
+    runNodeScript('on("click", () => node.scale);', { scale: 5 }, on);
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toBe('click');
+    expect(calls[0][1]()).toBe(5);
+  });
+
+  it('applyNodeTransform writes x/y/rotation/scale into a CSS transform string', () => {
+    const el = document.createElement('div');
+    applyNodeTransform(el, { x: 10, y: 20, rotation: 45, scale: 2 });
+    expect(el.style.transform).toContain('translate(10px, 20px)');
+    expect(el.style.transform).toContain('rotate(45deg)');
+    expect(el.style.transform).toContain('scale(2)');
   });
 });
