@@ -6,7 +6,7 @@ import type { AudioState } from '../state/audio.svelte';
 import type { AssetsState } from '../state/assets.svelte';
 import { confirmDialog } from '../state/confirmModal.svelte';
 import { toast } from '../state/toast.svelte';
-import { downloadText } from './downloadText';
+import { downloadText, downloadDataUrl } from './downloadText';
 import { buildExportFiles } from '../export/exportAll';
 import { exportSettings } from '../state/exportSettings.svelte';
 
@@ -50,11 +50,20 @@ export async function renderCapsule(store: ProjectStore, audio: AudioState, asse
     const files = buildExportFiles({
       project,
       audioSha256: audio.sha256,
+      audioExtension: audio.extension,
       coverExtension: assets.coverImage ? assets.extension : null,
       sharedPlay: exportSettings.sharedPlay,
     });
     for (const file of files) downloadText(file.name, file.content);
-    toast.push('success', `Exported ${files.length} files for ${store.project.meta.slug}`);
+    // The manifest/pack script have referenced assets/images/{slug}_cover.ext
+    // since Gap 2 landed, but nothing actually delivered those bytes until now —
+    // pack_*.py's ROOT / "{slug}_cover.ext" entry expects this exact flat filename.
+    let fileCount = files.length;
+    if (assets.coverImage) {
+      downloadDataUrl(`${store.project.meta.slug}_cover.${assets.extension}`, assets.coverImage.dataUrl);
+      fileCount++;
+    }
+    toast.push('success', `Exported ${fileCount} files for ${store.project.meta.slug}`);
   } finally {
     exportSettings.exporting = false;
   }

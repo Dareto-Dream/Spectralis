@@ -8,6 +8,7 @@ import { buildPackScript } from './buildPackScript';
 export interface ExportContext {
   project: Project;
   audioSha256: string | null;
+  audioExtension?: string;
   coverExtension: string | null;
   sharedPlay: boolean;
 }
@@ -24,6 +25,6 @@ export function buildExportFiles(ctx: ExportContext): ExportFile[] {
     { name: `${slug}_module.json`, content: buildModuleJson(ctx.project) },
     { name: `${slug}_manifest.json`, content: buildManifestJson(ctx.project, ctx) },
     { name: `${slug}_reactive.json`, content: buildReactiveJson(ctx.project) },
-    { name: `pack_${slug}.py`, content: buildPackScript(ctx.project) },
+    { name: `pack_${slug}.py`, content: buildPackScript(ctx.project, { audioExtension: ctx.audioExtension, coverExtension: ctx.coverExtension }) },
   ];
 }

@@ -6,6 +6,9 @@ export interface ManifestOptions {
   // Gap 1: null means audio hasn't been loaded yet — never a silent placeholder,
   // the manifest gets a visibly-labeled sentinel and the export UI warns.
   audioSha256: string | null;
+  // Was hardcoded to 'wav' regardless of what was actually loaded — matches
+  // AudioState.extension's own 'wav' fallback for the not-yet-loaded case.
+  audioExtension?: string;
   // Gap 2: null means no cover attached (identical to today's already-correct
   // empty-state behavior); otherwise the file extension to name the asset with.
   coverExtension: string | null;
@@ -34,7 +37,7 @@ export function buildManifestJson(project: Project, opts: ManifestOptions): stri
       artist: project.meta.artist || 'Unknown',
       release: { year: new Date().getFullYear(), credits: [] },
       audio: {
-        entry: `audio/${slug}.wav`,
+        entry: `audio/${slug}.${opts.audioExtension ?? 'wav'}`,
         sha256: opts.audioSha256 ?? 'PENDING-LOAD-AUDIO-TO-COMPUTE',
         durationSeconds: project.meta.songEnd,
       },

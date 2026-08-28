@@ -87,6 +87,15 @@ export class AudioState {
     }
   }
 
+  // Mirrors AssetsState.extension — 'wav' fallback matches the export
+  // pipeline's old hardcoded literal for the not-yet-loaded case.
+  get extension(): string {
+    if (!this.file) return 'wav';
+    const name = this.file.name;
+    const dot = name.lastIndexOf('.');
+    return dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'wav';
+  }
+
   currentLevel(): AudioLevel {
     if (!this.analyser) return { peak: 0, rms: 0 };
     const buf = new Uint8Array(this.analyser.frequencyBinCount);
