@@ -1,0 +1,29 @@
+appId: com.spectralis.visualizer-studio
+productName: Spectralis Visualizer Studio
+directories:
+  buildResources: build
+  # electron-builder's own default output dir is "dist" — which is exactly
+  # where vite's web build already lives. Redirect it so a packaging run
+  # never clobbers (or gets confused with) the browser build.
+  output: release
+files:
+  - dist/**
+  - electron-out/**
+  - package.json
+asar: true
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.music
+linux:
+  target:
+    - AppImage
+  category: AudioVideo

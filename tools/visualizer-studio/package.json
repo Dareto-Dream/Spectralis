@@ -2,6 +2,8 @@
   "name": "visualizer-studio",
   "private": true,
   "version": "0.1.0",
+  "description": "AE-style layer/keyframe/curve editor for building Spectralis capsule audio visualizers.",
+  "author": "DeltaVDevs",
   "type": "module",
   "main": "electron-out/main.js",
   "scripts": {

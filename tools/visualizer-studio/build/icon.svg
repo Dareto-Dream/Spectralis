@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Visualizer Studio app icon — the "Venn Orb A/B" pair from the app's own
+       default template (see src/lib/templates.ts), the shape every new
+       project and every screenshot of this app actually opens with. -->
+  <defs>
+    <radialGradient id="orbA" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#bcdcff"/>
+      <stop offset="45%" stop-color="#7fb7ff"/>
+      <stop offset="100%" stop-color="#7fb7ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#fff0c7"/>
+      <stop offset="45%" stop-color="#ffd06e"/>
+      <stop offset="100%" stop-color="#ffd06e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#0a0a0d"/>
+
+  <g style="mix-blend-mode:screen">
+    <circle cx="400" cy="512" r="280" fill="url(#orbA)"/>
+    <circle cx="624" cy="512" r="280" fill="url(#orbB)"/>
+  </g>
+
+  <circle cx="400" cy="512" r="280" fill="none" stroke="#e7e7ee" stroke-opacity="0.25" stroke-width="3"/>
+  <circle cx="624" cy="512" r="280" fill="none" stroke="#e7e7ee" stroke-opacity="0.25" stroke-width="3"/>
+</svg>

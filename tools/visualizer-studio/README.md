@@ -27,6 +27,25 @@ That's the whole deployment: copy `dist/index.html` wherever, open it in a
 browser. Re-run `npm run build` any time source changes and redistribute
 the new file.
 
+## Desktop build (Electron)
+
+Same app, packaged as a native Windows/Linux/macOS app via Electron. The
+Electron shell just loads the same `dist/index.html` the web build produces,
+plus a `window.native` bridge (see `electron/preload.ts`) that lets asset/
+audio/export code skip the browser's base64-in-memory ceiling when it's
+available — every native code path has a browser fallback, so the plain web
+build behaves identically to before.
+
+```
+npm run electron:dev          # hot-reloading dev window against the vite dev server
+npm run electron:build:win    # NSIS installer + portable exe -> release/
+npm run electron:build:linux  # AppImage -> release/
+npm run electron:build:mac    # dmg + zip -> release/
+```
+
+Cross-compiling AppImage/dmg from Windows isn't reliable — build those on
+(or via CI on) their native OS.
+
 ## What it does
 
 - **Studio** tab: layers (orb/ring/streak/wheel/ambientBeam/shard/text/
