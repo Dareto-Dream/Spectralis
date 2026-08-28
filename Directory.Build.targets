@@ -1,0 +1,32 @@
+<Project>
+
+  <!-- CefGlue.Common's macOS item group copies libEGL/libGLESv2/libvk_swiftshader
+       out of $(OutDir) and into CefGlueBrowserProcess/, but nothing has put them
+       there yet when those items are evaluated, so any project that pulls CefGlue
+       in on macOS fails its build with MSB3030. Stage them from the restored
+       redist first.
+
+       Sourced by glob rather than through @(CefRedistOSX64): that item comes from
+       cef.redist.osx64's build/ props, which NuGet imports only for the project
+       that references the package directly (Spectralis.App), not for the test
+       project that picks CefGlue up transitively. The glob also keeps this from
+       needing an edit whenever the CEF pin moves.
+
+       Only osx64 exists upstream, so the arm64 CefGlue platform gets the x64
+       stubs; they are inert unless a browser process actually starts, and the
+       shipped app is x64 regardless (see Spectralis.Installer/Mac/build-dmg.sh). -->
+  <Target Name="StageCefMacOSNativeAssets"
+          BeforeTargets="PrepareForBuild;Publish"
+          Condition="$([MSBuild]::IsOSPlatform('OSX'))
+                     And ('$(CefGlueTargetPlatform)' == 'osx-x64' Or '$(CefGlueTargetPlatform)' == 'osx-arm64')">
+    <ItemGroup>
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libEGL.dylib" />
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libGLESv2.dylib" />
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libvk_swiftshader.dylib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CefMacOSStagedAsset)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
