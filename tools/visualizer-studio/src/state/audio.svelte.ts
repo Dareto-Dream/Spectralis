@@ -32,6 +32,9 @@ export class AudioState {
   private objectUrl: string | null = null;
 
   file: File | null = $state(null);
+  // Electron build only — real fs path, set whenever window.native could
+  // resolve one. Lets the export pipeline fs.copyFile the real bytes.
+  filePath: string | null = $state(null);
   loaded = $state(false);
   error: string | null = $state(null);
   waveformPeaks: Float32Array | null = $state(null);
@@ -51,9 +54,18 @@ export class AudioState {
     this.error = null;
     this.waveformPeaks = null;
     this.sha256 = null;
-    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-    this.objectUrl = URL.createObjectURL(file);
-    this.el.src = this.objectUrl;
+    if (this.objectUrl) {
+      URL.revokeObjectURL(this.objectUrl);
+      this.objectUrl = null;
+    }
+    const path = window.native?.getPathForFile(file);
+    if (path) {
+      this.el.src = window.native!.toFileUrl(path);
+    } else {
+      this.objectUrl = URL.createObjectURL(file);
+      this.el.src = this.objectUrl;
+    }
+    this.filePath = path || null;
     this.file = file;
     try {
       this.ensureGraph();
@@ -81,7 +93,10 @@ export class AudioState {
       this.waveformPeaks = null;
     }
     try {
-      this.sha256 = await sha256Hex(raw);
+      // Native: hash streams off disk in the main process, the full file is
+      // never resident as one buffer there or here. Browser: only option is
+      // hashing the buffer we already had to read for waveform decode above.
+      this.sha256 = this.filePath ? await window.native!.sha256File(this.filePath) : await sha256Hex(raw);
     } catch {
       this.sha256 = null;
     }

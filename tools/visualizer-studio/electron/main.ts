@@ -1,5 +1,7 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 // MenuBar.svelte already owns File/Edit/View/Tools/Help — a native menu bar
 // on top of that would be a confusing duplicate. (Known risk, not yet
@@ -27,6 +29,20 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
+
+// Streamed over fs.createReadStream so the whole audio file is never resident
+// as one buffer anywhere, in either process — the renderer-side equivalent
+// (sha256Hex over a full arrayBuffer()) is exactly the RAM cost this exists
+// to avoid for what can be a tens-of-MB file.
+ipcMain.handle('hash:sha256File', (_event, filePath: string) => {
+  return new Promise<string>((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+});
 
 app.whenReady().then(() => {
   createWindow();

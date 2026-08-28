@@ -1,4 +1,4 @@
-import { contextBridge, webUtils } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 // node:url's pathToFileURL isn't reliably present in the sandboxed preload's
 // Node polyfill (confirmed: threw "pathToFileURL is not a function" at
@@ -22,4 +22,5 @@ contextBridge.exposeInMainWorld('native', {
   platform: process.platform,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   toFileUrl,
+  sha256File: (path: string) => ipcRenderer.invoke('hash:sha256File', path) as Promise<string>,
 });
