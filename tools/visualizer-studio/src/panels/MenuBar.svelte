@@ -179,7 +179,14 @@
 <div class="menuBar" onclick={(e) => e.stopPropagation()}>
   {#each menus as menu, i (menu.label)}
     <div class="menuItem">
-      <button class="topLabel" class:open={openIndex === i} onclick={() => toggle(i)} onmouseenter={() => onEnter(i)}>
+      <button
+        class="topLabel"
+        class:open={openIndex === i}
+        aria-haspopup="menu"
+        aria-expanded={openIndex === i}
+        onclick={() => toggle(i)}
+        onmouseenter={() => onEnter(i)}
+      >
         {menu.label}
       </button>
       {#if openIndex === i}
