@@ -19,3 +19,43 @@ export function downloadDataUrl(filename: string, dataUrl: string) {
   a.click();
   document.body.removeChild(a);
 }
+
+export interface DeliverOptions {
+  dirName: string;
+  // Browser fallback needs the actual bytes to download; native only needs a
+  // real fs path so the main process can fs.copyFile it directly.
+  coverDataUrl?: string | null;
+  coverSourcePath?: string | null;
+  coverDestName?: string | null;
+  // No browser equivalent exists for audio — it's always been BYOF for the
+  // pack script there. Native can fs.copyFile the real source file.
+  audioSourcePath?: string | null;
+  audioDestName?: string | null;
+}
+
+// The one thing both runtimes funnel export delivery through. Native: one
+// native save-folder dialog, then everything (text files + cover + audio) is
+// written by the main process via real fs calls — nothing round-trips
+// through renderer memory as a Blob. Browser: falls back to today's behavior,
+// one <a download> click per file.
+export async function deliverFiles(
+  files: { name: string; content: string }[],
+  opts: DeliverOptions
+): Promise<{ delivered: boolean; dir?: string }> {
+  if (window.native) {
+    const dir = await window.native.chooseExportDir(opts.dirName);
+    if (!dir) return { delivered: false }; // user cancelled the folder picker
+    await window.native.writeExport({
+      dir,
+      files,
+      coverSourcePath: opts.coverSourcePath ?? null,
+      coverDestName: opts.coverDestName ?? null,
+      audioSourcePath: opts.audioSourcePath ?? null,
+      audioDestName: opts.audioDestName ?? null,
+    });
+    return { delivered: true, dir };
+  }
+  for (const f of files) downloadText(f.name, f.content);
+  if (opts.coverDataUrl && opts.coverDestName) downloadDataUrl(opts.coverDestName, opts.coverDataUrl);
+  return { delivered: true };
+}

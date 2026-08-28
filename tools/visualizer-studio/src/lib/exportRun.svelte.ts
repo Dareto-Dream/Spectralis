@@ -6,7 +6,7 @@ import type { AudioState } from '../state/audio.svelte';
 import type { AssetsState } from '../state/assets.svelte';
 import { confirmDialog } from '../state/confirmModal.svelte';
 import { toast } from '../state/toast.svelte';
-import { downloadText, downloadDataUrl } from './downloadText';
+import { deliverFiles } from './downloadText';
 import { buildExportFiles } from '../export/exportAll';
 import { exportSettings } from '../state/exportSettings.svelte';
 
@@ -54,16 +54,19 @@ export async function renderCapsule(store: ProjectStore, audio: AudioState, asse
       coverExtension: assets.coverImage ? assets.extension : null,
       sharedPlay: exportSettings.sharedPlay,
     });
-    for (const file of files) downloadText(file.name, file.content);
-    // The manifest/pack script have referenced assets/images/{slug}_cover.ext
-    // since Gap 2 landed, but nothing actually delivered those bytes until now —
-    // pack_*.py's ROOT / "{slug}_cover.ext" entry expects this exact flat filename.
-    let fileCount = files.length;
-    if (assets.coverImage) {
-      downloadDataUrl(`${store.project.meta.slug}_cover.${assets.extension}`, assets.coverImage.dataUrl);
-      fileCount++;
-    }
-    toast.push('success', `Exported ${fileCount} files for ${store.project.meta.slug}`);
+    const slug = store.project.meta.slug;
+    const coverDestName = assets.coverImage ? `${slug}_cover.${assets.extension}` : null;
+    const audioDestName = audio.file ? `${slug}.${audio.extension}` : null;
+    const { delivered, dir } = await deliverFiles(files, {
+      dirName: slug,
+      coverDataUrl: assets.coverImage?.dataUrl ?? null,
+      coverSourcePath: assets.coverImage?.path ?? null,
+      coverDestName,
+      audioSourcePath: audio.filePath,
+      audioDestName,
+    });
+    if (!delivered) return; // native folder picker was cancelled — no toast, nothing happened
+    toast.push('success', dir ? `Exported ${slug} to ${dir}` : `Exported ${files.length + (coverDestName ? 1 : 0)} files for ${slug}`);
   } finally {
     exportSettings.exporting = false;
   }

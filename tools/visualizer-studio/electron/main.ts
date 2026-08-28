@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -42,6 +42,37 @@ ipcMain.handle('hash:sha256File', (_event, filePath: string) => {
     stream.on('end', () => resolve(hash.digest('hex')));
     stream.on('error', reject);
   });
+});
+
+interface WriteExportPayload {
+  dir: string;
+  files: { name: string; content: string }[];
+  coverSourcePath: string | null;
+  coverDestName: string | null;
+  audioSourcePath: string | null;
+  audioDestName: string | null;
+}
+
+ipcMain.handle('dialog:chooseExportDir', async (_event, defaultName: string) => {
+  const win = BrowserWindow.getFocusedWindow() ?? undefined;
+  const result = win
+    ? await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: `Export "${defaultName}" to folder` })
+    : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: `Export "${defaultName}" to folder` });
+  return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+});
+
+// Text files land flat next to the generated pack_*.py, matching what
+// buildPackScript.ts's ROOT / "filename" entries already expect — same flat
+// layout the browser build's downloads always produced, just automated.
+// Cover/audio bytes are fs.copyFile'd straight from their source paths,
+// never read into either process's JS heap.
+ipcMain.handle('export:write', async (_event, payload: WriteExportPayload) => {
+  const { dir, files, coverSourcePath, coverDestName, audioSourcePath, audioDestName } = payload;
+  await fs.promises.mkdir(dir, { recursive: true });
+  for (const f of files) await fs.promises.writeFile(path.join(dir, f.name), f.content, 'utf-8');
+  if (coverSourcePath && coverDestName) await fs.promises.copyFile(coverSourcePath, path.join(dir, coverDestName));
+  if (audioSourcePath && audioDestName) await fs.promises.copyFile(audioSourcePath, path.join(dir, audioDestName));
+  return { ok: true, dir };
 });
 
 app.whenReady().then(() => {

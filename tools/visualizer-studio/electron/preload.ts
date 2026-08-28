@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld('native', {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   toFileUrl,
   sha256File: (path: string) => ipcRenderer.invoke('hash:sha256File', path) as Promise<string>,
+  chooseExportDir: (defaultName: string) => ipcRenderer.invoke('dialog:chooseExportDir', defaultName) as Promise<string | null>,
+  writeExport: (payload: unknown) => ipcRenderer.invoke('export:write', payload) as Promise<{ ok: boolean; dir: string }>,
 });
