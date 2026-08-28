@@ -21,19 +21,25 @@ done
 rm -rf "$OUT"
 mkdir -p "$REPO_ROOT/releases"
 
-for RID in osx-x64 osx-arm64; do
-  dotnet publish "$APP_PROJECT" -c Release -r "$RID" --self-contained true \
-    -o "$OUT/$RID" "/p:Version=$VERSION"
-done
+# x64 only, deliberately. CefGlue's pinned CEF redistribution ships an osx64
+# package and nothing for arm64, so an osx-arm64 publish silently comes out with
+# no libcef.dylib and no CEF Resources -- the in-app browser would be dead. On
+# Apple Silicon this bundle runs under Rosetta.
+#
+# The explicit -f is required: Spectralis.App multitargets, and `dotnet publish`
+# refuses to pick a framework on its own (NETSDK1129).
+RID=osx-x64
+dotnet publish "$APP_PROJECT" -c Release -f net8.0 -r "$RID" --self-contained true \
+  -o "$OUT/$RID" "/p:Version=$VERSION"
 
-# Universal bundle layout
+if [[ ! -f "$OUT/$RID/libcef.dylib" ]]; then
+  echo "error: libcef.dylib missing from the publish output; the CEF redist did not restore." >&2
+  exit 1
+fi
+
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
-lipo -create \
-  "$OUT/osx-x64/Spectralis.App" \
-  "$OUT/osx-arm64/Spectralis.App" \
-  -output "$BUNDLE/Contents/MacOS/Spectralis"
-# Managed assemblies are architecture-neutral; take the arm64 set.
-rsync -a --exclude "Spectralis.App" "$OUT/osx-arm64/" "$BUNDLE/Contents/MacOS/"
+rsync -a "$OUT/$RID/" "$BUNDLE/Contents/MacOS/"
+mv "$BUNDLE/Contents/MacOS/Spectralis.App" "$BUNDLE/Contents/MacOS/Spectralis"
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
