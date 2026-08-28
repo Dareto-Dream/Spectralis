@@ -16,10 +16,9 @@
       <h3>Visualizer Studio</h3>
       <p>
         An AE-style layer/keyframe/curve editor for Spectralis capsule audio visualizers, plus the World and Story
-        capsule builders — all as dockable panels in one workspace. Rewrite of
-        <code>metadata/tools/visualizer-studio.html</code>.
+        capsule builders — all as dockable panels in one workspace.
       </p>
-      <p class="dim">Ships as a single self-contained static page — no server, no Node runtime, no network calls.</p>
+      <p class="dim">Runs standalone in a browser, or as a packaged desktop app — no account, no network calls.</p>
       <button class="primary" onclick={onClose}>Close</button>
     </div>
   </div>
@@ -57,9 +56,6 @@
   }
   .modal p.dim {
     color: var(--dim2);
-  }
-  .modal code {
-    color: var(--accent);
   }
   .modal .primary {
     width: 100%;
