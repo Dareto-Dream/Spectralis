@@ -3,6 +3,7 @@
   import { AudioState } from './state/audio.svelte';
   import { AssetsState } from './state/assets.svelte';
   import MenuBar from './panels/MenuBar.svelte';
+  import ActionBar from './panels/ActionBar.svelte';
   import TopBar from './panels/TopBar.svelte';
   import DockviewLayout from './panels/DockviewLayout.svelte';
   import Toast from './panels/Toast.svelte';
@@ -47,6 +48,7 @@
 <div class="app">
   <AutosaveBanner {store} />
   <MenuBar {store} {audio} {assets} />
+  <ActionBar {store} {audio} {assets} />
   <TopBar {store} {audio} {assets} />
   <div class="dockWrap">
     <DockviewLayout {store} {audio} {assets} />
