@@ -1,0 +1,10 @@
+<Project>
+
+  <!-- Several projects target Windows TFMs (the app's SMTC/WinRT target and the
+       whole legacy WinForms tree). Building or even restoring those from macOS
+       and Linux needs the reference packs explicitly opted into. -->
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>
