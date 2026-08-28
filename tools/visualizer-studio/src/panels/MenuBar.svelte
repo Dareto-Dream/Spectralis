@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
   import type { AssetsState } from '../state/assets.svelte';
   import type { TopMenu } from '../lib/menuTypes';
   import MenuList from './MenuList.svelte';
   import { TEMPLATES } from '../lib/templates';
-  import { confirmUnsavedIfNeeded, importProjectFile } from '../lib/projectImport';
+  import { confirmUnsavedIfNeeded, importProjectFile, loadTemplateIntoStore } from '../lib/projectImport';
   import { importLrcFile } from '../lib/lrcImport';
   import { saveProjectFile } from '../lib/projectSave';
   import { renderCapsule } from '../lib/exportRun.svelte';
@@ -15,6 +16,8 @@
   import { storyStore } from '../state/story.svelte';
   import { uiState } from '../state/uiState.svelte';
   import { toast } from '../state/toast.svelte';
+  import { appMode } from '../state/appMode.svelte';
+  import { saveWorldFile, loadWorldFile } from '../lib/worldSave';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
 
@@ -22,6 +25,14 @@
   let audioFileInput: HTMLInputElement | undefined = $state();
   let lrcFileInput: HTMLInputElement | undefined = $state();
   let coverFileInput: HTMLInputElement | undefined = $state();
+  let worldFileInput: HTMLInputElement | undefined = $state();
+
+  function onWorldFileChosen(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) loadWorldFile(file);
+  }
 
   async function newProject() {
     if (!(await confirmUnsavedIfNeeded(store))) return;
@@ -30,11 +41,8 @@
   }
 
   async function loadTemplate(id: string) {
-    if (!(await confirmUnsavedIfNeeded(store))) return;
     const tpl = TEMPLATES.find((t) => t.id === id);
-    if (!tpl) return;
-    store.loadProject(tpl.build());
-    toast.push('success', `Loaded "${tpl.label}"`);
+    if (tpl) await loadTemplateIntoStore(store, tpl);
   }
 
   async function onLoadProjectClick() {
@@ -64,7 +72,12 @@
     if (file) assets.loadCover(file);
   }
 
-  const dockers: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets', 'world', 'story', 'script', 'svgmaker'];
+  // Dockers list is scoped to whichever mode's dockview is actually live
+  // (DockviewLayout.svelte builds a different panel set per mode) — checking
+  // a panel that belongs to the other mode would just add a dead, blank tab.
+  const CAPSULE_DOCKERS: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets', 'story', 'script', 'svgmaker'];
+  const WORLD_DOCKERS: DockPanelId[] = ['nodeGraph', 'nodeInspector', 'spriteEditor', 'preview', 'world'];
+  const dockers = $derived(appMode.mode === 'world' ? WORLD_DOCKERS : CAPSULE_DOCKERS);
 
   const menus = $derived.by((): TopMenu[] => [
     {
@@ -77,7 +90,7 @@
           items: TEMPLATES.map((t) => ({ kind: 'action' as const, label: t.label, action: () => loadTemplate(t.id) })),
         },
         { kind: 'action', label: 'Load Project…', action: onLoadProjectClick },
-        { kind: 'action', label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveProjectFile(store) },
+        { kind: 'action', label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveProjectFile(store, audio, assets) },
         { kind: 'separator' },
         {
           kind: 'submenu',
@@ -143,12 +156,50 @@
       items: [
         { kind: 'action', label: 'Render Capsule', action: () => renderCapsule(store, audio, assets) },
         { kind: 'separator' },
-        { kind: 'action', label: 'Generate World Files', action: () => { worldStore.generate(); dockManager.focusOrOpen('world'); } },
-        { kind: 'action', label: 'Generate Story Files', action: () => { storyStore.generate(); dockManager.focusOrOpen('story'); } },
+        {
+          kind: 'action',
+          label: 'Save World (.spectral)',
+          action: async () => {
+            appMode.mode = 'world';
+            await saveWorldFile();
+          },
+        },
+        {
+          kind: 'action',
+          label: 'Load World…',
+          action: async () => {
+            appMode.mode = 'world';
+            await tick();
+            worldFileInput?.click();
+          },
+        },
+        {
+          kind: 'action',
+          label: 'Generate World Files (Legacy Tracklist)',
+          // A mode switch tears down/rebuilds the live dockview in
+          // DockviewLayout.svelte's `$effect` — `tick()` lets that finish
+          // before focusOrOpen looks for a panel in the new one.
+          action: async () => {
+            appMode.mode = 'world';
+            worldStore.generate();
+            await tick();
+            dockManager.focusOrOpen('world');
+          },
+        },
+        {
+          kind: 'action',
+          label: 'Generate Story Files',
+          action: async () => {
+            appMode.mode = 'capsule';
+            storyStore.generate();
+            await tick();
+            dockManager.focusOrOpen('story');
+          },
+        },
         { kind: 'separator' },
-        { kind: 'action', label: 'SVG Maker', action: () => dockManager.focusOrOpen('svgmaker') },
-        { kind: 'action', label: 'Script Console', action: () => dockManager.focusOrOpen('script') },
-        { kind: 'action', label: 'Assets', action: () => dockManager.focusOrOpen('assets') },
+        { kind: 'action', label: 'SVG Maker', action: async () => { appMode.mode = 'capsule'; await tick(); dockManager.focusOrOpen('svgmaker'); } },
+        { kind: 'action', label: 'Script Console', action: async () => { appMode.mode = 'capsule'; await tick(); dockManager.focusOrOpen('script'); } },
+        { kind: 'action', label: 'Assets', action: async () => { appMode.mode = 'capsule'; await tick(); dockManager.focusOrOpen('assets'); } },
       ],
     },
     {
@@ -198,10 +249,11 @@
   {/each}
 </div>
 
-<input bind:this={projectFileInput} type="file" accept="application/json" hidden onchange={onProjectFileChosen} />
+<input bind:this={projectFileInput} type="file" accept=".spectralis,application/json" hidden onchange={onProjectFileChosen} />
 <input bind:this={audioFileInput} type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
 <input bind:this={lrcFileInput} type="file" accept=".lrc,text/plain" hidden onchange={onLrcFileChosen} />
 <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />
+<input bind:this={worldFileInput} type="file" accept=".spectral" hidden onchange={onWorldFileChosen} />
 
 <style>
   .menuBar {

@@ -3,7 +3,19 @@
 // DockviewLayout.svelte. There's only ever one dockview in this app, so a
 // module singleton is simpler than prop-drilling a component reference
 // through App.svelte/MenuBar.svelte — same pattern as toast/confirmModal.
-export type DockPanelId = 'preview' | 'timeline' | 'inspector' | 'layers' | 'assets' | 'world' | 'story' | 'script' | 'svgmaker';
+export type DockPanelId =
+  | 'preview'
+  | 'timeline'
+  | 'inspector'
+  | 'layers'
+  | 'assets'
+  | 'world'
+  | 'story'
+  | 'script'
+  | 'svgmaker'
+  | 'nodeGraph'
+  | 'nodeInspector'
+  | 'spriteEditor';
 
 export const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
   preview: 'Preview',
@@ -11,10 +23,13 @@ export const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
   inspector: 'Inspector',
   layers: 'Layers',
   assets: 'Assets',
-  world: 'World Editor',
+  world: 'World Workspace (Legacy Tracklist)',
   story: 'Story Editor',
   script: 'Script Console',
   svgmaker: 'SVG Maker',
+  nodeGraph: 'World Workspace',
+  nodeInspector: 'Node Inspector',
+  spriteEditor: 'Sprite Editor',
 };
 
 interface DockHost {
@@ -23,6 +38,12 @@ interface DockHost {
   close(id: DockPanelId): void;
   focusOrOpen(id: DockPanelId): void;
   resetLayout(): void;
+  // Back the Capsule Workspace/Preview/Story viewport switch in ActionBar —
+  // "Preview" temporarily fills the whole dockview (dockview-core's own
+  // maximize-group), giving it the "watch your capsule, no editing chrome
+  // in the way" feel the plan calls for; Workspace/Story exit that.
+  maximize(id: DockPanelId): void;
+  exitMaximized(): void;
 }
 
 class DockManager {
@@ -69,6 +90,14 @@ class DockManager {
 
   resetLayout() {
     this.host?.resetLayout();
+  }
+
+  maximize(id: DockPanelId) {
+    this.host?.maximize(id);
+  }
+
+  exitMaximized() {
+    this.host?.exitMaximized();
   }
 }
 

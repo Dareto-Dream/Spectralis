@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, mount, unmount, type Component } from 'svelte';
+  import { onDestroy, mount, unmount, type Component } from 'svelte';
   import { DockviewComponent } from 'dockview-core';
   import 'dockview-core/dist/styles/dockview.css';
   import type { ProjectStore } from '../state/project.svelte';
@@ -11,10 +11,14 @@
   import TimelinePanelContent from './TimelinePanelContent.svelte';
   import AssetsPanel from './AssetsPanel.svelte';
   import WorldPanel from '../world-tab/WorldPanel.svelte';
+  import NodeCanvas from '../world-tab/NodeCanvas.svelte';
+  import NodeInspector from '../world-tab/NodeInspector.svelte';
+  import SpriteEditor from '../world-tab/SpriteEditor.svelte';
   import StoryPanel from '../story-tab/StoryPanel.svelte';
   import ScriptConsole from './ScriptConsole.svelte';
   import SvgMaker from './SvgMaker.svelte';
   import { dockManager, DOCK_PANEL_TITLES, type DockPanelId } from './dockManager.svelte';
+  import { appMode } from '../state/appMode.svelte';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
 
@@ -22,38 +26,79 @@
   let dv: DockviewComponent | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Bumped to v4: Assets now tabs with Timeline instead of stacking full-width
-  // below it (was eating too much vertical space for two panels people mostly
-  // use one-at-a-time), and the properties rail is narrower by default — a v3
-  // save would otherwise pin the old heavier arrangement back on next load.
-  const LAYOUT_KEY = 'visualizer-studio:layout:v4';
+  // Capsule and World are separate top-level modes (state/appMode.svelte.ts)
+  // with genuinely different viewport sets — Capsule keeps the full
+  // Layers/Timeline/Inspector/Assets/Story arrangement this app has always
+  // had, World is just its (legacy, pre-node-graph) tracklist workspace +
+  // a preview. Rather than one dockview/POSITION_CHAIN pretending to serve
+  // both shapes, each mode gets its own config and the live DockviewComponent
+  // is torn down and rebuilt when the mode switches.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  interface ModeConfig {
+    layoutKey: string;
+    defaultOpen: DockPanelId[];
+    positionChain: Partial<Record<DockPanelId, { direction: 'right' | 'below' | 'within'; candidates: DockPanelId[] }>>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    components: Partial<Record<DockPanelId, Component<any>>>;
+  }
 
-  const DEFAULT_OPEN: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets'];
-
-  // Reference-panel chain per id, in priority order — (re)opening a panel
-  // picks the first still-open candidate to dock against, so the intended
-  // arrangement re-forms itself regardless of what's currently open. Preview/
-  // Timeline form the main column; Inspector/Layers the properties rail;
-  // Assets tabs alongside Timeline instead of stacking below it — the two are
-  // mostly used one-at-a-time, so a tab costs no vertical space; World/Story/
-  // SVG Maker join Preview as alternate "viewport" tabs; Script Console joins
-  // the Timeline/Assets group as a fellow utility panel — each one is its own
-  // dockable viewport that can be opened independently rather than a
-  // hard-coded tab switcher.
-  const POSITION_CHAIN: Record<DockPanelId, { direction: 'right' | 'below' | 'within'; candidates: DockPanelId[] } | null> = {
-    preview: null,
-    timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers', 'assets'] },
-    inspector: { direction: 'right', candidates: ['preview', 'timeline', 'layers'] },
-    layers: { direction: 'below', candidates: ['inspector', 'preview', 'timeline'] },
-    assets: { direction: 'within', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
-    world: { direction: 'within', candidates: ['preview', 'timeline', 'inspector'] },
-    story: { direction: 'within', candidates: ['preview', 'world', 'timeline'] },
-    svgmaker: { direction: 'within', candidates: ['preview', 'world', 'story'] },
-    script: { direction: 'within', candidates: ['assets', 'timeline', 'preview'] },
+  // Bumped to v4 under the old single-dockview scheme; now split per-mode —
+  // a stale v4 save (from before the mode split) is simply never read again
+  // under these new keys, so there's no migration to write for it.
+  const CAPSULE_CONFIG: ModeConfig = {
+    layoutKey: 'visualizer-studio:layout:capsule:v1',
+    defaultOpen: ['preview', 'timeline', 'inspector', 'layers', 'assets'],
+    positionChain: {
+      timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers', 'assets'] },
+      inspector: { direction: 'right', candidates: ['preview', 'timeline', 'layers'] },
+      layers: { direction: 'below', candidates: ['inspector', 'preview', 'timeline'] },
+      assets: { direction: 'within', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
+      story: { direction: 'within', candidates: ['preview', 'timeline'] },
+      svgmaker: { direction: 'within', candidates: ['preview', 'story'] },
+      script: { direction: 'within', candidates: ['assets', 'timeline', 'preview'] },
+    },
+    components: {
+      layers: LayersPanel,
+      preview: PreviewCanvas,
+      inspector: InspectorPanel,
+      timeline: TimelinePanelContent,
+      assets: AssetsPanel,
+      story: StoryPanel,
+      script: ScriptConsole,
+      svgmaker: SvgMaker,
+    },
   };
 
-  function positionFor(id: DockPanelId) {
-    const chain = POSITION_CHAIN[id];
+  // "2 viewports" (Workspace, Preview) per the plan — nodeGraph is the real
+  // Workspace now (a node canvas, not layer-based); nodeInspector/spriteEditor
+  // tab alongside it as the property rail; the legacy flat tracklist/level-
+  // map generator (`world`) is still reachable via View > Dockers, not
+  // deleted, just no longer the default — see AssetsPanel's Templates
+  // category for where its old role (a ready-made starting point) landed.
+  const WORLD_CONFIG: ModeConfig = {
+    layoutKey: 'visualizer-studio:layout:world:v2',
+    defaultOpen: ['nodeGraph', 'nodeInspector', 'preview'],
+    positionChain: {
+      nodeInspector: { direction: 'right', candidates: ['nodeGraph'] },
+      preview: { direction: 'below', candidates: ['nodeInspector', 'nodeGraph'] },
+      spriteEditor: { direction: 'within', candidates: ['nodeInspector'] },
+      world: { direction: 'within', candidates: ['nodeGraph'] },
+    },
+    components: {
+      world: WorldPanel,
+      nodeGraph: NodeCanvas,
+      nodeInspector: NodeInspector,
+      spriteEditor: SpriteEditor,
+      preview: PreviewCanvas,
+    },
+  };
+
+  function configFor(mode: 'capsule' | 'world'): ModeConfig {
+    return mode === 'world' ? WORLD_CONFIG : CAPSULE_CONFIG;
+  }
+
+  function positionFor(config: ModeConfig, id: DockPanelId) {
+    const chain = config.positionChain[id];
     if (!chain || !dv) return undefined;
     for (const candidate of chain.candidates) {
       if (dv.api.getPanel(candidate)) return { direction: chain.direction, referencePanel: candidate };
@@ -61,36 +106,33 @@
     return undefined;
   }
 
-  function addPanelById(id: DockPanelId) {
-    if (!dv || dv.api.getPanel(id)) return;
-    dv.addPanel({ id, component: id, title: DOCK_PANEL_TITLES[id], position: positionFor(id) });
+  function addPanelById(config: ModeConfig, id: DockPanelId) {
+    if (!dv || !config.components[id] || dv.api.getPanel(id)) return;
+    dv.addPanel({ id, component: id, title: DOCK_PANEL_TITLES[id], position: positionFor(config, id) });
     if (id === 'timeline') dv.api.getPanel('timeline')?.api.setSize({ height: 260 });
     if (id === 'inspector' || id === 'layers') dv.api.getPanel(id)?.api.setSize({ width: 280 });
   }
 
-  function addDefaultPanels() {
+  function addDefaultPanels(config: ModeConfig) {
     if (!dv) return;
-    for (const id of DEFAULT_OPEN) addPanelById(id);
+    for (const id of config.defaultOpen) addPanelById(config, id);
   }
 
   function syncOpenIds() {
     dockManager.sync(dv?.api.panels.map((p) => p.id) ?? []);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const PANEL_COMPONENTS: Record<string, Component<any>> = {
-    layers: LayersPanel,
-    preview: PreviewCanvas,
-    inspector: InspectorPanel,
-    timeline: TimelinePanelContent,
-    assets: AssetsPanel,
-    world: WorldPanel,
-    story: StoryPanel,
-    script: ScriptConsole,
-    svgmaker: SvgMaker,
-  };
+  function teardownDockview() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    dockManager.unregister();
+    dv?.dispose();
+    dv = undefined;
+  }
 
-  onMount(() => {
+  function buildDockview(config: ModeConfig) {
     if (!container) return;
     dv = new DockviewComponent(container, {
       className: 'dockview-theme-abyss',
@@ -103,7 +145,7 @@
         return {
           element: el,
           init: () => {
-            const Comp = PANEL_COMPONENTS[options.name];
+            const Comp = config.components[options.name as DockPanelId];
             if (Comp) instance = mount(Comp, { target: el, props: { store, audio, assets } });
           },
           dispose: () => {
@@ -113,12 +155,9 @@
       },
     });
 
-    // Panel layout is UI chrome, not project data — persisted separately from
-    // project autosave and explicitly not part of undo/redo. Falls back to the
-    // default arrangement if nothing's saved yet or the saved JSON is stale/bad.
     let restored = false;
     try {
-      const raw = localStorage.getItem(LAYOUT_KEY);
+      const raw = localStorage.getItem(config.layoutKey);
       if (raw) {
         dv.fromJSON(JSON.parse(raw));
         restored = true;
@@ -126,7 +165,7 @@
     } catch {
       restored = false;
     }
-    if (!restored) addDefaultPanels();
+    if (!restored) addDefaultPanels(config);
     syncOpenIds();
     dv.api.onDidAddPanel(syncOpenIds);
     dv.api.onDidRemovePanel(syncOpenIds);
@@ -138,7 +177,7 @@
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         try {
-          localStorage.setItem(LAYOUT_KEY, JSON.stringify(dv!.toJSON()));
+          localStorage.setItem(config.layoutKey, JSON.stringify(dv!.toJSON()));
         } catch {
           // best-effort — layout persistence is a convenience, never fatal
         }
@@ -148,7 +187,7 @@
     dockManager.register(
       {
         isOpen: (id) => !!dv?.api.getPanel(id),
-        open: (id) => addPanelById(id),
+        open: (id) => addPanelById(config, id),
         close: (id) => {
           const p = dv?.api.getPanel(id);
           if (p) dv?.removePanel(p);
@@ -156,20 +195,34 @@
         focusOrOpen: (id) => {
           const p = dv?.api.getPanel(id);
           if (p) dv?.setActivePanel(p);
-          else addPanelById(id);
+          else addPanelById(config, id);
         },
         resetLayout: () => {
           dv?.clear();
-          addDefaultPanels();
+          addDefaultPanels(config);
         },
+        maximize: (id) => {
+          const p = dv?.api.getPanel(id);
+          p?.api.maximize();
+        },
+        exitMaximized: () => dv?.api.exitMaximizedGroup(),
       },
       dv.api.panels.map((p) => p.id)
     );
+  }
+
+  // Rebuilds the whole dockview whenever the mode switches (including the
+  // first run, once `container` exists) — Capsule ↔ World aren't tabs
+  // within one layout, they're two independent ones.
+  $effect(() => {
+    const mode = appMode.mode;
+    if (!container) return;
+    teardownDockview();
+    buildDockview(configFor(mode));
   });
 
   onDestroy(() => {
-    dockManager.unregister();
-    dv?.dispose();
+    teardownDockview();
   });
 </script>
 
