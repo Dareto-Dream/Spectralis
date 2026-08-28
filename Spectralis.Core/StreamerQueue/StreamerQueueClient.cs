@@ -41,9 +41,10 @@ public sealed class StreamerQueueClient : IDisposable
         return await DeserializeAsync<SqRoom>(res, ct);
     }
 
-    public async Task<SqRoom> PutSettingsAsync(Uri baseUri, string roomId, string ownerToken, bool enabled, SqSettings settings, string? channelId, CancellationToken ct)
+    public async Task<SqRoom> PutSettingsAsync(Uri baseUri, string roomId, string ownerToken, bool enabled, SqSettings settings, string? channelId,
+        IEnumerable<SqQueueChannel>? queueChannels, IEnumerable<SqMixSlot>? channelMixPattern, CancellationToken ct)
     {
-        var body = new { ownerToken, enabled, settings, channelId };
+        var body = new { ownerToken, enabled, settings, channelId, queueChannels, channelMixPattern };
         var res = await http.PutAsync(new Uri(RoomUri(baseUri, roomId) + "/settings"), JsonContent(body), ct);
         return await DeserializeAsync<SqRoom>(res, ct);
     }
@@ -98,9 +99,9 @@ public sealed class StreamerQueueClient : IDisposable
         return res.IsSuccessStatusCode;
     }
 
-    public async Task<SqAddTrackResponse> AddTrackAsync(Uri baseUri, string roomId, string ownerToken, string url, string? title, string? artist, double? durationSeconds, CancellationToken ct)
+    public async Task<SqAddTrackResponse> AddTrackAsync(Uri baseUri, string roomId, string ownerToken, string url, string? title, string? artist, double? durationSeconds, string? queueChannelId, CancellationToken ct)
     {
-        var body = new { ownerToken, url, title, artist, durationSeconds };
+        var body = new { ownerToken, url, title, artist, durationSeconds, queueChannelId };
         var res = await http.PostAsync(new Uri(RoomUri(baseUri, roomId) + "/submissions"), JsonContent(body), ct);
         return await DeserializeAsync<SqAddTrackResponse>(res, ct);
     }

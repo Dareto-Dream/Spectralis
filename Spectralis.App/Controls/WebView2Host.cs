@@ -166,6 +166,35 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         return Task.CompletedTask;
     }
 
+    public void NudgeResize()
+    {
+        // Mirrors the CefGlue workaround: an instant, single-jump resize (window maximize/
+        // restore) only fires one ArrangeOverride, and DirectComposition can settle on the
+        // pre-resize surface if that one bounds-set races the swap chain. Forcing two distinct
+        // controller.Bounds values (shrink then restore) instead of one guarantees the composited
+        // surface actually re-syncs to the final size.
+        if (_controller is null)
+        {
+            return;
+        }
+
+        SyncControllerBounds();
+        var bounds = _controller.Bounds;
+        if (bounds.Width <= 1 || bounds.Height <= 1)
+        {
+            return;
+        }
+
+        _controller.Bounds = new System.Drawing.Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_controller is not null)
+            {
+                _controller.Bounds = bounds;
+            }
+        }, DispatcherPriority.Background);
+    }
+
     // IDisposable (NativeControlHost also handles native cleanup above) ---
 
     public void Dispose()
