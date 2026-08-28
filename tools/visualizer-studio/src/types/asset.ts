@@ -1,7 +1,12 @@
 // Shared "Assets" docker (plan follow-up: Godot-style project asset browser).
 // Session-only by design — see state/assetLibrary.svelte.ts for why these
 // aren't persisted to localStorage the way project autosave/layout are.
-export type AssetKind = 'image' | 'audio' | 'svg';
+// 'script' backs World node scripts (Spectralis Code / .spc) — plain JS with
+// a small `node`/`on` API, see core/nodeRender.js. Scripts live in the Assets
+// docker like any other asset and are only ever REFERENCED by id from a
+// node's scriptIds, never embedded — "scripts get attached to nodes, they
+// are not immediately associated."
+export type AssetKind = 'image' | 'audio' | 'svg' | 'script';
 
 export interface AssetEntry {
   id: string;

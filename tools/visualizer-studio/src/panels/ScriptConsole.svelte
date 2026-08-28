@@ -6,6 +6,7 @@
   import { assetLibrary } from '../state/assetLibrary.svelte';
   import { runScript } from '../lib/scriptRun';
   import { toast } from '../state/toast.svelte';
+  import CodeEditor from './CodeEditor.svelte';
   import Play from '@lucide/svelte/icons/play';
 
   // audio is accepted for API symmetry with other dockview-mounted panels but
@@ -142,7 +143,9 @@ ctx.story.generate();`,
     Plain browser JavaScript — not Node (no filesystem/network access; this ships as a static webpage). Your code
     receives a <code>ctx</code> object; the current target's API is shown in the Example snippet.
   </p>
-  <textarea class="editor" bind:value={code} spellcheck="false" onblur={saveCode}></textarea>
+  <div class="editorWrap" onfocusout={saveCode}>
+    <CodeEditor bind:value={code} onRun={run} />
+  </div>
   <div class="outputHead">
     <span>Output</span>
     {#if logs.length || errorMsg}<button class="small ghost" onclick={clearLog}>Clear</button>{/if}
@@ -194,14 +197,9 @@ ctx.story.generate();`,
   .hint code {
     color: var(--dim);
   }
-  .editor {
+  .editorWrap {
     flex: 1 1 55%;
     min-height: 90px;
-    resize: none;
-    font: 11px var(--mono);
-    line-height: 1.5;
-    white-space: pre;
-    tab-size: 2;
   }
   .outputHead {
     display: flex;

@@ -5,6 +5,10 @@ class UiState {
   helpOpen = $state(false);
   settingsOpen = $state(false);
   aboutOpen = $state(false);
+  // Which script asset is open in ScriptEditorModal — null means closed.
+  // A single id rather than a boolean since the modal needs to know WHICH
+  // asset it's editing, same shape as e.g. a "currently open document".
+  editingScriptAssetId: string | null = $state(null);
 }
 
 export const uiState = new UiState();

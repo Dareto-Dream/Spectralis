@@ -3,8 +3,21 @@ import type { AssetEntry, AssetKind } from '../types/asset';
 function kindOf(mime: string, name: string): AssetKind {
   if (mime.startsWith('image/svg') || name.toLowerCase().endsWith('.svg')) return 'svg';
   if (mime.startsWith('audio/')) return 'audio';
+  if (name.toLowerCase().endsWith('.spc') || name.toLowerCase().endsWith('.js')) return 'script';
   return 'image';
 }
+
+// Starter template for a new script asset — documents the node/on API this
+// pass supports (see core/nodeRender.js's wireNodeScripts).
+export const DEFAULT_NODE_SCRIPT = `// Spectralis Code (.spc) — plain JavaScript with a small API bound per node:
+//   node.x / node.y / node.rotation / node.scale — read or assign to transform the node live
+//   node.name — this node's name (read-only)
+//   on(event, handler) — event is 'hover' | 'unhover' | 'click', handler receives \`node\`
+//
+// Example: grow slightly while hovered.
+on('hover', (node) => { node.scale += 0.08; });
+on('unhover', (node) => { node.scale -= 0.08; });
+`;
 
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -61,6 +74,42 @@ export class AssetLibrary {
     };
     this.assets.push(entry);
     return entry;
+  }
+
+  // Script assets store their source as a text data: URL — same "small text
+  // content, no real file behind it yet" shape as addSvg, just JS instead of
+  // markup. getScriptSource() below is the only place that needs to decode it
+  // back out.
+  addScript(name: string, code = DEFAULT_NODE_SCRIPT): AssetEntry {
+    const dataUrl = 'data:text/javascript;base64,' + btoa(unescape(encodeURIComponent(code)));
+    const entry: AssetEntry = {
+      id: crypto.randomUUID(),
+      name: name.toLowerCase().endsWith('.spc') ? name : `${name}.spc`,
+      kind: 'script',
+      mime: 'text/javascript',
+      dataUrl,
+      size: code.length,
+      createdAt: Date.now(),
+    };
+    this.assets.push(entry);
+    return entry;
+  }
+
+  updateScriptContent(id: string, code: string) {
+    const a = this.get(id);
+    if (!a || a.kind !== 'script') return;
+    a.dataUrl = 'data:text/javascript;base64,' + btoa(unescape(encodeURIComponent(code)));
+    a.size = code.length;
+  }
+
+  getScriptSource(id: string): string | null {
+    const a = this.get(id);
+    if (!a || a.kind !== 'script') return null;
+    try {
+      return decodeURIComponent(escape(atob(a.dataUrl.split(',')[1] ?? '')));
+    } catch {
+      return null;
+    }
   }
 
   get(id: string): AssetEntry | undefined {
