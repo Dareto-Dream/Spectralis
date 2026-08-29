@@ -13,6 +13,8 @@
   import { resolveLayerTransform, screenToLayerLocal, layerLocalToScreen, layerLocalBounds, screenDist, newAnchor, type LayerTransform } from '../lib/vectorHitTest';
   import type { AnimKey, AnyLayer, VectorShape } from '../types/project';
   import { toast } from '../state/toast.svelte';
+  import { assetDrop } from '../lib/dragAsset';
+  import { addImageLayerFromAsset } from '../lib/imageLayer';
 
   let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
 
@@ -567,7 +569,13 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="workspaceCanvasWrap">
+<div
+  class="workspaceCanvasWrap"
+  use:assetDrop={{
+    accept: (e) => e.kind === 'image' || e.kind === 'svg',
+    onAsset: (e) => addImageLayerFromAsset(store, e),
+  }}
+>
   <canvas
     bind:this={canvas}
     onpointerdown={onPointerDown}
@@ -582,6 +590,10 @@
     position: relative;
     display: inline-block;
     background: #000;
+  }
+  .workspaceCanvasWrap:global(.dragOver) {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
   }
   canvas {
     display: block;

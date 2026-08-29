@@ -5,11 +5,14 @@
   import ParamFields from './ParamFields.svelte';
   import CurveEditor from '../timeline/CurveEditor.svelte';
   import type { Ease } from '../types/project';
+  import { rasterizeLayer } from '../lib/rasterize';
+  import { toast } from '../state/toast.svelte';
   import Eye from '@lucide/svelte/icons/eye';
   import EyeOff from '@lucide/svelte/icons/eye-off';
   import Lock from '@lucide/svelte/icons/lock';
   import Unlock from '@lucide/svelte/icons/unlock';
   import Timer from '@lucide/svelte/icons/timer';
+  import ImageDown from '@lucide/svelte/icons/image-down';
 
   let { store }: { store: ProjectStore } = $props();
 
@@ -37,6 +40,12 @@
   function onNameChange(e: Event) {
     if (!layer) return;
     store.renameLayer(layer.id, (e.target as HTMLInputElement).value);
+  }
+
+  function onRasterize() {
+    if (!layer) return;
+    rasterizeLayer(store, layer.id);
+    toast.push('success', 'Rasterized to a paintable image layer');
   }
 </script>
 
@@ -74,6 +83,11 @@
       >
         S
       </button>
+      {#if layer.type === 'vector'}
+        <button class="iconBtn" title="Rasterize — bake to a paintable image, replaces this layer" aria-label="Rasterize layer" onclick={onRasterize}>
+          <ImageDown size={13} />
+        </button>
+      {/if}
     </div>
 
     <div class="visRow">
