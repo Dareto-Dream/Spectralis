@@ -274,13 +274,20 @@ describe('ToastStore', () => {
 });
 
 describe('AutosaveManager', () => {
-  it('round-trips a saved entry through localStorage', () => {
-    const a = new AutosaveManager();
-    a.saveNow({ hello: 'world' });
-    const saved = a.readSaved();
-    expect(saved?.project).toEqual({ hello: 'world' });
-    a.clear();
-    expect(a.readSaved()).toBeNull();
+  // Generic over an encode/decode pair now (CapsuleFile/WorldFile in real
+  // use) so both Capsule and World share one implementation — a plain JSON
+  // codec is enough to exercise the browser (localStorage) branch here;
+  // window.native is undefined under jsdom, same as a real browser build.
+  const encode = (d: unknown) => new TextEncoder().encode(JSON.stringify(d));
+  const decode = (b: Uint8Array) => JSON.parse(new TextDecoder().decode(b));
+
+  it('round-trips a saved entry through localStorage', async () => {
+    const a = new AutosaveManager('test-autosave.bin', 'test:autosave:manager', encode, decode);
+    await a.saveNow({ hello: 'world' });
+    const saved = await a.readSaved();
+    expect(saved).toEqual({ hello: 'world' });
+    await a.clear();
+    expect(await a.readSaved()).toBeNull();
   });
 });
 

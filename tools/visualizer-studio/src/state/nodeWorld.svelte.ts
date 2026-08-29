@@ -28,6 +28,13 @@ export class NodeWorldStore {
   meta: NodeWorldMeta = $state({ name: 'Untitled World', author: '' });
   roots: SceneNode[] = $state([]);
   selectedId: string | null = $state(null);
+  // Bumped by every mutator below — NodeWorldStore has no undo/history stack
+  // (yet) to key a "something changed" effect off of, unlike ProjectStore's
+  // `history.undoStack.length`. This is that same signal for World's autosave.
+  revision = $state(0);
+  private bump() {
+    this.revision++;
+  }
 
   get selectedNode(): SceneNode | null {
     return this.selectedId ? (this.findNode(this.selectedId)?.node ?? null) : null;
@@ -65,12 +72,14 @@ export class NodeWorldStore {
         ref.node.children.push(node);
         const reactive = ref.node.children[ref.node.children.length - 1];
         this.selectedId = reactive.id;
+        this.bump();
         return reactive;
       }
     }
     this.roots.push(node);
     const reactive = this.roots[this.roots.length - 1];
     this.selectedId = reactive.id;
+    this.bump();
     return reactive;
   }
 
@@ -80,6 +89,7 @@ export class NodeWorldStore {
     const idx = ref.siblings.indexOf(ref.node);
     if (idx >= 0) ref.siblings.splice(idx, 1);
     if (this.selectedId === id) this.selectedId = null;
+    this.bump();
   }
 
   duplicateNode(id: string): SceneNode | null {
@@ -96,17 +106,24 @@ export class NodeWorldStore {
     ref.siblings.splice(idx + 1, 0, clone);
     const reactive = ref.siblings[idx + 1];
     this.selectedId = reactive.id;
+    this.bump();
     return reactive;
   }
 
   updateTransform(id: string, patch: Partial<Pick<SceneNode, 'x' | 'y' | 'rotation' | 'scale'>>) {
     const ref = this.findNode(id);
-    if (ref) Object.assign(ref.node, patch);
+    if (ref) {
+      Object.assign(ref.node, patch);
+      this.bump();
+    }
   }
 
   rename(id: string, name: string) {
     const ref = this.findNode(id);
-    if (ref && name.trim()) ref.node.name = name.trim();
+    if (ref && name.trim()) {
+      ref.node.name = name.trim();
+      this.bump();
+    }
   }
 
   toggleAsset(id: string, assetId: string) {
@@ -115,6 +132,7 @@ export class NodeWorldStore {
     const i = ref.node.assetIds.indexOf(assetId);
     if (i >= 0) ref.node.assetIds.splice(i, 1);
     else ref.node.assetIds.push(assetId);
+    this.bump();
   }
 
   toggleScript(id: string, scriptId: string) {
@@ -123,26 +141,35 @@ export class NodeWorldStore {
     const i = ref.node.scriptIds.indexOf(scriptId);
     if (i >= 0) ref.node.scriptIds.splice(i, 1);
     else ref.node.scriptIds.push(scriptId);
+    this.bump();
   }
 
   setSpritesheet(id: string, config: SpritesheetConfig | null) {
     const ref = this.findNode(id);
-    if (ref) ref.node.spritesheet = config;
+    if (ref) {
+      ref.node.spritesheet = config;
+      this.bump();
+    }
   }
 
   updateMeta(patch: Partial<NodeWorldMeta>) {
     Object.assign(this.meta, patch);
+    this.bump();
   }
 
   loadGraph(roots: SceneNode[], meta?: Partial<NodeWorldMeta>) {
     this.roots = roots;
     if (meta) Object.assign(this.meta, meta);
     this.selectedId = null;
+    // Deliberately no bump() — loading a graph (including the autosave
+    // restore flow itself) must not immediately re-trigger a fresh autosave
+    // write of the thing that was just read.
   }
 
   clear() {
     this.roots = [];
     this.selectedId = null;
+    this.bump();
   }
 }
 

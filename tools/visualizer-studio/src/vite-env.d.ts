@@ -22,5 +22,6 @@ interface Window {
     openFileDialog(opts: { defaultPath?: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
     writeBinaryFile(filePath: string, data: ArrayBuffer): Promise<{ ok: boolean }>;
     readBinaryFile(filePath: string): Promise<ArrayBuffer>;
+    deleteFile(filePath: string): Promise<{ ok: boolean }>;
   };
 }

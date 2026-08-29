@@ -32,4 +32,5 @@ contextBridge.exposeInMainWorld('native', {
     ipcRenderer.invoke('dialog:openFile', opts) as Promise<string | null>,
   writeBinaryFile: (filePath: string, data: ArrayBuffer) => ipcRenderer.invoke('fs:writeBinary', filePath, data) as Promise<{ ok: boolean }>,
   readBinaryFile: (filePath: string) => ipcRenderer.invoke('fs:readBinary', filePath) as Promise<ArrayBuffer>,
+  deleteFile: (filePath: string) => ipcRenderer.invoke('fs:deleteFile', filePath) as Promise<{ ok: boolean }>,
 });

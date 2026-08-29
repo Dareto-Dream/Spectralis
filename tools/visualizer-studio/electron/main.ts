@@ -70,7 +70,7 @@ ipcMain.handle('hash:sha256File', (_event, filePath: string) => {
 // has no equivalent — window.native is undefined there, same feature-detect
 // as every other native-only path in this codebase.
 const STUDIO_ROOT = path.join(app.getPath('documents'), 'Spectralis Visualizer Studio');
-const STUDIO_SUBFOLDERS = ['Projects', 'Assets', 'Templates', 'Scripts'];
+const STUDIO_SUBFOLDERS = ['Projects', 'Assets', 'Templates', 'Scripts', 'Autosaves'];
 
 async function ensureStudioScaffold() {
   for (const sub of STUDIO_SUBFOLDERS) {
@@ -109,6 +109,14 @@ ipcMain.handle('dialog:openFile', async (_event, opts: { defaultPath?: string; f
 ipcMain.handle('fs:writeBinary', async (_event, filePath: string, data: ArrayBuffer) => {
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
   await fs.promises.writeFile(filePath, Buffer.from(data));
+  return { ok: true };
+});
+
+// Used by the autosave manager to remove its own rotating file once a real
+// Save Project/Save World lands — `force: true` makes a missing file a no-op
+// instead of throwing, since "nothing to clear" is a normal outcome here.
+ipcMain.handle('fs:deleteFile', async (_event, filePath: string) => {
+  await fs.promises.rm(filePath, { force: true });
   return { ok: true };
 });
 

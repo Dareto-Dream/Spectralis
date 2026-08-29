@@ -4,22 +4,30 @@
 // NodeWorldStore's own documented gaps for this pass.
 import { nodeWorldStore } from '../state/nodeWorld.svelte';
 import type { SceneNode } from '../types/node';
-import { encodeWorldFile, decodeWorldFile, newWorldMeta } from '../format/worldFile';
+import { encodeWorldFile, decodeWorldFile, newWorldMeta, type WorldFile } from '../format/worldFile';
 import { buildNodeGraphHtml } from '../world-tab/buildNodeGraphHtml';
 import { downloadBytes, downloadText } from './downloadText';
 import { toast } from '../state/toast.svelte';
+import { worldAutosave } from '../state/autosave.svelte';
 
 function slug(name: string): string {
   return (name || 'world').toLowerCase().replace(/[^a-z0-9\-_]/gi, '-');
 }
 
-export async function saveWorldFile() {
-  const bytes = encodeWorldFile({
+// Shared with state/autosave.svelte.ts's world autosave — same reasoning as
+// projectSave.ts's buildCapsuleFile.
+export function buildWorldFile(): WorldFile {
+  return {
     meta: newWorldMeta({ name: nodeWorldStore.meta.name, author: nodeWorldStore.meta.author }),
     tracks: [],
     layout: [],
     nodeGraph: $state.snapshot(nodeWorldStore.roots),
-  });
+    passthrough: [],
+  };
+}
+
+export async function saveWorldFile() {
+  const bytes = encodeWorldFile(buildWorldFile());
   const name = slug(nodeWorldStore.meta.name);
   if (window.native) {
     const root = await window.native.getStudioRoot();
@@ -32,6 +40,7 @@ export async function saveWorldFile() {
   } else {
     downloadBytes(`${name}.spectral`, bytes);
   }
+  void worldAutosave.clear();
   toast.push('success', 'World saved');
 }
 

@@ -13,12 +13,14 @@ import type { AudioState } from '../state/audio.svelte';
 import type { AssetsState } from '../state/assets.svelte';
 import { downloadBytes } from './downloadText';
 import { toast } from '../state/toast.svelte';
-import { autosave } from '../state/autosave.svelte';
-import { encodeCapsuleFile, newCapsuleMeta } from '../format/capsuleFile';
+import { capsuleAutosave } from '../state/autosave.svelte';
+import { encodeCapsuleFile, newCapsuleMeta, type CapsuleFile } from '../format/capsuleFile';
 
-export async function saveProjectFile(store: ProjectStore, audio: AudioState, assets: AssetsState) {
-  const slug = store.project.meta.slug || 'project';
-  const bytes = encodeCapsuleFile({
+// Shared with state/autosave.svelte.ts's capsule autosave — one place builds
+// "what a CapsuleFile looks like right now" so the manual Save path and the
+// autosave safety net can never drift into two different shapes.
+export function buildCapsuleFile(store: ProjectStore, audio: AudioState, assets: AssetsState): CapsuleFile {
+  return {
     meta: newCapsuleMeta({
       title: store.project.meta.title,
       artist: store.project.meta.artist,
@@ -29,7 +31,13 @@ export async function saveProjectFile(store: ProjectStore, audio: AudioState, as
       cover: assets.coverImage?.path ?? '',
     },
     project: store.project,
-  });
+    passthrough: [],
+  };
+}
+
+export async function saveProjectFile(store: ProjectStore, audio: AudioState, assets: AssetsState) {
+  const slug = store.project.meta.slug || 'project';
+  const bytes = encodeCapsuleFile(buildCapsuleFile(store, audio, assets));
 
   if (window.native) {
     const root = await window.native.getStudioRoot();
@@ -44,6 +52,6 @@ export async function saveProjectFile(store: ProjectStore, audio: AudioState, as
   } else {
     downloadBytes(`${slug}.spectralis`, bytes);
   }
-  autosave.clear();
+  void capsuleAutosave.clear();
   toast.push('success', 'Project saved');
 }

@@ -15,7 +15,11 @@
   import ScriptEditorModal from './panels/ScriptEditorModal.svelte';
   import AutosaveBanner from './panels/AutosaveBanner.svelte';
   import { createGlobalKeymap } from './lib/keymap';
-  import { autosave } from './state/autosave.svelte';
+  import { capsuleAutosave, worldAutosave } from './state/autosave.svelte';
+  import { buildCapsuleFile } from './lib/projectSave';
+  import { buildWorldFile } from './lib/worldSave';
+  import { nodeWorldStore } from './state/nodeWorld.svelte';
+  import { appMode } from './state/appMode.svelte';
   import { themeSettings } from './state/theme.svelte';
   import { uiState } from './state/uiState.svelte';
 
@@ -31,15 +35,23 @@
 
   const onKeyDown = createGlobalKeymap(store, audio, assets, () => (uiState.helpOpen = true));
 
-  // Debounce-write to localStorage on every committed edit — see AutosaveManager
-  // for why this is a safety net, not a replacement for Save Project.
+  // Debounce-write to Autosaves/*.spectralis on every committed edit — see
+  // AutosaveManager for why this is a safety net, not a replacement for Save
+  // Project. Same pattern for World, gated on mode so switching to World
+  // doesn't start writing world-autosave.spectral for an untouched graph.
   $effect(() => {
     void store.history.undoStack.length; // reactive dependency: fires on every commit
-    autosave.scheduleSave($state.snapshot(store.project));
+    capsuleAutosave.scheduleSave(buildCapsuleFile(store, audio, assets));
+  });
+  $effect(() => {
+    void nodeWorldStore.revision; // reactive dependency: fires on every mutation
+    if (appMode.mode === 'world') worldAutosave.scheduleSave(buildWorldFile());
   });
 
   function onBeforeUnload(e: BeforeUnloadEvent) {
-    if (store.history.hasUncommittedSinceLoad && autosave.isStale()) {
+    const capsuleDirty = store.history.hasUncommittedSinceLoad && capsuleAutosave.isStale();
+    const worldDirty = appMode.mode === 'world' && nodeWorldStore.revision > 0 && worldAutosave.isStale();
+    if (capsuleDirty || worldDirty) {
       e.preventDefault();
       e.returnValue = '';
     }
