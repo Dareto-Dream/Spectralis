@@ -13,6 +13,7 @@
   import SettingsModal from './panels/SettingsModal.svelte';
   import AboutModal from './panels/AboutModal.svelte';
   import ScriptEditorModal from './panels/ScriptEditorModal.svelte';
+  import LyricsImporter from './panels/LyricsImporter.svelte';
   import AutosaveBanner from './panels/AutosaveBanner.svelte';
   import { createGlobalKeymap } from './lib/keymap';
   import { capsuleAutosave, worldAutosave } from './state/autosave.svelte';
@@ -76,6 +77,7 @@
 <SettingsModal open={uiState.settingsOpen} onClose={() => (uiState.settingsOpen = false)} />
 <AboutModal open={uiState.aboutOpen} onClose={() => (uiState.aboutOpen = false)} />
 <ScriptEditorModal />
+<LyricsImporter {store} />
 
 <style>
   .app {
