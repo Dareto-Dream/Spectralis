@@ -38,7 +38,7 @@ export function rasterizeLayer(store: ProjectStore, layerId: string): void {
     locked: layer.locked,
     tracks: emptyTracks(),
     statics: { x: 135, y: 240, scale: 1, rotation: 0, opacity: 1, hueA: 0, hueB: 0 },
-    params: { dataUrl, sourceAssetId: null, w: W, h: H },
+    params: { dataUrl, sourceAssetId: null },
     visibleTrack: layer.visibleTrack,
     groupId: layer.groupId,
   };

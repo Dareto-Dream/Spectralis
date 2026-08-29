@@ -14,7 +14,12 @@ export interface LayerTransform {
   y: number;
   rotation: number;
   scale: number;
-  worldScale: number; // scale * (minSide/380) — what shape-local units actually get multiplied by
+  // What local-space units actually get multiplied by. Vector shapes use
+  // scale*(minSide/380) — normalized so a circle stays circular regardless
+  // of aspect. Bitmap layers use plain `scale` instead: their local space is
+  // already real canvas pixels (see layerLocalBounds), and a full-bleed
+  // image is SUPPOSED to stretch to the actual aspect, not stay "circular".
+  worldScale: number;
 }
 
 export function resolveLayerTransform(layer: AnyLayer, t: number, W: number, H: number): LayerTransform {
@@ -23,7 +28,8 @@ export function resolveLayerTransform(layer: AnyLayer, t: number, W: number, H: 
   const rotation = evalTrack(layer.tracks.rotation, t, layer.statics.rotation);
   const scale = evalTrack(layer.tracks.scale, t, layer.statics.scale);
   const minSide = Math.min(W, H);
-  return { x, y, rotation, scale, worldScale: scale * (minSide / 380) };
+  const worldScale = layer.type === 'bitmap' ? scale : scale * (minSide / 380);
+  return { x, y, rotation, scale, worldScale };
 }
 
 export function screenToLayerLocal(px: number, py: number, tr: LayerTransform): { x: number; y: number } {
@@ -44,13 +50,15 @@ export function layerLocalToScreen(lx: number, ly: number, tr: LayerTransform): 
   return { x: tr.x + (sx * cos - sy * sin), y: tr.y + (sx * sin + sy * cos) };
 }
 
-// Local-space (top-left form) bounding box of a layer's own content — a
-// bitmap layer's authored box, or the union of every vector shape's bounds.
-// Used to draw the Workspace canvas's selection outline/handles, and to
-// hit-test "did this click land on this layer at all" for click-to-select.
-export function layerLocalBounds(layer: AnyLayer): { x: number; y: number; w: number; h: number } {
+// Local-space (top-left form) bounding box of a layer's own content — the
+// full canvas for a bitmap layer (it has no authored size of its own, see
+// types/project.ts's LayerParamsByType.bitmap doc), or the union of every
+// vector shape's bounds. Used to draw the Workspace canvas's selection
+// outline/handles, and to hit-test "did this click land on this layer at
+// all" for click-to-select.
+export function layerLocalBounds(layer: AnyLayer, canvasW: number, canvasH: number): { x: number; y: number; w: number; h: number } {
   if (layer.type === 'bitmap') {
-    return { x: -layer.params.w / 2, y: -layer.params.h / 2, w: layer.params.w, h: layer.params.h };
+    return { x: -canvasW / 2, y: -canvasH / 2, w: canvasW, h: canvasH };
   }
   const shapes = layer.params.shapes;
   if (!shapes.length) return { x: -20, y: -20, w: 40, h: 40 };

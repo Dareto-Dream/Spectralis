@@ -37,9 +37,9 @@ export const LAYER_TYPE_DEFS: { [K in LayerType]: LayerTypeDef<K> } = {
     type: 'bitmap',
     label: 'Image',
     defaultName: 'Image Layer',
-    defaultParams: () => ({ dataUrl: null, sourceAssetId: null, w: 200, h: 200 }),
+    defaultParams: () => ({ dataUrl: null, sourceAssetId: null }),
     paramFields: [],
-    hint: 'Drag an image from Assets onto this layer, or paint directly with the brush tool.',
+    hint: 'Fills the whole canvas — drag an image from Assets onto it, or paint directly with the brush tool.',
   },
 };
 

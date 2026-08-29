@@ -118,7 +118,7 @@ describe('capsuleFile.ts', () => {
   it('round-trips real bitmap/vector layer content, including an embedded image data URL, byte-for-byte', () => {
     const project = newProject();
     const bitmap = newLayer('bitmap');
-    bitmap.params = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', sourceAssetId: 'asset-1', w: 120, h: 80 };
+    bitmap.params = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', sourceAssetId: 'asset-1' };
     const vector = newLayer('vector');
     vector.params.shapes = [
       { id: 'shape-1', kind: 'ellipse', x: 0, y: 0, rx: 40, ry: 40, rotation: 0, fill: { kind: 'radial', stops: [{ offset: 0, color: '$hueA' }, { offset: 1, color: '$hueB' }] }, stroke: 'none', strokeWidth: 0, glow: { blur: 20, color: '$hueA' } },

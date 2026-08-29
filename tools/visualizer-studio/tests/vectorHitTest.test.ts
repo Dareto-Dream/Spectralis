@@ -41,19 +41,25 @@ describe('vectorHitTest.ts', () => {
     expect(back.y).toBeCloseTo(260, 5);
   });
 
-  it('layerLocalBounds for a vector layer unions every shape\'s bounds', () => {
+  it('layerLocalBounds for a vector layer unions every shape\'s bounds (canvas size is irrelevant to it)', () => {
     const layer = vectorLayer();
-    const b = layerLocalBounds(layer);
+    const b = layerLocalBounds(layer, 270, 480);
     expect(b).toEqual({ x: -10, y: -10, w: 20, h: 20 });
   });
 
-  it('layerLocalBounds for a bitmap layer uses its own w/h, centered', () => {
+  it('layerLocalBounds for a bitmap layer is the FULL canvas, centered — it has no authored size of its own', () => {
     const bitmap: AnyLayer = {
       ...vectorLayer(),
       type: 'bitmap',
-      params: { dataUrl: null, sourceAssetId: null, w: 100, h: 50 },
+      params: { dataUrl: null, sourceAssetId: null },
     };
-    expect(layerLocalBounds(bitmap)).toEqual({ x: -50, y: -25, w: 100, h: 50 });
+    expect(layerLocalBounds(bitmap, 270, 480)).toEqual({ x: -135, y: -240, w: 270, h: 480 });
+  });
+
+  it('resolveLayerTransform gives a bitmap layer plain-scale worldScale (not the minSide/380 shape normalization)', () => {
+    const bitmap: AnyLayer = { ...vectorLayer({ scale: 2 }), type: 'bitmap', params: { dataUrl: null, sourceAssetId: null } };
+    const tr = resolveLayerTransform(bitmap, 0, 270, 480);
+    expect(tr.worldScale).toBe(2);
   });
 
   it('pointInLocalBounds is inclusive of the edges', () => {

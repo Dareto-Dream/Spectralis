@@ -45,7 +45,7 @@
     const layer = selectedLayer();
     if (!layer) return;
     const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
-    const b = layerLocalBounds(layer);
+    const b = layerLocalBounds(layer, canvas.width, canvas.height);
     const corners = [
       layerLocalToScreen(b.x, b.y, tr),
       layerLocalToScreen(b.x + b.w, b.y, tr),
@@ -257,7 +257,7 @@
 
   function hitTestHandles(layer: AnyLayer, tr: LayerTransform, pt: { x: number; y: number }): DragMode {
     if (layer.locked) return null;
-    const b = layerLocalBounds(layer);
+    const b = layerLocalBounds(layer, canvas.width, canvas.height);
     const rotateHandle = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y - 24, tr);
     if (screenDist(pt.x, pt.y, rotateHandle.x, rotateHandle.y) < HANDLE_HIT_PX) return 'rotate';
     const corners = [
@@ -278,7 +278,7 @@
       if (layer.locked) continue;
       const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
       const local = screenToLayerLocal(pt.x, pt.y, tr);
-      const b = layerLocalBounds(layer);
+      const b = layerLocalBounds(layer, canvas.width, canvas.height);
       if (local.x >= b.x && local.x <= b.x + b.w && local.y >= b.y && local.y <= b.y + b.h) return layer;
     }
     return undefined;
@@ -298,7 +298,7 @@
         return;
       }
       const local = screenToLayerLocal(pt.x, pt.y, tr);
-      const b = layerLocalBounds(layer);
+      const b = layerLocalBounds(layer, canvas.width, canvas.height);
       if (!layer.locked && local.x >= b.x && local.x <= b.x + b.w && local.y >= b.y && local.y <= b.y + b.h) {
         dragMode = 'move';
         dragLayerId = layer.id;
@@ -582,18 +582,21 @@
       return;
     }
     brushLayerId = layer.id;
+    // Bitmap layers have no authored size — the offscreen paint buffer is
+    // exactly the (live Studio) canvas resolution, matching how render.js
+    // now draws bitmap layers full-bleed at W×H (see layerLocalBounds's doc).
     brushOffscreen = document.createElement('canvas');
-    brushOffscreen.width = layer.params.w;
-    brushOffscreen.height = layer.params.h;
+    brushOffscreen.width = canvas.width;
+    brushOffscreen.height = canvas.height;
     const bctx = brushOffscreen.getContext('2d')!;
     if (layer.params.dataUrl) {
       const img = new Image();
       img.src = layer.params.dataUrl;
-      if (img.complete) bctx.drawImage(img, 0, 0, layer.params.w, layer.params.h);
+      if (img.complete) bctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     }
     const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
     const local = screenToLayerLocal(pt.x, pt.y, tr);
-    const bx = local.x + layer.params.w / 2, by = local.y + layer.params.h / 2;
+    const bx = local.x + canvas.width / 2, by = local.y + canvas.height / 2;
     stampBrush(bctx, bx, by);
     brushLast = { x: bx, y: by };
   }
@@ -605,7 +608,7 @@
     const bctx = brushOffscreen.getContext('2d')!;
     const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
     const local = screenToLayerLocal(pt.x, pt.y, tr);
-    const bx = local.x + layer.params.w / 2, by = local.y + layer.params.h / 2;
+    const bx = local.x + canvas.width / 2, by = local.y + canvas.height / 2;
     const dist = screenDist(bx, by, brushLast.x, brushLast.y);
     const steps = Math.max(1, Math.floor(dist / (toolState.brushSize / 4)));
     for (let i = 1; i <= steps; i++) {
@@ -708,7 +711,6 @@
       <RotateCcw size={13} />
     </button>
   </div>
-  <div class="viewHint">Space+drag or middle-click to pan · Ctrl+scroll to zoom · Alt+Shift+drag to rotate</div>
 </div>
 
 <style>
@@ -779,17 +781,5 @@
     align-self: stretch;
     background: var(--line);
     margin: 0 2px;
-  }
-  .viewHint {
-    position: absolute;
-    right: 8px;
-    bottom: 8px;
-    font: 10px var(--mono);
-    color: var(--dim2);
-    background: var(--bg1);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 3px 6px;
-    pointer-events: none;
   }
 </style>

@@ -64,10 +64,15 @@ export function renderLayerAt(ctx, layer, t, W, H, nowMs, beatFlash) {
     drawVectorLayer(ctx, p.shapes, hueA, hueB, opacity, nowMs, beatFlash);
     ctx.restore();
   } else if (layer.type === 'bitmap') {
+    // Bitmap layers have no authored size — they're the full canvas at
+    // scale:1, stretched to the actual W×H (not the minSide/380-normalized
+    // worldScale vector shapes use to stay aspect-independent; a full-bleed
+    // image should stretch to match the real aspect, not stay "circular").
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
-    drawBitmapLayer(ctx, p.dataUrl, p.w * worldScale, p.h * worldScale, opacity);
+    ctx.scale(scale, scale);
+    drawBitmapLayer(ctx, p.dataUrl, W, H, opacity);
     ctx.restore();
   }
 }

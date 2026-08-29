@@ -153,7 +153,13 @@ export interface LayerParamsByType {
   // library is cleared. `sourceAssetId` is purely a soft link back to the
   // AssetLibrary entry it was dragged in from, for editor-side convenience
   // (e.g. "this came from Cover.png") — never required for rendering.
-  bitmap: { dataUrl: string | null; sourceAssetId: string | null; w: number; h: number };
+  //
+  // Deliberately no width/height here — a bitmap layer is never "a box you
+  // define the size of". It always spans the FULL capsule canvas at scale:1
+  // (like a normal image-editor layer), stretched to whatever the project's
+  // actual aspect is; the generic scale/rotation/position tracks every layer
+  // already has are how you resize/move/rotate it afterward, same as vector.
+  bitmap: { dataUrl: string | null; sourceAssetId: string | null };
 }
 
 export interface Layer<T extends LayerType = LayerType> {
