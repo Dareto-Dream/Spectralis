@@ -10,14 +10,20 @@
   import type { AudioState } from '../state/audio.svelte';
   import { drawPreviewFrame, initialFrameState, aspectSize } from './drawPreview';
   import { toolState } from '../state/toolState.svelte';
+  import { workspaceView } from '../state/workspaceView.svelte';
   import { resolveLayerTransform, screenToLayerLocal, layerLocalToScreen, layerLocalBounds, screenDist, newAnchor, type LayerTransform } from '../lib/vectorHitTest';
   import type { AnimKey, AnyLayer, VectorShape } from '../types/project';
   import { toast } from '../state/toast.svelte';
   import { assetDrop } from '../lib/dragAsset';
   import { addImageLayerFromAsset } from '../lib/imageLayer';
+  import { isTextInput } from '../lib/keymap';
+  import ZoomIn from '@lucide/svelte/icons/zoom-in';
+  import ZoomOut from '@lucide/svelte/icons/zoom-out';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 
   let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
 
+  let wrapEl: HTMLDivElement;
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
   let raf = 0;
@@ -114,7 +120,9 @@
   function tick(now: number) {
     raf = requestAnimationFrame(tick);
     const level = audio.loaded ? audio.currentLevel() : { peak: 0, rms: 0 };
-    drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState, store.soloedLayerIds);
+    drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState, store.soloedLayerIds, {
+      transparentBg: true,
+    });
     drawSelectionOverlay();
     drawPenOverlay();
   }
@@ -125,12 +133,105 @@
   });
   onDestroy(() => cancelAnimationFrame(raf));
 
-  // ---- pointer -> canvas-pixel coordinates ----
-  function toCanvasPoint(e: PointerEvent): { x: number; y: number } {
-    const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
-    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+  // ---- view transform (pan/zoom/rotate of the CANVAS ELEMENT itself, via
+  // CSS transform: translate(pan) rotate(rotation) scale(zoom) with
+  // transform-origin: center) <-> screen-pixel math. Kept in exact sync with
+  // the CSS in the template below — see workspaceView.svelte.ts's doc for why
+  // this is view state, not project state. ----
+  function wrapCenter(): { x: number; y: number } {
+    const r = wrapEl.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function toCanvasPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+    const c = wrapCenter();
+    const dx = e.clientX - c.x - workspaceView.panX;
+    const dy = e.clientY - c.y - workspaceView.panY;
+    const cos = Math.cos(-workspaceView.rotation);
+    const sin = Math.sin(-workspaceView.rotation);
+    const rx = (dx * cos - dy * sin) / workspaceView.zoom;
+    const ry = (dx * sin + dy * cos) / workspaceView.zoom;
+    return { x: rx + canvas.width / 2, y: ry + canvas.height / 2 };
+  }
+
+  // ---- pan (Space+drag or middle-mouse-drag) / rotate (Alt+Shift+drag) ----
+  let spaceHeld = $state(false);
+  let panDragging = $state(false);
+  let rotateDragging = $state(false);
+  let panStartClient = { x: 0, y: 0 };
+  let panStartView = { x: 0, y: 0 };
+  let rotateStartAngle = 0;
+  let rotateStartView = 0;
+
+  function onWrapWheel(e: WheelEvent) {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      // Zoom, pinned to the point currently under the cursor.
+      const before = toCanvasPoint(e);
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const newZoom = Math.min(8, Math.max(0.1, workspaceView.zoom * (dir > 0 ? 1.1 : 1 / 1.1)));
+      const c = wrapCenter();
+      const relX = (before.x - canvas.width / 2) * newZoom;
+      const relY = (before.y - canvas.height / 2) * newZoom;
+      const cos = Math.cos(workspaceView.rotation);
+      const sin = Math.sin(workspaceView.rotation);
+      workspaceView.panX = e.clientX - c.x - (relX * cos - relY * sin);
+      workspaceView.panY = e.clientY - c.y - (relX * sin + relY * cos);
+      workspaceView.zoom = newZoom;
+    } else {
+      // Plain scroll pans, matching the standard "scroll the canvas" feel.
+      workspaceView.panX -= e.deltaX;
+      workspaceView.panY -= e.deltaY;
+    }
+  }
+
+  function onWrapPointerDown(e: PointerEvent) {
+    if (e.button === 1 || (e.button === 0 && spaceHeld)) {
+      panDragging = true;
+      panStartClient = { x: e.clientX, y: e.clientY };
+      panStartView = { x: workspaceView.panX, y: workspaceView.panY };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if (e.button === 0 && e.altKey && e.shiftKey) {
+      rotateDragging = true;
+      const c = wrapCenter();
+      rotateStartAngle = Math.atan2(e.clientY - c.y, e.clientX - c.x);
+      rotateStartView = workspaceView.rotation;
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    onPointerDown(e);
+  }
+
+  function onWrapPointerMove(e: PointerEvent) {
+    if (panDragging) {
+      workspaceView.panX = panStartView.x + (e.clientX - panStartClient.x);
+      workspaceView.panY = panStartView.y + (e.clientY - panStartClient.y);
+      return;
+    }
+    if (rotateDragging) {
+      const c = wrapCenter();
+      const a = Math.atan2(e.clientY - c.y, e.clientX - c.x);
+      workspaceView.rotation = rotateStartView + (a - rotateStartAngle);
+      return;
+    }
+    onPointerMove(e);
+  }
+
+  function onWrapPointerUp(e: PointerEvent) {
+    if (panDragging || rotateDragging) {
+      panDragging = false;
+      rotateDragging = false;
+      return;
+    }
+    onPointerUp();
+  }
+
+  function onWindowKeyup(e: KeyboardEvent) {
+    if (e.code === 'Space') spaceHeld = false;
   }
 
   // ---- select/transform drag state ----
@@ -434,6 +535,10 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.code === 'Space' && !isTextInput(e.target) && !spaceHeld) {
+      spaceHeld = true;
+      e.preventDefault(); // don't let Space also scroll the dockview panel
+    }
     if (toolState.active !== 'pen') return;
     if (e.key === 'Escape') {
       toolState.editingShapeId = null;
@@ -567,10 +672,23 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onkeyup={onWindowKeyup} />
 
+<!-- A canvas-editor surface, not a semantic widget any ARIA role fits well —
+     same pattern already used for the scrim/canvas-like interactive divs
+     elsewhere in this app (ScriptEditorModal, LyricsImporter). -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="workspaceCanvasWrap"
+  class:spacePan={spaceHeld && !panDragging}
+  class:panning={panDragging}
+  class:rotating={rotateDragging}
+  bind:this={wrapEl}
+  onwheel={onWrapWheel}
+  onpointerdown={onWrapPointerDown}
+  onpointermove={onWrapPointerMove}
+  onpointerup={onWrapPointerUp}
+  onpointerleave={onWrapPointerUp}
   use:assetDrop={{
     accept: (e) => e.kind === 'image' || e.kind === 'svg',
     onAsset: (e) => addImageLayerFromAsset(store, e),
@@ -578,18 +696,42 @@
 >
   <canvas
     bind:this={canvas}
-    onpointerdown={onPointerDown}
-    onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointerleave={onPointerUp}
+    style="transform: translate({workspaceView.panX}px, {workspaceView.panY}px) rotate({workspaceView.rotation}rad) scale({workspaceView.zoom});"
   ></canvas>
+
+  <div class="viewControls">
+    <button class="small ghost" title="Zoom out" aria-label="Zoom out" onclick={() => workspaceView.zoomStep(-1)}><ZoomOut size={13} /></button>
+    <span class="zoomLabel">{Math.round(workspaceView.zoom * 100)}%</span>
+    <button class="small ghost" title="Zoom in" aria-label="Zoom in" onclick={() => workspaceView.zoomStep(1)}><ZoomIn size={13} /></button>
+    <span class="sep"></span>
+    <button class="small ghost" title="Reset view (100%, centered, unrotated)" aria-label="Reset view" onclick={() => workspaceView.reset()}>
+      <RotateCcw size={13} />
+    </button>
+  </div>
+  <div class="viewHint">Space+drag or middle-click to pan · Ctrl+scroll to zoom · Alt+Shift+drag to rotate</div>
 </div>
 
 <style>
   .workspaceCanvasWrap {
     position: relative;
-    display: inline-block;
-    background: #000;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+  }
+  .workspaceCanvasWrap.spacePan,
+  .workspaceCanvasWrap.panning {
+    cursor: grab;
+  }
+  .workspaceCanvasWrap.panning {
+    cursor: grabbing;
+  }
+  .workspaceCanvasWrap.rotating {
+    cursor: alias;
   }
   .workspaceCanvasWrap:global(.dragOver) {
     outline: 2px dashed var(--accent);
@@ -597,6 +739,57 @@
   }
   canvas {
     display: block;
-    touch-action: none;
+    flex-shrink: 0;
+    transform-origin: center center;
+    /* The transparent-PNG-style checkerboard — anything the composited
+       render leaves transparent (drawPreviewFrame's transparentBg option)
+       shows this through instead of the real export's opaque black, and the
+       shadow gives the canvas bounds a crisp, unambiguous edge against the
+       white pasteboard around it. */
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #ccc 25%, transparent 25%),
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 4px 24px rgba(0, 0, 0, 0.18);
+  }
+  .viewControls {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    background: var(--bg1);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .zoomLabel {
+    font: 10px var(--mono);
+    color: var(--dim);
+    width: 34px;
+    text-align: center;
+  }
+  .viewControls .sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--line);
+    margin: 0 2px;
+  }
+  .viewHint {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    font: 10px var(--mono);
+    color: var(--dim2);
+    background: var(--bg1);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 6px;
+    pointer-events: none;
   }
 </style>

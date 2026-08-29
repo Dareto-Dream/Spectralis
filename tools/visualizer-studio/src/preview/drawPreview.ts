@@ -22,10 +22,20 @@ export function drawPreviewFrame(
   nowMs: number,
   level: { peak: number; rms: number },
   frameState: PreviewFrameState,
-  soloedLayerIds?: ReadonlySet<string>
+  soloedLayerIds?: ReadonlySet<string>,
+  // Workspace canvas only (preview/WorkspaceCanvas.svelte) — leaves untouched
+  // pixels transparent instead of opaque black, so a CSS checkerboard behind
+  // the canvas shows through wherever nothing's actually drawn. The read-only
+  // Preview viewport and export both keep the real opaque-black capsule look
+  // (this defaults to false, i.e. their existing behavior, unchanged).
+  opts?: { transparentBg?: boolean }
 ): void {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
+  if (opts?.transparentBg) {
+    ctx.clearRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+  }
   drawSectionWash(ctx, W, H, sectionAt(project.sections, playhead));
 
   const pkD = level.peak - frameState.lastPeakSmooth;

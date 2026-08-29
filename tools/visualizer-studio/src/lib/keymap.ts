@@ -41,7 +41,10 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { keys: '?', description: 'Show this help', category: 'General' },
 ];
 
-function isTextInput(el: EventTarget | null): boolean {
+// Exported for anything else outside the global keymap that needs to skip
+// text-input focus the same way (e.g. WorkspaceCanvas's Space-to-pan, which
+// would otherwise eat literal spacebar keystrokes typed into a field).
+export function isTextInput(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   const tag = el.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
