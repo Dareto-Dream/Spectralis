@@ -13,7 +13,7 @@ import {
 } from '../src/format/riff';
 import { decodeCapsuleFile, encodeCapsuleFile, newCapsuleMeta } from '../src/format/capsuleFile';
 import { decodeWorldFile, encodeWorldFile, newWorldMeta } from '../src/format/worldFile';
-import { newProject } from '../src/state/factories';
+import { newProject, newLayer } from '../src/state/factories';
 
 describe('riff.ts', () => {
   it('writeChunk/readChunks round-trips a single chunk byte-for-byte', () => {
@@ -113,6 +113,24 @@ describe('capsuleFile.ts', () => {
   it('rejects a .spectral (World) file with a clear error instead of a generic parse failure', () => {
     const worldBytes = encodeWorldFile({ meta: newWorldMeta(), tracks: [], layout: [] });
     expect(() => decodeCapsuleFile(worldBytes)).toThrow(/World/);
+  });
+
+  it('round-trips real bitmap/vector layer content, including an embedded image data URL, byte-for-byte', () => {
+    const project = newProject();
+    const bitmap = newLayer('bitmap');
+    bitmap.params = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', sourceAssetId: 'asset-1', w: 120, h: 80 };
+    const vector = newLayer('vector');
+    vector.params.shapes = [
+      { id: 'shape-1', kind: 'ellipse', x: 0, y: 0, rx: 40, ry: 40, rotation: 0, fill: { kind: 'radial', stops: [{ offset: 0, color: '$hueA' }, { offset: 1, color: '$hueB' }] }, stroke: 'none', strokeWidth: 0, glow: { blur: 20, color: '$hueA' } },
+    ];
+    project.layers.push(bitmap, vector);
+
+    const bytes = encodeCapsuleFile({ meta: newCapsuleMeta(), paths: { audio: '', cover: '' }, project });
+    const decoded = decodeCapsuleFile(bytes);
+    expect(decoded.project.layers).toHaveLength(2);
+    expect(decoded.project).toEqual(project);
+    const decodedBitmap = decoded.project.layers.find((l) => l.type === 'bitmap');
+    expect(decodedBitmap?.type === 'bitmap' && decodedBitmap.params.dataUrl).toBe(bitmap.params.dataUrl);
   });
 });
 
