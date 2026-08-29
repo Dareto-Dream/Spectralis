@@ -16,7 +16,10 @@ function resolveColor(c, hueA, hueB) {
   return c;
 }
 
-function boundsOf(shape) {
+// Exported (not just an internal draw-time helper) — the Workspace canvas's
+// selection bounding box (lib/vectorHitTest.ts) reuses this exact geometry so
+// the drawn selection outline always matches what actually gets painted.
+export function boundsOf(shape) {
   switch (shape.kind) {
     case 'rect':
       return { cx: shape.x + shape.w / 2, cy: shape.y + shape.h / 2, w: shape.w, h: shape.h };

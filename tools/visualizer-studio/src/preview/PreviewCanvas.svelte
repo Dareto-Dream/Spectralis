@@ -6,20 +6,16 @@
   import { fmtTime } from '../lib/fmtTime';
   import { sectionAt } from '../core/render.js';
 
-  // `readonly` is currently a no-op — this canvas has never had pointer
-  // handlers for editing (layer position is edited via the Inspector's
-  // scrubbable x/y fields, not canvas dragging), so there's nothing to
-  // disable yet. It exists so a future interactive-editing pass on this
-  // canvas has an explicit switch to gate itself on, instead of needing to
-  // thread a new prop through every mount site (Capsule's workspace viewport
-  // vs. Capsule/World's dedicated read-only Preview viewport) at that point.
-  let { store, audio, readonly = false }: { store: ProjectStore; audio: AudioState; readonly?: boolean } = $props();
+  // The forward-looking `readonly` prop this component used to carry is gone
+  // — WorkspaceCanvas.svelte is the genuinely editable canvas now, and this
+  // one was never given pointer handlers in the first place, so it was
+  // always read-only in practice. Nothing ever passed `readonly` either way.
+  let { store, audio }: { store: ProjectStore; audio: AudioState } = $props();
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
   let raf = 0;
   const frameState = initialFrameState();
-  let lastFrameTime = 0;
 
   $effect(() => {
     const { w, h } = aspectSize(store.project.meta.aspect);
@@ -27,43 +23,12 @@
     if (canvas.height !== h) canvas.height = h;
   });
 
-  // Keeps the real <audio> element's transport in lockstep with the store's
-  // `playing` flag — the RAF loop below only ever READS audio.el.currentTime.
-  $effect(() => {
-    if (!audio.loaded) return;
-    if (store.playing) {
-      audio.el.play().catch(() => {
-        store.playing = false;
-      });
-    } else {
-      audio.el.pause();
-    }
-  });
-
+  // Playhead advancement + <audio> play/pause sync now live in
+  // TransportDriver.svelte (mounted once in App.svelte) — this is a pure
+  // renderer, so it stays correct whether it's the only canvas mounted or
+  // sitting alongside WorkspaceCanvas without double-driving transport.
   function tick(now: number) {
     raf = requestAnimationFrame(tick);
-    if (!lastFrameTime) lastFrameTime = now;
-    const dt = (now - lastFrameTime) / 1000;
-    lastFrameTime = now;
-
-    if (store.playing) {
-      if (audio.loaded) {
-        store.playhead = audio.el.currentTime;
-      } else {
-        store.seekTo(store.playhead + dt);
-      }
-
-      const loop = store.loopEnabled ? store.loopRegion : null;
-      if (loop && store.playhead >= loop.end) {
-        store.playhead = loop.start;
-        if (audio.loaded) audio.el.currentTime = loop.start;
-      } else if (store.playhead >= store.project.meta.songEnd) {
-        store.stop();
-        audio.el.pause();
-        audio.el.currentTime = 0;
-      }
-    }
-
     const level = audio.loaded ? audio.currentLevel() : { peak: 0, rms: 0 };
     drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState, store.soloedLayerIds);
   }

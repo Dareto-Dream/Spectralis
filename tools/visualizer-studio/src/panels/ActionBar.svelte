@@ -50,7 +50,7 @@
       dockManager.maximize('preview');
     } else {
       dockManager.exitMaximized();
-      dockManager.focusOrOpen(v === 'story' ? 'story' : 'timeline');
+      dockManager.focusOrOpen(v === 'story' ? 'story' : 'workspace');
     }
   }
 

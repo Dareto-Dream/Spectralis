@@ -14,6 +14,7 @@
   import AboutModal from './panels/AboutModal.svelte';
   import ScriptEditorModal from './panels/ScriptEditorModal.svelte';
   import LyricsImporter from './panels/LyricsImporter.svelte';
+  import TransportDriver from './preview/TransportDriver.svelte';
   import AutosaveBanner from './panels/AutosaveBanner.svelte';
   import { createGlobalKeymap } from './lib/keymap';
   import { capsuleAutosave, worldAutosave } from './state/autosave.svelte';
@@ -61,6 +62,7 @@
 
 <svelte:window onkeydown={onKeyDown} onbeforeunload={onBeforeUnload} />
 
+<TransportDriver {store} {audio} />
 <div class="app">
   <AutosaveBanner {store} />
   <MenuBar {store} {audio} {assets} />

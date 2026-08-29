@@ -338,6 +338,17 @@ export class ProjectStore {
     this.commit();
   }
 
+  // Continuous drag counterpart to moveKeyframeTime, for the same keyframe's
+  // VALUE instead of its time — backs the Workspace canvas's transform tool
+  // dragging a property that's already keyframed (PropRow's "+Key" button is
+  // the same idea: seed/find the keyframe at the playhead, then this updates
+  // it live). Caller commits once on pointerup via `commit()`.
+  setKeyframeValue(id: string, v: number) {
+    const ref = this.selection.keyframeIndex.get(id);
+    if (!ref) return;
+    ref.layer.tracks[ref.trackKey][ref.index].v = v;
+  }
+
   // Continuous drag — caller commits once on pointerup via `commit()`.
   moveKeyframeTime(id: string, t: number) {
     const ref = this.selection.keyframeIndex.get(id);

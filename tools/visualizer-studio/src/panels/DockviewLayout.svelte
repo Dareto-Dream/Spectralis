@@ -10,6 +10,8 @@
   import PreviewCanvas from '../preview/PreviewCanvas.svelte';
   import TimelinePanelContent from './TimelinePanelContent.svelte';
   import AssetsPanel from './AssetsPanel.svelte';
+  import WorkspaceCanvas from '../preview/WorkspaceCanvas.svelte';
+  import ToolsPanel from './ToolsPanel.svelte';
   import WorldPanel from '../world-tab/WorldPanel.svelte';
   import NodeCanvas from '../world-tab/NodeCanvas.svelte';
   import NodeInspector from '../world-tab/NodeInspector.svelte';
@@ -37,27 +39,38 @@
   interface ModeConfig {
     layoutKey: string;
     defaultOpen: DockPanelId[];
-    positionChain: Partial<Record<DockPanelId, { direction: 'right' | 'below' | 'within'; candidates: DockPanelId[] }>>;
+    // dockview-core's real Direction also includes 'left'/'above' — this app
+    // only ever used 'right'/'below'/'within' until the Tools docker needed
+    // a left-side default position, so the local type just tracked what was
+    // in use rather than the library's full set.
+    positionChain: Partial<Record<DockPanelId, { direction: 'left' | 'right' | 'below' | 'within'; candidates: DockPanelId[] }>>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     components: Partial<Record<DockPanelId, Component<any>>>;
   }
 
-  // Bumped to v4 under the old single-dockview scheme; now split per-mode —
-  // a stale v4 save (from before the mode split) is simply never read again
-  // under these new keys, so there's no migration to write for it.
+  // v2: the Workspace canvas + left Tools docker replace `preview` as the
+  // default centerpiece — `preview` (still PreviewCanvas, still pointer-
+  // handler-free) is now opened on demand by ActionBar's Preview viewport
+  // button instead of being part of the normal layout, so drawing/point
+  // editing never happens on the read-only viewport. A stale v1 save is
+  // simply never read again under this new key, same as the v1 bump note.
   const CAPSULE_CONFIG: ModeConfig = {
-    layoutKey: 'visualizer-studio:layout:capsule:v1',
-    defaultOpen: ['preview', 'timeline', 'inspector', 'layers', 'assets'],
+    layoutKey: 'visualizer-studio:layout:capsule:v2',
+    defaultOpen: ['tools', 'workspace', 'layers', 'timeline', 'inspector', 'assets'],
     positionChain: {
-      timeline: { direction: 'below', candidates: ['preview', 'inspector', 'layers', 'assets'] },
-      inspector: { direction: 'right', candidates: ['preview', 'timeline', 'layers'] },
-      layers: { direction: 'below', candidates: ['inspector', 'preview', 'timeline'] },
-      assets: { direction: 'within', candidates: ['timeline', 'preview', 'inspector', 'layers'] },
-      story: { direction: 'within', candidates: ['preview', 'timeline'] },
-      svgmaker: { direction: 'within', candidates: ['preview', 'story'] },
-      script: { direction: 'within', candidates: ['assets', 'timeline', 'preview'] },
+      workspace: { direction: 'right', candidates: ['tools'] },
+      timeline: { direction: 'below', candidates: ['workspace', 'inspector', 'layers', 'assets'] },
+      inspector: { direction: 'right', candidates: ['workspace', 'timeline', 'layers'] },
+      layers: { direction: 'below', candidates: ['inspector', 'workspace', 'timeline'] },
+      assets: { direction: 'within', candidates: ['timeline', 'workspace', 'inspector', 'layers'] },
+      preview: { direction: 'within', candidates: ['workspace'] },
+      story: { direction: 'within', candidates: ['workspace', 'timeline'] },
+      svgmaker: { direction: 'within', candidates: ['workspace', 'story'] },
+      script: { direction: 'within', candidates: ['assets', 'timeline', 'workspace'] },
     },
     components: {
+      tools: ToolsPanel,
+      workspace: WorkspaceCanvas,
       layers: LayersPanel,
       preview: PreviewCanvas,
       inspector: InspectorPanel,
@@ -111,6 +124,7 @@
     dv.addPanel({ id, component: id, title: DOCK_PANEL_TITLES[id], position: positionFor(config, id) });
     if (id === 'timeline') dv.api.getPanel('timeline')?.api.setSize({ height: 260 });
     if (id === 'inspector' || id === 'layers') dv.api.getPanel(id)?.api.setSize({ width: 280 });
+    if (id === 'tools') dv.api.getPanel('tools')?.api.setSize({ width: 160 });
   }
 
   function addDefaultPanels(config: ModeConfig) {

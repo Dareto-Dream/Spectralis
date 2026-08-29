@@ -5,6 +5,8 @@
 // through App.svelte/MenuBar.svelte — same pattern as toast/confirmModal.
 export type DockPanelId =
   | 'preview'
+  | 'workspace'
+  | 'tools'
   | 'timeline'
   | 'inspector'
   | 'layers'
@@ -19,6 +21,8 @@ export type DockPanelId =
 
 export const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
   preview: 'Preview',
+  workspace: 'Workspace',
+  tools: 'Tools',
   timeline: 'Timeline',
   inspector: 'Inspector',
   layers: 'Layers',

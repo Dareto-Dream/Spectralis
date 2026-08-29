@@ -67,7 +67,7 @@
   // Dockers list is scoped to whichever mode's dockview is actually live
   // (DockviewLayout.svelte builds a different panel set per mode) — checking
   // a panel that belongs to the other mode would just add a dead, blank tab.
-  const CAPSULE_DOCKERS: DockPanelId[] = ['preview', 'timeline', 'inspector', 'layers', 'assets', 'story', 'script', 'svgmaker'];
+  const CAPSULE_DOCKERS: DockPanelId[] = ['tools', 'workspace', 'preview', 'timeline', 'inspector', 'layers', 'assets', 'story', 'script', 'svgmaker'];
   const WORLD_DOCKERS: DockPanelId[] = ['nodeGraph', 'nodeInspector', 'spriteEditor', 'preview', 'world'];
   const dockers = $derived(appMode.mode === 'world' ? WORLD_DOCKERS : CAPSULE_DOCKERS);
 
