@@ -17,7 +17,13 @@ export interface ManifestOptions {
 
 export function buildManifestJson(project: Project, opts: ManifestOptions): string {
   const slug = project.meta.slug;
-  const hasLyrics = project.layers.some((l) => l.type === 'lyrics');
+  // No dedicated `lyrics` layer kind anymore — lyrics content is plain
+  // keyframed vector layers, tagged with a "Lyrics" LayerGroup by the
+  // importer (lib/lyricsImport.ts) and by v3 migration for old saves. That
+  // group's presence is what tells the host app "this capsule already draws
+  // its own lyric text, suppress your built-in overlay" — there's no longer
+  // a separate .lrc data asset to bundle alongside it (it's just layers).
+  const hasLyrics = (project.layerGroups ?? []).some((g) => g.name === 'Lyrics');
   const reactiveEventCount = buildReactiveEvents(project).length;
 
   const images = opts.coverExtension ? [`assets/images/${slug}_cover.${opts.coverExtension}`] : [];
@@ -41,7 +47,7 @@ export function buildManifestJson(project: Project, opts: ManifestOptions): stri
         sha256: opts.audioSha256 ?? 'PENDING-LOAD-AUDIO-TO-COMPUTE',
         durationSeconds: project.meta.songEnd,
       },
-      assets: { images, fonts: [], videos: [], data: hasLyrics ? [`assets/data/${slug}.lrc`] : [] },
+      assets: { images, fonts: [], videos: [], data: [] },
       visualizers: [
         {
           id: `${slug}_studio`,
@@ -49,7 +55,7 @@ export function buildManifestJson(project: Project, opts: ManifestOptions): stri
           runtime: 'html',
           moduleEntry: `assets/data/${slug}_module.json`,
           binaryEntry: `assets/html/${slug}_visualizer.html`,
-          dataAssets: hasLyrics ? { lyrics: `assets/data/${slug}.lrc` } : {},
+          dataAssets: {},
           binaryAssets,
         },
       ],

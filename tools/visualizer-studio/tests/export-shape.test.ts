@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { buildVisualizerHtml } from '../src/export/buildVisualizerHtml';
+import { migrateProject } from '../src/lib/migrate';
 import { evalTrack } from '../src/core/ease';
-import type { Project } from '../src/types/project';
 import fixture from './fixtures/fixture-project.json';
 
-const project = fixture as unknown as Project;
+// fixture-project.json is deliberately still v2, raw `orb`/`wheel`-kind JSON
+// (matching the old tool's Neon Edit template) — routing it through
+// migrateProject here exercises the real v3 upgrade path (see
+// tests/state.test.ts's dedicated migration tests for narrower assertions on
+// that) while also giving buildVisualizerHtml valid current-schema layers.
+// Migration only ever touches `type`/`params` (see migrate.ts's doc), so
+// every assertion below that reads tracks/statics/sections is unaffected.
+const project = migrateProject(fixture);
 
 describe('buildVisualizerHtml — structure', () => {
   const html = buildVisualizerHtml(project);
@@ -22,19 +29,18 @@ describe('buildVisualizerHtml — structure', () => {
     // spot-check one function from each core module actually made it in
     expect(html).toContain('function lerp(');
     expect(html).toContain('function evalTrack(');
-    expect(html).toContain('function drawWheelShape(');
+    expect(html).toContain('function drawVectorLayer(');
     expect(html).toContain('function renderLayerAt(');
     expect(html).toContain('function sectionAt(');
   });
 
-  it('omits the LRC parser entirely when the project has no lyrics layer', () => {
+  it('never inlines the LRC parser — lyrics timing is baked into plain keyframes at import time now, not parsed live', () => {
     expect(html).not.toContain('function parseLRC(');
     expect(html).not.toContain('function flattenWords(');
-    expect(html).toContain('function getLyricWords(layer) { return []; }');
   });
 
   it('embeds the project with keyframe ids stripped', () => {
-    const match = html.match(/var PROJECT=(\{.*?\});\n\nfunction getLyricWords/s);
+    const match = html.match(/var PROJECT=(\{.*?\});\n\nvar canvas = /s);
     expect(match).toBeTruthy();
     const embedded = JSON.parse(match![1]);
     expect(embedded.layers).toHaveLength(3);
@@ -49,34 +55,6 @@ describe('buildVisualizerHtml — structure', () => {
     expect(html).toContain('window.spectral.onPlaybackFrame');
     expect(html).toContain("window.location.protocol === 'file:'");
     expect(html).toContain('requestAnimationFrame(rafLoop)');
-  });
-});
-
-describe('buildVisualizerHtml — with a lyrics layer', () => {
-  const withLyrics: Project = structuredClone(project);
-  withLyrics.layers.push({
-    id: 'layer_lyrics',
-    name: 'Lyrics',
-    type: 'lyrics',
-    visible: true,
-    statics: { x: 135, y: 220, scale: 1, rotation: 0, opacity: 1, hueA: 220, hueB: 260 },
-    tracks: { x: [], y: [], scale: [], rotation: [], opacity: [], hueA: [], hueB: [] },
-    params: {
-      placement: 'ANCHORED',
-      fontSize: 64,
-      tracking: 2,
-      keyWords: '',
-      suppressOnNoLyricsSections: true,
-      words: [],
-    },
-  });
-  const html = buildVisualizerHtml(withLyrics);
-
-  it('includes the LRC parser and the host-substitution fallback to params.words', () => {
-    expect(html).toContain('function parseLRC(');
-    expect(html).toContain('function flattenWords(');
-    expect(html).toContain('delta-data-json:untitled_lrc');
-    expect(html).toContain('return layer.params.words || [];');
   });
 });
 

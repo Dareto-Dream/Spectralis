@@ -2,7 +2,6 @@ import mathSrc from '../core/math.js?raw';
 import hashSrc from '../core/hash.js?raw';
 import easeSrc from '../core/ease.js?raw';
 import shapesSrc from '../core/shapes.js?raw';
-import lrcSrc from '../core/lrc.js?raw';
 import renderSrc from '../core/render.js?raw';
 import hostBridgeSrc from './hostBridge.template.js?raw';
 import { esc } from '../lib/esc';
@@ -30,43 +29,16 @@ function stripKeyframeIds(project: Project): unknown {
 
 export function buildVisualizerHtml(project: Project): string {
   const slug = project.meta.slug || 'track';
-  const hasLyrics = project.layers.some((l) => l.type === 'lyrics');
 
-  const coreModules = [mathSrc, hashSrc, easeSrc, shapesSrc, hasLyrics ? lrcSrc : '', renderSrc]
-    .filter(Boolean)
-    .map(stripModuleSyntax)
-    .join('\n\n');
+  // core/lrc.js is gone from this list — lyrics timing is baked into plain
+  // keyframes at import time now (lib/lyricsImport.ts), not parsed live by
+  // the exported HTML, so there's no LRC parser (or getLyricWords host-
+  // substitution shim) left to conditionally inline here.
+  const coreModules = [mathSrc, hashSrc, easeSrc, shapesSrc, renderSrc].map(stripModuleSyntax).join('\n\n');
 
-  // Preserves the host's `delta-data-json:<slug>_lrc` substitution contract byte-for-byte
-  // (never actually substituted today — an inert placeholder branch). The fallback no longer
-  // re-parses a separately embedded raw-LRC string: that duplicated `layer.params.words`
-  // (already correct, already carries the keyWords-derived isKey flags) and, worse, always
-  // re-derived words with an *empty* key-word set, silently losing key-word highlighting on
-  // export whenever a raw LRC had been imported. Falling back straight to the layer's own
-  // `params.words` fixes both, and — since it's per-layer — no longer collapses every lyrics
-  // layer onto whichever one happened to be first in the array.
-  const lyricWordsFn = hasLyrics
-    ? [
-        'function getLyricWords(layer) {',
-        `  var boundLyrics = "delta-data-json:${slug}_lrc";`,
-        '  var hostLrcText = (typeof boundLyrics === "string" && boundLyrics.trim() && boundLyrics !== "null" && boundLyrics.indexOf("delta-data-json:") !== 0) ? boundLyrics : null;',
-        '  if (hostLrcText) return flattenWords(parseLRC(hostLrcText), {});',
-        '  return layer.params.words || [];',
-        '}',
-      ].join('\n')
-    : 'function getLyricWords(layer) { return []; }';
-
-  const driver = [
-    '(function(){',
-    coreModules,
-    '',
-    `var PROJECT=${JSON.stringify(stripKeyframeIds(project))};`,
-    '',
-    lyricWordsFn,
-    '',
-    hostBridgeSrc.trim(),
-    '})();',
-  ].join('\n');
+  const driver = ['(function(){', coreModules, '', `var PROJECT=${JSON.stringify(stripKeyframeIds(project))};`, '', hostBridgeSrc.trim(), '})();'].join(
+    '\n'
+  );
 
   return [
     '<!DOCTYPE html>',

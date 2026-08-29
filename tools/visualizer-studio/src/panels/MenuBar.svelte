@@ -7,7 +7,6 @@
   import MenuList from './MenuList.svelte';
   import { TEMPLATES } from '../lib/templates';
   import { confirmUnsavedIfNeeded, importProjectFile, loadTemplateIntoStore } from '../lib/projectImport';
-  import { importLrcFile } from '../lib/lrcImport';
   import { saveProjectFile } from '../lib/projectSave';
   import { renderCapsule } from '../lib/exportRun.svelte';
   import { deleteSelection } from '../lib/deleteSelection';
@@ -23,7 +22,6 @@
 
   let projectFileInput: HTMLInputElement | undefined = $state();
   let audioFileInput: HTMLInputElement | undefined = $state();
-  let lrcFileInput: HTMLInputElement | undefined = $state();
   let coverFileInput: HTMLInputElement | undefined = $state();
   let worldFileInput: HTMLInputElement | undefined = $state();
 
@@ -59,12 +57,6 @@
     (e.target as HTMLInputElement).value = '';
     if (file) audio.loadFile(file);
   }
-  function onLrcFileChosen(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) importLrcFile(store, file);
-  }
   function onCoverFileChosen(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -97,7 +89,7 @@
           label: 'Import',
           items: [
             { kind: 'action', label: 'Audio File…', action: () => audioFileInput?.click() },
-            { kind: 'action', label: 'LRC Lyrics…', action: () => lrcFileInput?.click() },
+            { kind: 'action', label: 'Lyrics Importer…', action: () => (uiState.lyricsImporterOpen = true) },
             { kind: 'action', label: 'Cover Image…', action: () => coverFileInput?.click() },
           ],
         },
@@ -251,7 +243,6 @@
 
 <input bind:this={projectFileInput} type="file" accept=".spectralis,application/json" hidden onchange={onProjectFileChosen} />
 <input bind:this={audioFileInput} type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
-<input bind:this={lrcFileInput} type="file" accept=".lrc,text/plain" hidden onchange={onLrcFileChosen} />
 <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />
 <input bind:this={worldFileInput} type="file" accept=".spectral" hidden onchange={onWorldFileChosen} />
 

@@ -16,104 +16,30 @@ export interface LayerTypeDef<T extends LayerType> {
   label: string;
   defaultName: string;
   defaultParams: () => LayerParamsByType[T];
+  // Empty for both kinds — bitmap/vector have no generic scalar fields worth
+  // a label+input row; editing happens on the Workspace canvas (shape tools,
+  // pen tool, paintbrush) via the left Tools docker, not here. ParamFields.svelte
+  // renders `hint` alone when this is empty.
   paramFields: ParamFieldDef[];
   hint?: string;
 }
 
 export const LAYER_TYPE_DEFS: { [K in LayerType]: LayerTypeDef<K> } = {
-  orb: {
-    type: 'orb',
-    label: 'Orb',
-    defaultName: 'Orb',
-    defaultParams: () => ({ radius: 60 }),
-    paramFields: [{ key: 'radius', label: 'Radius', kind: 'number' }],
+  vector: {
+    type: 'vector',
+    label: 'Vector',
+    defaultName: 'Vector Layer',
+    defaultParams: () => ({ shapes: [] }),
+    paramFields: [],
+    hint: 'Draw shapes on the Workspace canvas using the Tools docker.',
   },
-  ring: {
-    type: 'ring',
-    label: 'Ring',
-    defaultName: 'Ring',
-    defaultParams: () => ({ radius: 80, lineWidth: 2 }),
-    paramFields: [
-      { key: 'radius', label: 'Radius', kind: 'number' },
-      { key: 'lineWidth', label: 'Line Width', kind: 'number', step: 0.5, min: 0.5 },
-    ],
-  },
-  streak: {
-    type: 'streak',
-    label: 'Streak',
-    defaultName: 'Streak',
-    defaultParams: () => ({ length: 300, thickness: 14, mono: false }),
-    paramFields: [
-      { key: 'length', label: 'Length', kind: 'number' },
-      { key: 'thickness', label: 'Thickness', kind: 'number' },
-      { key: 'mono', label: 'Monochrome', kind: 'checkbox' },
-    ],
-  },
-  wheel: {
-    type: 'wheel',
-    label: 'Wheel',
-    defaultName: 'Wheel',
-    defaultParams: () => ({ radius: 90, spokes: 14, spin: 0.35, accentIdx: 0 }),
-    paramFields: [
-      { key: 'radius', label: 'Radius', kind: 'number' },
-      { key: 'spokes', label: 'Spokes', kind: 'number', step: 1, min: 2 },
-      { key: 'spin', label: 'Spin Rate', kind: 'number', step: 0.05 },
-      { key: 'accentIdx', label: 'Accent Spoke', kind: 'number', step: 1, min: 0 },
-    ],
-  },
-  ambientBeam: {
-    type: 'ambientBeam',
-    label: 'Ambient Beam',
-    defaultName: 'Ambient Beam',
-    defaultParams: () => ({ bandHeight: 120 }),
-    paramFields: [{ key: 'bandHeight', label: 'Band Height', kind: 'number' }],
-  },
-  shard: {
-    type: 'shard',
-    label: 'Shard',
-    defaultName: 'Shard',
-    defaultParams: () => ({ size: 10, spin: 0.6 }),
-    paramFields: [
-      { key: 'size', label: 'Size', kind: 'number' },
-      { key: 'spin', label: 'Spin Rate', kind: 'number', step: 0.05 },
-    ],
-  },
-  text: {
-    type: 'text',
-    label: 'Text',
-    defaultName: 'Text',
-    defaultParams: () => ({ text: 'TEXT', fontSize: 48, tracking: 2 }),
-    paramFields: [
-      { key: 'text', label: 'Text', kind: 'text' },
-      { key: 'fontSize', label: 'Font Size', kind: 'number' },
-      { key: 'tracking', label: 'Tracking', kind: 'number', step: 0.5 },
-    ],
-  },
-  lyrics: {
-    type: 'lyrics',
-    label: 'Lyrics (from LRC)',
-    defaultName: 'Lyrics',
-    defaultParams: () => ({
-      placement: 'ANCHORED',
-      fontSize: 64,
-      tracking: 2,
-      keyWords: '',
-      suppressOnNoLyricsSections: true,
-      words: [],
-    }),
-    paramFields: [
-      {
-        key: 'placement',
-        label: 'Placement',
-        kind: 'select',
-        options: ['ANCHORED', 'ARC_RISE', 'SCATTER', 'STACKED_ECHO', 'SETTLE_FADE'],
-      },
-      { key: 'fontSize', label: 'Font Size', kind: 'number' },
-      { key: 'tracking', label: 'Tracking', kind: 'number', step: 0.5 },
-      { key: 'keyWords', label: 'Key Words', kind: 'text', placeholder: 'comma or space separated' },
-      { key: 'suppressOnNoLyricsSections', label: 'Suppress on no-lyrics sections', kind: 'checkbox' },
-    ],
-    hint: 'Only ANCHORED currently renders in the export driver; other placements are reserved.',
+  bitmap: {
+    type: 'bitmap',
+    label: 'Image',
+    defaultName: 'Image Layer',
+    defaultParams: () => ({ dataUrl: null, sourceAssetId: null, w: 200, h: 200 }),
+    paramFields: [],
+    hint: 'Drag an image from Assets onto this layer, or paint directly with the brush tool.',
   },
 };
 

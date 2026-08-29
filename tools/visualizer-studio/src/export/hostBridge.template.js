@@ -67,7 +67,7 @@ function rafLoop(now) {
     ctx.restore();
   }
   PROJECT.layers.forEach(function (layer) {
-    renderLayerAt(ctx, layer, t, W, H, now, beatFlash, getLyricWords, PROJECT.sections);
+    renderLayerAt(ctx, layer, t, W, H, now, beatFlash);
   });
   if (beatFlash > 0.3) {
     ctx.fillStyle = 'rgba(255,255,255,' + (beatFlash - 0.3) * 0.05 + ')';

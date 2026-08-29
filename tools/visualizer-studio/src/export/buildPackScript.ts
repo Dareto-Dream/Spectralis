@@ -11,7 +11,6 @@ export interface PackScriptOptions {
 export function buildPackScript(project: Project, opts: PackScriptOptions = {}): string {
   const slug = project.meta.slug;
   const audioExtension = opts.audioExtension ?? 'wav';
-  const hasLyrics = project.layers.some((l) => l.type === 'lyrics');
   const hasCover = !!opts.coverExtension;
   return [
     '#!/usr/bin/env python3',
@@ -54,7 +53,9 @@ export function buildPackScript(project: Project, opts: PackScriptOptions = {}):
     'ENTRIES = [',
     `    ("assets/data/${slug}_module.json", ROOT / "${slug}_module.json"),`,
     `    ("assets/html/${slug}_visualizer.html", ROOT / "${slug}_visualizer.html"),`,
-    hasLyrics ? `    ("assets/data/${slug}.lrc", ROOT / "${slug}.lrc"),` : '    # no LRC layer in this project',
+    // No separate LRC companion file — lyrics content is baked into ordinary
+    // keyframed layers now (lib/lyricsImport.ts), packaged the same as
+    // anything else in the visualizer HTML, not as its own data asset.
     `    ("audio/${slug}.${audioExtension}", ROOT / "${slug}.${audioExtension}"),  # swap to match your actual audio file if it's not what was loaded in-studio`,
     hasCover
       ? `    ("assets/images/${slug}_cover.${opts.coverExtension}", ROOT / "${slug}_cover.${opts.coverExtension}"),`

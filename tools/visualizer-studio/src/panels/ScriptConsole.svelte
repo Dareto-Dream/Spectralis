@@ -23,7 +23,7 @@
   const EXAMPLES: Record<Target, string> = {
     studio: `// ctx.studio: addLayer(type), setMeta(patch), addSection(), project (read-only snapshot)
 for (let i = 0; i < 3; i++) {
-  const layer = ctx.studio.addLayer('orb');
+  const layer = ctx.studio.addLayer('vector');
   console.log('added', layer.name);
 }
 console.log(ctx.studio.project.layers.length, 'layers total');`,

@@ -9,6 +9,10 @@ class UiState {
   // A single id rather than a boolean since the modal needs to know WHICH
   // asset it's editing, same shape as e.g. a "currently open document".
   editingScriptAssetId: string | null = $state(null);
+  // Replaces the old raw "LRC Lyrics…" file-input flow (lib/lrcImport.ts,
+  // removed — it wrote straight onto a `lyrics`-kind layer that no longer
+  // exists). LyricsImporter.svelte does the parse/settings/preview/commit.
+  lyricsImporterOpen = $state(false);
 }
 
 export const uiState = new UiState();

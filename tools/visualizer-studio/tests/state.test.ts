@@ -80,7 +80,7 @@ describe('ProjectStore — layers', () => {
   it('addLayer selects the new layer and commits one history entry', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     expect(store.project.layers).toHaveLength(1);
     expect(store.selection.layerId).toBe(layer.id);
     expect(store.history.canUndo).toBe(true);
@@ -89,7 +89,7 @@ describe('ProjectStore — layers', () => {
   it('undo after addLayer restores the empty layer list', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    store.addLayer('orb');
+    store.addLayer('vector');
     store.undo();
     expect(store.project.layers).toHaveLength(0);
   });
@@ -97,19 +97,19 @@ describe('ProjectStore — layers', () => {
   it('duplicateLayer gives the clone fresh layer and keyframe ids', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     store.toggleKeyframing(layer.id, 'opacity');
     const clone = store.duplicateLayer(layer.id)!;
     expect(clone.id).not.toBe(layer.id);
     expect(clone.tracks.opacity[0].id).not.toBe(layer.tracks.opacity[0].id);
-    expect(clone.name).toBe('Orb copy');
+    expect(clone.name).toBe('Vector Layer copy');
   });
 
   it('moveLayer swaps stacking order and no-ops at the array edges', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const a = store.addLayer('orb');
-    const b = store.addLayer('ring');
+    const a = store.addLayer('vector');
+    const b = store.addLayer('bitmap');
     store.moveLayer(b.id, -1);
     expect(store.project.layers.map((l) => l.id)).toEqual([b.id, a.id]);
     store.moveLayer(b.id, -1); // already at index 0 — no-op
@@ -121,7 +121,7 @@ describe('ProjectStore — keyframing', () => {
   it('toggleKeyframing seeds one keyframe at t:0 holding the static value', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     store.toggleKeyframing(layer.id, 'opacity');
     expect(layer.tracks.opacity).toEqual([{ id: expect.any(String), t: 0, v: 1, ease: 'linear' }]);
   });
@@ -129,7 +129,7 @@ describe('ProjectStore — keyframing', () => {
   it('toggling keyframing off folds the current playhead value back into statics', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     store.toggleKeyframing(layer.id, 'scale');
     store.addKeyframeAtPlayhead(layer.id, 'scale'); // t:0 already exists — this adds nothing new at t=0
     layer.tracks.scale = [
@@ -145,7 +145,7 @@ describe('ProjectStore — keyframing', () => {
   it('addKeyframeAtPlayhead inserts the currently-evaluated value, not a stale one', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     layer.tracks.scale = [
       { id: 'a', t: 0, v: 0, ease: 'linear' },
       { id: 'b', t: 10, v: 10, ease: 'linear' },
@@ -162,7 +162,7 @@ describe('ProjectStore — keyframing', () => {
   it('deleteKeyframe removes it from the track and from selection', () => {
     const store = new ProjectStore();
     store.loadProject(blankProject());
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     store.toggleKeyframing(layer.id, 'opacity');
     const id = layer.tracks.opacity[0].id;
     store.selection.selectKeyframe(id);
@@ -245,8 +245,8 @@ describe('ProjectStore — selectAdjacentLayer', () => {
     const store = new ProjectStore();
     const p = blankProject();
     store.loadProject(p);
-    const l1 = store.addLayer('orb');
-    const l2 = store.addLayer('orb');
+    const l1 = store.addLayer('vector');
+    const l2 = store.addLayer('vector');
     // Array order is [l1, l2]; display order is reversed: [l2, l1].
     store.selection.selectLayer(l2.id);
     store.selectAdjacentLayer(1);
@@ -294,14 +294,14 @@ describe('AutosaveManager', () => {
 describe('ProjectStore visibility keyframing', () => {
   it('a fresh layer has no visibleTrack, so evalVisible falls back to the static flag', () => {
     const store = new ProjectStore();
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     expect(store.isVisibilityKeyframed(layer.id)).toBe(false);
     expect(layer.visibleTrack).toEqual([]);
   });
 
   it('toggleVisibilityKeyframing seeds one keyframe at t:0 holding the current static value', () => {
     const store = new ProjectStore();
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     layer.visible = false;
     store.toggleVisibilityKeyframing(layer.id);
     expect(store.isVisibilityKeyframed(layer.id)).toBe(true);
@@ -310,7 +310,7 @@ describe('ProjectStore visibility keyframing', () => {
 
   it('addVisibilityToggleAtPlayhead seeds at t:0 on first use, then adds toggles at the playhead, kept sorted', () => {
     const store = new ProjectStore();
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     layer.visible = true;
     store.addVisibilityToggleAtPlayhead(layer.id); // not yet keyframed: seeds t:0 with the OPPOSITE of the static value
     expect(layer.visibleTrack).toEqual([{ id: layer.visibleTrack![0].id, t: 0, v: false }]);
@@ -325,7 +325,7 @@ describe('ProjectStore visibility keyframing', () => {
 
   it('disabling visibility keyframing folds the value AT THE PLAYHEAD back into the static flag', () => {
     const store = new ProjectStore();
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     layer.visible = true;
     store.toggleVisibilityKeyframing(layer.id); // seeds [{t:0, v:true}]
     store.playhead = 5;
@@ -337,7 +337,7 @@ describe('ProjectStore visibility keyframing', () => {
 
   it('duplicateLayer gives the clone fresh visibility-keyframe ids, not shared ones', () => {
     const store = new ProjectStore();
-    const layer = store.addLayer('orb');
+    const layer = store.addLayer('vector');
     store.toggleVisibilityKeyframing(layer.id);
     const clone = store.duplicateLayer(layer.id);
     expect(clone!.visibleTrack![0].id).not.toBe(layer.visibleTrack![0].id);

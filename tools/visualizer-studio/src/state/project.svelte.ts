@@ -117,6 +117,29 @@ export class ProjectStore {
     return reactive;
   }
 
+  // Non-destructive multi-layer insert — backs both the Assets > Templates
+  // "layer templates" (lib/vectorize.ts-built Orb/Wheel/etc., inserted into
+  // the current project rather than replacing it like the whole-project
+  // TEMPLATES flow does) and the Lyrics Importer's generated group. All
+  // pushed layers share one new LayerGroup when `groupName` is given, one
+  // history commit for the whole batch.
+  addLayers(layers: AnyLayer[], groupName?: string): AnyLayer[] {
+    if (!layers.length) return [];
+    const groupId = groupName ? `group_${crypto.randomUUID()}` : undefined;
+    if (groupId) {
+      for (const l of layers) l.groupId = groupId;
+      this.project.layerGroups = [...(this.project.layerGroups ?? []), { id: groupId, name: groupName! }];
+    }
+    const startLen = this.project.layers.length;
+    this.project.layers.push(...layers);
+    // Re-fetch from the reactive array — see addLayer()'s comment on why the
+    // pre-$state objects aren't the identity callers need.
+    const reactive = this.project.layers.slice(startLen);
+    this.selection.selectLayer(reactive[reactive.length - 1]?.id ?? null);
+    this.commit();
+    return reactive;
+  }
+
   deleteLayer(id: string) {
     const idx = this.project.layers.findIndex((l) => l.id === id);
     if (idx < 0) return;

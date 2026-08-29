@@ -6,7 +6,7 @@
 
   let { store }: { store: ProjectStore } = $props();
 
-  let newLayerType: LayerType = $state('orb');
+  let newLayerType: LayerType = $state('vector');
 
   // Old tool painted the list topmost-layer-first (matching on-canvas stacking:
   // top of list = top of stack), which is the REVERSE of the underlying array

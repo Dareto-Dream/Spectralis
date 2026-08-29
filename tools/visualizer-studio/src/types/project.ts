@@ -24,8 +24,22 @@ export type AnimKey = (typeof ANIM_KEYS)[number];
 export type Tracks = Record<AnimKey, Track>;
 export type Statics = Record<AnimKey, number>;
 
-export type LayerType = 'orb' | 'ring' | 'streak' | 'wheel' | 'ambientBeam' | 'shard' | 'text' | 'lyrics';
+// A layer is only ever one of these two primitives now — bitmap (raster
+// pixels) or vector (editable shapes), the same split every real drawing
+// tool is built on. The old fixed "looks" (orb/ring/streak/wheel/
+// ambientBeam/shard/text/lyrics) never belonged as layer KINDS — they're
+// Assets > Templates now, built out of vector content (src/lib/vectorize.ts
+// converts the old per-kind params into real VectorShape[] geometry, reused
+// by both the v3 project migration in lib/migrate.ts and the rebuilt
+// lib/templates.ts, so migrated saves and fresh templates never drift).
+export type LayerType = 'bitmap' | 'vector';
 
+// Still used by the (session-only) raw-LRC-import scratch fields on Project
+// below and by lib/lyricsImport.ts's word-splitting — NOT tied to a layer
+// kind anymore. The old `lyrics` LayerType is gone; importing timed lyrics
+// now generates a group of plain keyframed `vector` text-shape layers (see
+// lib/lyricsImport.ts's buildLyricsLayerGroup) instead of one special layer
+// that reads from this data at render time.
 export interface LyricWord {
   text: string;
   time: number;
@@ -34,23 +48,112 @@ export interface LyricWord {
   seed: number;
 }
 
+// A fill can be flat, or a gradient. '$hueA'/'$hueB' resolve to the layer's
+// own hue tracks (already-keyframeable ANIM_KEYS) at render time — lets
+// vectorized shapes keep the hue-cycling look the old procedural kinds had,
+// with no new animation-engine changes. Any other string is a literal CSS
+// color, or the sentinel 'none' meaning "don't paint this" (paired with
+// strokeWidth: 0 for strokes — canvas doesn't understand 'none' as a real
+// color, so 'none' is checked for explicitly at draw time, never handed to
+// ctx.fillStyle/strokeStyle directly).
+export type FillColor = string | '$hueA' | '$hueB';
+export interface GradientStop {
+  offset: number; // 0..1
+  color: FillColor;
+}
+export type Fill =
+  | { kind: 'flat'; color: FillColor }
+  | { kind: 'radial'; stops: GradientStop[] }
+  | { kind: 'linear'; angle: number; stops: GradientStop[] }; // angle in radians, matching the layer rotation track's own unit
+
+export interface Glow {
+  blur: number;
+  color?: FillColor; // defaults to the shape's fill/stroke color at draw time
+}
+
+// No parent-pointer field (mirrors state/nodeWorld.svelte.ts's SceneNode
+// convention) — a path shape just owns a flat, ordered point list. Handles
+// are stored as offsets FROM the anchor, not absolute coordinates, so moving
+// an anchor moves its handles with it for free.
+export interface AnchorPoint {
+  id: string;
+  x: number;
+  y: number;
+  handleIn: { x: number; y: number } | null;
+  handleOut: { x: number; y: number } | null;
+  // Whether dragging one handle keeps the other mirrored opposite it (the
+  // default, smooth-curve pen-tool behavior) — Alt-drag breaks this per anchor.
+  mirrored: boolean;
+}
+
+interface VectorShapeBase {
+  id: string;
+  fill: Fill;
+  // 'none' + strokeWidth: 0 together mean "no stroke" — see FillColor's doc.
+  stroke: FillColor;
+  strokeWidth: number;
+  glow?: Glow;
+}
+export interface VectorPathShape extends VectorShapeBase {
+  kind: 'path';
+  closed: boolean;
+  points: AnchorPoint[];
+}
+export interface VectorRectShape extends VectorShapeBase {
+  kind: 'rect';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number; // radians, about the rect's own center
+}
+export interface VectorEllipseShape extends VectorShapeBase {
+  kind: 'ellipse';
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  rotation: number; // radians
+}
+export interface VectorLineShape extends VectorShapeBase {
+  kind: 'line';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+export interface VectorPolygonShape extends VectorShapeBase {
+  kind: 'polygon';
+  x: number;
+  y: number;
+  sides: number;
+  radius: number;
+  rotation: number; // radians
+}
+export interface VectorTextShape extends VectorShapeBase {
+  kind: 'text';
+  x: number;
+  y: number;
+  text: string;
+  fontSize: number;
+  tracking: number;
+  // Per-glyph wobble amount, same formula the old lyrics-only jitter used —
+  // 0 (the default new text shapes get) renders perfectly static, matching
+  // what plain `text` layers always looked like pre-vectorization.
+  jitter?: number;
+}
+export type VectorShape = VectorPathShape | VectorRectShape | VectorEllipseShape | VectorLineShape | VectorPolygonShape | VectorTextShape;
+
 export interface LayerParamsByType {
-  orb: { radius: number };
-  ring: { radius: number; lineWidth: number };
-  streak: { length: number; thickness: number; mono: boolean };
-  wheel: { radius: number; spokes: number; spin: number; accentIdx: number };
-  ambientBeam: { bandHeight: number };
-  shard: { size: number; spin: number };
-  text: { text: string; fontSize: number; tracking: number };
-  lyrics: {
-    // Only ANCHORED currently renders in the export driver; the rest are reserved placements.
-    placement: 'ANCHORED' | 'ARC_RISE' | 'SCATTER' | 'STACKED_ECHO' | 'SETTLE_FADE';
-    fontSize: number;
-    tracking: number;
-    keyWords: string;
-    suppressOnNoLyricsSections: boolean;
-    words: LyricWord[];
-  };
+  vector: { shapes: VectorShape[] };
+  // Always self-contained: `dataUrl` holds the actual image bytes directly on
+  // the layer (part of the ordinary VIZP JSON payload), not just a reference
+  // into the session-only, non-persisted AssetLibrary — so a saved project
+  // never goes stale/broken if the original asset is later removed or the
+  // library is cleared. `sourceAssetId` is purely a soft link back to the
+  // AssetLibrary entry it was dragged in from, for editor-side convenience
+  // (e.g. "this came from Cover.png") — never required for rendering.
+  bitmap: { dataUrl: string | null; sourceAssetId: string | null; w: number; h: number };
 }
 
 export interface Layer<T extends LayerType = LayerType> {
@@ -70,11 +173,26 @@ export interface Layer<T extends LayerType = LayerType> {
   // migration, same convention as `locked`. Read via evalVisible() in
   // core/render.js wherever `layer.visible` used to be read directly.
   visibleTrack?: VisibilityKeyframe[];
+  // Optional — which LayerGroup (below) this layer belongs to, if any. No
+  // recursive tree: a flat array with an optional groupId, same shape layers
+  // already have; LayersPanel.svelte clusters consecutive same-groupId rows
+  // under a collapsible header. Absent = ungrouped, same convention as locked.
+  groupId?: string;
 }
 // A distributed union (one concrete Layer<T> per branch), NOT Layer<LayerType> —
 // the latter collapses `type`/`params` into a single non-discriminated shape, so
-// `if (layer.type === 'lyrics')` wouldn't narrow `layer.params` to the lyrics shape.
+// `if (layer.type === 'vector')` wouldn't narrow `layer.params` to the vector shape.
 export type AnyLayer = { [K in LayerType]: Layer<K> }[LayerType];
+
+// A named cluster of layers — currently only produced by the Lyrics Importer
+// (lib/lyricsImport.ts groups its generated per-line/word/phrase layers under
+// one "Lyrics" group) and by v3 migration doing the same for old `lyrics`
+// layers, but generic enough for any future multi-layer generator.
+export interface LayerGroup {
+  id: string;
+  name: string;
+  collapsed?: boolean;
+}
 
 export interface Section {
   id: string;
@@ -98,10 +216,11 @@ export interface ProjectMeta {
 }
 
 export interface Project {
-  formatVersion: 2;
+  formatVersion: 2 | 3;
   meta: ProjectMeta;
   sections: Section[];
   layers: AnyLayer[];
+  layerGroups?: LayerGroup[];
   importedWords?: LyricWord[];
   importedLrcRaw?: string;
 }

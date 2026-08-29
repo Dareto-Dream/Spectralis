@@ -40,7 +40,7 @@ export function defaultSection(id: string, label: string, start: number, end: nu
 
 export function newProject(): Project {
   return {
-    formatVersion: 2,
+    formatVersion: 3,
     meta: { title: 'Untitled', artist: '', slug: 'untitled', songEnd: 60, aspect: '9x16' },
     sections: [defaultSection('s1', 'Section 1', 0, 60, 220, 260)],
     layers: [],

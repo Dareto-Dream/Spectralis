@@ -5,7 +5,6 @@
   import ParamFields from './ParamFields.svelte';
   import CurveEditor from '../timeline/CurveEditor.svelte';
   import type { Ease } from '../types/project';
-  import { importLrcFile } from '../lib/lrcImport';
   import Eye from '@lucide/svelte/icons/eye';
   import EyeOff from '@lucide/svelte/icons/eye-off';
   import Lock from '@lucide/svelte/icons/lock';
@@ -100,7 +99,7 @@
       {/each}
     </div>
 
-    <ParamFields {layer} onChange={() => store.commit()} onDropLrc={(f) => importLrcFile(store, f)} />
+    <ParamFields {layer} onChange={() => store.commit()} />
 
     {#if singleSelectedKeyframeId && singleSelectedEase}
       <div class="curveSection">

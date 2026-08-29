@@ -1,5 +1,5 @@
 import { renderLayerAt, sectionAt, drawSectionWash } from '../core/render.js';
-import type { AnyLayer, Project } from '../types/project';
+import type { Project } from '../types/project';
 
 export interface PreviewFrameState {
   beatFlash: number;
@@ -8,10 +8,6 @@ export interface PreviewFrameState {
 
 export function initialFrameState(): PreviewFrameState {
   return { beatFlash: 0, lastPeakSmooth: 0 };
-}
-
-function getLyricWords(layer: AnyLayer) {
-  return layer.type === 'lyrics' ? layer.params.words : [];
 }
 
 // Kept as a plain, DOM-adjacent-but-framework-free function (takes a 2D context
@@ -39,7 +35,7 @@ export function drawPreviewFrame(
 
   for (const layer of project.layers) {
     if (soloedLayerIds && soloedLayerIds.size > 0 && !soloedLayerIds.has(layer.id)) continue;
-    renderLayerAt(ctx, layer, playhead, W, H, nowMs, frameState.beatFlash, getLyricWords, project.sections);
+    renderLayerAt(ctx, layer, playhead, W, H, nowMs, frameState.beatFlash);
   }
 
   if (frameState.beatFlash > 0.3) {

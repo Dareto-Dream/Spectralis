@@ -41,7 +41,7 @@ function project(): Project {
       {
         id: 'l1',
         name: 'Orb',
-        type: 'orb',
+        type: 'vector',
         visible: true,
         statics: { x: 135, y: 220, scale: 1, rotation: 0, opacity: 1, hueA: 220, hueB: 260 },
         tracks: {
@@ -56,7 +56,7 @@ function project(): Project {
           hueA: [],
           hueB: [],
         },
-        params: { radius: 60 },
+        params: { shapes: [] },
       },
     ],
   };
