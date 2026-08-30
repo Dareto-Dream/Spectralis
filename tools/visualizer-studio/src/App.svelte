@@ -37,7 +37,7 @@
 
   const onKeyDown = createGlobalKeymap(store, audio, assets, () => (uiState.helpOpen = true));
 
-  // Debounce-write to Autosaves/*.spectralis on every committed edit — see
+  // Debounce-write to Autosaves/*.spex on every committed edit — see
   // AutosaveManager for why this is a safety net, not a replacement for Save
   // Project. Same pattern for World, gated on mode so switching to World
   // doesn't start writing world-autosave.spectral for an untouched graph.

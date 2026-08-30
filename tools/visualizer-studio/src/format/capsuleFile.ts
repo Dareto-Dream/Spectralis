@@ -1,8 +1,16 @@
-// .spectralis (capsule) file codec — magic `SPEX`/signature `pikl`. A capsule
-// represents a single preserved track/session. Visualizer Studio's own
-// project data (layers, sections, tracks/keyframes — everything in
-// src/types/project.ts) travels as-is, unchanged, inside the opaque `VIZP`
-// chunk; this module only owns the container around it.
+// .spex (capsule) file codec — magic `SPEX`/signature `pikl`. This is
+// Visualizer Studio's own working project file, saved/opened directly by
+// File > Save/Load Project (src/lib/projectSave.ts) and by the autosave
+// safety net. NOT the same thing as the `.spectralis` extension used
+// elsewhere in this codebase (export/buildPackScript.ts) — that's the real
+// signed SPCC-v3 capsule produced once you EXPORT and run the generated pack
+// script; the two are unrelated container formats that happen to be
+// documented in the same product-level spec (docs/formats/spectralis-
+// capsule.md), not the same file. A capsule represents a single preserved
+// track/session. Visualizer Studio's own project data (layers, sections,
+// tracks/keyframes — everything in src/types/project.ts) travels as-is,
+// unchanged, inside the opaque `VIZP` chunk; this module only owns the
+// container around it.
 //
 // `DISC`/`SYNC`/`SRCE` (Discord Rich Presence, Shared Play session state,
 // source provenance) belong to the main Spectralis player app, not the
@@ -136,7 +144,7 @@ export function newCapsuleMeta(partial: Partial<CapsuleMeta> = {}): CapsuleMeta 
 export function decodeCapsuleFile(bytes: Uint8Array): CapsuleFile {
   const header = readFileHeader(bytes);
   if (header.magic !== 'SPEX') {
-    throw new Error(`this is a ${header.magic === 'SPWX' ? 'World' : 'non-Spectralis'} file, not a Capsule (.spectralis) file`);
+    throw new Error(`this is a ${header.magic === 'SPWX' ? 'World' : 'non-Spectralis'} file, not a Capsule (.spex) file`);
   }
   const chunks = readChunks(bytes, header.bodyStart, header.bodyEnd);
 

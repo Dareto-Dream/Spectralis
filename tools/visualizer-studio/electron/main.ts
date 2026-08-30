@@ -88,7 +88,7 @@ interface DialogFilter {
   extensions: string[];
 }
 
-// Generic save/open dialogs + binary read/write, used by the .spectralis/
+// Generic save/open dialogs + binary read/write, used by the .spex/
 // .spectral project format (native path — the browser build falls back to
 // Blob download / <input type=file>, see src/lib/downloadText.ts).
 ipcMain.handle('dialog:saveFile', async (_event, opts: { defaultPath: string; filters: DialogFilter[] }) => {
