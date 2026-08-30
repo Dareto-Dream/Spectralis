@@ -1,10 +1,10 @@
 <script lang="ts">
   // Left-docked tool docker for the Workspace canvas — select/transform,
-  // shape tools, the pen tool (full anchor/handle editing), and the
-  // paintbrush. Mirrors SvgMaker.svelte's toolbar pattern (a TOOLS array +
-  // icon buttons), but targets the layer model instead of local component
-  // state — see preview/WorkspaceCanvas.svelte for what each tool actually
-  // does on pointer events.
+  // shape tools, the pen tool (draw new anchors/curves), the node tool (edit
+  // existing anchors/curves), and the paintbrush. Purely icon buttons with a
+  // native hover tooltip (the `title` attr) each — no per-tool option
+  // controls live here; those are in ActionBar.svelte's top bar instead, so
+  // this docker never grows/shrinks or wraps text as you switch tools.
   import { toolState, type ToolId } from '../state/toolState.svelte';
   import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2';
   import Square from '@lucide/svelte/icons/square';
@@ -12,6 +12,7 @@
   import Minus from '@lucide/svelte/icons/minus';
   import Pentagon from '@lucide/svelte/icons/pentagon';
   import PenTool from '@lucide/svelte/icons/pen-tool';
+  import SplinePointer from '@lucide/svelte/icons/spline-pointer';
   import Paintbrush from '@lucide/svelte/icons/paintbrush';
 
   const TOOLS: { id: ToolId; icon: typeof MousePointer2; label: string }[] = [
@@ -20,14 +21,10 @@
     { id: 'ellipse', icon: Circle, label: 'Ellipse' },
     { id: 'line', icon: Minus, label: 'Line' },
     { id: 'polygon', icon: Pentagon, label: 'Polygon' },
-    { id: 'pen', icon: PenTool, label: 'Pen (anchors)' },
+    { id: 'pen', icon: PenTool, label: 'Pen — draw new anchors/curves' },
+    { id: 'node', icon: SplinePointer, label: 'Node — move points, add curves' },
     { id: 'brush', icon: Paintbrush, label: 'Paintbrush (image layers)' },
   ];
-
-  function finishPath() {
-    toolState.editingShapeId = null;
-    toolState.selectedAnchorId = null;
-  }
 </script>
 
 <div class="toolsPanel">
@@ -38,64 +35,10 @@
       </button>
     {/each}
   </div>
-
-  <div class="sep"></div>
-
-  {#if toolState.active === 'pen'}
-    <div class="options">
-      <p class="hint">Click to place anchors, drag while placing to pull a curve handle. Click the start point to close the path.</p>
-      {#if toolState.editingShapeId}
-        <button class="small" onclick={finishPath}>Done (leave open)</button>
-      {/if}
-    </div>
-  {:else if toolState.active === 'brush'}
-    <div class="options">
-      <label>
-        <span>Size</span>
-        <input type="range" min="2" max="120" bind:value={toolState.brushSize} />
-      </label>
-      <label>
-        <span>Opacity</span>
-        <input type="range" min="0" max="1" step="0.05" bind:value={toolState.brushOpacity} />
-      </label>
-      <label>
-        <span>Hardness</span>
-        <input type="range" min="0" max="1" step="0.05" bind:value={toolState.brushHardness} />
-      </label>
-      <label>
-        <span>Color</span>
-        <input type="color" bind:value={toolState.brushColor} />
-      </label>
-      <p class="hint">Paints onto the selected image layer.</p>
-    </div>
-  {:else if ['rect', 'ellipse', 'line', 'polygon'].includes(toolState.active)}
-    <div class="options">
-      <label>
-        <span>Fill</span>
-        <input type="color" bind:value={toolState.fillColor} />
-      </label>
-      <label>
-        <span>Stroke</span>
-        <input type="color" bind:value={toolState.strokeColor} />
-      </label>
-      <label>
-        <span>Stroke width</span>
-        <input type="number" min="0" step="0.5" bind:value={toolState.strokeWidth} />
-      </label>
-      <p class="hint">Drag on the Workspace canvas to draw.</p>
-    </div>
-  {:else}
-    <div class="options">
-      <p class="hint">Click a layer to select it. Drag the body to move, corner handles to scale, the top handle to rotate.</p>
-    </div>
-  {/if}
 </div>
 
 <style>
   .toolsPanel {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
     padding: 6px;
     height: 100%;
   }
@@ -122,33 +65,5 @@
     background: var(--accent2);
     color: #1a1400;
     border-color: var(--accent2);
-  }
-  .sep {
-    height: 1px;
-    background: var(--line);
-  }
-  .options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .options label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    font: 11px var(--mono);
-    color: var(--dim);
-  }
-  .options input[type='range'] {
-    width: 110px;
-  }
-  .options input[type='number'] {
-    width: 60px;
-  }
-  .hint {
-    font: 10px var(--mono);
-    color: var(--dim2);
-    line-height: 1.4;
   }
 </style>

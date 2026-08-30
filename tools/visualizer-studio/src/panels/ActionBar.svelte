@@ -12,6 +12,7 @@
   import { appMode, type AppMode } from '../state/appMode.svelte';
   import { saveWorldFile, exportWorldHtml } from '../lib/worldSave';
   import { dockManager } from './dockManager.svelte';
+  import { toolState } from '../state/toolState.svelte';
   import Clapperboard from '@lucide/svelte/icons/clapperboard';
   import Globe from '@lucide/svelte/icons/globe';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -97,6 +98,36 @@
       </button>
     </div>
   {/if}
+  {#if appMode.mode === 'capsule'}
+    <span class="sep"></span>
+    <!-- The active Workspace tool's own options (brush size/opacity/hardness,
+         shape fill/stroke, pen/node hints) — deliberately here, not in the
+         left Tools docker (ToolsPanel.svelte), which stays a fixed grid of
+         icon buttons so it never resizes as you switch tools. -->
+    <div class="toolOptions">
+      {#if toolState.active === 'pen' || toolState.active === 'node'}
+        <span class="toolHint">
+          {toolState.active === 'pen'
+            ? 'Click to place anchors · drag while placing to pull a curve handle · click the start point to close'
+            : 'Drag a point to move it · Alt-drag a point to pull out a curve handle · drag a handle to reshape'}
+        </span>
+        {#if toolState.editingShapeId}
+          <button class="small ghost" onclick={() => toolState.finishPath()}>Done</button>
+        {/if}
+      {:else if toolState.active === 'brush'}
+        <label class="opt"><span>Size</span><input type="range" min="2" max="120" bind:value={toolState.brushSize} /></label>
+        <label class="opt"><span>Opacity</span><input type="range" min="0" max="1" step="0.05" bind:value={toolState.brushOpacity} /></label>
+        <label class="opt"><span>Hardness</span><input type="range" min="0" max="1" step="0.05" bind:value={toolState.brushHardness} /></label>
+        <input type="color" title="Brush color" bind:value={toolState.brushColor} />
+      {:else if toolState.active === 'rect' || toolState.active === 'ellipse' || toolState.active === 'line' || toolState.active === 'polygon'}
+        <input type="color" title="Fill" bind:value={toolState.fillColor} />
+        <input type="color" title="Stroke" bind:value={toolState.strokeColor} />
+        <label class="opt"><span>Width</span><input class="num" type="number" min="0" step="0.5" bind:value={toolState.strokeWidth} /></label>
+      {:else}
+        <span class="toolHint">Click a shape to select just it. Drag its body to move it; use the layer's own corner/rotate handles to transform the whole layer.</span>
+      {/if}
+    </div>
+  {/if}
   <span class="spacer"></span>
   {#if appMode.mode === 'capsule'}
     <div class="actions">
@@ -163,5 +194,33 @@
     align-self: stretch;
     background: var(--line);
     margin: 0 4px;
+  }
+  .toolOptions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .toolHint {
+    font: 10px var(--mono);
+    color: var(--dim2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 46vw;
+  }
+  .opt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font: 10px var(--mono);
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  .opt input[type='range'] {
+    width: 70px;
+  }
+  .num {
+    width: 42px;
   }
 </style>
