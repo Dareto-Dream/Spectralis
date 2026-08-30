@@ -7,7 +7,7 @@
 // snapping.ts.
 import { evalTrack } from '../core/ease.js';
 import { boundsOf } from '../core/shapes.js';
-import type { AnchorPoint, AnyLayer } from '../types/project';
+import type { AnchorPoint, AnyLayer, VectorShape } from '../types/project';
 
 export interface LayerTransform {
   x: number;
@@ -86,4 +86,53 @@ export function screenDist(ax: number, ay: number, bx: number, by: number): numb
 
 export function newAnchor(x: number, y: number): AnchorPoint {
   return { id: crypto.randomUUID(), x, y, handleIn: null, handleOut: null, mirrored: true };
+}
+
+// Local-space (top-left form) bounding box of a SINGLE shape — same geometry
+// boundsOf/layerLocalBounds already use, just not unioned across the whole
+// layer. Used to draw a per-shape selection outline and as the fallback
+// hit-test area for kinds without a tighter test below (text/path).
+export function shapeLocalBounds(shape: VectorShape): { x: number; y: number; w: number; h: number } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b = boundsOf(shape as any) as { cx: number; cy: number; w: number; h: number };
+  return { x: b.cx - b.w / 2, y: b.cy - b.h / 2, w: b.w, h: b.h };
+}
+
+function distToSegment(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const abx = b.x - a.x, aby = b.y - a.y;
+  const lenSq = abx * abx + aby * aby;
+  let t = lenSq > 0 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  return screenDist(p.x, p.y, a.x + t * abx, a.y + t * aby);
+}
+
+// Per-shape click hit-test, in the shape's own local units (same space its
+// x/y/etc. fields are authored in — the Select tool converts a screen point
+// to this space via screenToLayerLocal first). Reasonably tight per kind
+// (real ellipse/segment-distance tests, not just a bounding box) so clicking
+// beside a shape's actual pixels — but still inside its bbox — correctly
+// misses it; rect/text/path stay bbox-based, which is what boundsOf already
+// gives every other consumer here (rotation is ignored for rect, same
+// good-enough tradeoff layerLocalBounds already makes).
+export function hitTestShapeLocal(shape: VectorShape, local: { x: number; y: number }): boolean {
+  switch (shape.kind) {
+    case 'rect':
+      return local.x >= shape.x && local.x <= shape.x + shape.w && local.y >= shape.y && local.y <= shape.y + shape.h;
+    case 'ellipse': {
+      if (shape.rx <= 0 || shape.ry <= 0) return false;
+      const dx = (local.x - shape.x) / shape.rx;
+      const dy = (local.y - shape.y) / shape.ry;
+      return dx * dx + dy * dy <= 1;
+    }
+    case 'line':
+      return distToSegment(local, { x: shape.x1, y: shape.y1 }, { x: shape.x2, y: shape.y2 }) <= Math.max(6, shape.strokeWidth / 2 + 4);
+    case 'polygon':
+      return screenDist(local.x, local.y, shape.x, shape.y) <= shape.radius;
+    case 'text':
+    case 'path': {
+      const b = shapeLocalBounds(shape);
+      const pad = shape.kind === 'path' ? 6 : 0; // paths can be a single thin stroke with a ~zero-area bbox
+      return local.x >= b.x - pad && local.x <= b.x + b.w + pad && local.y >= b.y - pad && local.y <= b.y + b.h + pad;
+    }
+  }
 }

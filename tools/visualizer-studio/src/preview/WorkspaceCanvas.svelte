@@ -9,10 +9,21 @@
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
   import { drawPreviewFrame, initialFrameState, aspectSize } from './drawPreview';
+  import { evalTrack } from '../core/ease.js';
   import { toolState } from '../state/toolState.svelte';
   import { workspaceView } from '../state/workspaceView.svelte';
-  import { resolveLayerTransform, screenToLayerLocal, layerLocalToScreen, layerLocalBounds, screenDist, newAnchor, type LayerTransform } from '../lib/vectorHitTest';
-  import type { AnimKey, AnyLayer, VectorShape } from '../types/project';
+  import {
+    resolveLayerTransform,
+    screenToLayerLocal,
+    layerLocalToScreen,
+    layerLocalBounds,
+    shapeLocalBounds,
+    hitTestShapeLocal,
+    screenDist,
+    newAnchor,
+    type LayerTransform,
+  } from '../lib/vectorHitTest';
+  import type { AnimKey, AnyLayer, VectorShape, VectorPathShape } from '../types/project';
   import { toast } from '../state/toast.svelte';
   import { assetDrop } from '../lib/dragAsset';
   import { addImageLayerFromAsset } from '../lib/imageLayer';
@@ -80,8 +91,39 @@
     ctx.restore();
   }
 
+  // The Select tool's real click target — the single shape under the cursor
+  // (see pickShapeAt), not the layer's whole bounding box. Drawn distinctly
+  // from the layer outline above so it's clear which of the two you're about
+  // to drag: the layer outline's corner/rotate handles transform the WHOLE
+  // layer, dragging inside this box moves just this one shape.
+  function drawShapeSelectionOverlay() {
+    if (toolState.active !== 'select' || !toolState.selectedShapeId) return;
+    const layer = selectedLayer();
+    if (!layer || layer.type !== 'vector') return;
+    const shape = layer.params.shapes.find((s) => s.id === toolState.selectedShapeId);
+    if (!shape) return;
+    const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+    const b = shapeLocalBounds(shape);
+    const corners = [
+      layerLocalToScreen(b.x, b.y, tr),
+      layerLocalToScreen(b.x + b.w, b.y, tr),
+      layerLocalToScreen(b.x + b.w, b.y + b.h, tr),
+      layerLocalToScreen(b.x, b.y + b.h, tr),
+    ];
+    ctx.save();
+    ctx.strokeStyle = '#ff9d5c';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    for (const c of corners.slice(1)) ctx.lineTo(c.x, c.y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawPenOverlay() {
-    if (toolState.active !== 'pen' || !toolState.editingShapeId) return;
+    if ((toolState.active !== 'pen' && toolState.active !== 'node') || !toolState.editingShapeId) return;
     const layer = selectedLayer();
     if (!layer || layer.type !== 'vector') return;
     const shape = layer.params.shapes.find((s) => s.id === toolState.editingShapeId);
@@ -117,13 +159,39 @@
     ctx.restore();
   }
 
+  // While actively painting, the layer's own committed dataUrl is stale (it
+  // only gets written back on pointerup — see onBrushPointerUp) — that used
+  // to mean strokes only appeared once you let go. Instead, skip that one
+  // layer in the normal pass and draw the live in-progress paint buffer on
+  // top ourselves, at the exact same transform/opacity renderLayerAt would
+  // use, so every frame shows the stroke as it's actually being painted.
+  function drawLiveBrushLayer() {
+    if (!brushOffscreen || !brushLayerId) return;
+    const layer = store.project.layers.find((l) => l.id === brushLayerId);
+    if (!layer || layer.type !== 'bitmap') return;
+    const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+    const opacity = evalTrack(layer.tracks.opacity, store.playhead, layer.statics.opacity);
+    if (opacity <= 0.004) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(tr.x, tr.y);
+    ctx.rotate(tr.rotation);
+    ctx.scale(tr.worldScale, tr.worldScale);
+    ctx.drawImage(brushOffscreen, -canvas.width / 2, -canvas.height / 2, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
   function tick(now: number) {
     raf = requestAnimationFrame(tick);
     const level = audio.loaded ? audio.currentLevel() : { peak: 0, rms: 0 };
+    const paintingLayerId = brushOffscreen ? brushLayerId : null;
     drawPreviewFrame(ctx, canvas.width, canvas.height, store.project, store.playhead, now, level, frameState, store.soloedLayerIds, {
       transparentBg: true,
+      skipLayerId: paintingLayerId,
     });
+    if (paintingLayerId) drawLiveBrushLayer();
     drawSelectionOverlay();
+    drawShapeSelectionOverlay();
     drawPenOverlay();
   }
 
@@ -272,6 +340,9 @@
     return null;
   }
 
+  // Bitmap-only fallback (see onSelectPointerDown) — bitmaps have no
+  // sub-shapes to target individually, so the whole layer's full-canvas
+  // bounds is the only thing there is to click.
   function pickLayerAt(pt: { x: number; y: number }): AnyLayer | undefined {
     for (let i = store.project.layers.length - 1; i >= 0; i--) {
       const layer = store.project.layers[i];
@@ -284,9 +355,50 @@
     return undefined;
   }
 
+  // The real click target for a vector layer — the single TOPMOST shape
+  // under the cursor, tested against its own actual geometry (see
+  // hitTestShapeLocal), not the layer's overall bounding box. This is what
+  // makes "click a shape" select just that shape instead of the whole layer.
+  function pickShapeAt(pt: { x: number; y: number }): { layer: AnyLayer; shape: VectorShape } | null {
+    for (let i = store.project.layers.length - 1; i >= 0; i--) {
+      const layer = store.project.layers[i];
+      if (layer.locked || !layer.visible || layer.type !== 'vector') continue;
+      const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+      const local = screenToLayerLocal(pt.x, pt.y, tr);
+      for (let j = layer.params.shapes.length - 1; j >= 0; j--) {
+        const shape = layer.params.shapes[j];
+        if (hitTestShapeLocal(shape, local)) return { layer, shape };
+      }
+    }
+    return null;
+  }
+
+  // Moves a shape by a LOCAL-space (dx, dy) — applied against a snapshot
+  // taken at drag start (not incrementally against the live shape) so
+  // repeated small pointermove deltas can't accumulate rounding drift, same
+  // reasoning as evalScaleAtDragStart/evalRotationAtDragStart below.
+  function applyShapeMove(shape: VectorShape, snapshot: VectorShape, dx: number, dy: number) {
+    if (shape.kind === 'line' && snapshot.kind === 'line') {
+      shape.x1 = snapshot.x1 + dx;
+      shape.y1 = snapshot.y1 + dy;
+      shape.x2 = snapshot.x2 + dx;
+      shape.y2 = snapshot.y2 + dy;
+    } else if (shape.kind === 'path' && snapshot.kind === 'path') {
+      shape.points = snapshot.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+    } else if ('x' in shape && 'x' in snapshot) {
+      shape.x = snapshot.x + dx;
+      shape.y = snapshot.y + dy;
+    }
+  }
+
+  let shapeDrag: { layerId: string; shapeId: string; startLocal: { x: number; y: number }; snapshot: VectorShape } | null = null;
+
   function onSelectPointerDown(pt: { x: number; y: number }) {
     const layer = selectedLayer();
-    if (layer) {
+    if (layer && !layer.locked) {
+      // The selected layer's own corner/rotate handles always take priority
+      // — an explicit, deliberate way to transform the WHOLE layer, kept
+      // available alongside per-shape selection below.
       const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
       const mode = hitTestHandles(layer, tr, pt);
       if (mode) {
@@ -297,23 +409,52 @@
         kfIds = { scale: ensureKeyframeId(layer, 'scale'), rotation: ensureKeyframeId(layer, 'rotation') };
         return;
       }
-      const local = screenToLayerLocal(pt.x, pt.y, tr);
-      const b = layerLocalBounds(layer, canvas.width, canvas.height);
-      if (!layer.locked && local.x >= b.x && local.x <= b.x + b.w && local.y >= b.y && local.y <= b.y + b.h) {
-        dragMode = 'move';
-        dragLayerId = layer.id;
-        dragTr = tr;
-        dragStartCanvas = pt;
-        dragStartLocal = local;
-        kfIds = { x: ensureKeyframeId(layer, 'x'), y: ensureKeyframeId(layer, 'y') };
-        return;
-      }
     }
-    const hit = pickLayerAt(pt);
-    store.selection.selectLayer(hit?.id ?? null);
+    // Click a shape: select + start moving just THAT shape (never "the whole
+    // layer" — see applyShapeMove/pickShapeAt's docs).
+    const hitShape = pickShapeAt(pt);
+    if (hitShape) {
+      store.selection.selectLayer(hitShape.layer.id);
+      toolState.selectedShapeId = hitShape.shape.id;
+      const tr = resolveLayerTransform(hitShape.layer, store.playhead, canvas.width, canvas.height);
+      shapeDrag = {
+        layerId: hitShape.layer.id,
+        shapeId: hitShape.shape.id,
+        startLocal: screenToLayerLocal(pt.x, pt.y, tr),
+        snapshot: structuredClone(hitShape.shape),
+      };
+      return;
+    }
+    // No shape hit — the only other clickable body is a bitmap layer's (it
+    // has no sub-shapes of its own to target).
+    const hitLayer = pickLayerAt(pt);
+    if (hitLayer && hitLayer.type === 'bitmap' && !hitLayer.locked) {
+      const tr = resolveLayerTransform(hitLayer, store.playhead, canvas.width, canvas.height);
+      dragMode = 'move';
+      dragLayerId = hitLayer.id;
+      dragTr = tr;
+      dragStartCanvas = pt;
+      dragStartLocal = screenToLayerLocal(pt.x, pt.y, tr);
+      kfIds = { x: ensureKeyframeId(hitLayer, 'x'), y: ensureKeyframeId(hitLayer, 'y') };
+      store.selection.selectLayer(hitLayer.id);
+      toolState.selectedShapeId = null;
+      return;
+    }
+    store.selection.selectLayer(null);
+    toolState.selectedShapeId = null;
   }
 
   function onSelectPointerMove(pt: { x: number; y: number }) {
+    if (shapeDrag) {
+      const layer = store.project.layers.find((l) => l.id === shapeDrag!.layerId);
+      if (!layer || layer.type !== 'vector') return;
+      const shape = layer.params.shapes.find((s) => s.id === shapeDrag!.shapeId);
+      if (!shape) return;
+      const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+      const local = screenToLayerLocal(pt.x, pt.y, tr);
+      applyShapeMove(shape, shapeDrag.snapshot, local.x - shapeDrag.startLocal.x, local.y - shapeDrag.startLocal.y);
+      return;
+    }
     if (!dragMode || !dragLayerId || !dragTr) return;
     const layer = store.project.layers.find((l) => l.id === dragLayerId);
     if (!layer) return;
@@ -358,6 +499,11 @@
   }
 
   function onSelectPointerUp() {
+    if (shapeDrag) {
+      store.commit();
+      shapeDrag = null;
+      return;
+    }
     if (dragMode) store.commit();
     dragMode = null;
     dragLayerId = null;
@@ -519,8 +665,124 @@
     drawingLayerId = null;
   }
 
+  // ---- node tool (edit an EXISTING path's anchors — move points, and turn a
+  // corner into a curve by Alt-dragging a handle out of it — without the pen
+  // tool's "click empty space appends a new anchor" behavior) ----
+  type NodeDragMode = 'moveAnchor' | 'addHandle' | 'dragHandleOut' | 'dragHandleIn' | null;
+  let nodeDragMode: NodeDragMode = null;
+  let nodeDragAnchorId: string | null = null;
+  let nodeDragLayerId: string | null = null;
+
+  // Finds the path shape the node tool should operate on: whichever is
+  // already being edited (toolState.editingShapeId), or — if nothing is —
+  // whatever path shape the click landed on, which starts editing it (same
+  // re-entry rule the pen tool uses). Each return is typed/narrowed locally,
+  // right where the 'path' check happens, rather than through a reassigned
+  // `let` — avoids the union-narrowing gap noted elsewhere in this codebase
+  // where TS loses track of a shape kind across a conditional reassignment.
+  function resolveEditableShape(pt: { x: number; y: number }): { layer: AnyLayer; shape: VectorPathShape } | null {
+    const layer = selectedLayer();
+    if (layer && layer.type === 'vector') {
+      const shape = layer.params.shapes.find((s) => s.id === toolState.editingShapeId);
+      if (shape && shape.kind === 'path') return { layer, shape };
+    }
+    const hit = pickShapeAt(pt);
+    if (hit && hit.shape.kind === 'path') {
+      store.selection.selectLayer(hit.layer.id);
+      toolState.editingShapeId = hit.shape.id;
+      return { layer: hit.layer, shape: hit.shape };
+    }
+    return null;
+  }
+
+  function onNodePointerDown(pt: { x: number; y: number }, altKey: boolean) {
+    const target = resolveEditableShape(pt);
+    if (!target) {
+      toolState.editingShapeId = null;
+      toolState.selectedAnchorId = null;
+      return;
+    }
+    const { layer, shape } = target;
+    const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+    nodeDragLayerId = layer.id;
+    // Handle dots take priority over anchors so a handle sitting close to its
+    // own anchor is still reachable.
+    for (const anchor of shape.points) {
+      if (anchor.handleOut) {
+        const h = layerLocalToScreen(anchor.x + anchor.handleOut.x, anchor.y + anchor.handleOut.y, tr);
+        if (screenDist(pt.x, pt.y, h.x, h.y) < HANDLE_HIT_PX) {
+          toolState.selectedAnchorId = anchor.id;
+          nodeDragAnchorId = anchor.id;
+          nodeDragMode = 'dragHandleOut';
+          return;
+        }
+      }
+      if (anchor.handleIn) {
+        const h = layerLocalToScreen(anchor.x + anchor.handleIn.x, anchor.y + anchor.handleIn.y, tr);
+        if (screenDist(pt.x, pt.y, h.x, h.y) < HANDLE_HIT_PX) {
+          toolState.selectedAnchorId = anchor.id;
+          nodeDragAnchorId = anchor.id;
+          nodeDragMode = 'dragHandleIn';
+          return;
+        }
+      }
+    }
+    for (const anchor of shape.points) {
+      const s = layerLocalToScreen(anchor.x, anchor.y, tr);
+      if (screenDist(pt.x, pt.y, s.x, s.y) < HANDLE_HIT_PX) {
+        toolState.selectedAnchorId = anchor.id;
+        nodeDragAnchorId = anchor.id;
+        // Plain drag moves the point; Alt-drag pulls a fresh curve handle out
+        // of it (turns a corner into a smooth curve point).
+        nodeDragMode = altKey ? 'addHandle' : 'moveAnchor';
+        return;
+      }
+    }
+    // Clicked empty space inside the layer — deselect the anchor but keep
+    // editing this shape (its anchors stay visible).
+    toolState.selectedAnchorId = null;
+  }
+
+  function onNodePointerMove(pt: { x: number; y: number }, altKey: boolean) {
+    if (!nodeDragMode || !nodeDragAnchorId || !nodeDragLayerId) return;
+    const layer = store.project.layers.find((l) => l.id === nodeDragLayerId);
+    if (!layer || layer.type !== 'vector') return;
+    const shape = layer.params.shapes.find((s) => s.id === toolState.editingShapeId);
+    if (!shape || shape.kind !== 'path') return;
+    const anchor = shape.points.find((a) => a.id === nodeDragAnchorId);
+    if (!anchor) return;
+    const tr = resolveLayerTransform(layer, store.playhead, canvas.width, canvas.height);
+    const local = screenToLayerLocal(pt.x, pt.y, tr);
+    if (nodeDragMode === 'moveAnchor') {
+      anchor.x = local.x;
+      anchor.y = local.y;
+    } else if (nodeDragMode === 'addHandle') {
+      const dx = local.x - anchor.x, dy = local.y - anchor.y;
+      anchor.handleOut = { x: dx, y: dy };
+      anchor.handleIn = { x: -dx, y: -dy };
+      anchor.mirrored = true;
+    } else if (nodeDragMode === 'dragHandleOut') {
+      const dx = local.x - anchor.x, dy = local.y - anchor.y;
+      anchor.handleOut = { x: dx, y: dy };
+      if (anchor.mirrored && !altKey) anchor.handleIn = { x: -dx, y: -dy };
+      else anchor.mirrored = false;
+    } else if (nodeDragMode === 'dragHandleIn') {
+      const dx = local.x - anchor.x, dy = local.y - anchor.y;
+      anchor.handleIn = { x: dx, y: dy };
+      if (anchor.mirrored && !altKey) anchor.handleOut = { x: -dx, y: -dy };
+      else anchor.mirrored = false;
+    }
+  }
+
+  function onNodePointerUp() {
+    if (nodeDragMode) store.commit();
+    nodeDragMode = null;
+    nodeDragAnchorId = null;
+    nodeDragLayerId = null;
+  }
+
   function deleteSelectedAnchor() {
-    if (toolState.active !== 'pen' || !toolState.editingShapeId || !toolState.selectedAnchorId) return;
+    if ((toolState.active !== 'pen' && toolState.active !== 'node') || !toolState.editingShapeId || !toolState.selectedAnchorId) return;
     const layer = selectedLayer();
     if (!layer || layer.type !== 'vector') return;
     const shape = layer.params.shapes.find((s) => s.id === toolState.editingShapeId);
@@ -539,7 +801,7 @@
       spaceHeld = true;
       e.preventDefault(); // don't let Space also scroll the dockview panel
     }
-    if (toolState.active !== 'pen') return;
+    if (toolState.active !== 'pen' && toolState.active !== 'node') return;
     if (e.key === 'Escape') {
       toolState.editingShapeId = null;
       toolState.selectedAnchorId = null;
@@ -635,6 +897,7 @@
     const pt = toCanvasPoint(e);
     if (toolState.active === 'select') onSelectPointerDown(pt);
     else if (toolState.active === 'pen') onPenPointerDown(pt);
+    else if (toolState.active === 'node') onNodePointerDown(pt, e.altKey);
     else if (toolState.active === 'brush') onBrushPointerDown(pt);
     else onShapePointerDown(pt);
   }
@@ -642,15 +905,33 @@
     const pt = toCanvasPoint(e);
     if (toolState.active === 'select') onSelectPointerMove(pt);
     else if (toolState.active === 'pen') onPenPointerMove(pt, e.altKey);
+    else if (toolState.active === 'node') onNodePointerMove(pt, e.altKey);
     else if (toolState.active === 'brush') onBrushPointerMove(pt);
     else onShapePointerMove(pt);
   }
   function onPointerUp() {
     if (toolState.active === 'select') onSelectPointerUp();
     else if (toolState.active === 'pen') onPenPointerUp();
+    else if (toolState.active === 'node') onNodePointerUp();
     else if (toolState.active === 'brush') onBrushPointerUp();
     else onShapePointerUp();
   }
+
+  // A shape selection only ever makes sense within the layer it belongs to,
+  // and only as long as the shape itself still exists — reruns whenever the
+  // layer selection changes (LayersPanel, Tab-to-cycle, etc.) or the shape
+  // list changes (deleted via Delete, Rasterize, ShapeFields' Delete button),
+  // and drops a now-stale id instead of silently pointing at nothing/the
+  // wrong layer. Note this does NOT fire when onSelectPointerDown sets both
+  // selection.layerId and selectedShapeId together in the same tick — by the
+  // time this effect runs, that pair is already self-consistent.
+  $effect(() => {
+    const id = toolState.selectedShapeId;
+    if (!id) return;
+    const layer = store.project.layers.find((l) => l.id === store.selection.layerId);
+    const stillValid = !!layer && layer.type === 'vector' && layer.params.shapes.some((s) => s.id === id);
+    if (!stillValid) toolState.selectedShapeId = null;
+  });
 
   // Capture scale/rotation-at-drag-start right when a drag begins, not lazily
   // (evalScaleAtDragStart/evalRotationAtDragStart read these) — set here

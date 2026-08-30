@@ -51,8 +51,8 @@ describe('drawPreviewFrame — beat flash', () => {
 
 describe('aspectSize', () => {
   it('maps each aspect to its known canvas dimensions', () => {
-    expect(aspectSize('9x16')).toEqual({ w: 270, h: 480 });
-    expect(aspectSize('16x9')).toEqual({ w: 480, h: 270 });
-    expect(aspectSize('1x1')).toEqual({ w: 380, h: 380 });
+    expect(aspectSize('9x16')).toEqual({ w: 1080, h: 1920 });
+    expect(aspectSize('16x9')).toEqual({ w: 1920, h: 1080 });
+    expect(aspectSize('1x1')).toEqual({ w: 1520, h: 1520 });
   });
 });
