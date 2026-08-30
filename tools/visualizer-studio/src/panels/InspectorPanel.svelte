@@ -3,10 +3,12 @@
   import { ANIM_KEYS } from '../types/project';
   import PropRow from './PropRow.svelte';
   import ParamFields from './ParamFields.svelte';
+  import ShapeFields from './ShapeFields.svelte';
   import CurveEditor from '../timeline/CurveEditor.svelte';
   import type { Ease } from '../types/project';
   import { rasterizeLayer } from '../lib/rasterize';
   import { toast } from '../state/toast.svelte';
+  import { toolState } from '../state/toolState.svelte';
   import Eye from '@lucide/svelte/icons/eye';
   import EyeOff from '@lucide/svelte/icons/eye-off';
   import Lock from '@lucide/svelte/icons/lock';
@@ -36,6 +38,17 @@
   };
 
   const layer = $derived(store.selection.selectedLayer);
+  const selectedShape = $derived(
+    layer && layer.type === 'vector' ? layer.params.shapes.find((s) => s.id === toolState.selectedShapeId) : undefined
+  );
+
+  function onDeleteShape() {
+    if (!layer || layer.type !== 'vector' || !selectedShape) return;
+    const id = selectedShape.id;
+    layer.params.shapes = layer.params.shapes.filter((s) => s.id !== id);
+    toolState.selectedShapeId = null;
+    store.commit();
+  }
 
   function onNameChange(e: Event) {
     if (!layer) return;
@@ -114,6 +127,13 @@
     </div>
 
     <ParamFields {layer} onChange={() => store.commit()} />
+
+    {#if layer.type === 'vector' && selectedShape}
+      <div class="shapeSection">
+        <p class="sectionLabel">Selected Shape</p>
+        <ShapeFields shape={selectedShape} onChange={() => store.commit()} onDelete={onDeleteShape} />
+      </div>
+    {/if}
 
     {#if singleSelectedKeyframeId && singleSelectedEase}
       <div class="curveSection">
@@ -196,6 +216,7 @@
     border-bottom: 1px solid var(--line);
     padding: 4px 0;
   }
+  .shapeSection,
   .curveSection {
     border-top: 1px solid var(--line);
     padding-top: 6px;
