@@ -29,8 +29,8 @@ export async function loadTemplateIntoStore(store: ProjectStore, tpl: Template):
   return true;
 }
 
-// Reads either a real .spectralis capsule file (sniffed by its "SPEX" magic)
-// or a legacy flat `.studio.json` save — both keep working indefinitely, the
+// Reads either a real .spex capsule file (sniffed by its "SPEX" magic) or a
+// legacy flat `.studio.json` save — both keep working indefinitely, the
 // binary format is purely additive.
 export async function importProjectFile(store: ProjectStore, file: File): Promise<void> {
   if (!(await confirmUnsavedIfNeeded(store))) return;

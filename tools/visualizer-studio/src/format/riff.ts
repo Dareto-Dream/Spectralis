@@ -1,5 +1,5 @@
 // Minimal hand-rolled reader/writer for the RIFF/WAV-style chunked binary
-// container used by .spectralis (capsule) and .spectral (world) project
+// container used by .spex (capsule) and .spectral (world) project
 // files — see the "File format" section of the project plan for the full
 // spec this implements. No dependency: it's just DataView/Uint8Array
 // bookkeeping, small enough to hand-roll and keep in sync with the spec

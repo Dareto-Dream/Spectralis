@@ -1,7 +1,7 @@
 // A safety net on top of the file-based Save/Load flow, not a replacement for
 // it — cleared on a successful Save. Now format-aware: this used to be one
 // global localStorage key holding raw `Project` JSON, which never touched the
-// real .spectralis/.spectral binary encoding and had no World-mode equivalent
+// real .spex/.spectral binary encoding and had no World-mode equivalent
 // at all. Generic over T (a CapsuleFile or a WorldFile) so both modes share
 // one implementation and exercise the exact same encode/decode path manual
 // Save/Load already uses — no second "JSON shape" to keep in sync.
@@ -100,7 +100,7 @@ export class AutosaveManager<T> {
 }
 
 export const capsuleAutosave = new AutosaveManager<CapsuleFile>(
-  'capsule-autosave.spectralis',
+  'capsule-autosave.spex',
   'visualizer-studio:autosave:capsule',
   (d) => encodeCapsuleFile(d),
   decodeCapsuleFile

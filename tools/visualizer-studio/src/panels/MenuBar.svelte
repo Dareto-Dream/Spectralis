@@ -241,7 +241,7 @@
   {/each}
 </div>
 
-<input bind:this={projectFileInput} type="file" accept=".spectralis,application/json" hidden onchange={onProjectFileChosen} />
+<input bind:this={projectFileInput} type="file" accept=".spex,application/json" hidden onchange={onProjectFileChosen} />
 <input bind:this={audioFileInput} type="file" accept="audio/*" hidden onchange={onAudioFileChosen} />
 <input bind:this={coverFileInput} type="file" accept="image/*" hidden onchange={onCoverFileChosen} />
 <input bind:this={worldFileInput} type="file" accept=".spectral" hidden onchange={onWorldFileChosen} />

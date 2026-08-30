@@ -9,7 +9,7 @@ export function downloadText(filename: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
-// Browser-build fallback for saving a .spectralis/.spectral file — the same
+// Browser-build fallback for saving a .spex/.spectral file — the same
 // bytes the native build writes via fs, just delivered as a download since
 // there's no filesystem to write to directly.
 export function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/octet-stream') {
