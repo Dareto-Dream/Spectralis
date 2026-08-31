@@ -33,6 +33,15 @@ export class ProjectStore {
     this.timelinePxPerSec = Math.max(10, Math.min(400, this.timelinePxPerSec + dir * 20));
   }
 
+  // The real on-disk .spex path this project was last saved to or loaded
+  // from (native only — always null in the browser build, which has no real
+  // filesystem to remember a path into). Ephemeral session state, same
+  // category as soloedLayerIds/loopRegion above, not persisted project data.
+  // Ctrl+S (lib/projectSave.ts's saveProjectFile) reuses this silently
+  // instead of prompting every time; Ctrl+Shift+S (saveProjectFileAs)
+  // always prompts and then overwrites this with whatever you picked.
+  knownFilePath: string | null = $state(null);
+
   // Explicit commit point for continuous UI-driven edits (keyframe drag, numeric
   // field entry) that mutate `project` directly and only want ONE history entry
   // at the end, instead of one per intermediate frame.
@@ -40,12 +49,16 @@ export class ProjectStore {
     this.history.commit(this.project);
   }
 
-  loadProject(project: Project) {
+  // `knownFilePath` defaults to null (a brand new/templated/restored project
+  // isn't tied to any file on disk yet) — importProjectFile passes the real
+  // resolved path explicitly when one's actually loaded FROM a file.
+  loadProject(project: Project, knownFilePath: string | null = null) {
     this.project = project;
     this.playhead = 0;
     this.playing = false;
     this.selection.clearAll();
     this.history.reset(project);
+    this.knownFilePath = knownFilePath;
   }
 
   newProject() {

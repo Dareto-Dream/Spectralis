@@ -191,6 +191,31 @@ describe('NodeWorldStore', () => {
     expect(node.x).toBe(42);
     expect(node.y).toBe(0);
   });
+
+  it('isDirty flips true on any mutation and back to false once markSaved catches up', () => {
+    const w = new NodeWorldStore();
+    expect(w.isDirty).toBe(false);
+    w.addNode(null);
+    expect(w.isDirty).toBe(true);
+    w.markSaved('C:/Projects/world.spectral');
+    expect(w.isDirty).toBe(false);
+    expect(w.knownFilePath).toBe('C:/Projects/world.spectral');
+  });
+
+  it('a mutation after markSaved makes it dirty again', () => {
+    const w = new NodeWorldStore();
+    w.markSaved(null);
+    w.addNode(null);
+    expect(w.isDirty).toBe(true);
+  });
+
+  it('loadGraph treats the freshly loaded graph as clean (not dirty) and records its known path', () => {
+    const w = new NodeWorldStore();
+    w.addNode(null); // dirty from some prior session state
+    w.loadGraph([], { name: 'Loaded' }, 'C:/Projects/world.spectral');
+    expect(w.isDirty).toBe(false);
+    expect(w.knownFilePath).toBe('C:/Projects/world.spectral');
+  });
 });
 
 describe('core/nodeRender.js', () => {

@@ -7,7 +7,7 @@
   import MenuList from './MenuList.svelte';
   import { TEMPLATES } from '../lib/templates';
   import { confirmUnsavedIfNeeded, importProjectFile, loadTemplateIntoStore } from '../lib/projectImport';
-  import { saveProjectFile } from '../lib/projectSave';
+  import { saveProjectFile, saveProjectFileAs } from '../lib/projectSave';
   import { renderCapsule } from '../lib/exportRun.svelte';
   import { deleteSelection } from '../lib/deleteSelection';
   import { dockManager, DOCK_PANEL_TITLES, type DockPanelId } from './dockManager.svelte';
@@ -16,7 +16,7 @@
   import { uiState } from '../state/uiState.svelte';
   import { toast } from '../state/toast.svelte';
   import { appMode } from '../state/appMode.svelte';
-  import { saveWorldFile, loadWorldFile } from '../lib/worldSave';
+  import { saveWorldFile, saveWorldFileAs, loadWorldFile } from '../lib/worldSave';
   import { loadAudioFile } from '../lib/audioLoad';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
@@ -84,6 +84,7 @@
         },
         { kind: 'action', label: 'Load Project…', action: onLoadProjectClick },
         { kind: 'action', label: 'Save Project', shortcut: 'Ctrl+S', action: () => saveProjectFile(store, audio, assets) },
+        { kind: 'action', label: 'Save Project As…', shortcut: 'Ctrl+Shift+S', action: () => saveProjectFileAs(store, audio, assets) },
         { kind: 'separator' },
         {
           kind: 'submenu',
@@ -155,6 +156,14 @@
           action: async () => {
             appMode.mode = 'world';
             await saveWorldFile();
+          },
+        },
+        {
+          kind: 'action',
+          label: 'Save World As…',
+          action: async () => {
+            appMode.mode = 'world';
+            await saveWorldFileAs();
           },
         },
         {

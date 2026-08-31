@@ -6,11 +6,11 @@
   import type { ProjectStore } from '../state/project.svelte';
   import type { AudioState } from '../state/audio.svelte';
   import type { AssetsState } from '../state/assets.svelte';
-  import { saveProjectFile } from '../lib/projectSave';
+  import { saveProjectFile, saveProjectFileAs } from '../lib/projectSave';
   import { renderCapsule } from '../lib/exportRun.svelte';
   import { exportSettings } from '../state/exportSettings.svelte';
   import { appMode, type AppMode } from '../state/appMode.svelte';
-  import { saveWorldFile, exportWorldHtml } from '../lib/worldSave';
+  import { saveWorldFile, saveWorldFileAs, exportWorldHtml } from '../lib/worldSave';
   import { dockManager } from './dockManager.svelte';
   import { toolState } from '../state/toolState.svelte';
   import Clapperboard from '@lucide/svelte/icons/clapperboard';
@@ -19,6 +19,7 @@
   import Eye from '@lucide/svelte/icons/eye';
   import BookOpen from '@lucide/svelte/icons/book-open';
   import Save from '@lucide/svelte/icons/save';
+  import SavePen from '@lucide/svelte/icons/save-pen';
   import Undo2 from '@lucide/svelte/icons/undo-2';
   import Redo2 from '@lucide/svelte/icons/redo-2';
   import Package from '@lucide/svelte/icons/package';
@@ -138,6 +139,9 @@
       <button class="icon ghost" title="Save Project (Ctrl+S)" aria-label="Save Project" onclick={() => saveProjectFile(store, audio, assets)}>
         <Save size={14} />
       </button>
+      <button class="icon ghost" title="Save Project As… (Ctrl+Shift+S)" aria-label="Save Project As" onclick={() => saveProjectFileAs(store, audio, assets)}>
+        <SavePen size={14} />
+      </button>
       <button class="icon ghost" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!store.history.canUndo} onclick={() => store.undo()}>
         <Undo2 size={14} />
       </button>
@@ -157,8 +161,11 @@
     </div>
   {:else}
     <div class="actions">
-      <button class="icon ghost" title="Save World (.spectral)" aria-label="Save World" onclick={() => saveWorldFile()}>
+      <button class="icon ghost" title="Save World (.spectral) — Ctrl+S" aria-label="Save World" onclick={() => saveWorldFile()}>
         <Save size={14} />
+      </button>
+      <button class="icon ghost" title="Save World As… (Ctrl+Shift+S)" aria-label="Save World As" onclick={() => saveWorldFileAs()}>
+        <SavePen size={14} />
       </button>
       <span class="sep"></span>
       <button class="small ghost" title="Export World to HTML" aria-label="Export World" onclick={() => exportWorldHtml()}>

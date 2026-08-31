@@ -36,6 +36,23 @@ export class NodeWorldStore {
     this.revision++;
   }
 
+  // Mirrors ProjectStore.knownFilePath/HistoryStack's dirty flag for World —
+  // see those for the full reasoning (Ctrl+S reuse + the "unsaved changes"
+  // prompt getting stuck on forever after the first edit, even right after
+  // a save). savedAtRevision instead of a plain boolean since there's no
+  // commit()-shaped choke point here to flip a flag from — comparing against
+  // the same ever-increasing counter autosave already uses is simpler than
+  // adding one.
+  knownFilePath: string | null = $state(null);
+  private savedAtRevision = $state(0);
+  get isDirty(): boolean {
+    return this.revision > this.savedAtRevision;
+  }
+  markSaved(path: string | null) {
+    this.knownFilePath = path;
+    this.savedAtRevision = this.revision;
+  }
+
   get selectedNode(): SceneNode | null {
     return this.selectedId ? (this.findNode(this.selectedId)?.node ?? null) : null;
   }
@@ -157,13 +174,18 @@ export class NodeWorldStore {
     this.bump();
   }
 
-  loadGraph(roots: SceneNode[], meta?: Partial<NodeWorldMeta>) {
+  loadGraph(roots: SceneNode[], meta?: Partial<NodeWorldMeta>, knownFilePath: string | null = null) {
     this.roots = roots;
     if (meta) Object.assign(this.meta, meta);
     this.selectedId = null;
-    // Deliberately no bump() — loading a graph (including the autosave
+    this.knownFilePath = knownFilePath;
+    // Also syncs savedAtRevision to the CURRENT revision (not bumping it) —
+    // a freshly loaded graph exactly matches what's on disk, same "just
+    // loaded = not dirty" rule ProjectStore.loadProject follows. Deliberately
+    // no bump() beyond that — loading a graph (including the autosave
     // restore flow itself) must not immediately re-trigger a fresh autosave
     // write of the thing that was just read.
+    this.savedAtRevision = this.revision;
   }
 
   clear() {

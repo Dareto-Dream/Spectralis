@@ -4,7 +4,9 @@ import type { AssetsState } from '../state/assets.svelte';
 import { copyKeyframes, pasteAtPlayhead, pasteAtOriginalTimes, hasClipboard } from '../timeline/clipboard';
 import { closeContextMenu, contextMenuState } from '../timeline/contextMenu.svelte';
 import { confirmModalState } from '../state/confirmModal.svelte';
-import { saveProjectFile } from './projectSave';
+import { saveProjectFile, saveProjectFileAs } from './projectSave';
+import { saveWorldFile, saveWorldFileAs } from './worldSave';
+import { appMode } from '../state/appMode.svelte';
 import { deleteSelection } from './deleteSelection';
 
 const FRAME = 1 / 30;
@@ -38,7 +40,8 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { keys: 'Double-click a lane', description: 'Add a keyframe at that time', category: 'View' },
   { keys: 'Scroll wheel over timeline', description: 'Zoom, anchored at cursor', category: 'View' },
   { keys: 'Right-click keyframe/section/layer', description: 'Context menu', category: 'View' },
-  { keys: 'Ctrl+S', description: 'Save project', category: 'General' },
+  { keys: 'Ctrl+S', description: 'Save (Capsule or World, whichever mode you\'re in)', category: 'General' },
+  { keys: 'Ctrl+Shift+S', description: 'Save As — always prompts for a new location', category: 'General' },
   { keys: '?', description: 'Show this help', category: 'General' },
 ];
 
@@ -73,7 +76,18 @@ export function createGlobalKeymap(store: ProjectStore, audio: AudioState, asset
     }
     if (mod && e.key.toLowerCase() === 's') {
       e.preventDefault(); // prevents the browser's Save-page dialog
-      saveProjectFile(store, audio, assets);
+      // Mode-aware — this used to always save the Capsule project even while
+      // in World mode, which would silently save/prompt for the WRONG thing
+      // (and never touch the World graph you were actually looking at) if
+      // you hit Ctrl+S there instead of using the menu's own Save World.
+      if (appMode.mode === 'world') {
+        if (e.shiftKey) saveWorldFileAs();
+        else saveWorldFile();
+      } else if (e.shiftKey) {
+        saveProjectFileAs(store, audio, assets);
+      } else {
+        saveProjectFile(store, audio, assets);
+      }
       return;
     }
     if (typing) return;
