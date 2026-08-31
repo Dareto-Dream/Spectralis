@@ -216,6 +216,12 @@
   // frame so the canvas has already resized for the new pxPerSec before we
   // set scrollLeft (setting it against the old, narrower width would clamp).
   function onWheel(e: WheelEvent) {
+    // Plain wheel/trackpad scroll (no modifier) passes straight through to
+    // the browser's normal scrolling of .timelineWrap — vertical when there
+    // are more layer lanes than fit, horizontal via shift+wheel/trackpad —
+    // same Ctrl/Cmd-gates-zoom convention WorkspaceCanvas.svelte's own wheel
+    // handler already uses. Only intercept for the cursor-anchored zoom.
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const wrapperRect = wrapper.getBoundingClientRect();
     const localXInWrapper = e.clientX - wrapperRect.left;
@@ -407,8 +413,15 @@
     color: var(--dim);
   }
   .timelineWrap {
+    /* Without flex:1 + min-height:0, this sizes to its canvas child's full
+       content height (which grows with the layer count) instead of being
+       squeezed to whatever room TimelinePanelContent.svelte's flex column
+       actually has — nothing would ever overflow THIS element to scroll,
+       the dockview panel around it would just get pushed taller/clipped. */
+    flex: 1;
+    min-height: 0;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto;
     border-top: 1px solid var(--line);
   }
   canvas {
