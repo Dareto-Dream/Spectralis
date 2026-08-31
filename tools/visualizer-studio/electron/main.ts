@@ -12,16 +12,28 @@ import fs from 'node:fs';
 Menu.setApplicationMenu(null);
 
 function createWindow() {
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     backgroundColor: '#0a0a0d', // matches --bg0, avoids a white flash on first paint
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      // electron:dev serves the renderer from http://localhost:5173 (Vite),
+      // but audio/video loaded via the Assets panel resolve to a real
+      // file:// URL (preload.ts's toFileUrl) — Chromium refuses to fetch a
+      // file:// resource from an http(s):// origin, so <audio>.play() would
+      // silently reject and the transport driver's catch flips playing back
+      // off (looks exactly like "the play button doesn't work" once real
+      // audio is loaded, though everything ELSE about the load — waveform,
+      // sha256, the loaded/filename UI — reads straight off the File object
+      // and never touches this). A packaged build (electron:build) loads
+      // dist/index.html over file:// too, so the origins already match there
+      // and this only ever relaxes anything in dev.
+      webSecurity: !devUrl,
     },
   });
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
     win.loadURL(devUrl);
     win.webContents.openDevTools();

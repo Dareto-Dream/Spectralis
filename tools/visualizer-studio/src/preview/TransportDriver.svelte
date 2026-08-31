@@ -28,6 +28,25 @@
     }
   });
 
+  // Keep the real <audio> element's position in sync with store.playhead
+  // whenever something ELSE moves the playhead while paused — scrubbing the
+  // timeline ruler, clicking an overview lane, a keyboard nudge, all of them
+  // just call store.seekTo()/set store.playhead directly and have no idea
+  // an <audio> element even exists. Without this, audio.el.currentTime only
+  // ever gets read from (below, while playing) and drifts away from wherever
+  // the user actually scrubbed to — pressing Play then resumes from that
+  // stale position instead, which looks exactly like "Play doesn't work".
+  // Deliberately one-way: while playing, tick() below drives playhead FROM
+  // audio.el.currentTime every frame, so this stays a no-op then (skipped
+  // outright) to avoid the two fighting each other.
+  $effect(() => {
+    const t = store.playhead;
+    if (!audio.loaded || store.playing) return;
+    if (Math.abs(audio.el.currentTime - t) > 0.05) {
+      audio.el.currentTime = t;
+    }
+  });
+
   function tick(now: number) {
     raf = requestAnimationFrame(tick);
     if (!lastFrameTime) lastFrameTime = now;
