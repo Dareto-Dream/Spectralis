@@ -39,7 +39,14 @@
   let ctx: CanvasRenderingContext2D;
   let raf = 0;
   const frameState = initialFrameState();
-  const HANDLE_HIT_PX = 10;
+  // drawPreview.ts's aspectSize bumped every canvas resolution by an exact 4x
+  // (Full HD) — every hit-test radius and drawn dot/box below was originally
+  // tuned by eye against the old ~270-480px canvas, so without this they'd
+  // still be that same handful of CANVAS pixels against a canvas 4x bigger:
+  // easy to miss with the cursor and barely visible on screen. Scaling both
+  // by the same factor keeps them feeling exactly like they used to.
+  const UI_SCALE = 4;
+  const HANDLE_HIT_PX = 10 * UI_SCALE;
 
   $effect(() => {
     const { w, h } = aspectSize(store.project.meta.aspect);
@@ -65,8 +72,8 @@
     ];
     ctx.save();
     ctx.strokeStyle = '#5ec8ff';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = UI_SCALE;
+    ctx.setLineDash([4 * UI_SCALE, 3 * UI_SCALE]);
     ctx.beginPath();
     ctx.moveTo(corners[0].x, corners[0].y);
     for (const c of corners.slice(1)) ctx.lineTo(c.x, c.y);
@@ -75,17 +82,18 @@
     ctx.setLineDash([]);
     if (!layer.locked && toolState.active === 'select') {
       ctx.fillStyle = '#5ec8ff';
+      const half = 3 * UI_SCALE;
       for (const c of corners) {
-        ctx.fillRect(c.x - 3, c.y - 3, 6, 6);
+        ctx.fillRect(c.x - half, c.y - half, half * 2, half * 2);
       }
-      const rotateHandle = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y - 24, tr);
+      const rotateHandle = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y - 24 * UI_SCALE, tr);
       const topMid = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y, tr);
       ctx.beginPath();
       ctx.moveTo(topMid.x, topMid.y);
       ctx.lineTo(rotateHandle.x, rotateHandle.y);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(rotateHandle.x, rotateHandle.y, 4, 0, Math.PI * 2);
+      ctx.arc(rotateHandle.x, rotateHandle.y, 4 * UI_SCALE, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -112,8 +120,8 @@
     ];
     ctx.save();
     ctx.strokeStyle = '#ff9d5c';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1.5 * UI_SCALE;
+    ctx.setLineDash([3 * UI_SCALE, 3 * UI_SCALE]);
     ctx.beginPath();
     ctx.moveTo(corners[0].x, corners[0].y);
     for (const c of corners.slice(1)) ctx.lineTo(c.x, c.y);
@@ -132,6 +140,9 @@
     ctx.save();
     ctx.strokeStyle = '#ffcf5c';
     ctx.fillStyle = '#ffcf5c';
+    ctx.lineWidth = UI_SCALE;
+    const dotR = 3 * UI_SCALE;
+    const anchorHalf = 3 * UI_SCALE;
     for (const anchor of shape.points) {
       const p = layerLocalToScreen(anchor.x, anchor.y, tr);
       if (anchor.handleOut) {
@@ -141,7 +152,7 @@
         ctx.lineTo(h.x, h.y);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(h.x, h.y, 3, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, dotR, 0, Math.PI * 2);
         ctx.fill();
       }
       if (anchor.handleIn) {
@@ -151,10 +162,13 @@
         ctx.lineTo(h.x, h.y);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(h.x, h.y, 3, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, dotR, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.strokeRect(p.x - 3, p.y - 3, 6, 6);
+      const isSelected = anchor.id === toolState.selectedAnchorId;
+      ctx.lineWidth = isSelected ? UI_SCALE * 1.5 : UI_SCALE;
+      ctx.strokeRect(p.x - anchorHalf, p.y - anchorHalf, anchorHalf * 2, anchorHalf * 2);
+      ctx.lineWidth = UI_SCALE;
     }
     ctx.restore();
   }
@@ -326,7 +340,7 @@
   function hitTestHandles(layer: AnyLayer, tr: LayerTransform, pt: { x: number; y: number }): DragMode {
     if (layer.locked) return null;
     const b = layerLocalBounds(layer, canvas.width, canvas.height);
-    const rotateHandle = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y - 24, tr);
+    const rotateHandle = layerLocalToScreen((b.x + b.x + b.w) / 2, b.y - 24 * UI_SCALE, tr);
     if (screenDist(pt.x, pt.y, rotateHandle.x, rotateHandle.y) < HANDLE_HIT_PX) return 'rotate';
     const corners = [
       layerLocalToScreen(b.x, b.y, tr),
