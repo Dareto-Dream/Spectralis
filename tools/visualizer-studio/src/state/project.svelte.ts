@@ -141,6 +141,16 @@ export class ProjectStore {
     return reactive;
   }
 
+  // Backs LayersPanel.svelte's group header chevron — persisted on the
+  // LayerGroup record itself (LayerGroup.collapsed), not session-only UI
+  // state, so a project reopens with its groups exactly as you left them.
+  toggleLayerGroupCollapsed(groupId: string) {
+    const group = this.project.layerGroups?.find((g) => g.id === groupId);
+    if (!group) return;
+    group.collapsed = !group.collapsed;
+    this.commit();
+  }
+
   deleteLayer(id: string) {
     const idx = this.project.layers.findIndex((l) => l.id === id);
     if (idx < 0) return;
