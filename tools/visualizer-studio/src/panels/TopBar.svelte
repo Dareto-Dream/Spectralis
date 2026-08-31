@@ -6,6 +6,7 @@
   import { fmtTime } from '../lib/fmtTime';
   import { dropZone } from '../lib/dropZone';
   import { assetDrop } from '../lib/dragAsset';
+  import { loadAudioFile } from '../lib/audioLoad';
   import { exportSettings } from '../state/exportSettings.svelte';
   import type { Aspect } from '../types/project';
   import type { AssetEntry } from '../types/asset';
@@ -25,6 +26,9 @@
     store.updateMeta({ slug: cleaned });
   }
 
+  // Only reachable while no audio is loaded — see the "End" field's
+  // disabled state below. Once a track is loaded, songEnd is DERIVED from
+  // its real duration (lib/audioLoad.ts), not hand-typed.
   function onSongEndChange(e: Event) {
     const v = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(v) && v > 0) store.updateMeta({ songEnd: v });
@@ -51,7 +55,17 @@
     <input class="title" placeholder="Title" value={store.project.meta.title} onchange={(e) => store.updateMeta({ title: (e.target as HTMLInputElement).value })} />
     <input class="artist" placeholder="Artist" value={store.project.meta.artist} onchange={(e) => store.updateMeta({ artist: (e.target as HTMLInputElement).value })} />
     <input class="slug" placeholder="slug" value={store.project.meta.slug} oninput={onSlugInput} />
-    <label class="field"><span>End</span><input type="number" step="0.5" value={store.project.meta.songEnd} onchange={onSongEndChange} /></label>
+    <label class="field">
+      <span>End</span>
+      <input
+        type="number"
+        step="0.5"
+        value={store.project.meta.songEnd}
+        disabled={audio.loaded}
+        title={audio.loaded ? 'Determined by the loaded audio track — remove/replace the audio to change it' : 'No audio loaded — set the song length manually'}
+        onchange={onSongEndChange}
+      />
+    </label>
     <select value={store.project.meta.aspect} onchange={(e) => store.updateMeta({ aspect: (e.target as HTMLSelectElement).value as Aspect })}>
       <option value="9x16">9:16 portrait</option>
       <option value="16x9">16:9 landscape</option>
@@ -64,7 +78,7 @@
     title="Drop an audio file here to load it"
     use:dropZone={{
       accept: isAudioFile,
-      onDrop: (f) => audio.loadFile(f),
+      onDrop: (f) => loadAudioFile(store, audio, f),
       onReject: () => toast.push('error', "That doesn't look like an audio file"),
     }}
   >

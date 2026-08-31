@@ -17,6 +17,7 @@
   import { toast } from '../state/toast.svelte';
   import { appMode } from '../state/appMode.svelte';
   import { saveWorldFile, loadWorldFile } from '../lib/worldSave';
+  import { loadAudioFile } from '../lib/audioLoad';
 
   let { store, audio, assets }: { store: ProjectStore; audio: AudioState; assets: AssetsState } = $props();
 
@@ -55,7 +56,7 @@
   function onAudioFileChosen(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = '';
-    if (file) audio.loadFile(file);
+    if (file) loadAudioFile(store, audio, file);
   }
   function onCoverFileChosen(e: Event) {
     const input = e.target as HTMLInputElement;
