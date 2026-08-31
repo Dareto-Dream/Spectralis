@@ -105,12 +105,16 @@
          left Tools docker (ToolsPanel.svelte), which stays a fixed grid of
          icon buttons so it never resizes as you switch tools. -->
     <div class="toolOptions">
-      {#if toolState.active === 'pen' || toolState.active === 'node'}
-        <span class="toolHint">
-          {toolState.active === 'pen'
-            ? 'Click to place anchors · drag while placing to pull a curve handle · click the start point to close'
-            : 'Drag a point to move it · Alt-drag a point to pull out a curve handle · drag a handle to reshape'}
-        </span>
+      {#if toolState.active === 'pen'}
+        <input type="color" title="Fill" bind:value={toolState.fillColor} />
+        <input type="color" title="Stroke" bind:value={toolState.strokeColor} />
+        <label class="opt"><span>Width</span><input class="num" type="number" min="0" step="0.5" bind:value={toolState.strokeWidth} /></label>
+        <span class="toolHint">Click to place anchors · drag while placing to pull a curve handle · click the start point to close</span>
+        {#if toolState.editingShapeId}
+          <button class="small ghost" onclick={() => toolState.finishPath()}>Done</button>
+        {/if}
+      {:else if toolState.active === 'node'}
+        <span class="toolHint">Drag a point to move it · Alt-drag a point to pull out a curve handle · drag a handle to reshape</span>
         {#if toolState.editingShapeId}
           <button class="small ghost" onclick={() => toolState.finishPath()}>Done</button>
         {/if}
