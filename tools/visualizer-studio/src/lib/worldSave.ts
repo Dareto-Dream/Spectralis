@@ -26,22 +26,38 @@ export function buildWorldFile(): WorldFile {
   };
 }
 
-export async function saveWorldFile() {
+// Shared core for Save (Ctrl+S) and Save As (Ctrl+Shift+S) — same reasoning
+// as projectSave.ts's writeProjectFile.
+async function writeWorldFile(forcePrompt: boolean) {
   const bytes = encodeWorldFile(buildWorldFile());
   const name = slug(nodeWorldStore.meta.name);
   if (window.native) {
-    const root = await window.native.getStudioRoot();
-    const chosen = await window.native.saveFileDialog({
-      defaultPath: `${root}/Projects/${name}.spectral`,
-      filters: [{ name: 'Spectralis World', extensions: ['spectral'] }],
-    });
-    if (!chosen) return;
-    await window.native.writeBinaryFile(chosen, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    let path = forcePrompt ? null : nodeWorldStore.knownFilePath;
+    if (!path) {
+      const root = await window.native.getStudioRoot();
+      const chosen = await window.native.saveFileDialog({
+        defaultPath: nodeWorldStore.knownFilePath ?? `${root}/Projects/${name}.spectral`,
+        filters: [{ name: 'Spectralis World', extensions: ['spectral'] }],
+      });
+      if (!chosen) return;
+      path = chosen;
+    }
+    await window.native.writeBinaryFile(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    nodeWorldStore.markSaved(path);
   } else {
     downloadBytes(`${name}.spectral`, bytes);
+    nodeWorldStore.markSaved(null);
   }
   void worldAutosave.clear();
   toast.push('success', 'World saved');
+}
+
+export function saveWorldFile() {
+  return writeWorldFile(false);
+}
+
+export function saveWorldFileAs() {
+  return writeWorldFile(true);
 }
 
 export async function loadWorldFile(file: File) {
@@ -49,7 +65,9 @@ export async function loadWorldFile(file: File) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const wf = decodeWorldFile(bytes);
     const nodeGraph = Array.isArray(wf.nodeGraph) ? (wf.nodeGraph as SceneNode[]) : [];
-    nodeWorldStore.loadGraph(nodeGraph, { name: wf.meta.name, author: wf.meta.author });
+    // Native only — see projectImport.ts's importProjectFile for the same trick.
+    const knownPath = window.native?.getPathForFile(file) ?? null;
+    nodeWorldStore.loadGraph(nodeGraph, { name: wf.meta.name, author: wf.meta.author }, knownPath);
     toast.push('success', `Loaded ${file.name}`);
   } catch (err) {
     toast.push('error', `Couldn't load that world — ${err instanceof Error ? err.message : String(err)}`);

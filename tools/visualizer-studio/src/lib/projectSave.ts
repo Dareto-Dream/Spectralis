@@ -39,23 +39,43 @@ export function buildCapsuleFile(store: ProjectStore, audio: AudioState, assets:
   };
 }
 
-export async function saveProjectFile(store: ProjectStore, audio: AudioState, assets: AssetsState) {
+// Shared core for both Save (Ctrl+S) and Save As (Ctrl+Shift+S) — `forcePrompt`
+// is the only difference: Save reuses store.knownFilePath silently once one
+// exists (from a prior save, or from opening a real file), Save As always
+// asks and adopts whatever gets picked as the new known path. Neither
+// distinction exists in the browser build — there's no real filesystem to
+// remember a path into, so every save is just another download there.
+async function writeProjectFile(store: ProjectStore, audio: AudioState, assets: AssetsState, forcePrompt: boolean) {
   const slug = store.project.meta.slug || 'project';
   const bytes = encodeCapsuleFile(buildCapsuleFile(store, audio, assets));
 
   if (window.native) {
-    const root = await window.native.getStudioRoot();
-    const chosen = await window.native.saveFileDialog({
-      defaultPath: `${root}/Projects/${slug}.spex`,
-      filters: [{ name: 'Spectralis Studio Project', extensions: ['spex'] }],
-    });
-    if (!chosen) return; // user cancelled the save dialog
+    let path = forcePrompt ? null : store.knownFilePath;
+    if (!path) {
+      const root = await window.native.getStudioRoot();
+      const chosen = await window.native.saveFileDialog({
+        defaultPath: store.knownFilePath ?? `${root}/Projects/${slug}.spex`,
+        filters: [{ name: 'Spectralis Studio Project', extensions: ['spex'] }],
+      });
+      if (!chosen) return; // user cancelled the save dialog
+      path = chosen;
+    }
     // Same ArrayBuffer-vs-ArrayBufferLike type-system gap as downloadBytes —
     // `bytes` is always a freshly allocated, non-shared buffer.
-    await window.native.writeBinaryFile(chosen, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    await window.native.writeBinaryFile(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    store.knownFilePath = path;
   } else {
     downloadBytes(`${slug}.spex`, bytes);
   }
   void capsuleAutosave.clear();
+  store.history.markSaved();
   toast.push('success', 'Project saved');
+}
+
+export function saveProjectFile(store: ProjectStore, audio: AudioState, assets: AssetsState) {
+  return writeProjectFile(store, audio, assets, false);
+}
+
+export function saveProjectFileAs(store: ProjectStore, audio: AudioState, assets: AssetsState) {
+  return writeProjectFile(store, audio, assets, true);
 }

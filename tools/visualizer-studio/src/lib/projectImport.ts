@@ -38,7 +38,12 @@ export async function importProjectFile(store: ProjectStore, file: File): Promis
     const bytes = new Uint8Array(await file.arrayBuffer());
     const magic = new TextDecoder('ascii').decode(bytes.subarray(0, 4));
     const project = magic === 'SPEX' || magic === 'SPWX' ? decodeCapsuleFile(bytes).project : migrateProject(JSON.parse(new TextDecoder('utf-8').decode(bytes)));
-    store.loadProject(project);
+    // Native only — resolves the real fs path this File came from, same
+    // trick AudioState.loadFile already uses, so Ctrl+S right after opening
+    // a project overwrites the file you just opened instead of prompting
+    // for a location all over again.
+    const knownPath = window.native?.getPathForFile(file) ?? null;
+    store.loadProject(project, knownPath);
     toast.push('success', `Loaded ${file.name}`);
   } catch (err) {
     await confirmDialog({

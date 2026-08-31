@@ -74,6 +74,51 @@ describe('HistoryStack', () => {
     expect(h.canUndo).toBe(false);
     expect(h.hasUncommittedSinceLoad).toBe(false);
   });
+
+  it('a commit marks it dirty, and markSaved (after a real Save) clears the dirty flag without touching undo history', () => {
+    const h = new HistoryStack();
+    h.reset(projectTitled('A'));
+    h.commit(projectTitled('B'));
+    expect(h.hasUncommittedSinceLoad).toBe(true);
+    h.markSaved();
+    expect(h.hasUncommittedSinceLoad).toBe(false);
+    expect(h.canUndo).toBe(true); // undo still works across a save
+  });
+
+  it('a commit AFTER markSaved makes it dirty again', () => {
+    const h = new HistoryStack();
+    h.reset(projectTitled('A'));
+    h.commit(projectTitled('B'));
+    h.markSaved();
+    h.commit(projectTitled('C'));
+    expect(h.hasUncommittedSinceLoad).toBe(true);
+  });
+
+  it('undo/redo after a save mark it dirty again too (moving the current state away from what was saved)', () => {
+    const h = new HistoryStack();
+    h.reset(projectTitled('A'));
+    h.commit(projectTitled('B'));
+    h.markSaved();
+    h.undo(projectTitled('B'));
+    expect(h.hasUncommittedSinceLoad).toBe(true);
+  });
+});
+
+describe('ProjectStore — knownFilePath (Ctrl+S vs. Ctrl+Shift+S)', () => {
+  it('loadProject defaults knownFilePath to null, and accepts an explicit one (importProjectFile passes the resolved fs path)', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    expect(store.knownFilePath).toBeNull();
+    store.loadProject(blankProject(), 'C:/Projects/song.spex');
+    expect(store.knownFilePath).toBe('C:/Projects/song.spex');
+  });
+
+  it('newProject clears knownFilePath — a fresh project has no file yet', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject(), 'C:/Projects/song.spex');
+    store.newProject();
+    expect(store.knownFilePath).toBeNull();
+  });
 });
 
 describe('ProjectStore — layers', () => {

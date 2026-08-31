@@ -52,7 +52,7 @@
 
   function onBeforeUnload(e: BeforeUnloadEvent) {
     const capsuleDirty = store.history.hasUncommittedSinceLoad && capsuleAutosave.isStale();
-    const worldDirty = appMode.mode === 'world' && nodeWorldStore.revision > 0 && worldAutosave.isStale();
+    const worldDirty = appMode.mode === 'world' && nodeWorldStore.isDirty && worldAutosave.isStale();
     if (capsuleDirty || worldDirty) {
       e.preventDefault();
       e.returnValue = '';
