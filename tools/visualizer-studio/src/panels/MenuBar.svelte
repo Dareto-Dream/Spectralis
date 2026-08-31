@@ -89,7 +89,6 @@
           label: 'Import',
           items: [
             { kind: 'action', label: 'Audio File…', action: () => audioFileInput?.click() },
-            { kind: 'action', label: 'Lyrics Importer…', action: () => (uiState.lyricsImporterOpen = true) },
             { kind: 'action', label: 'Cover Image…', action: () => coverFileInput?.click() },
           ],
         },
@@ -147,6 +146,7 @@
       label: 'Tools',
       items: [
         { kind: 'action', label: 'Render Capsule', action: () => renderCapsule(store, audio, assets) },
+        { kind: 'action', label: 'Lyrics Importer…', action: () => (uiState.lyricsImporterOpen = true) },
         { kind: 'separator' },
         {
           kind: 'action',
