@@ -27,6 +27,7 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { keys: 'Ctrl+Z / Ctrl+Shift+Z', description: 'Undo / Redo', category: 'Editing' },
   { keys: 'Delete / Backspace', description: 'Delete selected keyframe(s) or layer', category: 'Editing' },
   { keys: 'Ctrl+D', description: 'Duplicate selected layer', category: 'Editing' },
+  { keys: 'K', description: 'Add a keyframe at the playhead for the selected property', category: 'Editing' },
   { keys: 'Ctrl+C / Ctrl+V', description: 'Copy / Paste keyframes at playhead', category: 'Editing' },
   { keys: 'Ctrl+Shift+V', description: 'Paste keyframes at original times', category: 'Editing' },
   { keys: 'F2', description: 'Rename selected layer', category: 'Editing' },
@@ -91,6 +92,15 @@ export function createGlobalKeymap(store: ProjectStore, audio: AudioState, asset
       if (store.selection.layerId) {
         e.preventDefault();
         store.duplicateLayer(store.selection.layerId);
+      }
+    } else if (e.key.toLowerCase() === 'k') {
+      // Same action as PropRow.svelte's "+Key" button (or ShapeAnimRow's, for
+      // a selected shape's own motion) — a keyboard shortcut for whatever
+      // property is currently selected, rather than requiring a mouse trip
+      // to the Inspector every time.
+      if (store.selection.layerId && store.selection.trackKey) {
+        e.preventDefault();
+        store.addKeyframeAtPlayhead(store.selection.layerId, store.selection.trackKey);
       }
     } else if (mod && e.key.toLowerCase() === 'c') {
       const entries = [...store.selection.keyframeIds]
