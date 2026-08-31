@@ -1,8 +1,14 @@
-import type { AnimKey, AnyLayer, Project } from '../types/project';
+import type { AnimKey, AnyLayer, Project, ShapeAnimKey, VectorShape } from '../types/project';
 
 export interface KeyframeRef {
   layer: AnyLayer;
-  trackKey: AnimKey;
+  // Present iff this keyframe lives on a SHAPE's animTracks (ShapeAnimKey,
+  // a subset of AnimKey's own string values) rather than the layer's own
+  // tracks — store.svelte.ts's setKeyframeValue/setKeyframeEase/
+  // deleteKeyframe/moveKeyframeTime all branch on this so one shared set of
+  // methods serves both scopes.
+  shape?: VectorShape;
+  trackKey: AnimKey | ShapeAnimKey;
   index: number;
 }
 
@@ -35,6 +41,19 @@ export class SelectionState {
         layer.tracks[trackKey].forEach((kf, index) => {
           map.set(kf.id, { layer, trackKey, index });
         });
+      }
+      if (layer.type === 'vector') {
+        for (const shape of layer.params.shapes) {
+          const tracks = shape.animTracks;
+          if (!tracks) continue;
+          for (const trackKey of Object.keys(tracks) as ShapeAnimKey[]) {
+            const track = tracks[trackKey];
+            if (!track) continue;
+            track.forEach((kf, index) => {
+              map.set(kf.id, { layer, shape, trackKey, index });
+            });
+          }
+        }
       }
     }
     return map;

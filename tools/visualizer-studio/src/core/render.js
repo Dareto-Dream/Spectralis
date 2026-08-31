@@ -61,7 +61,7 @@ export function renderLayerAt(ctx, layer, t, W, H, nowMs, beatFlash) {
     ctx.translate(x, y);
     ctx.rotate(rotation);
     ctx.scale(worldScale, worldScale);
-    drawVectorLayer(ctx, p.shapes, hueA, hueB, opacity, nowMs, beatFlash);
+    drawVectorLayer(ctx, p.shapes, hueA, hueB, opacity, nowMs, beatFlash, t);
     ctx.restore();
   } else if (layer.type === 'bitmap') {
     // Bitmap layers have no authored size — they're the full canvas at

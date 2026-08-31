@@ -1,5 +1,24 @@
 import { clamp01 } from './math.js';
 import { hash, seeded } from './hash.js';
+import { evalTrack } from './ease.js';
+
+const SHAPE_ANIM_DEFAULTS = { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+
+// Evaluates a shape's own optional per-shape animation (types/project.ts's
+// animTracks/animStatics) at time `t` — absent tracks/statics fall back to
+// the neutral identity (no nudge, scale 1, no rotation, fully opaque), so a
+// shape with none of this authored renders exactly as it always has.
+function evalShapeAnim(shape, t) {
+  const tracks = shape.animTracks;
+  const statics = shape.animStatics;
+  const out = { ...SHAPE_ANIM_DEFAULTS };
+  for (const key of Object.keys(out)) {
+    const base = statics && statics[key] !== undefined ? statics[key] : out[key];
+    const track = tracks && tracks[key];
+    out[key] = track && track.length ? evalTrack(track, t, base) : base;
+  }
+  return out;
+}
 
 // The old per-kind procedural draw functions (drawOrbShape/drawRingShape/
 // drawStreakShape/drawWheelShape/drawShardShape/drawAmbientBeamShape) lived
@@ -125,10 +144,27 @@ function tracePath(ctx, shape) {
   }
 }
 
-export function drawVectorShape(ctx, shape, hueA, hueB, alpha, nowMs, beatFlash) {
-  if (alpha <= 0.004) return;
+export function drawVectorShape(ctx, shape, hueA, hueB, alpha, nowMs, beatFlash, t) {
+  // A shape with no authored animTracks/animStatics evaluates to the
+  // identity (x:0,y:0,scale:1,rotation:0,opacity:1) — totalAlpha === alpha
+  // and the extra transform below is skipped entirely, so nothing changes
+  // for the vast majority of shapes that never use this.
+  const anim = evalShapeAnim(shape, t || 0);
+  const totalAlpha = alpha * clamp01(anim.opacity);
+  if (totalAlpha <= 0.004) return;
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = totalAlpha;
+  if (anim.x || anim.y || anim.scale !== 1 || anim.rotation) {
+    // Pivot around the shape's OWN center (not the layer origin) so scale/
+    // rotation feel like manipulating just this shape, matching how the
+    // Workspace canvas's Select tool already treats a shape as its own
+    // object (see WorkspaceCanvas.svelte's applyShapeMove).
+    const pivot = boundsOf(shape);
+    ctx.translate(pivot.cx + anim.x, pivot.cy + anim.y);
+    ctx.rotate(anim.rotation);
+    ctx.scale(anim.scale, anim.scale);
+    ctx.translate(-pivot.cx, -pivot.cy);
+  }
   if (shape.glow) {
     ctx.shadowBlur = shape.glow.blur + (beatFlash || 0) * shape.glow.blur * 0.5;
     ctx.shadowColor = resolveColor(shape.glow.color ?? (shape.fill.kind === 'flat' ? shape.fill.color : '$hueA'), hueA, hueB);
@@ -161,8 +197,8 @@ export function drawVectorShape(ctx, shape, hueA, hueB, alpha, nowMs, beatFlash)
   ctx.restore();
 }
 
-export function drawVectorLayer(ctx, shapes, hueA, hueB, alpha, nowMs, beatFlash) {
-  for (const shape of shapes) drawVectorShape(ctx, shape, hueA, hueB, alpha, nowMs, beatFlash);
+export function drawVectorLayer(ctx, shapes, hueA, hueB, alpha, nowMs, beatFlash, t) {
+  for (const shape of shapes) drawVectorShape(ctx, shape, hueA, hueB, alpha, nowMs, beatFlash, t);
 }
 
 // Bitmap layers are self-contained (params.dataUrl carries the actual image
