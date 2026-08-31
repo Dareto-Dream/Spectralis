@@ -71,7 +71,7 @@
     const shapes = vectorizeText({ text: text.toUpperCase(), fontSize: settings.fontSize * (W / 270), tracking: 2 });
     ctx.save();
     ctx.translate(settings.x * (W / 270), settings.y * (H / 480));
-    drawVectorLayer(ctx, shapes, settings.baseHue, settings.highlightHue, 1, performance.now(), 0);
+    drawVectorLayer(ctx, shapes, settings.baseHue, settings.highlightHue, 1, performance.now(), 0, previewT);
     ctx.restore();
   });
 

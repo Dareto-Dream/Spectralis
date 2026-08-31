@@ -1,9 +1,10 @@
-import type { AnimKey, AnyLayer, Ease, Layer, LayerType, Project, ProjectMeta, Section } from '../types/project';
+import type { AnimKey, AnyLayer, Ease, Layer, LayerType, Project, ProjectMeta, Section, ShapeAnimKey } from '../types/project';
+import { SHAPE_ANIM_DEFAULTS } from '../types/project';
 import { evalTrack } from '../core/ease.js';
 import { sectionAt, evalVisible } from '../core/render.js';
 import { newLayer, newKeyframeId, newProject as createNewProject } from './factories';
 import { HistoryStack } from './history.svelte';
-import { SelectionState } from './selection.svelte';
+import { SelectionState, type KeyframeRef } from './selection.svelte';
 
 const HUE_KEYS: ReadonlySet<AnimKey> = new Set(['hueA', 'hueB']);
 
@@ -158,6 +159,26 @@ export class ProjectStore {
       clone.tracks[key] = clone.tracks[key].map((kf) => ({ ...kf, id: newKeyframeId() }));
     }
     if (clone.visibleTrack) clone.visibleTrack = clone.visibleTrack.map((kf) => ({ ...kf, id: newKeyframeId() }));
+    if (clone.type === 'vector') {
+      // Fresh ids for every shape AND its own per-shape keyframes — unlike
+      // an AnchorPoint id (always looked up scoped to one already-resolved
+      // shape, never globally), a shape keyframe id is looked up through
+      // selection.svelte.ts's keyframeIndex, which is keyed GLOBALLY across
+      // every layer/shape — a clone sharing ids with its source would
+      // silently alias one for the other the moment either gets keyframed.
+      clone.params.shapes = clone.params.shapes.map((shape) => {
+        const next = { ...shape, id: crypto.randomUUID() };
+        if (next.animTracks) {
+          const freshTracks: typeof next.animTracks = {};
+          for (const key of Object.keys(next.animTracks) as ShapeAnimKey[]) {
+            const track = next.animTracks[key];
+            if (track) freshTracks[key] = track.map((kf) => ({ ...kf, id: newKeyframeId() }));
+          }
+          next.animTracks = freshTracks;
+        }
+        return next;
+      });
+    }
     this.project.layers.splice(srcIdx + 1, 0, clone);
     const reactive = this.project.layers[srcIdx + 1];
     this.selection.selectLayer(reactive.id);
@@ -319,10 +340,20 @@ export class ProjectStore {
     this.commit();
   }
 
+  // The one place every KeyframeRef-addressed method resolves which actual
+  // Track array a ref points into — a layer's own tracks, or (ref.shape set)
+  // one shape's animTracks. Keeps deleteKeyframe/setKeyframeEase/
+  // setKeyframeValue/moveKeyframeTime from each needing their own branch.
+  private trackFor(ref: KeyframeRef) {
+    if (ref.shape) return ref.shape.animTracks?.[ref.trackKey as ShapeAnimKey];
+    return ref.layer.tracks[ref.trackKey as AnimKey];
+  }
+
   deleteKeyframe(id: string) {
     const ref = this.selection.keyframeIndex.get(id);
-    if (!ref) return;
-    ref.layer.tracks[ref.trackKey].splice(ref.index, 1);
+    const track = ref && this.trackFor(ref);
+    if (!ref || !track) return;
+    track.splice(ref.index, 1);
     if (this.selection.keyframeIds.has(id)) {
       const next = new Set(this.selection.keyframeIds);
       next.delete(id);
@@ -333,8 +364,9 @@ export class ProjectStore {
 
   setKeyframeEase(id: string, ease: Ease) {
     const ref = this.selection.keyframeIndex.get(id);
-    if (!ref) return;
-    ref.layer.tracks[ref.trackKey][ref.index].ease = ease;
+    const track = ref && this.trackFor(ref);
+    if (!track) return;
+    track[ref!.index].ease = ease;
     this.commit();
   }
 
@@ -345,16 +377,59 @@ export class ProjectStore {
   // it live). Caller commits once on pointerup via `commit()`.
   setKeyframeValue(id: string, v: number) {
     const ref = this.selection.keyframeIndex.get(id);
-    if (!ref) return;
-    ref.layer.tracks[ref.trackKey][ref.index].v = v;
+    const track = ref && this.trackFor(ref);
+    if (!track) return;
+    track[ref!.index].v = v;
   }
 
   // Continuous drag — caller commits once on pointerup via `commit()`.
   moveKeyframeTime(id: string, t: number) {
     const ref = this.selection.keyframeIndex.get(id);
-    if (!ref) return;
-    ref.layer.tracks[ref.trackKey][ref.index].t = Math.max(0, t);
-    ref.layer.tracks[ref.trackKey].sort((a, b) => a.t - b.t);
+    const track = ref && this.trackFor(ref);
+    if (!track) return;
+    track[ref!.index].t = Math.max(0, t);
+    track.sort((a, b) => a.t - b.t);
+  }
+
+  // ---- per-shape keyframing (mirrors toggleKeyframing/addKeyframeAt above,
+  // scoped to one shape's animTracks/animStatics instead of a layer's tracks/
+  // statics — see types/project.ts's ShapeAnimKey doc) ----
+  toggleShapeKeyframing(layerId: string, shapeId: string, key: ShapeAnimKey) {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    if (!layer || layer.type !== 'vector') return;
+    const shape = layer.params.shapes.find((s) => s.id === shapeId);
+    if (!shape) return;
+    const tracks = shape.animTracks ?? {};
+    const statics = shape.animStatics ?? {};
+    const current = statics[key] ?? SHAPE_ANIM_DEFAULTS[key];
+    if (tracks[key]?.length) {
+      shape.animStatics = { ...statics, [key]: evalTrack(tracks[key]!, this.playhead, current) };
+      shape.animTracks = { ...tracks, [key]: [] };
+    } else {
+      shape.animStatics = { ...statics, [key]: current };
+      shape.animTracks = { ...tracks, [key]: [{ id: newKeyframeId(), t: 0, v: current, ease: 'linear' }] };
+    }
+    this.commit();
+  }
+
+  addShapeKeyframeAtPlayhead(layerId: string, shapeId: string, key: ShapeAnimKey): string | null {
+    const layer = this.project.layers.find((l) => l.id === layerId);
+    if (!layer || layer.type !== 'vector') return null;
+    const shape = layer.params.shapes.find((s) => s.id === shapeId);
+    if (!shape) return null;
+    const tracks = shape.animTracks ?? {};
+    if (!tracks[key]?.length) {
+      this.toggleShapeKeyframing(layerId, shapeId, key);
+      return shape.animTracks?.[key]?.[0]?.id ?? null;
+    }
+    const statics = shape.animStatics ?? {};
+    const current = statics[key] ?? SHAPE_ANIM_DEFAULTS[key];
+    const value = evalTrack(tracks[key]!, this.playhead, current);
+    const id = newKeyframeId();
+    const nextTrack = [...tracks[key]!, { id, t: this.playhead, v: value, ease: 'linear' as const }].sort((a, b) => a.t - b.t);
+    shape.animTracks = { ...tracks, [key]: nextTrack };
+    this.commit();
+    return id;
   }
 
   // ---- sections ----

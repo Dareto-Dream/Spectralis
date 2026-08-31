@@ -5,13 +5,26 @@
   // layer-level hint text for vector/bitmap layers — a layer has no scalar
   // params of its own worth editing here, but an individual SHAPE inside a
   // vector layer very much does.
-  import type { FillColor, VectorShape } from '../types/project';
+  import type { AnyLayer, FillColor, VectorShape } from '../types/project';
+  import { SHAPE_ANIM_KEYS } from '../types/project';
+  import type { ProjectStore } from '../state/project.svelte';
+  import ShapeAnimRow from './ShapeAnimRow.svelte';
 
-  let { shape, onChange, onDelete }: {
+  let { store, layer, shape, onChange, onDelete }: {
+    store: ProjectStore;
+    layer: AnyLayer;
     shape: VectorShape;
     onChange: () => void;
     onDelete: () => void;
   } = $props();
+
+  const ANIM_LABELS: Record<(typeof SHAPE_ANIM_KEYS)[number], string> = {
+    x: 'Nudge X',
+    y: 'Nudge Y',
+    scale: 'Scale',
+    rotation: 'Rotation',
+    opacity: 'Opacity',
+  };
 
   function isSentinel(c: FillColor): c is '$hueA' | '$hueB' {
     return c === '$hueA' || c === '$hueB';
@@ -42,6 +55,26 @@
 
   function toggleGlow(on: boolean) {
     shape.glow = on ? { blur: shape.glow?.blur ?? 20, color: shape.glow?.color } : undefined;
+    onChange();
+  }
+  function glowColorSelectValue(): string {
+    const c = shape.glow?.color;
+    if (!c) return 'inherit';
+    return isSentinel(c) ? c.slice(1) : 'custom';
+  }
+  function setGlowColorMode(mode: string) {
+    if (!shape.glow) return;
+    shape.glow.color = mode === 'inherit' ? undefined : mode === 'hueA' ? '$hueA' : mode === 'hueB' ? '$hueB' : glowColorValue();
+    onChange();
+  }
+  function glowColorValue(): string {
+    const c = shape.glow?.color;
+    if (!c || isSentinel(c)) return '#ffffff';
+    return c;
+  }
+  function setGlowColor(v: string) {
+    if (!shape.glow) return;
+    shape.glow.color = v;
     onChange();
   }
 </script>
@@ -110,7 +143,26 @@
   </label>
   {#if shape.glow}
     <label class="field"><span>Glow blur</span><input type="number" min="0" step="1" value={shape.glow.blur} onchange={(e) => { shape.glow!.blur = num(e); onChange(); }} /></label>
+    <label class="field">
+      <span>Glow color</span>
+      <select value={glowColorSelectValue()} onchange={(e) => setGlowColorMode((e.target as HTMLSelectElement).value)}>
+        <option value="inherit">Match fill/stroke</option>
+        <option value="custom">Solid color</option>
+        <option value="hueA">Hue A (animated)</option>
+        <option value="hueB">Hue B (animated)</option>
+      </select>
+    </label>
+    {#if shape.glow.color && !isSentinel(shape.glow.color)}
+      <label class="field"><span></span><input type="color" value={glowColorValue()} onchange={(e) => setGlowColor((e.target as HTMLInputElement).value)} /></label>
+    {/if}
   {/if}
+
+  <div class="sep"></div>
+  <p class="sectionLabel">Motion — this shape only</p>
+  <p class="hint">Click the stopwatch to keyframe a property just for this shape, independent of the layer's own transform. x/y here nudge it from its authored position; scale/rotation pivot around its own center.</p>
+  {#each SHAPE_ANIM_KEYS as key (key)}
+    <ShapeAnimRow {store} {layer} {shape} animKey={key} label={ANIM_LABELS[key]} />
+  {/each}
 </div>
 
 <style>
@@ -128,6 +180,13 @@
     font: 11px var(--mono);
     color: var(--text);
     text-transform: capitalize;
+  }
+  .sectionLabel {
+    margin: 0;
+    font: 10px var(--mono);
+    color: var(--dim2);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   .field {
     display: flex;

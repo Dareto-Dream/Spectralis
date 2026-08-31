@@ -86,6 +86,21 @@ export interface AnchorPoint {
   mirrored: boolean;
 }
 
+// A small, fixed animatable set for an individual SHAPE inside a vector
+// layer — separate from the layer's own ANIM_KEYS (which move/scale/rotate/
+// fade the WHOLE layer, every shape in it together). x/y here are a NUDGE
+// added on top of the shape's own authored geometry (not a replacement
+// position); scale/rotation pivot around the shape's own center (see
+// core/shapes.js's boundsOf). No hueA/hueB — a shape's color already animates
+// via the layer's existing hueA/hueB tracks when its fill/stroke/glow uses
+// the '$hueA'/'$hueB' sentinel, so a second hue track per shape would be
+// redundant. Same Track/Ease model as the layer's own tracks (hold = snap,
+// every other Ease = a tween) — see state/project.svelte.ts's
+// toggleShapeKeyframing/addShapeKeyframeAtPlayhead.
+export const SHAPE_ANIM_KEYS = ['x', 'y', 'scale', 'rotation', 'opacity'] as const;
+export type ShapeAnimKey = (typeof SHAPE_ANIM_KEYS)[number];
+export const SHAPE_ANIM_DEFAULTS: Record<ShapeAnimKey, number> = { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+
 interface VectorShapeBase {
   id: string;
   fill: Fill;
@@ -93,6 +108,12 @@ interface VectorShapeBase {
   stroke: FillColor;
   strokeWidth: number;
   glow?: Glow;
+  // Optional per-shape animation — absent/empty means "render exactly as
+  // authored, no per-shape motion", same convention as layer locked/groupId.
+  // Each present key's Track takes priority over its matching animStatics
+  // entry, exactly like a layer's tracks/statics pair.
+  animTracks?: Partial<Record<ShapeAnimKey, Track>>;
+  animStatics?: Partial<Record<ShapeAnimKey, number>>;
 }
 export interface VectorPathShape extends VectorShapeBase {
   kind: 'path';

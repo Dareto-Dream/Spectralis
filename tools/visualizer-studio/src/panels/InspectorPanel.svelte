@@ -131,7 +131,7 @@
     {#if layer.type === 'vector' && selectedShape}
       <div class="shapeSection">
         <p class="sectionLabel">Selected Shape</p>
-        <ShapeFields shape={selectedShape} onChange={() => store.commit()} onDelete={onDeleteShape} />
+        <ShapeFields {store} {layer} shape={selectedShape} onChange={() => store.commit()} onDelete={onDeleteShape} />
       </div>
     {/if}
 

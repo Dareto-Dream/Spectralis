@@ -172,6 +172,82 @@ describe('ProjectStore — keyframing', () => {
   });
 });
 
+describe('ProjectStore — per-shape keyframing', () => {
+  function layerWithRectShape(store: ProjectStore) {
+    const layer = store.addLayer('vector');
+    layer.params.shapes.push({
+      id: 'shape-1', kind: 'rect', x: 0, y: 0, w: 10, h: 10, rotation: 0,
+      fill: { kind: 'flat', color: '#fff' }, stroke: 'none', strokeWidth: 0,
+    });
+    return layer;
+  }
+
+  it('toggleShapeKeyframing seeds one keyframe at t:0 holding the current animStatics value', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const layer = layerWithRectShape(store);
+    store.toggleShapeKeyframing(layer.id, 'shape-1', 'opacity');
+    const shape = layer.params.shapes[0];
+    expect(shape.animTracks?.opacity).toEqual([{ id: expect.any(String), t: 0, v: 1, ease: 'linear' }]);
+  });
+
+  it('addShapeKeyframeAtPlayhead inserts the currently-evaluated value and keeps the track sorted', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const layer = layerWithRectShape(store);
+    const shape = layer.params.shapes[0];
+    shape.animTracks = { rotation: [{ id: 'a', t: 0, v: 0, ease: 'linear' }, { id: 'b', t: 10, v: 10, ease: 'linear' }] };
+    store.seekTo(4);
+    const id = store.addShapeKeyframeAtPlayhead(layer.id, 'shape-1', 'rotation')!;
+    const inserted = shape.animTracks.rotation!.find((k) => k.id === id)!;
+    expect(inserted.t).toBe(4);
+    expect(inserted.v).toBe(4);
+    expect(shape.animTracks.rotation!.map((k) => k.t)).toEqual([0, 4, 10]);
+  });
+
+  it('toggling shape keyframing off folds the current playhead value back into animStatics', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const layer = layerWithRectShape(store);
+    const shape = layer.params.shapes[0];
+    shape.animTracks = { scale: [{ id: 'a', t: 0, v: 0, ease: 'linear' }, { id: 'b', t: 10, v: 2, ease: 'linear' }] };
+    store.seekTo(5);
+    store.toggleShapeKeyframing(layer.id, 'shape-1', 'scale');
+    expect(shape.animTracks.scale).toEqual([]);
+    expect(shape.animStatics?.scale).toBe(1); // midpoint of 0->2 linear at t=5
+  });
+
+  it('setKeyframeValue/deleteKeyframe reach a shape keyframe via the shared global keyframeIndex', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const layer = layerWithRectShape(store);
+    store.toggleShapeKeyframing(layer.id, 'shape-1', 'opacity');
+    const shape = layer.params.shapes[0];
+    const id = shape.animTracks!.opacity![0].id;
+    store.setKeyframeValue(id, 0.25);
+    expect(shape.animTracks!.opacity![0].v).toBe(0.25);
+    store.deleteKeyframe(id);
+    expect(shape.animTracks!.opacity).toHaveLength(0);
+  });
+
+  it('duplicating a layer gives its shapes and their keyframes fresh ids, not shared ones', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const layer = layerWithRectShape(store);
+    store.toggleShapeKeyframing(layer.id, 'shape-1', 'opacity');
+    const originalShapeId = layer.params.shapes[0].id;
+    const originalKfId = layer.params.shapes[0].animTracks!.opacity![0].id;
+    const clone = store.duplicateLayer(layer.id)!;
+    if (clone.type !== 'vector') throw new Error('expected a vector clone');
+    expect(clone.params.shapes[0].id).not.toBe(originalShapeId);
+    expect(clone.params.shapes[0].animTracks!.opacity![0].id).not.toBe(originalKfId);
+    // The original's own keyframe must still resolve to the ORIGINAL shape,
+    // not get silently reassigned to the clone by a shared id colliding in
+    // the global keyframeIndex.
+    expect(store.selection.keyframeIndex.get(originalKfId)?.shape?.id).toBe(originalShapeId);
+  });
+});
+
 describe('ProjectStore — sections', () => {
   it('deleteSection refuses to remove the last remaining section', () => {
     const store = new ProjectStore();
