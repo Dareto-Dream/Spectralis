@@ -236,9 +236,11 @@
   }
 
   // Right-click context menus (plan QoL §H) — keyframe (Delete / Copy / Set
-  // Ease), section (Edit / Loop / Delete), or empty lane space with a
-  // non-empty clipboard (Paste). Whichever the cursor is over wins, checked
-  // in the same priority order onPointerDown already uses.
+  // Ease), section (Edit / Loop / Delete), an overview/minimap row (Show-
+  // Hide / Lock / Duplicate / Delete Layer), or empty lane space (Add
+  // Keyframe Here, plus Paste when the clipboard has something). Whichever
+  // the cursor is over wins, checked in the same priority order
+  // onPointerDown already uses.
   function onContextMenu(e: MouseEvent) {
     const { x, y } = localPoint(e);
     const layout = currentLayout();
@@ -307,13 +309,44 @@
       return;
     }
 
-    if (bandAtY(layout, y) === 'lane' && hasClipboard() && store.selection.layerId && store.selection.trackKey) {
+    const rowHit = hitTestOverviewRow(layout, store.project, y);
+    if (rowHit) {
+      e.preventDefault();
+      store.selection.selectLayer(rowHit.id);
+      openContextMenu(e.clientX, e.clientY, [
+        { label: rowHit.visible ? 'Hide' : 'Show', action: () => store.toggleLayerVisibility(rowHit.id) },
+        { label: rowHit.locked ? 'Unlock' : 'Lock', action: () => store.toggleLayerLock(rowHit.id) },
+        { label: 'Duplicate', action: () => store.duplicateLayer(rowHit.id) },
+        {
+          label: 'Delete Layer',
+          danger: true,
+          action: async () => {
+            const ok = await confirmDialog({
+              title: 'Delete layer?',
+              body: `Delete "${rowHit.name}"? You can undo this with Ctrl+Z.`,
+              confirmLabel: 'Delete',
+              danger: true,
+            });
+            if (ok) store.deleteLayer(rowHit.id);
+          },
+        },
+      ]);
+      return;
+    }
+
+    if (bandAtY(layout, y) === 'lane' && store.selection.layerId && store.selection.trackKey) {
       e.preventDefault();
       const t = Math.max(0, x / pxPerSec);
-      openContextMenu(e.clientX, e.clientY, [
-        { label: 'Paste at cursor', action: () => store.pasteKeyframes(pasteAtPlayhead(t)) },
-        { label: 'Paste at original time', action: () => store.pasteKeyframes(pasteAtOriginalTimes()) },
-      ]);
+      const layerId = store.selection.layerId;
+      const trackKey = store.selection.trackKey;
+      const items: ContextMenuItem[] = [{ label: 'Add Keyframe Here', action: () => store.addKeyframeAt(layerId, trackKey, t) }];
+      if (hasClipboard()) {
+        items.push(
+          { label: 'Paste at cursor', action: () => store.pasteKeyframes(pasteAtPlayhead(t)) },
+          { label: 'Paste at original time', action: () => store.pasteKeyframes(pasteAtOriginalTimes()) }
+        );
+      }
+      openContextMenu(e.clientX, e.clientY, items);
     }
   }
 
