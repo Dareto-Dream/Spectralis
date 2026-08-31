@@ -5,7 +5,7 @@
   import { dropZone } from '../lib/dropZone';
   import { startAssetDrag } from '../lib/dragAsset';
   import { toast } from '../state/toast.svelte';
-  import { TEMPLATES } from '../lib/templates';
+  import { TEMPLATES, LAYER_TEMPLATES } from '../lib/templates';
   import { loadTemplateIntoStore } from '../lib/projectImport';
   import { uiState } from '../state/uiState.svelte';
   import type { AssetKind } from '../types/asset';
@@ -29,6 +29,11 @@
   // aren't assets, but this is where anything preset-shaped belongs instead
   // of being silently applied on load (see App.svelte's blank-boot comment).
   let kindFilter: AssetKind | 'all' | 'template' = $state('all');
+  // Full-project starters (replace everything, confirm-gated) vs. individual
+  // layer templates (Orb/Ring/Streak/Spin Wheel/Ambient Beam/Shard — just
+  // insert, no confirm needed) are different enough operations to need their
+  // own sub-tab within the Templates category, per the original split plan.
+  let templateScope: 'projects' | 'layers' = $state('projects');
   let renamingId: string | null = $state(null);
   let renameValue = $state('');
 
@@ -38,11 +43,20 @@
     )
   );
   const filteredTemplates = $derived(TEMPLATES.filter((t) => t.label.toLowerCase().includes(query.toLowerCase())));
+  const filteredLayerTemplates = $derived(LAYER_TEMPLATES.filter((t) => t.label.toLowerCase().includes(query.toLowerCase())));
 
   async function onLoadTemplate(id: string) {
     if (!store) return;
     const tpl = TEMPLATES.find((t) => t.id === id);
     if (tpl) await loadTemplateIntoStore(store, tpl);
+  }
+
+  function onAddLayerTemplate(id: string) {
+    if (!store) return;
+    const tpl = LAYER_TEMPLATES.find((t) => t.id === id);
+    if (!tpl) return;
+    store.addLayers(tpl.build(store.project.meta.songEnd));
+    toast.push('success', `Added "${tpl.label}" layer`);
   }
 
   function onNewScript() {
@@ -109,13 +123,31 @@
       <input type="text" placeholder="filter…" bind:value={query} />
     </div>
   </div>
+  {#if kindFilter === 'template'}
+    <div class="templateScope">
+      <button class="small ghost" class:active={templateScope === 'projects'} onclick={() => (templateScope = 'projects')}>Full Projects</button>
+      <button class="small ghost" class:active={templateScope === 'layers'} onclick={() => (templateScope = 'layers')}>Layers</button>
+    </div>
+  {/if}
   <div class="grid">
-    {#if kindFilter === 'template'}
+    {#if kindFilter === 'template' && templateScope === 'projects'}
       {#if !filteredTemplates.length}
         <p class="empty">Nothing matches.</p>
       {:else}
         {#each filteredTemplates as t (t.id)}
           <button class="card templateCard" onclick={() => onLoadTemplate(t.id)} title={t.hint} disabled={!store}>
+            <div class="thumb"><LayoutTemplate size={22} /></div>
+            <span class="name">{t.label}</span>
+            <span class="size">{t.hint}</span>
+          </button>
+        {/each}
+      {/if}
+    {:else if kindFilter === 'template' && templateScope === 'layers'}
+      {#if !filteredLayerTemplates.length}
+        <p class="empty">Nothing matches.</p>
+      {:else}
+        {#each filteredLayerTemplates as t (t.id)}
+          <button class="card templateCard" onclick={() => onAddLayerTemplate(t.id)} title={`${t.hint} — adds a new layer, doesn't replace anything`} disabled={!store}>
             <div class="thumb"><LayoutTemplate size={22} /></div>
             <span class="name">{t.label}</span>
             <span class="size">{t.hint}</span>
@@ -194,6 +226,16 @@
     gap: 2px;
   }
   .kindFilter button.active {
+    background: var(--bg3);
+    color: var(--accent);
+  }
+  .templateScope {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px 0;
+    flex-shrink: 0;
+  }
+  .templateScope button.active {
     background: var(--bg3);
     color: var(--accent);
   }

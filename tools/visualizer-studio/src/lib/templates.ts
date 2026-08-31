@@ -1,6 +1,15 @@
-import type { Project } from '../types/project';
+import type { AnyLayer, Project, VectorShape } from '../types/project';
 import { newLayer, defaultSection, newProject } from '../state/factories';
-import { vectorizeOrb, vectorizeWheel, vectorizeText } from './vectorize';
+import {
+  vectorizeOrb,
+  vectorizeRing,
+  vectorizeStreak,
+  vectorizeWheel,
+  vectorizeShard,
+  vectorizeAmbientBeam,
+  vectorizeText,
+  bakeContinuousSpin,
+} from './vectorize';
 
 export interface Template {
   id: string;
@@ -108,6 +117,76 @@ function kineticTypography(): Project {
 
   return project;
 }
+
+// Non-destructive LAYER templates — the actual "orb/ring/streak/spin wheel/
+// ambient beam/shard" starting points the user meant when they said
+// Templates, as opposed to the whole-project TEMPLATES above (which REPLACE
+// the current project). Dropped into the current project via
+// store.addLayers(tpl.build(songEnd)) — see AssetsPanel.svelte's "Layers"
+// template sub-tab. Built on the exact same lib/vectorize.ts converters v3
+// migration uses, so a template and a migrated old save of the same "look"
+// always render identically.
+export interface LayerTemplate {
+  id: string;
+  label: string;
+  hint: string;
+  // Takes the current project's songEnd — only the Spin Wheel needs it (to
+  // bake a full-song rotation sweep, see vectorize.ts's bakeContinuousSpin
+  // doc), everything else ignores the argument.
+  build: (songEnd: number) => AnyLayer[];
+}
+
+function vectorLayerFrom(name: string, shapes: VectorShape[], hue: { hueA: number; hueB: number }): AnyLayer {
+  const layer = newLayer('vector');
+  layer.name = name;
+  layer.statics.hueA = hue.hueA;
+  layer.statics.hueB = hue.hueB;
+  layer.params.shapes = shapes;
+  return layer;
+}
+
+export const LAYER_TEMPLATES: LayerTemplate[] = [
+  {
+    id: 'layer-orb',
+    label: 'Orb',
+    hint: 'Soft glowing hue-cycling orb',
+    build: () => [vectorLayerFrom('Orb', vectorizeOrb({ radius: 60 }), { hueA: 190, hueB: 90 })],
+  },
+  {
+    id: 'layer-ring',
+    label: 'Ring',
+    hint: 'Thin glowing ring outline',
+    build: () => [vectorLayerFrom('Ring', vectorizeRing({ radius: 70, lineWidth: 2 }), { hueA: 200, hueB: 320 })],
+  },
+  {
+    id: 'layer-streak',
+    label: 'Streak',
+    hint: 'Horizontal glowing hue-gradient streak',
+    build: () => [vectorLayerFrom('Streak', vectorizeStreak({ length: 200, thickness: 10, mono: false }), { hueA: 30, hueB: 300 })],
+  },
+  {
+    id: 'layer-spin-wheel',
+    label: 'Spin Wheel',
+    hint: 'Spoked wheel that spins continuously',
+    build: (songEnd) => {
+      const layer = vectorLayerFrom('Spin Wheel', vectorizeWheel({ radius: 90, spokes: 12, accentIdx: 0 }), { hueA: 320, hueB: 30 });
+      layer.tracks.rotation = bakeContinuousSpin(0.6, songEnd || 60);
+      return [layer];
+    },
+  },
+  {
+    id: 'layer-ambient-beam',
+    label: 'Ambient Beam',
+    hint: 'Full-width soft gradient beam band',
+    build: () => [vectorLayerFrom('Ambient Beam', vectorizeAmbientBeam({ bandHeight: 60 }), { hueA: 210, hueB: 280 })],
+  },
+  {
+    id: 'layer-shard',
+    label: 'Shard',
+    hint: 'Faceted glowing polygon shard',
+    build: () => [vectorLayerFrom('Shard', vectorizeShard({ size: 50 }), { hueA: 0, hueB: 0 })],
+  },
+];
 
 export const TEMPLATES: Template[] = [
   {
