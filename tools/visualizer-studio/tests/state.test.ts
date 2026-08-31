@@ -115,6 +115,41 @@ describe('ProjectStore — layers', () => {
     store.moveLayer(b.id, -1); // already at index 0 — no-op
     expect(store.project.layers.map((l) => l.id)).toEqual([b.id, a.id]);
   });
+
+  it('addLayers with a groupName tags every pushed layer with the same fresh groupId and records one LayerGroup', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const a = store.addLayer('vector');
+    const inserted = store.addLayers([
+      { ...a, id: 'l2', name: 'L2' },
+      { ...a, id: 'l3', name: 'L3' },
+    ], 'Lyrics');
+    expect(inserted.every((l) => l.groupId === inserted[0].groupId)).toBe(true);
+    expect(store.project.layerGroups).toHaveLength(1);
+    expect(store.project.layerGroups![0].name).toBe('Lyrics');
+    expect(store.project.layerGroups![0].id).toBe(inserted[0].groupId);
+  });
+
+  it('addLayers with no groupName inserts ungrouped layers and adds no LayerGroup', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const a = store.addLayer('vector');
+    const inserted = store.addLayers([{ ...a, id: 'l2', name: 'L2' }]);
+    expect(inserted[0].groupId).toBeUndefined();
+    expect(store.project.layerGroups ?? []).toHaveLength(0);
+  });
+
+  it('toggleLayerGroupCollapsed flips the persisted collapsed flag on that group only', () => {
+    const store = new ProjectStore();
+    store.loadProject(blankProject());
+    const a = store.addLayer('vector');
+    store.addLayers([{ ...a, id: 'l2', name: 'L2' }], 'Lyrics');
+    const groupId = store.project.layerGroups![0].id;
+    store.toggleLayerGroupCollapsed(groupId);
+    expect(store.project.layerGroups![0].collapsed).toBe(true);
+    store.toggleLayerGroupCollapsed(groupId);
+    expect(store.project.layerGroups![0].collapsed).toBe(false);
+  });
 });
 
 describe('ProjectStore — keyframing', () => {
