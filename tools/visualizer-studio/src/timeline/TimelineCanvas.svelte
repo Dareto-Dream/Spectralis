@@ -22,6 +22,7 @@
   import { toast } from '../state/toast.svelte';
   import { dropZone } from '../lib/dropZone';
   import { fmtTime } from '../lib/fmtTime';
+  import { loadAudioFile } from '../lib/audioLoad';
   import { onMount } from 'svelte';
   import Play from '@lucide/svelte/icons/play';
   import Pause from '@lucide/svelte/icons/pause';
@@ -360,7 +361,7 @@
   title="Drop an audio file anywhere here to load it"
   use:dropZone={{
     accept: (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name),
-    onDrop: (f) => audio.loadFile(f),
+    onDrop: (f) => loadAudioFile(store, audio, f),
     onReject: () => toast.push('error', "That doesn't look like an audio file"),
   }}
 >
