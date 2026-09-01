@@ -18,8 +18,10 @@ param(
 #     is passed; built inside WSL via Spectralis.Installer/Linux/build-appimage.sh.
 #   - Linux Velopack feed (releases-velopack/releases.linux-x64.json) when
 #     -LinuxVelopack is passed; built inside WSL via build-velopack-linux.ps1.
-#   - macOS Velopack feeds are produced by Spectralis.Installer/Mac/build-velopack.sh
-#     on a macOS CI runner (cannot cross-compile from Windows).
+#   - macOS Velopack feeds (osx-arm64 + osx-x64) are produced by ./build.sh on a
+#     macOS host (cannot cross-compile from Windows); it wraps
+#     Spectralis.Installer/Mac/build-velopack.sh and writes the same
+#     releases-velopack/ feed dir.
 #
 # The legacy WinForms release build lives at legacy\build.ps1.
 
