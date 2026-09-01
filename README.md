@@ -109,9 +109,16 @@ $env:SPECTRALIS_DISCORD_CLIENT_ID="your Discord application ID"
 
 # Linux — AppImage (run on Linux/WSL with appimagetool on PATH)
 ./Spectralis.Installer/Linux/build-appimage.sh 2.0.0
+```
 
-# macOS — universal .dmg with signing/notarization hooks (run on macOS)
-./Spectralis.Installer/Mac/build-dmg.sh 2.0.0
+```bash
+# macOS - run on a Mac (cannot be cross-built). build.sh is the peer of build.ps1;
+# it loads client IDs from .env and writes to the same releases-velopack/ feed dir.
+./build.sh --version 2.0.0          # Velopack feeds: osx-arm64 + osx-x64
+./build.sh --version 2.0.0 --dmg    # ...plus the standalone .dmg bundle
+
+# Signing/notarization is opt-in via env vars (unsigned builds work without them):
+#   SPECTRALIS_MAC_SIGN_IDENTITY, SPECTRALIS_MAC_INSTALL_SIGN_IDENTITY, SPECTRALIS_NOTARY_PROFILE
 ```
 
 For windows distribution, sign the artifacts as unsigned installers are far more likely to get flagged by reputation based endpoint tools:
