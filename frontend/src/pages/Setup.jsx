@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Download, Terminal, GitFork, ArrowUpRight } from 'lucide-react'
+import { Download, Terminal, Apple, GitFork, ArrowUpRight } from 'lucide-react'
 
 const FAQ = [
   {
@@ -12,15 +12,19 @@ const FAQ = [
   },
   {
     q: 'Will installing overwrite my existing library or settings?',
-    a: 'No. Windows installs to %LocalAppData%\\Spectralis, and Linux runs as a self-contained AppImage; neither touches files outside its own folder.',
+    a: 'No. Windows installs to %LocalAppData%\\Spectralis, macOS installs Spectralis.app to /Applications, and Linux runs as a self-contained AppImage; none of them touch files outside their own location.',
   },
   {
     q: 'How do updates work?',
-    a: 'Windows uses Velopack: it checks on launch and applies delta patches silently, no re-installer needed. On Linux, just download the latest AppImage when a new version ships.',
+    a: 'Every platform uses Velopack. Spectralis checks for updates on launch and applies delta patches in place, so there is no re-installer to run on Windows, macOS, or Linux.',
   },
   {
     q: 'Is macOS supported?',
-    a: 'Not yet, though it\'s on the roadmap. Windows and Linux are supported today.',
+    a: 'Yes, as of v6. There are separate builds for Apple Silicon (arm64) and Intel (x64) Macs running macOS 11 or newer.',
+  },
+  {
+    q: 'macOS won\'t open the installer. What do I do?',
+    a: 'If Gatekeeper blocks it, right-click (or Control-click) the .pkg and choose Open, or allow it under System Settings → Privacy & Security, then run it again.',
   },
   {
     q: 'The AppImage won\'t launch on Linux. What do I do?',
@@ -35,7 +39,7 @@ export default function Setup() {
         <div className="dl-hero__inner">
           <div className="dl-hero__head">
             <div className="dl-hero__version-row">
-              <span className="dl-hero__v">v5.2.0</span>
+              <span className="dl-hero__v">v6.0.0</span>
               <span className="dl-hero__v-badge">Latest</span>
             </div>
             <h1 className="dl-hero__title">Setup & Requirements</h1>
@@ -47,12 +51,12 @@ export default function Setup() {
               <span className="dl-hero__stat-l">Velopack installer</span>
             </div>
             <div className="dl-hero__stat">
-              <span className="dl-hero__stat-n">Linux</span>
-              <span className="dl-hero__stat-l">AppImage · New in v5</span>
+              <span className="dl-hero__stat-n">macOS</span>
+              <span className="dl-hero__stat-l">.pkg · New in v6</span>
             </div>
             <div className="dl-hero__stat">
-              <span className="dl-hero__stat-n">Free</span>
-              <span className="dl-hero__stat-l">No license key</span>
+              <span className="dl-hero__stat-n">Linux</span>
+              <span className="dl-hero__stat-l">AppImage · x86_64</span>
             </div>
           </div>
         </div>
@@ -107,6 +111,68 @@ export default function Setup() {
           </div>
         </div>
 
+        {/* macOS */}
+        <div className="dl-card dl-card--macos" id="macos">
+          <div className="dl-card__header">
+            <div className="dl-card__icon">
+              <Apple size={18} />
+            </div>
+            <div className="dl-card__header-text">
+              <h2 className="dl-card__title">macOS</h2>
+              <p className="dl-card__platform-sub">11 Big Sur or newer</p>
+            </div>
+            <span className="dl-card__badge dl-card__badge--new">New in v6</span>
+          </div>
+
+          <div className="dl-card__file">
+            <span className="dl-card__filename">Spectralis-osx-&lt;arch&gt;-Setup.pkg</span>
+            <span className="dl-card__filetype">.pkg installer · pick your chip</span>
+          </div>
+
+          <div className="dl-card__arch">
+            <a
+              href="https://cdn.deltavdevs.com/spectralis/Spectralis-osx-arm64-Setup.pkg"
+              className="btn btn--primary dl-card__arch-btn"
+            >
+              <Download size={16} />
+              Apple Silicon
+              <span className="dl-card__arch-tag">arm64</span>
+            </a>
+            <a
+              href="https://cdn.deltavdevs.com/spectralis/Spectralis-osx-x64-Setup.pkg"
+              className="btn btn--ghost dl-card__arch-btn"
+            >
+              <Download size={16} />
+              Intel
+              <span className="dl-card__arch-tag">x64</span>
+            </a>
+          </div>
+
+          <div className="dl-card__notes">
+            <div className="dl-note">
+              <span className="dl-note__label">Which one?</span>
+              <p className="dl-note__body">M1 through M4 Macs take the Apple Silicon build; 2020-and-earlier Intel Macs take the Intel build. Not sure? Check <code>Apple menu → About This Mac</code>.</p>
+            </div>
+            <div className="dl-note">
+              <span className="dl-note__label">Auto-updates</span>
+              <p className="dl-note__body">Like Windows, macOS runs on Velopack and applies delta patches on launch, so there's no re-installer to chase.</p>
+            </div>
+            <div className="dl-note">
+              <span className="dl-note__label">Gatekeeper</span>
+              <p className="dl-note__body">If macOS won't open the <code>.pkg</code>, Control-click it and choose Open, or allow it under <code>System Settings → Privacy &amp; Security</code>.</p>
+            </div>
+          </div>
+
+          <div className="dl-card__steps">
+            <p className="dl-steps__label">To install</p>
+            <ol className="dl-steps">
+              <li>Open the <code>.pkg</code> and follow the installer</li>
+              <li>Spectralis installs to <code>/Applications</code></li>
+              <li>Future updates apply on next launch</li>
+            </ol>
+          </div>
+        </div>
+
         {/* Linux */}
         <div className="dl-card dl-card--linux" id="linux">
           <div className="dl-card__header">
@@ -117,7 +183,6 @@ export default function Setup() {
               <h2 className="dl-card__title">Linux</h2>
               <p className="dl-card__platform-sub">x86_64 · AppImage</p>
             </div>
-            <span className="dl-card__badge dl-card__badge--new">New in v5</span>
           </div>
 
           <div className="dl-card__file">
@@ -137,6 +202,10 @@ export default function Setup() {
             <div className="dl-note">
               <span className="dl-note__label">Self-contained</span>
               <p className="dl-note__body">Everything it needs is bundled in, so it runs without installing dependencies or needing root access.</p>
+            </div>
+            <div className="dl-note">
+              <span className="dl-note__label">Auto-updates</span>
+              <p className="dl-note__body">Velopack checks on launch and applies delta patches in place, same as Windows and macOS — no need to re-download the AppImage.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">FUSE</span>
@@ -166,6 +235,17 @@ export default function Setup() {
                 <tr><td>Runtime</td><td>.NET 8 (bundled)</td></tr>
                 <tr><td>Display</td><td>WebView2 (bundled)</td></tr>
                 <tr><td>Arch</td><td>x64</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="dl-req-col">
+            <h3>macOS</h3>
+            <table className="dl-req-table">
+              <tbody>
+                <tr><td>OS</td><td>macOS 11 Big Sur or newer</td></tr>
+                <tr><td>Runtime</td><td>.NET 8 (bundled)</td></tr>
+                <tr><td>Chip</td><td>Apple Silicon or Intel</td></tr>
+                <tr><td>Arch</td><td>arm64 · x64</td></tr>
               </tbody>
             </table>
           </div>

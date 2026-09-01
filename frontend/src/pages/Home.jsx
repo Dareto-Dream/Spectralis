@@ -93,14 +93,14 @@ function DownloadsSection() {
               </span>
               <ArrowRight size={16} className="dl-teaser__arrow" />
             </Link>
-            <div className="dl-teaser__card dl-teaser__card--soon">
+            <Link to="/setup#macos" className="dl-teaser__card">
               <span className="dl-teaser__icon"><Apple size={20} /></span>
               <span className="dl-teaser__text">
                 <span className="dl-teaser__name">macOS</span>
-                <span className="dl-teaser__sub">Universal · Apple Silicon &amp; Intel</span>
+                <span className="dl-teaser__sub">11+ · Apple Silicon &amp; Intel</span>
               </span>
-              <span className="dl-teaser__badge">Coming soon</span>
-            </div>
+              <ArrowRight size={16} className="dl-teaser__arrow" />
+            </Link>
             <Link to="/setup#linux" className="dl-teaser__card">
               <span className="dl-teaser__icon"><Terminal size={20} /></span>
               <span className="dl-teaser__text">
@@ -270,7 +270,7 @@ function CTASection() {
         <img src="/icon.png" alt="Spectralis" className="cta-logo" />
         <div className="cta-text">
           <h2 className="cta-title">Start listening.</h2>
-          <p className="cta-sub">Windows 10/11 · Linux x86_64 · No sign-in · Free</p>
+          <p className="cta-sub">Windows 10/11 · macOS 11+ · Linux x86_64 · No sign-in · Free</p>
           <div className="cta-actions">
             <Link to="/setup" className="btn btn--primary btn--lg">
               <Download size={16} />
