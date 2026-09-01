@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AnnouncementBanner } from './components/AnnouncementBanner.jsx'
 import { Navbar } from './components/Navbar.jsx'
 import { Footer } from './components/Footer.jsx'
 import Home from './pages/Home.jsx'
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <>
       <ScrollToTop />
+      <AnnouncementBanner />
       <Navbar />
       <Routes>
         <Route path="/" element={<Home />} />
