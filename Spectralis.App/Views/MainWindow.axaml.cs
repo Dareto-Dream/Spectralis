@@ -28,6 +28,7 @@ public partial class MainWindow : Window
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private bool _placementApplied;
+    private PixelRect? _lastNormalBounds;
     private readonly DispatcherTimer _clipboardMonitorTimer;
     private readonly HashSet<string> _clipboardUrlHistory = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _clipboardUrlHistoryOrder = new();
@@ -78,6 +79,8 @@ public partial class MainWindow : Window
             }
         };
         SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        SizeChanged += (_, _) => CaptureNormalBounds();
+        PositionChanged += (_, _) => CaptureNormalBounds();
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
@@ -315,25 +318,51 @@ public partial class MainWindow : Window
         }
 
         var settings = vm.AppSettings;
-        if (!settings.RememberWindowPlacement ||
-            settings.WindowWidth < (int)MinWidth ||
-            settings.WindowHeight < (int)MinHeight)
+        if (!settings.RememberWindowPlacement)
         {
             _placementApplied = true;
             return;
         }
 
-        var savedBounds = new PixelRect(
-            settings.WindowX,
-            settings.WindowY,
-            settings.WindowWidth,
-            settings.WindowHeight);
-        var restoredBounds = ResolveVisibleBounds(savedBounds);
-        if (restoredBounds is not null)
+        // Restore the normal-state rectangle when we have a usable one on record. A too-small
+        // (or never-saved, i.e. 0) size just means "no normal bounds yet" — the maximized
+        // state below still restores, so a window that was only ever used maximized comes
+        // back maximized.
+        var hasNormalBounds =
+            settings.WindowWidth >= (int)MinWidth &&
+            settings.WindowHeight >= (int)MinHeight;
+
+        if (hasNormalBounds)
         {
-            Position = restoredBounds.Value.Position;
-            Width = restoredBounds.Value.Width;
-            Height = restoredBounds.Value.Height;
+            var savedBounds = new PixelRect(
+                settings.WindowX,
+                settings.WindowY,
+                settings.WindowWidth,
+                settings.WindowHeight);
+            var restoredBounds = ResolveVisibleBounds(savedBounds);
+            if (restoredBounds is not null)
+            {
+                Position = restoredBounds.Value.Position;
+                Width = restoredBounds.Value.Width;
+                Height = restoredBounds.Value.Height;
+                _lastNormalBounds = restoredBounds;
+
+                // SystemDecorations="None" on Windows: the OS finishes placing the frame
+                // *after* Opened fires and can stomp the Position we set here, which is why
+                // "reopen where I left it" looked like it randomly stopped working. Re-assert
+                // it once the current placement pass has settled.
+                if (!settings.WindowMaximized)
+                {
+                    var target = restoredBounds.Value.Position;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (WindowState == WindowState.Normal && Position != target)
+                        {
+                            Position = target;
+                        }
+                    }, DispatcherPriority.Background);
+                }
+            }
         }
 
         if (settings.WindowMaximized)
@@ -342,6 +371,32 @@ public partial class MainWindow : Window
         }
 
         _placementApplied = true;
+        CaptureNormalBounds();
+    }
+
+    /// <summary>
+    /// Remembers the window's most recent normal-state rectangle. Save-on-close can't read
+    /// this off the live window — by the time <c>Closing</c> fires the window may be
+    /// maximized, minimized, or hidden behind the mini player, and <c>Position</c>/
+    /// <c>ClientSize</c> then report the wrong thing (or 0, which trips the restore guard and
+    /// silently disables the feature). Tracking it continuously means we always persist the
+    /// last real size and location the user actually had.
+    /// </summary>
+    private void CaptureNormalBounds()
+    {
+        if (!_placementApplied || WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        var size = ClientSize;
+        if (size.Width < MinWidth || size.Height < MinHeight)
+        {
+            return;
+        }
+
+        _lastNormalBounds = new PixelRect(
+            Position.X, Position.Y, (int)size.Width, (int)size.Height);
     }
 
     private PixelRect? ResolveVisibleBounds(PixelRect savedBounds)
@@ -375,14 +430,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        // One last capture in case we're closing straight from a normal-state window.
+        CaptureNormalBounds();
+
         var settings = vm.AppSettings;
-        settings.WindowMaximized = WindowState == WindowState.Maximized;
-        if (WindowState == WindowState.Normal)
+
+        // Minimized tells us nothing about maximized-vs-normal — keep the prior value.
+        if (WindowState != WindowState.Minimized)
         {
-            settings.WindowX = Position.X;
-            settings.WindowY = Position.Y;
-            settings.WindowWidth = (int)ClientSize.Width;
-            settings.WindowHeight = (int)ClientSize.Height;
+            settings.WindowMaximized = WindowState == WindowState.Maximized;
+        }
+
+        if (_lastNormalBounds is { } bounds)
+        {
+            settings.WindowX = bounds.X;
+            settings.WindowY = bounds.Y;
+            settings.WindowWidth = bounds.Width;
+            settings.WindowHeight = bounds.Height;
         }
 
         AppSettingsStore.Save(settings);
@@ -1021,12 +1085,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        new VideoExportWindow(
+        var request = new Spectralis.App.VideoExport.VideoExportRequest(
             track.SourcePath,
             vm.NowPlaying.Title,
             vm.NowPlaying.Artist,
+            vm.NowPlaying.Album,
             vm.NowPlaying.CoverArtBytes,
-            vm.NowPlaying.SelectedVisualizerMode,
+            track.CoverArtMimeType);
+
+        new VideoExportWindow(
+            request,
+            vm.NowPlaying.TrackEmbeddedHtml,
+            vm.NowPlaying.TrackEmbeddedVideo,
+            vm.NowPlaying.SelectedVisualizer,
             isExporting => vm.NowPlaying.IsExporting = isExporting)
             .Show(this);
     }

@@ -1239,6 +1239,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool HasEmbeddedVisualizer => _embeddedVisualizer is not null;
 
+    /// <summary>The current track's own embedded video, if it carries one — offered as a
+    /// video-export visualizer source.</summary>
+    public Spectralis.Core.Embedded.EmbeddedVideoContext? TrackEmbeddedVideo => _embeddedVideo;
+
+    /// <summary>The HTML visualizer surface currently in play for this track — the capsule's
+    /// own HTML, or a user-picked "Special:" installed one. Offered as a video-export source.</summary>
+    public Spectralis.Core.Embedded.EmbeddedHtmlContext? TrackEmbeddedHtml => _embeddedHtml ?? _pickedInstalledHtml;
+
     /// <summary>True when a `.spectralis` capsule or `.spectral` album world track brought its
     /// own HTML/WASM visualizer (or Markdown/video promoted to the HTML surface) — the picker,
     /// prev/next, and keyboard shortcuts are all blocked while this is true, since the capsule
