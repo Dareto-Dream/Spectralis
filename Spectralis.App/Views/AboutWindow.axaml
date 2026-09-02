@@ -3,8 +3,9 @@
         x:Class="Spectralis.App.Views.AboutWindow"
         Title="About Spectralis"
         Icon="/Assets/icon.png"
-        Width="560" Height="460"
-        MinWidth="460" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Width="560" Height="520"
+        MinWidth="460" MinHeight="380"
         Background="{StaticResource Brush.Bg.Base}">
 
   <Grid RowDefinitions="Auto,*,Auto" Margin="24" RowSpacing="16">
@@ -19,9 +20,21 @@
     </StackPanel>
 
     <ScrollViewer Grid.Row="1">
-      <TextBlock x:Name="DetailsText"
-                 Classes="data"
-                 TextWrapping="Wrap" />
+      <StackPanel Spacing="14">
+        <TextBlock Classes="secondary"
+                   TextWrapping="Wrap"
+                   Text="Spectralis is a music player built on the idea that a song can be a place, not just a sound. Normal files play instantly and stay that way — every richer layer is additive. On top of playback, a track can carry its own visualizers, synced and annotated lyrics, reactive timelines, and signed capsule releases, and the whole experience can travel through Shared Play rooms, Discord Rich Presence, and a live OBS overlay." />
+
+        <TextBlock Classes="secondary"
+                   TextWrapping="Wrap"
+                   Text="Made by DeltaVortex under DeltaVDevs. Built with AvaloniaUI on .NET. Releases, documentation, and contact live at deltavdevs.com." />
+
+        <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" />
+
+        <TextBlock x:Name="DetailsText"
+                   Classes="data"
+                   TextWrapping="Wrap" />
+      </StackPanel>
     </ScrollViewer>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
