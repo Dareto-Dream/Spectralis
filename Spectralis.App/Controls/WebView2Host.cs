@@ -166,6 +166,22 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Captures the current WebView viewport as a PNG. Used by the offscreen video-export
+    /// host to grab one deterministic frame at a time. Throws if the browser isn't ready.
+    /// </summary>
+    public async Task<byte[]> CapturePngAsync()
+    {
+        if (_core is null)
+        {
+            throw new InvalidOperationException("WebView2 is not initialized yet — cannot capture a frame.");
+        }
+
+        using var ms = new MemoryStream();
+        await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+        return ms.ToArray();
+    }
+
     public void NudgeResize()
     {
         // Mirrors the CefGlue workaround: an instant, single-jump resize (window maximize/
