@@ -72,7 +72,8 @@ public sealed class EffectChain : IEffectChainBuilder
 
     public static IAudioEffect CreateEffect(string displayName) => displayName switch
     {
-        "10-Band EQ" => new Eq10BandEffect(),
+        "Parametric EQ" => new ParametricEqEffect(),
+        "10-Band EQ" => new ParametricEqEffect(),  // legacy persisted name
         "Compressor" => new CompressorEffect(),
         "Reverb" => new ReverbEffect(),
         "Vocal Remover" => new VocalBlendEffect(),
@@ -80,5 +81,5 @@ public sealed class EffectChain : IEffectChainBuilder
     };
 
     public static string[] AvailableEffects { get; } =
-        ["10-Band EQ", "Compressor", "Reverb", "Vocal Remover"];
+        ["Parametric EQ", "Compressor", "Reverb", "Vocal Remover"];
 }

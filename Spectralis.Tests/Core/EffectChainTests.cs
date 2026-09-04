@@ -41,7 +41,7 @@ public sealed class EffectChainTests
     public void BuildChain_Disabled_ReturnsSourceUnchanged()
     {
         var chain = new EffectChain { Enabled = false };
-        chain.Add(new Eq10BandEffect());
+        chain.Add(new ParametricEqEffect());
         var source = new SilenceProvider();
 
         Assert.Same(source, chain.BuildChain(source));
@@ -51,7 +51,7 @@ public sealed class EffectChainTests
     public void BuildChain_WrapsOnlyEnabledEffects()
     {
         var chain = new EffectChain();
-        var eq = new Eq10BandEffect { Enabled = false };
+        var eq = new ParametricEqEffect { Enabled = false };
         chain.Add(eq);
         var source = new SilenceProvider();
 
@@ -68,7 +68,7 @@ public sealed class EffectChainTests
         var changes = 0;
         chain.Changed += (_, _) => changes++;
 
-        var eq = new Eq10BandEffect();
+        var eq = new ParametricEqEffect();
         chain.Add(eq);
         chain.Add(new ReverbEffect());
         chain.MoveUp(1);
