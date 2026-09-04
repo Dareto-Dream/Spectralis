@@ -818,7 +818,8 @@
     </Border>
 
     <!-- ─── Effects Chain docked sidebar ──────────────────────────── -->
-    <Border x:Name="EffectsChainSidebarBorder" Grid.Column="6" Width="300"
+    <Border x:Name="EffectsChainSidebarBorder" Grid.Column="6"
+            Width="{Binding EffectsChain.IsEqSelected, Converter={x:Static conv:BoolToWidthConverter.Instance}, ConverterParameter=470|300}"
             Background="{StaticResource Brush.Bg.Raised}"
             BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
             IsVisible="{Binding ShowEffectsChainPanel}">

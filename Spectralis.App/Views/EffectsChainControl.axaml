@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:controls="using:Spectralis.App.Controls"
              x:Class="Spectralis.App.Views.EffectsChainControl"
              x:DataType="vm:EffectsChainViewModel">
 
@@ -48,11 +49,65 @@
             BorderThickness="1"
             Padding="12">
       <ScrollViewer>
-        <StackPanel Spacing="4" DataContext="{Binding SelectedEffect}">
+        <StackPanel Spacing="6" DataContext="{Binding SelectedEffect}">
           <TextBlock Classes="heading"
                      FontSize="{StaticResource FontSize.UI}"
                      Text="{Binding Name, FallbackValue='No effect selected'}" />
-          <ItemsControl ItemsSource="{Binding Sliders}">
+
+          <!-- Parametric EQ: envelope curve editor + presets -->
+          <StackPanel IsVisible="{Binding HasEqEditor}" Spacing="6">
+            <StackPanel Spacing="6" DataContext="{Binding EqEditor}">
+              <Grid ColumnDefinitions="*,Auto">
+                <ComboBox Grid.Column="0"
+                          ItemsSource="{Binding PresetNames}"
+                          SelectedItem="{Binding SelectedPresetName}"
+                          HorizontalAlignment="Stretch"
+                          Margin="0,0,6,0" />
+                <Button Grid.Column="1" Content="Reset" Click="OnEqReset"
+                        FontSize="{StaticResource FontSize.UI.Small}" />
+              </Grid>
+
+              <controls:EqCurveEditor Editor="{Binding}"
+                                      Height="190"
+                                      CurveBrush="{StaticResource Brush.Accent}"
+                                      GridBrush="{StaticResource Brush.Border}"
+                                      TextBrush="{StaticResource Brush.Ink.Secondary}" />
+
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                <TextBlock Grid.Column="0" Classes="secondary" VerticalAlignment="Center"
+                           Text="Preamp" FontSize="{StaticResource FontSize.UI.Small}" />
+                <Slider Grid.Column="1" Minimum="-24" Maximum="24"
+                        Value="{Binding PreampDb, Mode=TwoWay}" />
+                <TextBlock Grid.Column="2" Classes="data" VerticalAlignment="Center"
+                           Text="{Binding PreampDb, StringFormat={}{0:0.0} dB}" />
+              </Grid>
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                <TextBlock Grid.Column="0" Classes="secondary" VerticalAlignment="Center"
+                           Text="Output" FontSize="{StaticResource FontSize.UI.Small}" />
+                <Slider Grid.Column="1" Minimum="-24" Maximum="24"
+                        Value="{Binding OutputGainDb, Mode=TwoWay}" />
+                <TextBlock Grid.Column="2" Classes="data" VerticalAlignment="Center"
+                           Text="{Binding OutputGainDb, StringFormat={}{0:0.0} dB}" />
+              </Grid>
+
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBox Watermark="Preset name" Text="{Binding NewPresetName}" Width="118"
+                         FontSize="{StaticResource FontSize.UI.Small}" />
+                <Button Content="Save" Click="OnEqSavePreset"
+                        FontSize="{StaticResource FontSize.UI.Small}" />
+                <Button Content="Delete" Click="OnEqDeletePreset"
+                        IsEnabled="{Binding CanDeleteSelectedPreset}"
+                        Classes="destructive" FontSize="{StaticResource FontSize.UI.Small}" />
+              </StackPanel>
+            </StackPanel>
+
+            <TextBlock Classes="secondary" TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Drag nodes to shape the curve · scroll a node for Q · double-click to add or remove · right-click for filter type. Applies to local files and downloaded URL sources (SoundCloud, YouTube…). For Spotify, enable EQ in Settings → Playback." />
+          </StackPanel>
+
+          <!-- Other effects: parameter sliders -->
+          <ItemsControl IsVisible="{Binding !HasEqEditor}" ItemsSource="{Binding Sliders}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:EffectParamViewModel">
                 <StackPanel Margin="0,4,0,0" Spacing="2">
