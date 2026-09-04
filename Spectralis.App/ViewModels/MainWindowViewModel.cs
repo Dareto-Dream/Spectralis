@@ -63,6 +63,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _isSidebarCollapsed = AppSettings.SidebarCollapsed;
         Engine = new AudioEngine();
         EffectChain = new EffectChain();
+        EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
         NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain);
