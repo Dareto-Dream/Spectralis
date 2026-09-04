@@ -172,6 +172,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private readonly OpenUrlService _openUrlService;
     private readonly SpotifyService _spotify = new();
     private readonly bool _persistSettings;
+    private readonly EffectChain _effectChain;
+    private readonly Avalonia.Threading.DispatcherTimer _effectChainSaveTimer;
     private bool _showVisualizer;
     private VisualizerOption _selectedVisualizer;
     private IReadOnlyList<VisualizerOption> _visualizerOptions = [];
@@ -314,11 +316,20 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         EffectChain? effectChain = null)
     {
         _engine = engine;
-        EffectsChain = new EffectsChainViewModel(effectChain ?? new EffectChain());
         _settings = settings is null
             ? new AppSettings()
             : AppSettingsStore.Normalize(settings);
         _persistSettings = settings is not null;
+
+        _effectChain = effectChain ?? new EffectChain();
+        _effectChainSaveTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _effectChainSaveTimer.Tick += (_, _) =>
+        {
+            _effectChainSaveTimer.Stop();
+            PersistEffectChain();
+        };
+        EffectsChain = new EffectsChainViewModel(_effectChain, ScheduleEffectChainSave);
+        _effectChain.Changed += (_, _) => ScheduleEffectChainSave();
         _openUrlService = new OpenUrlService();
         _openUrlService.SetYtDlpProgressCallback(line =>
         {
@@ -2999,6 +3010,29 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>Debounced — EQ drags fire many edits per second; only the last one hits disk.</summary>
+    private void ScheduleEffectChainSave()
+    {
+        if (!_persistSettings)
+        {
+            return;
+        }
+
+        _effectChainSaveTimer.Stop();
+        _effectChainSaveTimer.Start();
+    }
+
+    private void PersistEffectChain()
+    {
+        if (!_persistSettings)
+        {
+            return;
+        }
+
+        _settings.EffectChainJson = EffectChainState.Serialize(_effectChain);
+        AppSettingsStore.Save(_settings);
+    }
+
     private static string FirstNonEmpty(params string?[] values)
     {
         foreach (var value in values)
@@ -3018,6 +3052,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _idleActivityTick?.Dispose();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
+        if (_effectChainSaveTimer.IsEnabled)
+        {
+            _effectChainSaveTimer.Stop();
+            PersistEffectChain();
+        }
+
         RemoteAudioCache.TryDelete(_remoteAudioTempPath);
     }
 }

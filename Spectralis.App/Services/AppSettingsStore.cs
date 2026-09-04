@@ -34,6 +34,14 @@ public sealed class AppSettings
     public bool EnableVisualizerAutoCycle { get; set; } = false;
     public int VisualizerCycleSeconds { get; set; } = 12;
     public int PreferredSampleRate { get; set; }
+
+    /// <summary>Serialized effects rack (order, enable state, parameters) — see <c>EffectChainState</c>.</summary>
+    public string EffectChainJson { get; set; } = string.Empty;
+
+    /// <summary>Opt-in: capture Spotify's WebView audio, run it through the effects chain, and
+    /// re-output it (experimental, Windows-only, adds latency). Off by default.</summary>
+    public bool EqSpotifyAudioExperimental { get; set; }
+
     public MidiPlaybackInstrument MidiInstrument { get; set; } = MidiPlaybackInstrument.AcousticGrandPiano;
     public int DefaultVolume { get; set; } = 85;
     public bool AutoPlayOnOpen { get; set; } = true;
@@ -115,6 +123,8 @@ public sealed class AppSettings
             EnableVisualizerAutoCycle = EnableVisualizerAutoCycle,
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
+            EffectChainJson = EffectChainJson,
+            EqSpotifyAudioExperimental = EqSpotifyAudioExperimental,
             MidiInstrument = MidiInstrument,
             DefaultVolume = DefaultVolume,
             AutoPlayOnOpen = AutoPlayOnOpen,
