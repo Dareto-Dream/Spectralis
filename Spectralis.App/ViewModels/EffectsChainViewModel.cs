@@ -94,17 +94,6 @@ public sealed class EffectItemViewModel : ViewModelBase
     {
         switch (effect)
         {
-            case Eq10BandEffect:
-                yield return new EffectParamViewModel("Preamp (dB)", "preamp", -12, 12, effect.Parameters, onChanged, "0.0");
-                for (var band = 0; band < Eq10BandEffect.BandFrequencies.Length; band++)
-                {
-                    var freq = Eq10BandEffect.BandFrequencies[band];
-                    var label = freq >= 1000 ? $"{freq / 1000:0.#} kHz" : $"{freq:0} Hz";
-                    yield return new EffectParamViewModel(label, $"band{band}", -12, 12, effect.Parameters, onChanged, "0.0");
-                }
-
-                break;
-
             case CompressorEffect:
                 yield return new EffectParamViewModel("Threshold (dBFS)", "threshold", -60, 0, effect.Parameters, onChanged, "0.0");
                 yield return new EffectParamViewModel("Ratio", "ratio", 1, 20, effect.Parameters, onChanged, "0.0");
