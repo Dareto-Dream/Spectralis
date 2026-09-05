@@ -1979,6 +1979,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool EqSpotifyAudioExperimental
+    {
+        get => _settings.EqSpotifyAudioExperimental;
+        set
+        {
+            if (_settings.EqSpotifyAudioExperimental == value)
+            {
+                return;
+            }
+
+            _settings.EqSpotifyAudioExperimental = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool AutoAnalyzeBpm
     {
         get => _settings.AutoAnalyzeBpm;

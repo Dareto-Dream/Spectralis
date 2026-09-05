@@ -18,6 +18,23 @@ public interface IWebViewHost : IDisposable
 
     Task ExecuteScriptAsync(string script);
 
+    /// <summary>
+    /// OS process id of the embedded browser (for per-process audio loopback capture),
+    /// or null when the backend can't provide one / isn't initialized yet.
+    /// </summary>
+    int? BrowserProcessId => null;
+
+    /// <summary>
+    /// Mutes/unmutes the embedded browser's audio output. Used by the experimental
+    /// Spotify-EQ path, which captures the browser audio, processes it, and re-plays it.
+    /// No-op on backends that don't support it.
+    /// </summary>
+    bool AudioMuted
+    {
+        get => false;
+        set { }
+    }
+
     /// <summary>Forces the browser to re-sync its paint size to the host control's current
     /// bounds. Needed after an instant, single-jump resize (window maximize/restore) — both
     /// CEF's OSR WasResized()/GetViewRect() round-trip and WebView2's NativeControlHost bounds
