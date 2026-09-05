@@ -300,6 +300,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private double _spotifyDurationMs;
     private long _spotifyPositionSetAtTick;
     private WindowsLoopbackCaptureSource? _spotifyLoopback;
+    private SpotifyEqMonitor? _spotifyEqMonitor;
     private VisualizerSampleProvider? _spotifyVisualizer;
     private SelectionOption<int> _selectedSampleRate;
     private SelectionOption<int> _selectedCycleDuration;
@@ -1966,22 +1967,61 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         string.IsNullOrWhiteSpace(track.Album)  ? track.Artist :
         $"{track.Artist} — {track.Album}";
 
-    private void EnsureSpotifyLoopbackRunning()
+    private void EnsureSpotifyVisualizer()
     {
-        if (_spotifyLoopback is not null || !OperatingSystem.IsWindows()) return;
         if (_spotifyVisualizer is null)
         {
             _spotifyVisualizer = new VisualizerSampleProvider(new SignalGenerator(44100, 2) { Gain = 0 });
             _engine.ExternalVisualizerSource = _spotifyVisualizer;
         }
+    }
+
+    private bool HasEnabledEqEffect() =>
+        _effectChain.Enabled && _effectChain.Effects.Any(e => e is ParametricEqEffect { Enabled: true });
+
+    private void EnsureSpotifyLoopbackRunning()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        // Experimental opt-in: instead of only tapping Spotify audio for the visualizer,
+        // capture it, run it through the effects chain, and re-output it — muting the raw
+        // WebView audio so it isn't heard twice. Falls back to the plain tap on any failure.
+        if (_settings.EqSpotifyAudioExperimental && _spotifyEqMonitor is null &&
+            SpotifyEqMonitor.IsSupported && HasEnabledEqEffect() &&
+            _spotifyHost?.WebViewBrowserProcessId is int browserPid)
+        {
+            EnsureSpotifyVisualizer();
+            var monitor = new SpotifyEqMonitor();
+            var ok = monitor.Start(browserPid, _effectChain, _spotifyVisualizer!, muted =>
+            {
+                if (_spotifyHost is not null)
+                {
+                    _spotifyHost.WebViewAudioMuted = muted;
+                }
+            });
+            AppLogPaths.AppendTimestamped(SpotifyPlaybackHostService.SpotifyLogPath,
+                ok ? "Spotify EQ monitor started" : $"Spotify EQ monitor failed — {monitor.Status}");
+            if (ok)
+            {
+                _spotifyEqMonitor = monitor;
+                return;
+            }
+
+            monitor.Dispose();
+        }
+
+        if (_spotifyLoopback is not null) return;
+        EnsureSpotifyVisualizer();
         _spotifyLoopback = new WindowsLoopbackCaptureSource();
-        var started = _spotifyLoopback.Start(_spotifyVisualizer);
+        var started = _spotifyLoopback.Start(_spotifyVisualizer!);
         AppLogPaths.AppendTimestamped(SpotifyPlaybackHostService.SpotifyLogPath,
             started ? $"Loopback capture started" : "Loopback capture failed");
     }
 
     private void StopSpotifyLoopback()
     {
+        _spotifyEqMonitor?.Dispose();
+        _spotifyEqMonitor = null;
         _spotifyLoopback?.Stop();
         _spotifyLoopback?.Dispose();
         _spotifyLoopback = null;
@@ -3058,6 +3098,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             PersistEffectChain();
         }
 
+        StopSpotifyLoopback();
         RemoteAudioCache.TryDelete(_remoteAudioTempPath);
     }
 }

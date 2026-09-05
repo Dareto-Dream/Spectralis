@@ -155,6 +155,52 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         }
     }
 
+    public int? BrowserProcessId
+    {
+        get
+        {
+            try
+            {
+                var pid = _core?.BrowserProcessId;
+                return pid is > 0 ? (int)pid.Value : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    public bool AudioMuted
+    {
+        get
+        {
+            try
+            {
+                return _core?.IsMuted ?? false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        set
+        {
+            try
+            {
+                if (_core is not null)
+                {
+                    _core.IsMuted = value;
+                }
+            }
+            catch
+            {
+                // Older WebView2 runtimes may not expose IsMuted — treated as best-effort.
+            }
+        }
+    }
+
     public Task ExecuteScriptAsync(string script)
     {
         if (_core is not null)
