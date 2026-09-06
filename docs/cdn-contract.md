@@ -120,6 +120,7 @@ intersects the capsule's requested capabilities with this list. Any requested ca
 | `sharedPlay.hostCapsule` | Capsule can be hosted via Shared Play |
 | `sharedPlay.packageUpload` | Capsule assets may be uploaded for Shared Play |
 | `timeline.appControl` | Capsule's reactive timeline may issue app control events |
+| `presence.richPresence` | Capsule's embedded HTML may override Discord rich presence text while playing |
 
 ### Caching Policy
 
