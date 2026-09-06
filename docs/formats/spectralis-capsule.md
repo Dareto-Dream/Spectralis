@@ -172,3 +172,36 @@ See [../cdn-contract.md](../cdn-contract.md) for the full capability list and CD
 | `sharedPlay.hostCapsule` | Capsule can be hosted via Shared Play |
 | `sharedPlay.packageUpload` | Capsule assets may be uploaded for Shared Play |
 | `timeline.appControl` | Reactive timeline may issue app control events |
+| `presence.richPresence` | Embedded HTML may override Discord rich presence text (see below) |
+
+---
+
+## Discord Rich Presence (`presence.richPresence`)
+
+A capsule that declares `presence.richPresence` can drive the user's Discord status from its
+embedded HTML while the capsule audio is playing — handy for story capsules that want the
+status line to follow the narrative ("Chapter 3 — the descent") instead of the plain track title.
+
+```js
+// Set — all fields optional strings, clamped to 128 chars host-side.
+window.spectral.presence.set({
+  details: "The Line — Chapter 3",
+  state: "descending the shaft",
+  largeImageText: "Spectralis capsule",
+  smallImageText: "paused"
+});
+
+// Revert to the normal track presence.
+window.spectral.presence.clear();
+```
+
+Rules:
+
+- Only honoured while this capsule's surface is on screen. Leaving the capsule, a session reset,
+  or the visualizer being torn down clears the override automatically.
+- Timing (elapsed / remaining) still comes from the engine — the capsule controls text only,
+  not the progress bar.
+- Messages are dropped silently if the capsule did not declare the capability, so calling
+  `spectral.presence.set()` unconditionally is safe.
+- Honoured regardless of whether the user has any Spotify presence going; the capsule wins
+  while it is active.
