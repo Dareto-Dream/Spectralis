@@ -61,14 +61,35 @@ public sealed class EffectItemViewModel : ViewModelBase
     private readonly IAudioEffect _effect;
     private readonly Action _onChanged;
 
-    public EffectItemViewModel(IAudioEffect effect, Action onChanged)
+    public EffectItemViewModel(IAudioEffect effect, Action onChanged, Action? onStateChanged = null)
     {
         _effect = effect;
         _onChanged = onChanged;
-        Sliders = new ObservableCollection<EffectParamViewModel>(BuildSliders(effect, onChanged));
+
+        if (effect is ParametricEqEffect eq)
+        {
+            // The parametric EQ has its own envelope editor instead of a slider bank.
+            // Its edits are picked up per audio block via EffectParameters.Revision, so
+            // they only need the persistence hook, not a full engine rebuild.
+            EqEditor = new EqEditorViewModel(eq, () => onStateChanged?.Invoke());
+            Sliders = new ObservableCollection<EffectParamViewModel>();
+        }
+        else
+        {
+            Sliders = new ObservableCollection<EffectParamViewModel>(BuildSliders(effect, () =>
+            {
+                onChanged();
+                onStateChanged?.Invoke();
+            }));
+        }
     }
 
     public IAudioEffect Effect => _effect;
+
+    /// <summary>Non-null only for the parametric EQ; drives the envelope editor UI.</summary>
+    public EqEditorViewModel? EqEditor { get; }
+
+    public bool HasEqEditor => EqEditor is not null;
 
     public string Name => _effect.Name;
 
@@ -94,17 +115,6 @@ public sealed class EffectItemViewModel : ViewModelBase
     {
         switch (effect)
         {
-            case Eq10BandEffect:
-                yield return new EffectParamViewModel("Preamp (dB)", "preamp", -12, 12, effect.Parameters, onChanged, "0.0");
-                for (var band = 0; band < Eq10BandEffect.BandFrequencies.Length; band++)
-                {
-                    var freq = Eq10BandEffect.BandFrequencies[band];
-                    var label = freq >= 1000 ? $"{freq / 1000:0.#} kHz" : $"{freq:0} Hz";
-                    yield return new EffectParamViewModel(label, $"band{band}", -12, 12, effect.Parameters, onChanged, "0.0");
-                }
-
-                break;
-
             case CompressorEffect:
                 yield return new EffectParamViewModel("Threshold (dBFS)", "threshold", -60, 0, effect.Parameters, onChanged, "0.0");
                 yield return new EffectParamViewModel("Ratio", "ratio", 1, 20, effect.Parameters, onChanged, "0.0");
@@ -129,15 +139,20 @@ public sealed class EffectItemViewModel : ViewModelBase
 public sealed class EffectsChainViewModel : ViewModelBase
 {
     private readonly EffectChain _chain;
+    private readonly Action? _onStateChanged;
     private EffectItemViewModel? _selectedEffect;
     private string _selectedNewEffect;
 
-    public EffectsChainViewModel(EffectChain chain)
+    public EffectsChainViewModel(EffectChain chain, Action? onStateChanged = null)
     {
         _chain = chain;
+        _onStateChanged = onStateChanged;
         _selectedNewEffect = EffectChain.AvailableEffects[0];
         Reload();
     }
+
+    /// <summary>True when the selected rack slot is the parametric EQ (widens the sidebar for the curve editor).</summary>
+    public bool IsEqSelected => _selectedEffect?.HasEqEditor == true;
 
     public ObservableCollection<EffectItemViewModel> EffectItems { get; } = new();
 
@@ -152,7 +167,11 @@ public sealed class EffectsChainViewModel : ViewModelBase
     public EffectItemViewModel? SelectedEffect
     {
         get => _selectedEffect;
-        set => this.RaiseAndSetIfChanged(ref _selectedEffect, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedEffect, value);
+            this.RaisePropertyChanged(nameof(IsEqSelected));
+        }
     }
 
     public bool ChainEnabled
@@ -182,6 +201,7 @@ public sealed class EffectsChainViewModel : ViewModelBase
         _chain.Add(effect);
         Reload();
         SelectedEffect = EffectItems.LastOrDefault();
+        _onStateChanged?.Invoke();
     }
 
     public void RemoveSelectedEffect()
@@ -193,6 +213,7 @@ public sealed class EffectsChainViewModel : ViewModelBase
 
         _chain.Remove(SelectedEffect.Effect);
         Reload();
+        _onStateChanged?.Invoke();
     }
 
     public void MoveSelectedEffectUp()
@@ -206,6 +227,7 @@ public sealed class EffectsChainViewModel : ViewModelBase
         _chain.MoveUp(index);
         Reload();
         SelectedEffect = EffectItems[index - 1];
+        _onStateChanged?.Invoke();
     }
 
     public void MoveSelectedEffectDown()
@@ -219,6 +241,7 @@ public sealed class EffectsChainViewModel : ViewModelBase
         _chain.MoveDown(index);
         Reload();
         SelectedEffect = EffectItems[index + 1];
+        _onStateChanged?.Invoke();
     }
 
     private int IndexOfSelected()
@@ -239,7 +262,9 @@ public sealed class EffectsChainViewModel : ViewModelBase
         EffectItems.Clear();
         foreach (var effect in _chain.Effects)
         {
-            EffectItems.Add(new EffectItemViewModel(effect, _chain.NotifyChanged));
+            EffectItems.Add(new EffectItemViewModel(effect, _chain.NotifyChanged, _onStateChanged));
         }
+
+        this.RaisePropertyChanged(nameof(IsEqSelected));
     }
 }

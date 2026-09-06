@@ -54,6 +54,16 @@ public sealed class SpotifyPlaybackHostService
     public bool IsDeviceReady => _deviceId is not null;
     public string? DeviceId => _deviceId;
 
+    /// <summary>OS process id of the WebView hosting the Spotify SDK — for per-process audio capture.</summary>
+    public int? WebViewBrowserProcessId => _host.BrowserProcessId;
+
+    /// <summary>Mute/unmute the WebView's own audio output (used by the experimental Spotify-EQ path).</summary>
+    public bool WebViewAudioMuted
+    {
+        get => _host.AudioMuted;
+        set => _host.AudioMuted = value;
+    }
+
     public string? StatusMessage => _statusMessage;
 
     /// <summary>Fired on every player_state_changed event from the SDK with track + playback state.</summary>

@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -99,6 +98,12 @@ public NowPlayingView()
             ApplyDeadZoneLayout();
             ScheduleEmbeddedSurfaceResizeNudge();
         };
+        // The embedded HTML surface lives in the player column, which grows and shrinks as
+        // the docked sidebars (queue, lyrics, song wars, notepad, ...) toggle. That inner
+        // column resize never reaches this view's own SizeChanged, so the CEF OSR browser
+        // would keep painting at whatever size it had when the last panel opened. Watch the
+        // host container directly and let the debounced nudge settle it.
+        EmbeddedHtmlHost.SizeChanged += (_, _) => ScheduleEmbeddedSurfaceResizeNudge();
         VisualizerNameLabel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
         LyricsSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
         QueueSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
@@ -1128,28 +1133,15 @@ public NowPlayingView()
 
         var isAlbumWorld = vm?.IsAlbumWorldShowingWorld ?? false;
 
-        var html = Encoding.UTF8.GetString(context.HtmlBytes);
-        LogDocumentStage(context.Id, "decoded", html);
-        if (!isAlbumWorld)
-        {
-            html = StripInlineEventHandlers(html);
-            LogDocumentStage(context.Id, "stripped-inline-handlers", html);
-        }
-        html = ResolveEmbeddedAssetReferences(context.Id, html, context.BinaryAssets, context.TextAssets);
-        LogDocumentStage(context.Id, "assets-resolved", html);
-        html = InjectEmbeddedPerformancePrelude(html);
-        LogDocumentStage(context.Id, "performance-prelude", html);
-        // Album worlds don't have a current track at document-build time; skip spectral.meta injection.
-        if (!isAlbumWorld)
-        {
-            html = InjectTrackMeta(html, vm);
-            LogDocumentStage(context.Id, "track-meta", html);
-        }
-        html = InjectBridgeBootstrap(html, isAlbumWorld);
-        LogDocumentStage(context.Id, "bridge-bootstrap", html);
-        html = WebViewHostService.InjectContentSecurityPolicy(html, allowNetworkAccess: false);
-        LogDocumentStage(context.Id, "csp-final", html);
-        return html;
+        // Album worlds have no current track at document-build time; skip spectral.meta.
+        var meta = isAlbumWorld ? EmbeddedTrackMeta.Empty : BuildEmbeddedTrackMeta(vm);
+
+        return EmbeddedHtmlDocument.Build(
+            context,
+            meta,
+            isAlbumWorld,
+            onStage: (stage, html) => LogDocumentStage(context.Id, stage, html),
+            log: message => AppLogPaths.AppendTimestamped(_webviewPerfLog, message));
     }
 
     private static void LogDocumentStage(string contextId, string stage, string html) =>
@@ -1163,349 +1155,42 @@ public NowPlayingView()
         return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
     }
 
-    private string InjectTrackMeta(string html, NowPlayingViewModel? vm)
+    /// <summary>Snapshots the current track's metadata for <c>window.spectral.meta</c> injection.</summary>
+    private static EmbeddedTrackMeta BuildEmbeddedTrackMeta(NowPlayingViewModel? vm)
     {
         var track = vm?.Engine?.CurrentTrack;
 
-        string? artworkDataUrl = null;
-        var artworkSource = "none";
-        var artworkBytes = 0;
+        byte[]? artworkBytes = null;
+        string? artworkMime = null;
         if (track?.CoverArt is { Length: > 0 } art)
         {
-            var mime = string.IsNullOrWhiteSpace(track.CoverArtMimeType) ? "image/jpeg" : track.CoverArtMimeType;
-            artworkDataUrl = $"data:{mime};base64,{Convert.ToBase64String(art)}";
-            artworkSource = "track";
-            artworkBytes = art.Length;
+            artworkBytes = art;
+            artworkMime = string.IsNullOrWhiteSpace(track.CoverArtMimeType) ? "image/jpeg" : track.CoverArtMimeType;
         }
         else if (vm?.CoverArtBytes is { Length: > 0 } vmArt)
         {
-            artworkDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(vmArt)}";
-            artworkSource = "viewmodel";
-            artworkBytes = vmArt.Length;
+            artworkBytes = vmArt;
+            artworkMime = "image/jpeg";
         }
 
         AppLogPaths.AppendTimestamped(_webviewPerfLog,
-            $"[EMBEDDED] meta artwork source={artworkSource} bytes={artworkBytes:n0} " +
-            $"dataUrlChars={(artworkDataUrl?.Length ?? 0):n0}");
+            $"[EMBEDDED] meta artwork bytes={(artworkBytes?.Length ?? 0):n0}");
 
-        var metaJson = JsonSerializer.Serialize(new
-        {
-            title = vm?.Title ?? track?.DisplayTitle ?? string.Empty,
-            artist = vm?.Artist ?? track?.Artist ?? string.Empty,
-            album = vm?.Album ?? track?.Album ?? string.Empty,
-            albumArtist = track?.AlbumArtist ?? string.Empty,
-            genre = track?.Genre ?? string.Empty,
-            year = (int)(track?.Year ?? 0),
-            trackNumber = (int)(track?.TrackNumber ?? 0),
-            duration = vm?.LengthSeconds ?? track?.Duration.TotalSeconds ?? 0.0,
-            bpm = track?.Bpm,
-            key = track?.MusicalKey,
-            sampleRate = track?.SampleRateHz ?? 0,
-            channels = track?.Channels ?? 0,
-            artwork = artworkDataUrl,
-        });
-
-        var script = $"<script>window.spectral=window.spectral||{{}};window.spectral.meta={metaJson};</script>";
-
-        // Inject after <head> opens so it's available before any capsule script runs.
-        var headIndex = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
-        if (headIndex >= 0)
-        {
-            var headClose = html.IndexOf('>', headIndex);
-            if (headClose >= 0)
-                return html.Insert(headClose + 1, script);
-        }
-
-        return script + html;
-    }
-
-    private static string InjectEmbeddedPerformancePrelude(string html)
-    {
-        const string script =
-            """
-            <script>
-            (() => {
-              if (window.__spectralisPerformancePreludeInstalled) return;
-              window.__spectralisPerformancePreludeInstalled = true;
-              try {
-                Object.defineProperty(window, "devicePixelRatio", {
-                  get: function() { return 1; },
-                  configurable: true
-                });
-              } catch {
-              }
-            })();
-            </script>
-            """;
-
-        var headIndex = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
-        if (headIndex >= 0)
-        {
-            var headClose = html.IndexOf('>', headIndex);
-            if (headClose >= 0)
-            {
-                return html.Insert(headClose + 1, script);
-            }
-        }
-
-        return script + html;
-    }
-
-    private static string InjectBridgeBootstrap(string html, bool isAlbumWorld = false)
-    {
-        var script = "<script>" + WebViewHostService.BuildBootstrapScript(isAlbumWorld) + BuildEmbeddedFrameBridgeScript() + "</script>";
-        var bodyIndex = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
-        if (bodyIndex >= 0)
-        {
-            return html.Insert(bodyIndex, script);
-        }
-
-        return html + script;
-    }
-
-    private static string BuildEmbeddedFrameBridgeScript() =>
-        """
-        (() => {
-          if (window.__spectralisFrameBridgeInstalled) return;
-          window.__spectralisFrameBridgeInstalled = true;
-
-          // Pushed-frame slot: WebView2 path writes here; CefGlue path ignores it
-          // because spectralisBridge.getFrameJson() always returns live data.
-          let pushedFrame = null;
-          window.__spectralisReceiveFrame = function(frame) {
-            pushedFrame = frame;
-            window.spectral._lastFrame = frame;
-          };
-
-          let bars = null;
-          let nextBarsRefresh = 0;
-          let interpBaseTime = 0;
-          let interpBaseWall = 0;
-          let interpActive = false;
-          let lastAppliedTime = -1;
-
-          function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, Number(v) || 0)); }
-
-          function getBars() {
-            const now = performance.now();
-            if (!bars || now >= nextBarsRefresh) {
-              bars = document.querySelectorAll('[data-audio-bars] span, .spectrum span');
-              nextBarsRefresh = now + 1000;
-            }
-            return bars;
-          }
-
-          function applyFrame(frame, now) {
-            const barNodes = getBars();
-            const lvls = frame.levels || [];
-            for (let i = 0; i < barNodes.length; i++) {
-              const v = clamp(lvls[i], 0, 1.25);
-              const floor = frame.active ? 0.04 : 0.025;
-              barNodes[i].style.height = `${Math.max(5, Math.round((floor + v * 0.96) * 100))}%`;
-              barNodes[i].style.opacity = String(frame.active ? Math.min(1, 0.38 + v * 0.72) : 0.26);
-              barNodes[i].style.transform = `scaleY(${frame.active ? 0.86 + v * 0.28 : 0.55})`;
-            }
-
-            const t = Number(frame.time) || 0;
-            const dur = window.spectral?.meta?.duration || 0;
-            document.documentElement.style.setProperty('--audio-peak', String(clamp(frame.peak, 0, 1)));
-            document.documentElement.style.setProperty('--audio-rms', String(clamp(frame.rms, 0, 1)));
-            document.documentElement.style.setProperty('--audio-time', String(t));
-            document.documentElement.style.setProperty('--spectral-progress', String(dur > 0 ? Math.min(1, t / dur) : 0));
-            document.documentElement.classList.toggle('audio-active', Boolean(frame.active));
-
-            interpBaseTime = t;
-            interpBaseWall = now;
-            interpActive = Boolean(frame.active);
-            lastAppliedTime = t;
-
-            if (typeof window.spectral?.onPlaybackFrame === 'function') window.spectral.onPlaybackFrame(frame);
-            if (typeof window.onSpectralisFrame === 'function') window.onSpectralisFrame(frame);
-            if (typeof window.onAudioTime === 'function') window.onAudioTime(frame.time);
-          }
-
-          // Apply spectral.meta once it's ready (injected at document-build time).
-          function applyMetaOnce() {
-            const meta = window.spectral?.meta;
-            if (!meta) return;
-            const dur = meta.duration || 0;
-            if (dur > 0) {
-              document.documentElement.style.setProperty('--spectral-duration', String(dur));
-            }
-          }
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', applyMetaOnce, { once: true });
-          } else {
-            applyMetaOnce();
-          }
-
-          let rafFrames = 0;
-          let rafWindowStart = performance.now();
-
-          function pump(now) {
-            rafFrames++;
-            if (now - rafWindowStart >= 5000) {
-              const fps = (rafFrames / (now - rafWindowStart) * 1000).toFixed(1);
-              try {
-                spectralisBridge.postMessage(JSON.stringify({
-                  __rafStats: true, fps: parseFloat(fps), elapsed: Math.round(now - rafWindowStart)
-                }));
-              } catch {}
-              rafFrames = 0;
-              rafWindowStart = now;
-            }
-
-            // ── Frame acquisition (v5 pull-first model) ───────────────────
-            // 1. Try spectralisBridge.getFrameJson() — live C# data on CefGlue,
-            //    returns '' on WebView2 (which uses the push slot below).
-            // 2. Fall back to pushedFrame written by window.__spectralisReceiveFrame.
-            let frame = null;
-            try {
-              const raw = spectralisBridge.getFrameJson();
-              if (raw) frame = JSON.parse(raw);
-            } catch {}
-            if (!frame) frame = pushedFrame;
-
-            if (frame) {
-              applyFrame(frame, now);
-            }
-
-            // Extrapolate --audio-time between frames for smooth CSS animations.
-            if (interpActive && interpBaseWall > 0) {
-              const extrapolated = interpBaseTime + (now - interpBaseWall) / 1000;
-              document.documentElement.style.setProperty('--audio-time', String(extrapolated));
-              const dur = window.spectral?.meta?.duration || 0;
-              if (dur > 0) {
-                document.documentElement.style.setProperty('--spectral-progress',
-                  String(Math.min(1, extrapolated / dur)));
-              }
-            }
-
-            requestAnimationFrame(pump);
-          }
-
-          requestAnimationFrame(pump);
-        })();
-        """;
-
-    private static string StripInlineEventHandlers(string html) =>
-        Regex.Replace(
-            html,
-            // Inline event-handler attributes (onclick="...", onload='...') only ever appear
-            // inside HTML tags, never inside <script> bodies. Without the <script> alternative
-            // taking priority, this blindly matched JS identifiers like "onsetHit =" too — and
-            // since the assigned value wasn't quoted, its [^"']* clause ate everything up to the
-            // next stray quote anywhere later in the file, silently corrupting unrelated code.
-            "(?<script><script\\b[^>]*>[\\s\\S]*?</script>)|\\s+on\\w+\\s*=\\s*[\"']?[^\"']*[\"']?",
-            match => match.Groups["script"].Success ? match.Value : string.Empty,
-            RegexOptions.IgnoreCase);
-
-    private static string ResolveEmbeddedAssetReferences(
-        string contextId,
-        string html,
-        IReadOnlyDictionary<string, byte[]> binaryAssets,
-        IReadOnlyDictionary<string, string> textAssets)
-    {
-        if (binaryAssets.Count == 0 && textAssets.Count == 0)
-        {
-            AppLogPaths.AppendTimestamped(_webviewPerfLog,
-                $"[EMBEDDED] assets id={contextId} skipped no-assets");
-            return html;
-        }
-
-        var binaryRefs = 0;
-        var binaryResolved = 0;
-        var binaryMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var withBinaryAssets = Regex.Replace(
-            html,
-            "delta-(?:asset|bin):([A-Za-z0-9_.-]+)",
-            match =>
-            {
-                binaryRefs++;
-                var assetId = match.Groups[1].Value;
-                if (!binaryAssets.TryGetValue(assetId, out var bytes))
-                {
-                    binaryMissing.Add(assetId);
-                    return match.Value;
-                }
-
-                binaryResolved++;
-                return $"data:{GetMimeType(bytes, assetId)};base64,{Convert.ToBase64String(bytes)}";
-            },
-            RegexOptions.IgnoreCase);
-
-        var textRefs = 0;
-        var textResolved = 0;
-        var textMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = Regex.Replace(
-            withBinaryAssets,
-            "\"?delta-data-json:([A-Za-z0-9_.-]+)\"?",
-            match =>
-            {
-                textRefs++;
-                var assetId = match.Groups[1].Value;
-                if (textAssets.TryGetValue(assetId, out var text))
-                {
-                    textResolved++;
-                    return JsonSerializer.Serialize(text);
-                }
-
-                textMissing.Add(assetId);
-                return "null";
-            },
-            RegexOptions.IgnoreCase);
-
-        AppLogPaths.AppendTimestamped(_webviewPerfLog,
-            $"[EMBEDDED] assets id={contextId} binaryRefs={binaryRefs} binaryResolved={binaryResolved} " +
-            $"binaryMissing=[{string.Join(",", binaryMissing)}] textRefs={textRefs} textResolved={textResolved} " +
-            $"textMissing=[{string.Join(",", textMissing)}]");
-        return result;
-    }
-
-    private static string GetMimeType(byte[] bytes, string assetId)
-    {
-        if (bytes.Length >= 8 &&
-            bytes[0] == 0x89 &&
-            bytes[1] == 0x50 &&
-            bytes[2] == 0x4E &&
-            bytes[3] == 0x47)
-        {
-            return "image/png";
-        }
-
-        if (bytes.Length >= 3 &&
-            bytes[0] == 0xFF &&
-            bytes[1] == 0xD8 &&
-            bytes[2] == 0xFF)
-        {
-            return "image/jpeg";
-        }
-
-        if (bytes.Length >= 6 &&
-            Encoding.ASCII.GetString(bytes, 0, 6) is "GIF87a" or "GIF89a")
-        {
-            return "image/gif";
-        }
-
-        if (bytes.Length >= 12 &&
-            Encoding.ASCII.GetString(bytes, 0, 4) == "RIFF" &&
-            Encoding.ASCII.GetString(bytes, 8, 4) == "WEBP")
-        {
-            return "image/webp";
-        }
-
-        return Path.GetExtension(assetId).ToLowerInvariant() switch
-        {
-            ".svg" => "image/svg+xml",
-            ".woff" => "font/woff",
-            ".woff2" => "font/woff2",
-            ".mp4" => "video/mp4",
-            ".webm" => "video/webm",
-            ".json" => "application/json",
-            ".css" => "text/css",
-            ".js" => "text/javascript",
-            _ => "application/octet-stream",
-        };
+        return new EmbeddedTrackMeta(
+            Title: vm?.Title ?? track?.DisplayTitle ?? string.Empty,
+            Artist: vm?.Artist ?? track?.Artist ?? string.Empty,
+            Album: vm?.Album ?? track?.Album ?? string.Empty,
+            AlbumArtist: track?.AlbumArtist ?? string.Empty,
+            Genre: track?.Genre ?? string.Empty,
+            Year: (int)(track?.Year ?? 0),
+            TrackNumber: (int)(track?.TrackNumber ?? 0),
+            DurationSeconds: vm?.LengthSeconds ?? track?.Duration.TotalSeconds ?? 0.0,
+            Bpm: track?.Bpm,
+            MusicalKey: track?.MusicalKey,
+            SampleRate: track?.SampleRateHz ?? 0,
+            Channels: track?.Channels ?? 0,
+            ArtworkBytes: artworkBytes,
+            ArtworkMimeType: artworkMime);
     }
 
     private static float[] SampleSpectrum(float[] spectrum, int count)

@@ -155,6 +155,52 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
         }
     }
 
+    public int? BrowserProcessId
+    {
+        get
+        {
+            try
+            {
+                var pid = _core?.BrowserProcessId;
+                return pid is > 0 ? (int)pid.Value : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    public bool AudioMuted
+    {
+        get
+        {
+            try
+            {
+                return _core?.IsMuted ?? false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        set
+        {
+            try
+            {
+                if (_core is not null)
+                {
+                    _core.IsMuted = value;
+                }
+            }
+            catch
+            {
+                // Older WebView2 runtimes may not expose IsMuted — treated as best-effort.
+            }
+        }
+    }
+
     public Task ExecuteScriptAsync(string script)
     {
         if (_core is not null)
@@ -164,6 +210,22 @@ public sealed class WebView2Host : NativeControlHost, IWebViewHost
             $"[WV2] queue script chars={script.Length:n0} utf8={Encoding.UTF8.GetByteCount(script):n0}");
         _pendingScripts.Add(script);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Captures the current WebView viewport as a PNG. Used by the offscreen video-export
+    /// host to grab one deterministic frame at a time. Throws if the browser isn't ready.
+    /// </summary>
+    public async Task<byte[]> CapturePngAsync()
+    {
+        if (_core is null)
+        {
+            throw new InvalidOperationException("WebView2 is not initialized yet — cannot capture a frame.");
+        }
+
+        using var ms = new MemoryStream();
+        await _core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+        return ms.ToArray();
     }
 
     public void NudgeResize()
