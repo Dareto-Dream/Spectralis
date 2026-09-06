@@ -121,7 +121,8 @@ public sealed class EmbeddedHtmlContext
         IReadOnlyDictionary<string, byte[]> binaryAssets,
         IReadOnlyDictionary<string, string>? textAssets,
         string? version,
-        string? sourceDirectory = null)
+        string? sourceDirectory = null,
+        IReadOnlyList<string>? capabilities = null)
     {
         Id = id;
         HtmlBytes = htmlBytes.ToArray();
@@ -133,6 +134,7 @@ public sealed class EmbeddedHtmlContext
             .ToDictionary(static item => item.Key, static item => item.Value, StringComparer.OrdinalIgnoreCase);
         Version = version;
         SourceDirectory = sourceDirectory;
+        Capabilities = capabilities is null ? Array.Empty<string>() : capabilities.ToArray();
     }
 
     public string Id { get; }
@@ -141,7 +143,16 @@ public sealed class EmbeddedHtmlContext
     public IReadOnlyDictionary<string, string> TextAssets { get; }
     public string? Version { get; }
     public string? SourceDirectory { get; }
+
+    /// <summary>Capsule capabilities the creator key is authorized for, carried through so the
+    /// host surface can gate elevated bridge features (e.g. Discord rich presence).</summary>
+    public IReadOnlyList<string> Capabilities { get; }
+
     public string DisplayName => EmbeddedVisualizerContext.CreateDisplayLabel(Id, "HTML Content");
+
+    /// <summary>Returns a copy of this context carrying the given capability list.</summary>
+    public EmbeddedHtmlContext WithCapabilities(IReadOnlyList<string>? capabilities) =>
+        new(Id, HtmlBytes, BinaryAssets, TextAssets, Version, SourceDirectory, capabilities);
 }
 
 public sealed class EmbeddedMarkdownContext

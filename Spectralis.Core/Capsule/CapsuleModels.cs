@@ -105,6 +105,7 @@ public static class CapsuleCapability
     public const string SharedPlayPackageUpload = "sharedPlay.packageUpload";
     public const string TimelineAppControl = "timeline.appControl";
     public const string AlbumWorld = "album.world";
+    public const string PresenceRichPresence = "presence.richPresence";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>
     {
@@ -112,7 +113,7 @@ public static class CapsuleCapability
         VisualizerMultiLayer, VisualizerWasm, VisualizerShaderPack,
         WebViewLocalContent, WebViewNetworkAccess,
         SharedPlayHostCapsule, SharedPlayPackageUpload, TimelineAppControl,
-        AlbumWorld,
+        AlbumWorld, PresenceRichPresence,
     };
 }
 

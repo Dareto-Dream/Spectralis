@@ -19,6 +19,19 @@ public sealed class AlbumBookmarkRequest
 }
 
 /// <summary>
+/// A capsule-supplied Discord rich presence override, sent from page JS via
+/// <c>window.spectral.presence.set()</c>. Only honoured when the capsule declared the
+/// <c>presence.richPresence</c> capability. All fields are clamped host-side before use.
+/// </summary>
+public sealed class CapsulePresenceRequest
+{
+    public string Details { get; init; } = "";
+    public string State { get; init; } = "";
+    public string LargeImageText { get; init; } = "";
+    public string SmallImageText { get; init; } = "";
+}
+
+/// <summary>
 /// Drives an <see cref="IWebViewHost"/> for capsule/album-world content: the
 /// spectral.* JS bridge, window.spectral v5 bootstrap, audio frame push, CSP
 /// injection, and per-capsule persistent store. All page input is untrusted:
@@ -36,9 +49,12 @@ public sealed class WebViewHostService : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private const int MaxPresenceTextLength = 128;
+
     private readonly IWebViewHost _host;
     private readonly string? _storeFilePath;
     private readonly bool _isAlbumWorld;
+    private readonly bool _allowPresence;
     private Dictionary<string, JsonNode?>? _store;
 
     /// <param name="storeKey">
@@ -49,11 +65,17 @@ public sealed class WebViewHostService : IDisposable
     /// True when hosting a .spectral album world map. Enables world-specific bridge
     /// messages (playTrack, addToQueue) and the corresponding JS callbacks.
     /// </param>
-    public WebViewHostService(IWebViewHost host, string? storeKey = null, bool isAlbumWorld = false)
+    /// <param name="allowPresence">
+    /// True when the hosted capsule declared the <c>presence.richPresence</c> capability.
+    /// Gates the <c>spectral.presence.*</c> bridge messages; page JS can always call the
+    /// stub, but the host drops the messages unless this is set.
+    /// </param>
+    public WebViewHostService(IWebViewHost host, string? storeKey = null, bool isAlbumWorld = false, bool allowPresence = false)
     {
         _host = host;
         _host.MessageReceived += OnMessageReceived;
         _isAlbumWorld = isAlbumWorld;
+        _allowPresence = allowPresence;
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
@@ -72,6 +94,8 @@ public sealed class WebViewHostService : IDisposable
     public event EventHandler<double>? SeekRequested;
     public event EventHandler<AlbumBookmarkRequest>? SaveBookmarkRequested;
     public event EventHandler? ExitWorldRequested;
+    public event EventHandler<CapsulePresenceRequest>? PresenceUpdateRequested;
+    public event EventHandler? PresenceClearRequested;
 
     private void OnMessageReceived(object? sender, string messageJson) => DispatchMessage(messageJson);
 
@@ -161,6 +185,30 @@ public sealed class WebViewHostService : IDisposable
                     ExitWorldRequested?.Invoke(this, EventArgs.Empty);
                     break;
 
+                case "spectral.presence.set":
+                {
+                    // Gated on the presence.richPresence capability — dropped otherwise.
+                    if (!_allowPresence) break;
+
+                    var details = ClampPresenceText(ReadString(root, "details"));
+                    var state = ClampPresenceText(ReadString(root, "state"));
+                    if (details.Length == 0 && state.Length == 0) break;
+
+                    PresenceUpdateRequested?.Invoke(this, new CapsulePresenceRequest
+                    {
+                        Details = details,
+                        State = state,
+                        LargeImageText = ClampPresenceText(ReadString(root, "largeImageText")),
+                        SmallImageText = ClampPresenceText(ReadString(root, "smallImageText")),
+                    });
+                    break;
+                }
+
+                case "spectral.presence.clear":
+                    if (_allowPresence)
+                        PresenceClearRequested?.Invoke(this, EventArgs.Empty);
+                    break;
+
                 // Per-capsule persistent store
                 case "spectral.store.get":
                     HandleStoreGet(root);
@@ -246,6 +294,7 @@ public sealed class WebViewHostService : IDisposable
     ///   spectral.resume()
     ///   spectral.seek(sec)
     ///   spectral.exit()
+    ///   spectral.presence.*    — Discord rich presence override (presence.richPresence capability)
     ///
     ///   CSS custom properties on <html>:
     ///     --audio-time, --audio-peak, --audio-rms  (set by embedded frame bridge, not here)
@@ -315,6 +364,26 @@ public sealed class WebViewHostService : IDisposable
               };
               window.spectral.exit = function() {
                 spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.exitWorld' }));
+              };
+
+              // ── Discord rich presence ────────────────────────────────────────
+              // Needs the presence.richPresence capability; calls are dropped host-side otherwise.
+              // presence.set({ details, state, largeImageText, smallImageText }) — all optional strings.
+              // presence.clear() reverts to the normal track presence.
+              window.spectral.presence = {
+                set: function(p) {
+                  p = p || {};
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.presence.set',
+                    details: String(p.details || ''),
+                    state: String(p.state || ''),
+                    largeImageText: String(p.largeImageText || ''),
+                    smallImageText: String(p.smallImageText || '')
+                  }));
+                },
+                clear: function() {
+                  spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.presence.clear' }));
+                }
               };
 
               // ── Persistent store ──────────────────────────────────────────────
@@ -536,6 +605,17 @@ public sealed class WebViewHostService : IDisposable
         }
 
         return result;
+    }
+
+    private static string ReadString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
+            ? prop.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static string ClampPresenceText(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        return text.Length > MaxPresenceTextLength ? text[..MaxPresenceTextLength] : text;
     }
 
     private static string SanitizeFileName(string key)
