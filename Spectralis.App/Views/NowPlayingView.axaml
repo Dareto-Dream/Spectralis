@@ -96,10 +96,24 @@
 
       <!-- Drop hint -->
       <TextBlock Classes="muted"
-                 Text="Drop audio files or a .spectralis capsule here"
+                 Text="Drop audio files or a .spectralis capsule here — or paste a link"
                  TextAlignment="Center"
                  FontSize="{StaticResource FontSize.UI.Small}"
                  TextWrapping="Wrap"
+                 Margin="0,0,0,10" />
+
+      <!-- Supported link sources — telemetry-style readout, same type language as the
+           wordmark above. Clicking opens the same dialog as the Open URL button. -->
+      <TextBlock Text="SPOTIFY · SOUNDCLOUD · BANDLAB · YOUTUBE · SUNO · UNTITLED"
+                 Classes="data"
+                 Foreground="{StaticResource Brush.Ink.Muted}"
+                 FontSize="10"
+                 LetterSpacing="2"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 Cursor="Hand"
+                 PointerPressed="OnOpenUrlClick"
+                 ToolTip.Tip="Paste a track or playlist link from any of these"
                  Margin="0,0,0,24" />
 
       <!-- CTAs -->
