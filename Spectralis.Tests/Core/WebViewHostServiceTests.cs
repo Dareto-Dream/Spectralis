@@ -155,6 +155,54 @@ public sealed class WebViewHostServiceTests : IDisposable
             Assert.Contains(callback, script);
         }
     }
+
+    [Fact]
+    public void Presence_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.PresenceUpdateRequested += (_, _) => fired++;
+        _service.PresenceClearRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.presence.set","details":"Chapter 3","state":"exploring"}""");
+        _host.SimulateMessage("""{"type":"spectral.presence.clear"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void Presence_SetAndClearDispatchWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowPresence: true);
+
+        CapsulePresenceRequest? update = null;
+        var cleared = 0;
+        service.PresenceUpdateRequested += (_, e) => update = e;
+        service.PresenceClearRequested += (_, _) => cleared++;
+
+        var longText = new string('x', 500);
+        host.SimulateMessage($$"""{"type":"spectral.presence.set","details":"{{longText}}","state":"exploring the ruins"}""");
+        host.SimulateMessage("""{"type":"spectral.presence.clear"}""");
+
+        Assert.NotNull(update);
+        Assert.Equal(128, update!.Details.Length);
+        Assert.Equal("exploring the ruins", update.State);
+        Assert.Equal(1, cleared);
+    }
+
+    [Fact]
+    public void Presence_EmptyPayloadDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowPresence: true);
+
+        var fired = 0;
+        service.PresenceUpdateRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.presence.set","details":"","state":"   "}""");
+
+        Assert.Equal(0, fired);
+    }
 }
 
 public class ContentSecurityPolicyTests
