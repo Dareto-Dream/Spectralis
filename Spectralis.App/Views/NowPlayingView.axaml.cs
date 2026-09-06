@@ -799,13 +799,21 @@ public NowPlayingView()
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
         var isAlbumWorld = _viewModel?.IsAlbumWorldShowingWorld ?? false;
-        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: isAlbumWorld ? null : context.Id, isAlbumWorld: isAlbumWorld);
+        var allowPresence = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.PresenceRichPresence);
+        _embeddedService = new WebViewHostService(
+            _embeddedHost,
+            storeKey: isAlbumWorld ? null : context.Id,
+            isAlbumWorld: isAlbumWorld,
+            allowPresence: allowPresence);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
         _embeddedService.SeekRequested += OnEmbeddedSeekRequested;
         _embeddedService.ExitWorldRequested += OnEmbeddedExitRequested;
         _embeddedService.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
+        _embeddedService.PresenceUpdateRequested += OnEmbeddedPresenceUpdate;
+        _embeddedService.PresenceClearRequested += OnEmbeddedPresenceClear;
         EmbeddedHtmlHost.Content = _embeddedControl;
 
         try
@@ -886,6 +894,16 @@ public NowPlayingView()
     private void OnEmbeddedPlayTrackRequested(object? sender, Spectralis.Core.Integrations.Web.AlbumTrackPlayRequest req)
     {
         _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId, req.PositionSeconds);
+    }
+
+    private void OnEmbeddedPresenceUpdate(object? sender, Spectralis.Core.Integrations.Web.CapsulePresenceRequest req)
+    {
+        _viewModel?.CapsulePresenceRequested?.Invoke(req);
+    }
+
+    private void OnEmbeddedPresenceClear(object? sender, EventArgs e)
+    {
+        _viewModel?.CapsulePresenceRequested?.Invoke(null);
     }
 
     private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
@@ -1086,9 +1104,14 @@ public NowPlayingView()
             _embeddedService.SeekRequested -= OnEmbeddedSeekRequested;
             _embeddedService.ExitWorldRequested -= OnEmbeddedExitRequested;
             _embeddedService.SaveBookmarkRequested -= OnEmbeddedSaveBookmark;
+            _embeddedService.PresenceUpdateRequested -= OnEmbeddedPresenceUpdate;
+            _embeddedService.PresenceClearRequested -= OnEmbeddedPresenceClear;
             _embeddedService.Dispose();
             _embeddedService = null;
         }
+
+        // A capsule's presence override never outlives its surface.
+        _viewModel?.CapsulePresenceRequested?.Invoke(null);
 
         if (_embeddedHost is not null)
         {

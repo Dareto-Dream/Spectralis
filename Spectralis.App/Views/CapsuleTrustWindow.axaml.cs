@@ -25,6 +25,7 @@ public partial class CapsuleTrustWindow : Window
         ["sharedPlay.packageUpload"] = ("Upload capsule packages to listeners", true),
         ["timeline.appControl"]      = ("Control app playback via reactive timeline", false),
         ["album.world"]              = ("Open as an interactive album world", false),
+        ["presence.richPresence"]    = ("Set your Discord rich presence while playing", false),
     };
 
     // Amber from Color.Warning token; muted from Color.Ink.Muted token.

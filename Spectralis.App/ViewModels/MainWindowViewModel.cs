@@ -197,6 +197,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         ObsOverlay.Start();
         DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
+        NowPlaying.CapsulePresenceRequested = req => DiscordPresence.SetCapsulePresenceOverride(req);
+        NowPlaying.SessionReset += (_, _) => DiscordPresence.SetCapsulePresenceOverride(null);
         ObsEditor = new ObsEditorViewModel(
             AppSettings,
             enabled =>
