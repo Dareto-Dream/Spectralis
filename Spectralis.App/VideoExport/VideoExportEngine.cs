@@ -8,35 +8,63 @@ using NAudio.Wave;
 using NLayer.NAudioSupport;
 using Spectralis.App.Controls;
 using Spectralis.Core.Visualizers;
+using Spectralis.Core.Visualizers.Scripting;
 
 namespace Spectralis.App.VideoExport;
 
-public static class VideoExportEngine
+public static partial class VideoExportEngine
 {
     public static async Task ExportAsync(
-        string audioFilePath,
-        byte[]? albumArtBytes,
+        VideoExportRequest request,
         VideoExportOptions options,
         IProgress<float>? progress,
         CancellationToken ct)
     {
-        if (!File.Exists(audioFilePath))
-            throw new FileNotFoundException("Audio file not found.", audioFilePath);
+        if (!File.Exists(request.AudioFilePath))
+            throw new FileNotFoundException("Audio file not found.", request.AudioFilePath);
         if (string.IsNullOrWhiteSpace(options.OutputPath))
             throw new ArgumentException("No output path specified.", nameof(options));
+        if (options.Visualizers.Count == 0)
+            throw new ArgumentException("No visualizer selected.", nameof(options));
 
+        var primary = options.PrimaryVisualizer;
+        if (primary.IsWebView)
+        {
+#if WINDOWS
+            if (OperatingSystem.IsWindows())
+            {
+                await RunWebViewExportAsync(request, options, progress, ct);
+                return;
+            }
+#endif
+            throw new PlatformNotSupportedException(
+                "HTML and embedded-video visualizers can only be exported on Windows.");
+        }
+
+        await RunCanvasExportAsync(request, options, progress, ct);
+    }
+
+    // ── Built-in / scripted visualizer path (cross-platform, C#-drawn) ──────────
+
+    private static async Task RunCanvasExportAsync(
+        VideoExportRequest request,
+        VideoExportOptions options,
+        IProgress<float>? progress,
+        CancellationToken ct)
+    {
         var ffmpegPath = FindFfmpegPath();
         var w = options.Width;
         var h = options.Height;
         var fps = options.FrameRate;
         var bounds = new VizRect(0, 0, w, h);
 
-        using var audioStream = OpenAudioStream(audioFilePath);
+        using var audioStream = OpenAudioStream(request.AudioFilePath);
         var sampleRate = audioStream.WaveFormat.SampleRate;
         var channels = audioStream.WaveFormat.Channels;
         var durationSeconds = audioStream.TotalTime.TotalSeconds;
         if (durationSeconds <= 0)
-            throw new InvalidOperationException("Could not determine audio duration. The file may be unsupported or corrupt.");
+            throw new InvalidOperationException(
+                "Could not determine audio duration. The file may be unsupported or corrupt.");
 
         ISampleProvider rawProvider = audioStream is ISampleProvider sp ? sp : audioStream.ToSampleProvider();
         var visProvider = new VisualizerSampleProvider(rawProvider);
@@ -45,20 +73,24 @@ public static class VideoExportEngine
         var totalFrames = Math.Max(1, (int)Math.Ceiling(durationSeconds * fps));
         long consumedSampleFrames = 0;
 
-        var mode = options.Mode;
-        var preferredMode = VisualizerCatalog.GetPreferredMode(mode, albumArtBytes?.Length > 0);
-        var definition = VisualizerCatalog.GetDefinition(preferredMode);
+        var hasAlbumArt = request.AlbumArtBytes is { Length: > 0 };
+        var sequence = VisualizerSequence.Build(options, hasAlbumArt);
+
         var sceneState = new VisualizerSceneState
         {
             Palette = VisualizerPalette.Default,
-            AlbumArt = AvaloniaVizImage.FromBytes(albumArtBytes),
+            AlbumArt = AvaloniaVizImage.FromBytes(request.AlbumArtBytes),
         };
 
-        var outputDir = Path.GetDirectoryName(Path.GetFullPath(options.OutputPath));
-        if (!string.IsNullOrEmpty(outputDir))
-            Directory.CreateDirectory(outputDir);
+        Bitmap? overlayCover = null;
+        if (options.ShowAlbumArt && hasAlbumArt)
+        {
+            try { overlayCover = new Bitmap(new MemoryStream(request.AlbumArtBytes!)); }
+            catch { overlayCover = null; }
+        }
 
-        var ffmpegArgs = BuildFfmpegArgs(audioFilePath, options.OutputPath, fps, durationSeconds);
+        using var outputScope = ExportOutputScope.Create(options.OutputPath);
+        var ffmpegArgs = BuildFfmpegArgs(request.AudioFilePath, outputScope.WorkingPath, fps, options.Crf, durationSeconds);
         using var ffmpeg = StartFfmpeg(ffmpegPath, ffmpegArgs);
         using var killOnCancel = ct.Register(() =>
         {
@@ -86,9 +118,12 @@ public static class VideoExportEngine
                     consumedSampleFrames = targetSamples;
                     ConsumeAnalysisSamples(visProvider, analysisBuffer, samplesToConsume, channels);
 
+                    var entry = sequence.Resolve(elapsed);
                     var vizFrame = visProvider.GetFrame();
-                    sceneState.UpdateFrame(vizFrame, true, elapsed, preferredMode);
-                    var scene = sceneState.CreateScene(definition.Label);
+                    sceneState.UpdateFrame(vizFrame, true, elapsed, entry.Mode);
+                    var scene = sceneState.CreateScene(entry.Label);
+
+                    var overlayModel = BuildOverlayModel(request, options, overlayCover, elapsed, durationSeconds);
 
                     var pngBytes = await Dispatcher.UIThread.InvokeAsync(() =>
                     {
@@ -96,7 +131,8 @@ public static class VideoExportEngine
                         {
                             var canvas = new AvaloniaVizCanvas(dc);
                             canvas.FillRect(bounds, new VizColor(255, 0, 0, 0));
-                            definition.Renderer.Draw(canvas, bounds, scene);
+                            entry.Renderer.Draw(canvas, bounds, scene);
+                            VideoOverlayRenderer.Draw(dc, w, h, overlayModel);
                         }
                         using var ms = new MemoryStream();
                         rtb.Save(ms);
@@ -113,6 +149,7 @@ public static class VideoExportEngine
         finally
         {
             rtb.Dispose();
+            overlayCover?.Dispose();
         }
 
         stdin.Close();
@@ -125,8 +162,141 @@ public static class VideoExportEngine
                 $"FFmpeg exited with code {ffmpeg.ExitCode}. Ensure FFmpeg has libx264 support.\n{stderr.TrimEnd()}");
         }
 
+        outputScope.Commit();
         progress?.Report(1f);
     }
+
+    internal static VideoOverlayModel BuildOverlayModel(
+        VideoExportRequest request,
+        VideoExportOptions options,
+        Bitmap? cover,
+        double elapsedSeconds,
+        double totalSeconds) =>
+        new()
+        {
+            ShowTitle = options.ShowTitle,
+            ShowArtist = options.ShowArtist,
+            ShowAlbum = options.ShowAlbum,
+            ShowAlbumArt = options.ShowAlbumArt && cover is not null,
+            ShowProgressBar = options.ShowProgressBar,
+            Title = request.Title,
+            Artist = request.Artist,
+            Album = request.Album,
+            Cover = cover,
+            ElapsedSeconds = elapsedSeconds,
+            TotalSeconds = totalSeconds,
+        };
+
+    // ── Auto-cycle sequence ───────────────────────────────────────────────────
+
+    private sealed class VisualizerSequence
+    {
+        private readonly VisualizerEntry[] _entries;
+        private readonly int _cycleSeconds;
+
+        private VisualizerSequence(VisualizerEntry[] entries, int cycleSeconds)
+        {
+            _entries = entries.Length > 0 ? entries : [VisualizerEntry.BuiltIn(VisualizerMode.MirrorSpectrum, false)];
+            _cycleSeconds = Math.Max(1, cycleSeconds);
+        }
+
+        public static VisualizerSequence Build(VideoExportOptions options, bool hasAlbumArt)
+        {
+            IEnumerable<VideoExportVisualizerSelection> source = options.AutoCycle
+                ? options.Visualizers.Where(v => v.CanCycle)
+                : [options.PrimaryVisualizer];
+
+            var entries = source
+                .Where(v => v.CanCycle)
+                .Select(v => v.Script is { } script
+                    ? VisualizerEntry.Scripted(script)
+                    : VisualizerEntry.BuiltIn(v.Mode, hasAlbumArt))
+                .ToArray();
+
+            return new VisualizerSequence(entries, options.CycleSeconds);
+        }
+
+        public VisualizerEntry Resolve(float elapsedSeconds)
+        {
+            if (_entries.Length == 1)
+                return _entries[0];
+
+            var index = (int)(Math.Max(0, elapsedSeconds) / _cycleSeconds) % _entries.Length;
+            return _entries[index];
+        }
+    }
+
+    private sealed class VisualizerEntry
+    {
+        private VisualizerEntry(IVisualizerRenderer renderer, string label, VisualizerMode mode)
+        {
+            Renderer = renderer;
+            Label = label;
+            Mode = mode;
+        }
+
+        public IVisualizerRenderer Renderer { get; }
+        public string Label { get; }
+        public VisualizerMode Mode { get; }
+
+        public static VisualizerEntry BuiltIn(VisualizerMode mode, bool hasAlbumArt)
+        {
+            var resolved = VisualizerCatalog.GetPreferredMode(mode, hasAlbumArt);
+            var definition = VisualizerCatalog.GetDefinition(resolved);
+            return new VisualizerEntry(definition.Renderer, definition.Label, resolved);
+        }
+
+        public static VisualizerEntry Scripted(ScriptedVisualizerDefinition def) =>
+            new(new ScriptVisualizerRenderer(def), $"Script: {def.Name}", VisualizerMode.MirrorSpectrum);
+    }
+
+    // ── Atomic output ─────────────────────────────────────────────────────────
+
+    private sealed class ExportOutputScope : IDisposable
+    {
+        private readonly string _finalPath;
+        private bool _committed;
+
+        private ExportOutputScope(string finalPath, string workingPath)
+        {
+            _finalPath = finalPath;
+            WorkingPath = workingPath;
+        }
+
+        public string WorkingPath { get; }
+
+        public static ExportOutputScope Create(string finalPath)
+        {
+            var normalized = Path.GetFullPath(finalPath);
+            var directory = Path.GetDirectoryName(normalized)
+                ?? throw new InvalidOperationException("Choose a valid output folder.");
+            Directory.CreateDirectory(directory);
+
+            var stem = Path.GetFileNameWithoutExtension(normalized);
+            if (string.IsNullOrWhiteSpace(stem))
+                stem = "export";
+
+            return new ExportOutputScope(normalized, Path.Combine(directory, $".{stem}.{Guid.NewGuid():N}.tmp.mp4"));
+        }
+
+        public void Commit()
+        {
+            if (_committed)
+                return;
+            File.Move(WorkingPath, _finalPath, overwrite: true);
+            _committed = true;
+        }
+
+        public void Dispose()
+        {
+            if (_committed)
+                return;
+            try { if (File.Exists(WorkingPath)) File.Delete(WorkingPath); }
+            catch { }
+        }
+    }
+
+    // ── Shared audio / ffmpeg plumbing ────────────────────────────────────────
 
     private static WaveStream OpenAudioStream(string path)
     {
@@ -182,6 +352,7 @@ public static class VideoExportEngine
         string audioPath,
         string outputPath,
         int fps,
+        int crf,
         double durationSeconds) =>
     [
         "-y",
@@ -194,7 +365,7 @@ public static class VideoExportEngine
         "-map", "1:a:0",
         "-c:v", "libx264",
         "-preset", "fast",
-        "-crf", "18",
+        "-crf", crf.ToString(CultureInfo.InvariantCulture),
         "-pix_fmt", "yuv420p",
         "-af", "apad",
         "-c:a", "aac",

@@ -125,7 +125,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -167,6 +167,16 @@
           <CheckBox Grid.Row="6" Grid.Column="1"
                     IsChecked="{Binding PreserveSession}"
                     HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="7" Grid.Column="0" Classes="secondary" Text="EQ Spotify audio" VerticalAlignment="Top" Margin="0,4,0,0"
+                     ToolTip.Tip="Experimental. Windows only." />
+          <StackPanel Grid.Row="7" Grid.Column="1" Spacing="2" HorizontalAlignment="Left">
+            <CheckBox IsChecked="{Binding EqSpotifyAudioExperimental}"
+                      Content="Apply the effects chain to Spotify (experimental)" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Captures Spotify's audio, runs it through the effects chain, and re-plays it while muting the original. Adds ~150 ms latency. Takes effect on the next Spotify track." />
+          </StackPanel>
         </Grid>
       </StackPanel>
 

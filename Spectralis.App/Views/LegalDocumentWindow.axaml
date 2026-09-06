@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Spectralis.App.Views.LegalDocumentWindow"
         Icon="/Assets/icon.png"
+        WindowStartupLocation="CenterOwner"
         Width="760" Height="640"
         MinWidth="520" MinHeight="420"
         Background="{StaticResource Brush.Bg.Base}">
