@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Common;
 using Spectralis.Core.Integrations;
+using Spectralis.Core.Integrations.Web;
 using Spectralis.Core.Scrobbling;
 
 namespace Spectralis.App.Services;
@@ -20,6 +21,7 @@ public sealed class DiscordPresenceCoordinator : IDisposable
     private readonly DispatcherTimer _timer;
     private SpotifyTrackState? _currentSpotifyTrack;
     private bool _spotifyIsPlaying;
+    private CapsulePresenceRequest? _capsulePresence;
 
     /// <summary>Set by Shared Play hosting; appears as the Listen Together button.</summary>
     public string? SharedPlayJoinUrl { get; set; }
@@ -42,6 +44,13 @@ public sealed class DiscordPresenceCoordinator : IDisposable
 
     public void SetEnabled(bool enabled) => _service.SetEnabled(enabled);
 
+    /// <summary>
+    /// Sets (or clears, with null) a capsule-supplied rich presence override. While set it
+    /// takes priority over the normal track/Spotify presence. Cleared automatically when the
+    /// capsule unloads or the session resets.
+    /// </summary>
+    public void SetCapsulePresenceOverride(CapsulePresenceRequest? request) => _capsulePresence = request;
+
     private void OnSpotifyTrackStateChanged(object? sender, SpotifyTrackState state)
     {
         _currentSpotifyTrack = state;
@@ -50,6 +59,20 @@ public sealed class DiscordPresenceCoordinator : IDisposable
 
     private void Push()
     {
+        if (_capsulePresence is { } capsule)
+        {
+            _service.UpdateCapsule(
+                capsule.Details,
+                capsule.State,
+                _engine.IsPlaying,
+                TimeSpan.FromSeconds(_engine.GetPosition()),
+                TimeSpan.FromSeconds(_engine.GetLength()),
+                capsule.LargeImageText,
+                capsule.SmallImageText,
+                SharedPlayJoinUrl);
+            return;
+        }
+
         if (_spotifyIsPlaying && _currentSpotifyTrack is not null)
         {
             var spotifyTrack = BuildSpotifyTrackInfo(_currentSpotifyTrack);
