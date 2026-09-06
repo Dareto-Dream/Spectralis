@@ -750,8 +750,12 @@ public sealed class CapsulesViewModel : ViewModelBase
                 // story shows first (custom story.entry, then pages[]/chapters[], then a
                 // backstory pager), and the visualizer (or synthesized markdown/video surface)
                 // is queued behind it, taking over once the story calls spectral.resume().
-                var storyHtml = CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry);
-                var otherHtml = packageModules.Html ?? metadata.EmbeddedHtml;
+                // Carry the capsule's authorized capabilities onto every embedded surface so the
+                // host can gate elevated bridge features (e.g. presence.richPresence).
+                var storyHtml = CapsuleStoryRenderer.TryToHtmlContext(manifest.Story, package.TryReadEntry)
+                    ?.WithCapabilities(manifest.Capabilities);
+                var otherHtml = (packageModules.Html ?? metadata.EmbeddedHtml)
+                    ?.WithCapabilities(manifest.Capabilities);
 
                 var trackInfo = metadata with
                 {

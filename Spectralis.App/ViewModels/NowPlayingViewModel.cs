@@ -2142,6 +2142,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public Action<string, double>? AlbumPlayTrackDelegate { get; set; }
     public Action<double, bool>? AlbumWorldTick { get; set; }
     public Action? AlbumWorldExitDelegate { get; set; }
+
+    /// <summary>
+    /// Raised by an embedded capsule surface that declared the <c>presence.richPresence</c>
+    /// capability. Non-null payload = set override, null = revert to normal track presence.
+    /// </summary>
+    public Action<Spectralis.Core.Integrations.Web.CapsulePresenceRequest?>? CapsulePresenceRequested { get; set; }
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
     public event Action<string, double>? AlbumWorldTrackCompleted;
 
