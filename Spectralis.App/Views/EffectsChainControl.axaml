@@ -55,7 +55,7 @@
                      Text="{Binding Name, FallbackValue='No effect selected'}" />
 
           <!-- Parametric EQ: envelope curve editor + presets -->
-          <StackPanel IsVisible="{Binding HasEqEditor}" Spacing="6">
+          <StackPanel IsVisible="{Binding HasEqEditor, FallbackValue=false, TargetNullValue=false}" Spacing="6">
             <StackPanel Spacing="6" DataContext="{Binding EqEditor}">
               <Grid ColumnDefinitions="*,Auto">
                 <ComboBox Grid.Column="0"
