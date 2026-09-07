@@ -240,6 +240,14 @@ public sealed class OpenUrlService
 
     private static RemoteAudioServiceKind DetectTarget(Uri uri)
     {
+        // Suno's audio CDN URL (d2lwuy8qc234o3.cloudfront.net/1/clip/{id}.m4a) looks
+        // like a plain direct-audio link, but routing it through the Suno resolver
+        // recovers title/artist/lyrics from the clip id embedded in the path.
+        if (IsSunoCdnUri(uri))
+        {
+            return RemoteAudioServiceKind.Suno;
+        }
+
         if (IsDirectAudioUri(uri))
         {
             return RemoteAudioServiceKind.DirectAudio;
@@ -281,6 +289,12 @@ public sealed class OpenUrlService
 
         return RemoteAudioServiceKind.Generic;
     }
+
+    private static bool IsSunoCdnUri(Uri uri) =>
+        (uri.Host.Equals("d2lwuy8qc234o3.cloudfront.net", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Equals("suno.ai", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.EndsWith(".suno.ai", StringComparison.OrdinalIgnoreCase)) &&
+        SunoClipResolver.TryExtractClipId(uri.AbsoluteUri, out _);
 
     private static bool IsDirectAudioUri(Uri uri) =>
         SupportedAudioFormats.Extensions.Contains(
@@ -573,13 +587,18 @@ public sealed class OpenUrlService
         CancellationToken cancellationToken)
     {
         var clip = await SunoClipResolver.ResolveAsync(uri.AbsoluteUri, cancellationToken);
+        var audioExtension = NormalizeAudioExtension(
+            Uri.TryCreate(clip.AudioUrl, UriKind.Absolute, out var audioUri)
+                ? Path.GetExtension(audioUri.AbsolutePath)
+                : null,
+            ".m4a");
         return new RemoteAudioResolveResult(
             RemoteAudioServiceKind.Suno,
             "Suno",
             uri.AbsoluteUri,
             clip.AudioUrl,
-            ".mp3",
-            "Suno MP3",
+            audioExtension,
+            $"Suno {audioExtension.TrimStart('.').ToUpperInvariant()}",
             clip.Title,
             clip.Artist,
             FirstNonEmpty(clip.Tags, "Suno"),
