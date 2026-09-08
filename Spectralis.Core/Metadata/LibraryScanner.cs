@@ -1,4 +1,5 @@
 using Spectralis.Core.Common;
+using Spectralis.Core.Podcasts;
 
 namespace Spectralis.Core.Metadata;
 
@@ -20,15 +21,21 @@ public sealed class LibraryScanner
     public async Task<LibraryScanResult> ScanAsync(
         IReadOnlyList<string> rootPaths,
         IProgress<LibraryScanProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool markAsPodcast = false,
+        IReadOnlyCollection<string>? podcastFolders = null)
     {
-        return await Task.Run(() => Scan(rootPaths, progress, cancellationToken), cancellationToken);
+        return await Task.Run(
+            () => Scan(rootPaths, progress, cancellationToken, markAsPodcast, podcastFolders),
+            cancellationToken);
     }
 
     private LibraryScanResult Scan(
         IReadOnlyList<string> rootPaths,
         IProgress<LibraryScanProgress>? progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool markAsPodcast = false,
+        IReadOnlyCollection<string>? podcastFolders = null)
     {
         var files = new List<string>();
         foreach (var root in rootPaths)
@@ -64,11 +71,19 @@ public sealed class LibraryScanner
                         track = track with { FormatName = FormatLabel.FromExtension(path) };
                     }
 
-                    _database.Upsert(track, mtime);
+                    var isPodcast = markAsPodcast || PodcastDetector.DetectAuto(track, path, podcastFolders);
+                    _database.Upsert(track, mtime, isPodcast);
                     if (fingerprint is null)
                         added++;
                     else
                         updated++;
+                }
+
+                // A podcast-folder scan is an explicit "these are podcasts" statement — pin it via
+                // the manual override so it survives future music-library re-scans of the same file.
+                if (markAsPodcast)
+                {
+                    _database.SetPodcastOverride(path, true);
                 }
             }
             catch (OperationCanceledException)
