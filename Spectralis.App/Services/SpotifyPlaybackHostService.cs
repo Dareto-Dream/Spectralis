@@ -14,7 +14,8 @@ public record SpotifyTrackState(
     string? AlbumArtUrl,
     bool IsPaused,
     double PositionMs,
-    double DurationMs);
+    double DurationMs,
+    string? ContentType = null);
 
 /// <summary>
 /// Hosts the Spotify Web Playback SDK in a hidden WebView (the same
@@ -264,7 +265,8 @@ public sealed class SpotifyPlaybackHostService
                         var isPaused    = root.TryGetProperty("isPaused",   out var pEl)  && pEl.GetBoolean();
                         var posMs       = root.TryGetProperty("position",   out var posEl) ? posEl.GetDouble() : 0.0;
                         var durMs       = root.TryGetProperty("duration",   out var durEl) ? durEl.GetDouble() : 0.0;
-                        TrackStateChanged?.Invoke(this, new SpotifyTrackState(trackId, trackName, trackArtist, trackAlbum, artUrl, isPaused, posMs, durMs));
+                        var contentType = tEl.TryGetProperty("type",        out var tyEl) && tyEl.ValueKind == JsonValueKind.String ? tyEl.GetString() : null;
+                        TrackStateChanged?.Invoke(this, new SpotifyTrackState(trackId, trackName, trackArtist, trackAlbum, artUrl, isPaused, posMs, durMs, contentType));
                         AppLogPaths.AppendTimestamped(SpotifyLogPath, $"state_changed track={trackName} paused={isPaused}");
                     }
                     break;
@@ -368,7 +370,8 @@ public sealed class SpotifyPlaybackHostService
                         name: t.name,
                         artist: t.artists.map(a => a.name).join(', '),
                         album: t.album.name,
-                        albumArtUrl: t.album.images.length > 0 ? t.album.images[0].url : null
+                        albumArtUrl: t.album.images.length > 0 ? t.album.images[0].url : null,
+                        type: t.type
                     }
                 });
             };
