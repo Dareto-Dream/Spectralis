@@ -66,12 +66,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
-        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain);
 
         var databasePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Spectralis", "library-avalonia.db");
         LibraryDatabase = new LibraryDatabase(databasePath);
+
+        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain, library: LibraryDatabase);
+
         Library = new LibraryViewModel(
             LibraryDatabase,
             new LibraryScanner(LibraryDatabase),
@@ -79,6 +81,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             AppSettings);
         Library.InitializeWatchedFolders(AppSettings.LibraryAutoScanOnOpen);
         Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata);
+        Podcasts = new PodcastsViewModel(
+            LibraryDatabase,
+            AppSettings,
+            PlayFromLibraryAsync,
+            () => AppSettingsStore.Save(AppSettings));
         Scrobbling = new ScrobblingService(() => new ScrobblingConfig(
             AppSettings.LastFmEnabled,
             AppSettings.LastFmApiKey,
@@ -233,6 +240,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Now Playing", IconData.NowPlaying, NowPlaying),
             new("Library", IconData.Library, Library),
             new("Playlists", IconData.Playlists, Playlists),
+            new("Podcasts", IconData.Podcast, Podcasts),
             new("Capsules", IconData.Capsules, Capsules),
             new("Randomizer", IconData.Randomizer, RandomizerTools),
             NavSection.Separator("CREATE & STREAM"),
@@ -368,6 +376,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public NowPlayingViewModel NowPlaying { get; }
     public LibraryViewModel Library { get; }
     public PlaylistsViewModel Playlists { get; }
+    public PodcastsViewModel Podcasts { get; }
     public SharedPlayViewModel SharedPlay { get; }
     public StreamerQueueViewModel StreamerQueue { get; }
     public SongWarsViewModel SongWars { get; }
