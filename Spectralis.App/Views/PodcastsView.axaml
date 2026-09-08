@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:design="using:Spectralis.App.Design"
+             x:Class="Spectralis.App.Views.PodcastsView"
+             x:DataType="vm:PodcastsViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="20,16,20,16">
+
+    <!-- Header -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+      <StackPanel Grid.Column="0" Spacing="2">
+        <TextBlock Classes="display-large" Text="Podcasts" />
+        <TextBlock Classes="secondary" Text="Shows and audiobooks — chapters, resume, speed, sleep timer" FontSize="13" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <TextBlock Classes="muted" Text="{Binding ScanStatus}" VerticalAlignment="Center"
+                   IsVisible="{Binding ScanStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Classes="ghost" Content="Add folder..." Click="OnAddFolderClick" />
+        <Button Classes="ghost" Content="Rescan" Click="OnRescanClick"
+                IsEnabled="{Binding HasFolders}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Folders strip -->
+    <ItemsControl Grid.Row="1" ItemsSource="{Binding Folders}" Margin="0,0,0,10"
+                  IsVisible="{Binding HasFolders}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="x:String">
+          <Border Background="{StaticResource Brush.Bg.Overlay}"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                  Padding="8,3" Margin="0,0,6,6">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{Binding}" FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+              <Button Classes="ghost" Content="×" Padding="4,0" Click="OnRemoveFolderClick"
+                      Tag="{Binding}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- Empty state -->
+    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8"
+                IsVisible="{Binding !HasShows}">
+      <PathIcon Data="{x:Static design:IconData.Podcast}" Width="40" Height="40"
+                Foreground="{StaticResource Brush.Ink.Muted}" Opacity="0.5"
+                HorizontalAlignment="Center" />
+      <TextBlock Classes="secondary" HorizontalAlignment="Center"
+                 Text="Add a folder of podcast episodes or audiobooks to get started." />
+      <Button Classes="ghost" Content="Add folder..." Click="OnAddFolderClick" HorizontalAlignment="Center" />
+    </StackPanel>
+
+    <!-- Shows + episodes -->
+    <Grid Grid.Row="2" ColumnDefinitions="260,*" IsVisible="{Binding HasShows}">
+
+      <Border Grid.Column="0" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,1,0">
+        <ListBox ItemsSource="{Binding Shows}"
+                 SelectedItem="{Binding SelectedShow}"
+                 Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:PodcastShowRow">
+              <StackPanel Spacing="1" Margin="4,6">
+                <TextBlock Text="{Binding ShowName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                <TextBlock Classes="muted" Text="{Binding EpisodeCountText}"
+                           FontSize="{StaticResource FontSize.UI.Small}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="14,0,0,0">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,4,0,8"
+                    IsVisible="{Binding SelectedShow, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Classes="heading" Text="{Binding SelectedShow.ShowName}" VerticalAlignment="Center" />
+          <Button Classes="ghost" Content="Play show" Click="OnPlayShowClick" />
+        </StackPanel>
+
+        <ListBox Grid.Row="1"
+                 x:Name="EpisodeList"
+                 ItemsSource="{Binding SelectedShow.Episodes}"
+                 SelectedItem="{Binding SelectedEpisode}"
+                 DoubleTapped="OnEpisodeActivated"
+                 Background="Transparent">
+          <ListBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Play" Click="OnEpisodePlayClick" />
+              <MenuItem Header="Mark as finished" Click="OnMarkFinishedClick" />
+              <MenuItem Header="Mark as unplayed" Click="OnMarkUnplayedClick" />
+              <Separator />
+              <MenuItem Header="Remove from Podcasts" Click="OnRemoveFromPodcastsClick" />
+            </ContextMenu>
+          </ListBox.ContextMenu>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:PodcastEpisodeRow">
+              <Grid ColumnDefinitions="*,Auto" Margin="2,6">
+                <StackPanel Grid.Column="0" Spacing="3">
+                  <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="muted" Text="{Binding StatusText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                    <TextBlock Classes="muted" Text="{Binding DurationText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                  </StackPanel>
+                  <ProgressBar Minimum="0" Maximum="1" Value="{Binding ProgressFraction}"
+                               Height="3" Width="220" HorizontalAlignment="Left"
+                               IsVisible="{Binding HasProgress}" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="ghost" Content="Play" VerticalAlignment="Center"
+                        Click="OnEpisodePlayClick" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Grid>
+
+  </Grid>
+</UserControl>
