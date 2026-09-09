@@ -164,7 +164,20 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return true;
             },
             TimeSpan.FromMilliseconds(250));
-        RandomizerTools = new RandomizerToolsViewModel();
+        RandomizerTools = new RandomizerToolsViewModel(
+            LibraryDatabase,
+            Playlists,
+            AppSettings,
+            currentQueueProvider: () => NowPlaying.QueueItems
+                .Where(q => !string.IsNullOrWhiteSpace(q.Path))
+                .Select(q => new MusicPickCandidate(
+                    WheelEntryKind.Song,
+                    q.Path,
+                    string.IsNullOrWhiteSpace(q.Title) ? q.Path : q.Title,
+                    q.Subtitle ?? string.Empty))
+                .ToList(),
+            playSongs: PlayFromLibraryAsync,
+            setQueueMetadata: NowPlaying.SetQueueTrackMetadata);
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
         StreamerQueue.PlayTrackRequested = PlayStreamerQueueTrackAsync;
