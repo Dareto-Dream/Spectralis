@@ -15,6 +15,7 @@ using Spectralis.Core.Embedded;
 using Spectralis.Core.Formats;
 using Spectralis.Core.Lyrics;
 using Spectralis.Core.Metadata;
+using Spectralis.Core.Podcasts;
 using Spectralis.Core.Scrobbling;
 using Spectralis.Core.ContentWarnings;
 using Spectralis.Core.Integrations.Spotify;
@@ -164,6 +165,51 @@ public sealed class QueueItemViewModel : ViewModelBase
     }
 }
 
+/// <summary>One row in the Podcast Mode chapters panel.</summary>
+public sealed class ChapterRowViewModel : ViewModelBase
+{
+    private bool _isCurrent;
+
+    public ChapterRowViewModel(int index, Chapter chapter)
+    {
+        Index = index;
+        Title = chapter.Title;
+        Start = chapter.Start;
+    }
+
+    public int Index { get; }
+    public string Title { get; }
+    public TimeSpan Start { get; }
+    public string Number => $"{Index + 1}";
+    public string StartText => Spectralis.Core.Common.TimeFormat.FormatSeconds(Start.TotalSeconds);
+
+    public bool IsCurrent
+    {
+        get => _isCurrent;
+        set => this.RaiseAndSetIfChanged(ref _isCurrent, value);
+    }
+}
+
+/// <summary>Sleep-timer choices offered in Podcast Mode.</summary>
+public enum SleepTimerOption
+{
+    Off,
+    Minutes5,
+    Minutes10,
+    Minutes15,
+    Minutes30,
+    Minutes45,
+    Minutes60,
+    EndOfEpisode,
+    EndOfChapter,
+}
+
+/// <summary>A labelled sleep-timer option for the picker.</summary>
+public sealed record SleepTimerChoice(SleepTimerOption Option, string Label)
+{
+    public override string ToString() => Label;
+}
+
 public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 {
     private readonly AudioEngine _engine;
@@ -310,17 +356,41 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private ListeningActivitySnapshot _idleActivity = ListeningActivitySnapshot.Empty;
     private readonly IDisposable? _idleActivityTick;
 
+    // ── Podcast Mode ────────────────────────────────────────────────────────
+    private readonly LibraryDatabase? _library;
+    private bool _manualPodcastMode;
+    private bool _currentTrackIsPodcast;
+    private bool _currentTrackIsSpotifyEpisode;
+    private string _currentPodcastPath = string.Empty;
+    private ChapterList _chapterSet = ChapterList.Empty;
+    private int _activeChapterIndex = -1;
+    private bool _showChaptersPanel;
+    private double _podcastPlaybackSpeed = 1.0;
+    private Avalonia.Threading.DispatcherTimer? _resumeFlushTimer;
+    private long _lastResumeSaveMs = -1;
+    private SleepTimerOption _selectedSleepTimer = SleepTimerOption.Off;
+    private Avalonia.Threading.DispatcherTimer? _sleepTimer;
+    private DateTime _sleepTimerFiresAt;
+    private int _sleepTimerArmChapterIndex = -1;
+    private bool _sleepTimerEndOfEpisode;
+    private bool _sleepTimerEndOfChapter;
+    private double _volumeBeforeSleep = 85;
+
     public NowPlayingViewModel(
         AudioEngine engine,
         AppSettings? settings = null,
         bool enablePositionPolling = true,
-        EffectChain? effectChain = null)
+        EffectChain? effectChain = null,
+        LibraryDatabase? library = null)
     {
         _engine = engine;
+        _library = library;
         _settings = settings is null
             ? new AppSettings()
             : AppSettingsStore.Normalize(settings);
         _persistSettings = settings is not null;
+        _manualPodcastMode = _settings.PodcastModeManual;
+        _podcastPlaybackSpeed = _settings.PodcastPlaybackRate;
 
         _effectChain = effectChain ?? new EffectChain();
         _effectChainSaveTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -374,6 +444,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         PreviousCommand = ReactiveCommand.CreateFromTask(PlayPreviousAsync);
         NextVisualizerCommand = ReactiveCommand.Create(NextVisualizer);
         PreviousVisualizerCommand = ReactiveCommand.Create(PreviousVisualizer);
+
+        SkipBackCommand = ReactiveCommand.Create(() => SeekRelative(-_settings.PodcastSkipBackSeconds));
+        SkipForwardCommand = ReactiveCommand.Create(() => SeekRelative(_settings.PodcastSkipForwardSeconds));
+        NextChapterCommand = ReactiveCommand.Create(NextChapter);
+        PreviousChapterCommand = ReactiveCommand.Create(PreviousChapter);
+        IncreaseSpeedCommand = ReactiveCommand.Create(() => PlaybackSpeed = Math.Round(PlaybackSpeed + 0.1, 2));
+        DecreaseSpeedCommand = ReactiveCommand.Create(() => PlaybackSpeed = Math.Round(PlaybackSpeed - 0.1, 2));
 
         if (enablePositionPolling)
         {
@@ -518,9 +595,464 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when any of the docked side panels (lyrics/queue/notes/song wars/metronome/effects) is open — drives the collapsed panel-rail button's active state.</summary>
     public bool AnyPanelOpen =>
-        ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel || ShowMetronomePanel || ShowEffectsChainPanel;
+        ShowLyrics || ShowQueue || ShowNotepadPanel || ShowSongWarsPanel || ShowMetronomePanel ||
+        ShowEffectsChainPanel || ShowChaptersPanel;
 
     public EffectsChainViewModel EffectsChain { get; }
+
+    // ══ Podcast Mode ═══════════════════════════════════════════════════════════
+
+    public ReactiveCommand<Unit, Unit> SkipBackCommand { get; }
+    public ReactiveCommand<Unit, Unit> SkipForwardCommand { get; }
+    public ReactiveCommand<Unit, Unit> NextChapterCommand { get; }
+    public ReactiveCommand<Unit, Unit> PreviousChapterCommand { get; }
+    public ReactiveCommand<Unit, double> IncreaseSpeedCommand { get; }
+    public ReactiveCommand<Unit, double> DecreaseSpeedCommand { get; }
+
+    public ObservableCollection<ChapterRowViewModel> Chapters { get; } = new();
+
+    /// <summary>Forces Podcast Mode on for any track (File ▸ Podcast Mode). Persisted.</summary>
+    public bool ManualPodcastMode
+    {
+        get => _manualPodcastMode;
+        set
+        {
+            if (_manualPodcastMode == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _manualPodcastMode, value);
+            _settings.PodcastModeManual = value;
+            SaveSettings();
+            RaisePodcastModeChanged();
+            _engine.SetPlaybackRate(IsPodcastEngineMode ? PlaybackSpeed : 1.0);
+        }
+    }
+
+    /// <summary>True when the Now Playing surface should show the podcast controls / chapters.</summary>
+    public bool IsPodcastMode => _currentTrackIsPodcast || _currentTrackIsSpotifyEpisode || _manualPodcastMode;
+
+    /// <summary>Podcast Mode backed by the local engine (speed + chapters + resume all apply).</summary>
+    public bool IsPodcastEngineMode => IsPodcastMode && _spotifyState is null;
+
+    /// <summary>Podcast Mode for a Spotify episode — only the sleep timer applies.</summary>
+    public bool IsPodcastSpotifyMode => IsPodcastMode && _spotifyState is not null;
+
+    public bool HasChapters => _chapterSet is { IsEmpty: false };
+
+    public IReadOnlyList<double> ChapterStartSeconds => _chapterSet.StartSeconds;
+
+    public int ActiveChapterIndex
+    {
+        get => _activeChapterIndex;
+        private set
+        {
+            if (_activeChapterIndex == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _activeChapterIndex, value);
+            for (var i = 0; i < Chapters.Count; i++)
+            {
+                Chapters[i].IsCurrent = i == value;
+            }
+
+            this.RaisePropertyChanged(nameof(CurrentChapterTitle));
+        }
+    }
+
+    public string CurrentChapterTitle =>
+        _activeChapterIndex >= 0 && _activeChapterIndex < Chapters.Count
+            ? Chapters[_activeChapterIndex].Title
+            : string.Empty;
+
+    public bool ShowChaptersPanel
+    {
+        get => _showChaptersPanel;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _showChaptersPanel, value);
+            this.RaisePropertyChanged(nameof(AnyPanelOpen));
+        }
+    }
+
+    public double PlaybackSpeed
+    {
+        get => _podcastPlaybackSpeed;
+        set
+        {
+            var normalized = Math.Clamp(value, 0.5, 3.5);
+            if (Math.Abs(_podcastPlaybackSpeed - normalized) < 1e-4)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _podcastPlaybackSpeed, normalized);
+            _settings.PodcastPlaybackRate = normalized;
+            SaveSettings();
+            this.RaisePropertyChanged(nameof(SpeedText));
+            this.RaisePropertyChanged(nameof(SpeedInput));
+            if (IsPodcastEngineMode)
+            {
+                _engine.SetPlaybackRate(normalized);
+            }
+        }
+    }
+
+    public string SpeedText => $"{_podcastPlaybackSpeed:0.0}×";
+
+    /// <summary>Two-way text entry for the speed number. Accepts "1.5", "1.5x", "1,5"; snaps
+    /// back to the clamped canonical value on commit.</summary>
+    public string SpeedInput
+    {
+        get => _podcastPlaybackSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+        set
+        {
+            if (TryParseSpeed(value, out var parsed))
+            {
+                PlaybackSpeed = Math.Round(parsed, 2);
+            }
+
+            // Re-raise even on a no-op / bad parse so the TextBox reverts to the real value.
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(SpeedText));
+        }
+    }
+
+    private static bool TryParseSpeed(string? raw, out double value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var trimmed = raw.Trim().Replace(',', '.').TrimEnd('x', 'X', '×', ' ');
+        return double.TryParse(
+            trimmed,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out value);
+    }
+
+    /// <summary>Nudges the speed by one 0.1 step (from the hold-to-repeat buttons).</summary>
+    public void StepSpeed(int direction) =>
+        PlaybackSpeed = Math.Round(_podcastPlaybackSpeed + (Math.Sign(direction) * 0.1), 2);
+
+    public string SkipBackText => $"{_settings.PodcastSkipBackSeconds}s";
+
+    public string SkipForwardText => $"{_settings.PodcastSkipForwardSeconds}s";
+
+    public IReadOnlyList<SleepTimerChoice> SleepTimerOptions { get; } =
+    [
+        new(SleepTimerOption.Off, "Off"),
+        new(SleepTimerOption.Minutes5, "5 minutes"),
+        new(SleepTimerOption.Minutes10, "10 minutes"),
+        new(SleepTimerOption.Minutes15, "15 minutes"),
+        new(SleepTimerOption.Minutes30, "30 minutes"),
+        new(SleepTimerOption.Minutes45, "45 minutes"),
+        new(SleepTimerOption.Minutes60, "60 minutes"),
+        new(SleepTimerOption.EndOfEpisode, "End of episode"),
+        new(SleepTimerOption.EndOfChapter, "End of chapter"),
+    ];
+
+    public SleepTimerChoice SelectedSleepTimerChoice
+    {
+        get => SleepTimerOptions.FirstOrDefault(o => o.Option == _selectedSleepTimer) ?? SleepTimerOptions[0];
+        set
+        {
+            if (value is null || value.Option == _selectedSleepTimer)
+            {
+                return;
+            }
+
+            _selectedSleepTimer = value.Option;
+            this.RaisePropertyChanged();
+            ArmSleepTimer(value.Option);
+        }
+    }
+
+    public bool SleepTimerActive => _selectedSleepTimer != SleepTimerOption.Off;
+
+    public string SleepTimerStatusText
+    {
+        get
+        {
+            if (!SleepTimerActive)
+            {
+                return string.Empty;
+            }
+
+            if (_sleepTimerEndOfEpisode)
+            {
+                return "Sleeping at end of episode";
+            }
+
+            if (_sleepTimerEndOfChapter)
+            {
+                return "Sleeping at end of chapter";
+            }
+
+            var remaining = _sleepTimerFiresAt - DateTime.UtcNow;
+            return remaining > TimeSpan.Zero
+                ? $"Sleeping in {Spectralis.Core.Common.TimeFormat.FormatSeconds(remaining.TotalSeconds)}"
+                : "Sleeping...";
+        }
+    }
+
+    private void RaisePodcastModeChanged()
+    {
+        this.RaisePropertyChanged(nameof(IsPodcastMode));
+        this.RaisePropertyChanged(nameof(IsPodcastEngineMode));
+        this.RaisePropertyChanged(nameof(IsPodcastSpotifyMode));
+    }
+
+    /// <summary>Rebuilds the chapters panel + scrubber ticks for a freshly loaded track.</summary>
+    private void ApplyChapters(ChapterList chapters)
+    {
+        _chapterSet = chapters ?? ChapterList.Empty;
+        Chapters.Clear();
+        for (var i = 0; i < _chapterSet.Chapters.Count; i++)
+        {
+            Chapters.Add(new ChapterRowViewModel(i, _chapterSet.Chapters[i]));
+        }
+
+        _activeChapterIndex = -1;
+        this.RaisePropertyChanged(nameof(ActiveChapterIndex));
+        this.RaisePropertyChanged(nameof(CurrentChapterTitle));
+        this.RaisePropertyChanged(nameof(HasChapters));
+        this.RaisePropertyChanged(nameof(ChapterStartSeconds));
+
+        if (!HasChapters)
+        {
+            ShowChaptersPanel = false;
+        }
+    }
+
+    public void SeekToChapter(ChapterRowViewModel? row)
+    {
+        if (row is not null)
+        {
+            SeekToChapterIndex(row.Index);
+        }
+    }
+
+    private void SeekToChapterIndex(int index)
+    {
+        if (index < 0 || index >= _chapterSet.Chapters.Count)
+        {
+            return;
+        }
+
+        var target = (float)_chapterSet.Chapters[index].Start.TotalSeconds;
+        _engine.Seek(target);
+        if (_reactiveRuntime.IsLoaded)
+        {
+            _reactiveRuntime.Seek(target);
+        }
+
+        RefreshFromEngine();
+    }
+
+    private void NextChapter()
+    {
+        if (_chapterSet.Chapters.Count == 0)
+        {
+            return;
+        }
+
+        var next = Math.Min(_activeChapterIndex + 1, _chapterSet.Chapters.Count - 1);
+        SeekToChapterIndex(Math.Max(0, next));
+    }
+
+    private void PreviousChapter()
+    {
+        if (_chapterSet.Chapters.Count == 0)
+        {
+            return;
+        }
+
+        // Early in a chapter, "previous" jumps to the one before; otherwise it restarts the current.
+        var current = Math.Max(0, _activeChapterIndex);
+        var atStart = _engine.GetPosition() - _chapterSet.Chapters[current].Start.TotalSeconds < 3.0;
+        SeekToChapterIndex(atStart ? Math.Max(0, current - 1) : current);
+    }
+
+    // ── Resume-from-position (podcast content only) ─────────────────────────
+
+    /// <summary>Reads podcast state for the track about to play and, if it's a podcast, restores
+    /// the saved position and applies the saved speed. Returns the seek target (seconds) or 0.</summary>
+    private double PreparePodcastPlayback(string path, TimeSpan duration)
+    {
+        _currentPodcastPath = path;
+        _lastResumeSaveMs = -1;
+        _currentTrackIsSpotifyEpisode = false;
+
+        var state = _library?.GetPodcastState(path) ?? PodcastPlaybackState.None;
+        _currentTrackIsPodcast = state.IsPodcast;
+        RaisePodcastModeChanged();
+        this.RaisePropertyChanged(nameof(SkipBackText));
+        this.RaisePropertyChanged(nameof(SkipForwardText));
+
+        _engine.SetPlaybackRate(IsPodcastEngineMode ? PlaybackSpeed : 1.0);
+
+        if (!IsPodcastEngineMode || state.Finished)
+        {
+            return 0;
+        }
+
+        var resumeSeconds = state.ResumePositionMs / 1000.0;
+        var lengthSeconds = duration.TotalSeconds;
+        if (resumeSeconds > 3 && (lengthSeconds <= 0 || resumeSeconds < lengthSeconds - 15))
+        {
+            return resumeSeconds;
+        }
+
+        return 0;
+    }
+
+    private void EnsureResumeFlushTimer()
+    {
+        if (_resumeFlushTimer is not null)
+        {
+            return;
+        }
+
+        _resumeFlushTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _resumeFlushTimer.Tick += (_, _) => FlushResume(finished: false);
+        _resumeFlushTimer.Start();
+    }
+
+    /// <summary>Persists the current podcast position (throttled; never called from the 4 Hz poll directly).</summary>
+    private void FlushResume(bool finished)
+    {
+        if (_library is null || string.IsNullOrEmpty(_currentPodcastPath) || !_currentTrackIsPodcast || _spotifyState is not null)
+        {
+            return;
+        }
+
+        if (!finished && (_engine.CurrentTrack is null || _engine.GetLength() <= 0))
+        {
+            return;
+        }
+
+        var positionMs = (long)(_engine.GetPosition() * 1000);
+        var lengthMs = (long)(_engine.GetLength() * 1000);
+        var reachedEnd = finished || (lengthMs > 0 && positionMs >= lengthMs - 15000);
+
+        if (!finished && _lastResumeSaveMs >= 0 && Math.Abs(positionMs - _lastResumeSaveMs) < 2000 && !reachedEnd)
+        {
+            return;
+        }
+
+        _lastResumeSaveMs = reachedEnd ? 0 : positionMs;
+        _library.SaveResume(_currentPodcastPath, reachedEnd ? 0 : positionMs, reachedEnd);
+    }
+
+    // ── Sleep timer ────────────────────────────────────────────────────────
+
+    private void ArmSleepTimer(SleepTimerOption option)
+    {
+        _sleepTimer?.Stop();
+        _sleepTimer = null;
+        _sleepTimerEndOfEpisode = false;
+        _sleepTimerEndOfChapter = false;
+        _sleepTimerArmChapterIndex = -1;
+
+        var minutes = option switch
+        {
+            SleepTimerOption.Minutes5 => 5,
+            SleepTimerOption.Minutes10 => 10,
+            SleepTimerOption.Minutes15 => 15,
+            SleepTimerOption.Minutes30 => 30,
+            SleepTimerOption.Minutes45 => 45,
+            SleepTimerOption.Minutes60 => 60,
+            _ => 0,
+        };
+
+        if (minutes > 0)
+        {
+            _sleepTimerFiresAt = DateTime.UtcNow.AddMinutes(minutes);
+            _sleepTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _sleepTimer.Tick += (_, _) =>
+            {
+                this.RaisePropertyChanged(nameof(SleepTimerStatusText));
+                if (DateTime.UtcNow >= _sleepTimerFiresAt)
+                {
+                    FireSleepTimer();
+                }
+            };
+            _sleepTimer.Start();
+        }
+        else if (option == SleepTimerOption.EndOfEpisode)
+        {
+            _sleepTimerEndOfEpisode = true;
+        }
+        else if (option == SleepTimerOption.EndOfChapter)
+        {
+            _sleepTimerEndOfChapter = true;
+            _sleepTimerArmChapterIndex = _activeChapterIndex;
+        }
+
+        this.RaisePropertyChanged(nameof(SleepTimerActive));
+        this.RaisePropertyChanged(nameof(SleepTimerStatusText));
+    }
+
+    private void FireSleepTimer()
+    {
+        _sleepTimer?.Stop();
+        _sleepTimer = null;
+        _selectedSleepTimer = SleepTimerOption.Off;
+        _sleepTimerEndOfEpisode = false;
+        _sleepTimerEndOfChapter = false;
+
+        if (_spotifyState is not null && _spotifyHost is not null)
+        {
+            _ = _spotifyHost.PauseAsync();
+        }
+        else
+        {
+            _ = _engine.FadeOutAndPause(4000);
+        }
+
+        this.RaisePropertyChanged(nameof(SelectedSleepTimerChoice));
+        this.RaisePropertyChanged(nameof(SleepTimerActive));
+        this.RaisePropertyChanged(nameof(SleepTimerStatusText));
+    }
+
+    /// <summary>Per-tick podcast bookkeeping — active chapter, throttled resume flush, sleep timer.</summary>
+    private void TickPodcast(double position, double length)
+    {
+        if (!_chapterSet.IsEmpty)
+        {
+            ActiveChapterIndex = _chapterSet.FindActiveIndex(position);
+        }
+
+        if (_currentTrackIsPodcast && _spotifyState is null && IsPlaying)
+        {
+            EnsureResumeFlushTimer();
+        }
+
+        if (_sleepTimerEndOfEpisode && length > 0 && position >= length - 1.0)
+        {
+            FireSleepTimer();
+        }
+        else if (_sleepTimerEndOfChapter && _activeChapterIndex > _sleepTimerArmChapterIndex)
+        {
+            FireSleepTimer();
+        }
+    }
+
+    /// <summary>Called when a podcast episode plays to its natural end.</summary>
+    private void OnPodcastTrackEnded()
+    {
+        if (_currentTrackIsPodcast && _spotifyState is null)
+        {
+            FlushResume(finished: true);
+        }
+    }
 
     public bool ShowMetronomePanel
     {
@@ -792,6 +1324,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
         _engine.Toggle();
         RefreshFromEngine();
+        if (!_engine.IsPlaying)
+        {
+            FlushResume(finished: false);
+        }
     }
 
     public void StopPlayback()
@@ -809,6 +1345,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         var oldRemotePath = _remoteAudioTempPath;
         _remoteAudioTempPath = null;
 
+        FlushResume(finished: false);
         _engine.Unload();
         RemoteAudioCache.TryDelete(oldRemotePath);
 
@@ -822,6 +1359,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         IsOpeningRemote = false;
         ApplyTrack(null);
         ApplyLyrics(null);
+        ApplyChapters(ChapterList.Empty);
+        _currentTrackIsPodcast = false;
+        _currentTrackIsSpotifyEpisode = false;
+        _currentPodcastPath = string.Empty;
+        RaisePodcastModeChanged();
+        ArmSleepTimer(SleepTimerOption.Off);
+        _selectedSleepTimer = SleepTimerOption.Off;
+        this.RaisePropertyChanged(nameof(SelectedSleepTimerChoice));
         _reactiveRuntime.Load(null);
         IsReactiveActive = false;
         ReactiveSectionLabel = string.Empty;
@@ -1023,6 +1568,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             RefreshFromEngine();
             return;
         }
+
+        OnPodcastTrackEnded();
 
         if (Queue.HasNext || Queue.Repeat != RepeatMode.None)
         {
@@ -1883,6 +2430,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(HasNext));
         this.RaisePropertyChanged(nameof(HasPrevious));
 
+        // A Spotify podcast episode engages Podcast Mode too — but Spotify playback bypasses the
+        // local engine, so only the sleep timer + the mode label apply (no speed/chapters/resume).
+        _currentTrackIsSpotifyEpisode = string.Equals(state.ContentType, "episode", StringComparison.OrdinalIgnoreCase);
+        _currentTrackIsPodcast = false;
+        RaisePodcastModeChanged();
+
         // Start loopback when playing, stop when paused
         if (!state.IsPaused)
             EnsureSpotifyLoopbackRunning();
@@ -2522,6 +3075,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         LoadError = string.Empty;
         RemoteStatus = string.Empty;
+        // Persist where the outgoing podcast episode left off before its stream is torn down.
+        FlushResume(finished: false);
         ClearBeatGrid();
         ClearYouTubeVideo();
         _remoteLoadCts?.Cancel();
@@ -2533,6 +3088,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             LyricsDocument? lyrics = null;
             ReactiveTimelineDocument? reactive = null;
             TrackInfo? metadata = null;
+            ChapterList chapters = ChapterList.Empty;
             bool seamless = false;
             await Task.Run(() =>
             {
@@ -2542,7 +3098,16 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                     _engine.Load(path, metadata);
                 lyrics = LyricsLoader.LoadForTrack(path);
                 reactive = ReactiveTimelineLoader.LoadSidecar(path);
+                chapters = ChapterLoader.LoadForTrack(path, metadata?.Duration);
             });
+
+            // Podcast state + resume seek must land before playback starts.
+            var resumeSeconds = PreparePodcastPlayback(
+                path, _engine.CurrentTrack?.Duration ?? metadata?.Duration ?? TimeSpan.Zero);
+            if (resumeSeconds > 0)
+            {
+                _engine.Seek((float)resumeSeconds);
+            }
 
             if (startPlayback && !_engine.IsPlaying && await ShouldPlayWithContentWarningAsync(path))
             {
@@ -2551,6 +3116,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             RemoteAudioCache.TryDelete(oldRemotePath);
             ApplyTrack(_engine.CurrentTrack);
             ApplyLyrics(lyrics);
+            ApplyChapters(chapters);
             _reactiveRuntime.Load(reactive);
             IsReactiveActive = _reactiveRuntime.IsLoaded;
             ReactiveSectionLabel = string.Empty;
@@ -2570,6 +3136,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             RemoteAudioCache.TryDelete(oldRemotePath);
             ApplyTrack(null);
             ApplyLyrics(null);
+            ApplyChapters(ChapterList.Empty);
             _reactiveRuntime.Load(null);
             IsReactiveActive = false;
             ReactiveSectionLabel = string.Empty;
@@ -2643,6 +3210,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             _reactiveRuntime.Advance(position);
             ReactiveSectionLabel = _reactiveRuntime.CurrentSection?.Label ?? string.Empty;
         }
+
+        TickPodcast(position, length);
 
         this.RaisePropertyChanged(nameof(OutputRateText));
         CycleVisualizerIfDue();
@@ -3094,6 +3663,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        FlushResume(finished: false);
+        _resumeFlushTimer?.Stop();
+        _sleepTimer?.Stop();
         _positionPoll?.Dispose();
         _idleActivityTick?.Dispose();
         _remoteLoadCts?.Cancel();
