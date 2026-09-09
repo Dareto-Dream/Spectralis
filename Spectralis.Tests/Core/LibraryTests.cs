@@ -88,6 +88,65 @@ public sealed class LibraryDatabaseTests : IDisposable
         _db.Remove(@"C:\music\a.mp3");
         Assert.Empty(_db.GetAllTracks(includeMissing: true));
     }
+
+    [Fact]
+    public void Migration_IsIdempotent()
+    {
+        _db.Upsert(MakeTrack(@"C:\pod\a.mp3"), 1);
+        using var reopened = new LibraryDatabase(_dbPath);
+        Assert.Single(reopened.GetAllTracks());
+    }
+
+    [Fact]
+    public void Podcast_AutoFlagSurfacesInEpisodeQuery()
+    {
+        _db.Upsert(MakeTrack(@"C:\pod\ep1.mp3"), 1, isPodcast: true);
+        _db.Upsert(MakeTrack(@"C:\music\song.mp3"), 1, isPodcast: false);
+
+        var episodes = _db.GetPodcastEpisodes();
+
+        Assert.Single(episodes);
+        Assert.Equal(@"C:\pod\ep1.mp3", episodes[0].Track.SourcePath);
+    }
+
+    [Fact]
+    public void Podcast_ManualOverrideBeatsAutoFlag()
+    {
+        _db.Upsert(MakeTrack(@"C:\music\book.m4b"), 1, isPodcast: true);
+        _db.SetPodcastOverride(@"C:\music\book.m4b", false);
+
+        Assert.Empty(_db.GetPodcastEpisodes());
+        Assert.False(_db.GetPodcastState(@"C:\music\book.m4b").IsPodcast);
+
+        _db.SetPodcastOverride(@"C:\music\book.m4b", true);
+        Assert.Single(_db.GetPodcastEpisodes());
+    }
+
+    [Fact]
+    public void Podcast_ResumeRoundTrips()
+    {
+        _db.Upsert(MakeTrack(@"C:\pod\ep1.mp3"), 1, isPodcast: true);
+
+        _db.SaveResume(@"C:\pod\ep1.mp3", positionMs: 123_000, finished: false);
+        var state = _db.GetPodcastState(@"C:\pod\ep1.mp3");
+        Assert.Equal(123_000, state.ResumePositionMs);
+        Assert.False(state.Finished);
+
+        _db.SaveResume(@"C:\pod\ep1.mp3", positionMs: 0, finished: true);
+        Assert.True(_db.GetPodcastState(@"C:\pod\ep1.mp3").Finished);
+    }
+
+    [Fact]
+    public void Podcast_RescanDoesNotClobberManualOverride()
+    {
+        _db.Upsert(MakeTrack(@"C:\music\book.m4b"), 1, isPodcast: false);
+        _db.SetPodcastOverride(@"C:\music\book.m4b", true);
+
+        // A later scan re-upserts with the auto flag; the override must still win.
+        _db.Upsert(MakeTrack(@"C:\music\book.m4b", "Refreshed"), 2, isPodcast: false);
+
+        Assert.True(_db.GetPodcastState(@"C:\music\book.m4b").IsPodcast);
+    }
 }
 
 public sealed class LibraryScannerTests : IDisposable

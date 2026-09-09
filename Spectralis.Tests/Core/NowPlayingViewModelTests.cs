@@ -316,4 +316,45 @@ public sealed class NowPlayingViewModelTests : IDisposable
 
         Assert.Equal("0:00", _vm.PositionText);
     }
+
+    [Fact]
+    public void StepSpeed_NudgesByTenthAndClamps()
+    {
+        Assert.Equal(1.0, _vm.PlaybackSpeed);
+
+        _vm.StepSpeed(1);
+        _vm.StepSpeed(1);
+        Assert.Equal(1.2, _vm.PlaybackSpeed, 3);
+
+        for (var i = 0; i < 40; i++) _vm.StepSpeed(1);
+        Assert.Equal(3.5, _vm.PlaybackSpeed, 3);
+
+        for (var i = 0; i < 40; i++) _vm.StepSpeed(-1);
+        Assert.Equal(0.5, _vm.PlaybackSpeed, 3);
+    }
+
+    [Theory]
+    [InlineData("1.5", 1.5)]
+    [InlineData("2.0x", 2.0)]
+    [InlineData("1,25", 1.25)]
+    [InlineData("  0.8 ", 0.8)]
+    [InlineData("9", 3.5)]   // clamped
+    public void SpeedInput_ParsesAndClamps(string typed, double expected)
+    {
+        _vm.SpeedInput = typed;
+
+        Assert.Equal(expected, _vm.PlaybackSpeed, 3);
+        Assert.Equal(expected.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), _vm.SpeedInput);
+    }
+
+    [Fact]
+    public void SpeedInput_RejectsGarbageAndKeepsCurrentValue()
+    {
+        _vm.PlaybackSpeed = 1.5;
+
+        _vm.SpeedInput = "not a number";
+
+        Assert.Equal(1.5, _vm.PlaybackSpeed, 3);
+        Assert.Equal("1.5", _vm.SpeedInput);
+    }
 }
