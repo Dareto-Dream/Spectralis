@@ -1,3 +1,6 @@
+mod collab;
+mod store;
+
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -40,7 +43,8 @@ const STRIPE_CONNECT_TOKEN: &str = "https://connect.stripe.com/oauth/token";
 
 #[derive(Clone)]
 struct AppState {
-    data_dir: Arc<PathBuf>,
+    store: Arc<store::Store>,
+    rooms: collab::Rooms,
     web_share_root: Arc<PathBuf>,
     public_base_url: Option<String>,
     stripe_secret_key: Option<Arc<String>>,
@@ -48,6 +52,34 @@ struct AppState {
     stripe_connect_client_id: Option<Arc<String>>,
     stripe_publishable_key: Option<Arc<String>>,
 }
+
+/// TTL applied to every Redis session key, refreshed on activity.
+const SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(SESSION_TTL_HOURS as u64 * 3600);
+
+fn sess_key(room_code: &str, leaf: &str) -> String {
+    format!("sp:sess:{room_code}:{leaf}")
+}
+
+fn sess_blob_key(room_code: &str, leaf: &str) -> String {
+    format!("sessions/{room_code}/{leaf}")
+}
+
+fn channel_key(channel_id: &str) -> String {
+    format!("sp:chan:{channel_id}")
+}
+
+fn sq_room_key(room_id: &str) -> String {
+    format!("sq:room:{room_id}")
+}
+
+fn sq_pin_key(pin: &str) -> String {
+    format!("sq:pin:{pin}")
+}
+
+fn sq_upload_blob_key(stored_name: &str) -> String {
+    format!("sq-uploads/{stored_name}")
+}
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -57,9 +89,6 @@ async fn main() -> Result<()> {
         .parse::<u16>()
         .context("PORT must be a valid TCP port")?;
     let host = env::var("SPECTRALIS_BACKEND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let data_dir = PathBuf::from(
-        env::var("SPECTRALIS_BACKEND_DATA").unwrap_or_else(|_| "backend/data".to_string()),
-    );
     let web_share_root = PathBuf::from(
         env::var("SPECTRALIS_WEB_SHARE_ROOT").unwrap_or_else(|_| "web-share".to_string()),
     );
@@ -72,13 +101,11 @@ async fn main() -> Result<()> {
     let stripe_connect_client_id = env::var("STRIPE_CONNECT_CLIENT_ID").ok().map(Arc::new);
     let stripe_publishable_key = env::var("STRIPE_PUBLISHABLE_KEY").ok().map(Arc::new);
 
-    fs::create_dir_all(data_dir.join("sessions")).await?;
-    fs::create_dir_all(data_dir.join("sq-rooms")).await?;
-    fs::create_dir_all(data_dir.join("sq-uploads")).await?;
-    fs::create_dir_all(data_dir.join("sq-discord-pins")).await?;
+    let store = Arc::new(store::Store::from_env().await?);
 
     let state = AppState {
-        data_dir: Arc::new(data_dir),
+        store,
+        rooms: collab::Rooms::default(),
         web_share_root: Arc::new(web_share_root),
         public_base_url,
         stripe_secret_key,
@@ -86,6 +113,8 @@ async fn main() -> Result<()> {
         stripe_connect_client_id,
         stripe_publishable_key,
     };
+
+    collab::spawn_replica_fanout(state.clone());
 
     let app = Router::new()
         .route("/", get(index))
@@ -118,6 +147,10 @@ async fn main() -> Result<()> {
             get(get_queue).post(post_queue),
         )
         .route("/shared-play/v2/sessions/:code/queue/items", post(post_queue_item))
+        .route(
+            "/shared-play/v2/sessions/:code/socket",
+            get(collab::ws_handler),
+        )
         .route(
             "/shared-play/v2/sessions/:code/presence",
             get(get_presence).post(post_presence),
@@ -242,11 +275,7 @@ async fn create_session(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    cleanup_expired_sessions(&state).await;
-
     let (room_code, session_key) = generate_room_code();
-    let session_root = session_root(&state, &room_code)?;
-    fs::create_dir_all(&session_root).await?;
 
     let now = Utc::now();
     let expires_at = now + Duration::hours(SESSION_TTL_HOURS);
@@ -274,7 +303,7 @@ async fn create_session(
         "capabilities": payload.get("capabilities").cloned().unwrap_or_else(|| json!({}))
     });
     upsert_active_track(&mut manifest, &track_id_text, track, package);
-    write_json(session_root.join("manifest.json"), &manifest).await?;
+    write_json(&state, &sess_key(&room_code, "manifest"), &manifest).await?;
 
     if let Some(playback) = playback {
         write_playback_state(&state, &room_code, playback).await?;
@@ -329,21 +358,27 @@ async fn upload_package(
         return Err(AppError::payload_too_large("Upload body is too large."));
     }
 
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let temp_path = session_root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-    let package_path = session_root.join("spectralis-rich.zip");
-    fs::write(&temp_path, &body).await?;
-    fs::rename(&temp_path, &package_path).await?;
+    let room_code = touch_session(&state, &room_code).await?;
+    let bytes_len = body.len();
 
-    if let Ok(manifest) = read_json(session_root.join("manifest.json")).await {
-        if let Some(track_id) = active_track_id(&manifest) {
-            let track_root = session_root.join("tracks").join(track_asset_key(&track_id));
-            fs::create_dir_all(&track_root).await?;
-            fs::copy(&package_path, track_root.join("spectralis-rich.zip")).await?;
-        }
-    }
+    // Legacy single-package upload: store it as the active track's blob.
+    let track_key = read_json(&state, &sess_key(&room_code, "manifest"))
+        .await
+        .ok()
+        .and_then(|m| active_track_id(&m))
+        .map(|id| track_asset_key(&id))
+        .unwrap_or_else(|| "default".to_string());
+    state
+        .store
+        .put_blob(
+            &sess_blob_key(&room_code, &format!("tracks/{track_key}.zip")),
+            body,
+            "application/vnd.spectralis.shared-play+zip",
+        )
+        .await
+        .map_err(AppError::internal)?;
 
-    Ok(Json(json!({ "ok": true, "bytes": body.len() })))
+    Ok(Json(json!({ "ok": true, "bytes": bytes_len })))
 }
 
 async fn register_track(
@@ -352,10 +387,9 @@ async fn register_track(
     AxumPath(code): AxumPath<String>,
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let manifest_path = session_root.join("manifest.json");
-    let mut manifest = read_json(manifest_path.clone()).await?;
+    let room_code = touch_session(&state, &code).await?;
+    let manifest_key = sess_key(&room_code, "manifest");
+    let mut manifest = read_json(&state, &manifest_key).await?;
 
     let track = payload.get("track").cloned().unwrap_or_else(|| json!({}));
     let package = payload.get("package").cloned().unwrap_or_else(|| json!({}));
@@ -376,7 +410,7 @@ async fn register_track(
 
     upsert_pending_track(&mut manifest, &track_id_text, track, package);
     manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(manifest_path, &manifest).await?;
+    write_json(&state, &manifest_key, &manifest).await?;
 
     let base = base_url(&state, &headers);
     let upload_url = if activate_on_upload {
@@ -415,7 +449,6 @@ async fn upload_track_package(
     Query(query): Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
     let track_key = clean_asset_key(&key)?;
     if body.is_empty() {
         return Err(AppError::bad_request("Upload body was empty."));
@@ -424,14 +457,17 @@ async fn upload_track_package(
         return Err(AppError::payload_too_large("Upload body is too large."));
     }
 
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let track_root = session_root.join("tracks").join(&track_key);
-    fs::create_dir_all(&track_root).await?;
-
-    let temp_path = track_root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-    let package_path = track_root.join("spectralis-rich.zip");
-    fs::write(&temp_path, &body).await?;
-    fs::rename(&temp_path, &package_path).await?;
+    let room_code = touch_session(&state, &code).await?;
+    let bytes_len = body.len();
+    state
+        .store
+        .put_blob(
+            &sess_blob_key(&room_code, &format!("tracks/{track_key}.zip")),
+            body,
+            "application/vnd.spectralis.shared-play+zip",
+        )
+        .await
+        .map_err(AppError::internal)?;
 
     if query
         .get("activate")
@@ -439,8 +475,8 @@ async fn upload_track_package(
     {
         activate_track_package(&state, &room_code, &track_key, None).await?;
     } else {
-        let manifest_path = session_root.join("manifest.json");
-        if let Ok(mut manifest) = read_json(manifest_path.clone()).await {
+        let manifest_key = sess_key(&room_code, "manifest");
+        if let Ok(mut manifest) = read_json(&state, &manifest_key).await {
             if let Some(entry) = manifest
                 .get_mut("tracks")
                 .and_then(Value::as_object_mut)
@@ -455,12 +491,12 @@ async fn upload_track_package(
                 entry["status"] = json!("ready");
                 entry["packageReadyAtUtc"] = json!(Utc::now().to_rfc3339());
                 manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-                write_json(manifest_path, &manifest).await?;
+                write_json(&state, &manifest_key, &manifest).await?;
             }
         }
     }
 
-    Ok(Json(json!({ "ok": true, "bytes": body.len() })))
+    Ok(Json(json!({ "ok": true, "bytes": bytes_len })))
 }
 
 async fn activate_track(
@@ -480,20 +516,24 @@ async fn activate_track_package(
     track_key: &str,
     playback_payload: Option<Value>,
 ) -> Result<Value, AppError> {
-    let session_root = existing_session_root(state, room_code).await?;
-    let track_package = session_root.join("tracks").join(track_key).join("spectralis-rich.zip");
-    if fs::metadata(&track_package).await.is_err() {
+    let room_code = touch_session(state, room_code).await?;
+    let room_code = room_code.as_str();
+    if !state
+        .store
+        .blob_exists(&sess_blob_key(room_code, &format!("tracks/{track_key}.zip")))
+        .await
+        .map_err(AppError::internal)?
+    {
         return Err(AppError::not_found("Shared Play track package was not found."));
     }
-    fs::copy(&track_package, session_root.join("spectralis-rich.zip")).await?;
 
-    let manifest_path = session_root.join("manifest.json");
-    let mut manifest = read_json(manifest_path.clone()).await?;
+    let manifest_key = sess_key(room_code, "manifest");
+    let mut manifest = read_json(state, &manifest_key).await?;
     if !activate_track_by_asset_key(&mut manifest, track_key) {
         return Err(AppError::not_found("Shared Play track was not found."));
     }
     manifest["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(manifest_path, &manifest).await?;
+    write_json(state, &manifest_key, &manifest).await?;
 
     let state_body = if let Some(payload) = playback_payload {
         Some(write_playback_state(state, room_code, payload).await?)
@@ -523,10 +563,9 @@ async fn read_session_payload(
     headers: &HeaderMap,
     code: &str,
 ) -> Result<Value, AppError> {
-    let room_code = clean_room_code(code)?;
-    let session_root = existing_session_root(state, &room_code).await?;
-    let manifest = read_json(session_root.join("manifest.json")).await?;
-    let playback_state = read_json(session_root.join("state.json")).await.ok();
+    let room_code = touch_session(state, code).await?;
+    let manifest = read_json(state, &sess_key(&room_code, "manifest")).await?;
+    let playback_state = read_json_opt(state, &sess_key(&room_code, "state")).await;
     let base = base_url(state, headers);
 
     let active_track_id = active_track_id(&manifest);
@@ -623,10 +662,9 @@ async fn read_state_payload(
     headers: &HeaderMap,
     code: &str,
 ) -> Result<Value, AppError> {
-    let room_code = clean_room_code(code)?;
-    let session_root = existing_session_root(state, &room_code).await?;
-    let mut payload = read_json(session_root.join("state.json")).await?;
-    let manifest = read_json(session_root.join("manifest.json")).await?;
+    let room_code = touch_session(state, code).await?;
+    let mut payload = read_json(state, &sess_key(&room_code, "state")).await?;
+    let manifest = read_json(state, &sess_key(&room_code, "manifest")).await?;
     let base = base_url(state, headers);
     enrich_with_active_track(&mut payload, &manifest, &base, &room_code);
     Ok(payload)
@@ -637,15 +675,14 @@ async fn write_playback_state(
     room_code: &str,
     payload: Value,
 ) -> Result<Value, AppError> {
-    let room_code = clean_room_code(room_code)?;
-    let session_root = existing_session_root(state, &room_code).await?;
+    let room_code = touch_session(state, room_code).await?;
     let top_track_id = payload_track_id(&payload);
     let chosen = payload
         .get("playback")
         .or_else(|| payload.get("state"))
         .cloned()
         .unwrap_or_else(|| payload.clone());
-    let manifest = read_json(session_root.join("manifest.json")).await.ok();
+    let manifest = read_json_opt(state, &sess_key(&room_code, "manifest")).await;
     let track_id = payload_track_id(&chosen)
         .or(top_track_id)
         .or_else(|| manifest.as_ref().and_then(active_track_id));
@@ -658,7 +695,8 @@ async fn write_playback_state(
         "state": chosen.clone(),
         "playback": chosen
     });
-    write_json(session_root.join("state.json"), &body).await?;
+    write_json(state, &sess_key(&room_code, "state"), &body).await?;
+    let _ = collab::broadcast_state(state, &room_code, &body).await;
     Ok(body)
 }
 
@@ -666,11 +704,10 @@ async fn get_queue(
     State(state): State<AppState>,
     AxumPath(code): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let queue_path = existing_session_root(&state, &room_code)
-        .await?
-        .join("queue.json");
-    let queue = read_json(queue_path).await.unwrap_or_else(|_| empty_queue(&room_code));
+    let room_code = touch_session(&state, &code).await?;
+    let queue = read_json_opt(&state, &sess_key(&room_code, "queue"))
+        .await
+        .unwrap_or_else(|| empty_queue(&room_code));
     Ok(Json(queue))
 }
 
@@ -679,11 +716,11 @@ async fn post_queue(
     AxumPath(code): AxumPath<String>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
+    let room_code = touch_session(&state, &code).await?;
     let mut queue = normalize_queue_payload(&room_code, payload);
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("queue.json"), &queue).await?;
+    write_json(&state, &sess_key(&room_code, "queue"), &queue).await?;
+    let _ = collab::broadcast_queue(&state, &room_code, &queue).await;
     Ok(Json(queue))
 }
 
@@ -692,12 +729,11 @@ async fn post_queue_item(
     AxumPath(code): AxumPath<String>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let queue_path = session_root.join("queue.json");
-    let mut queue = read_json(queue_path.clone())
+    let room_code = touch_session(&state, &code).await?;
+    let queue_key = sess_key(&room_code, "queue");
+    let mut queue = read_json_opt(&state, &queue_key)
         .await
-        .unwrap_or_else(|_| empty_queue(&room_code));
+        .unwrap_or_else(|| empty_queue(&room_code));
 
     let item = normalize_queue_item(payload)?;
     let duplicate_id = item.get("id").and_then(Value::as_str).map(|v| v.to_string());
@@ -719,7 +755,8 @@ async fn post_queue_item(
     }
 
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(queue_path, &queue).await?;
+    write_json(&state, &queue_key, &queue).await?;
+    let _ = collab::broadcast_queue(&state, &room_code, &queue).await;
     Ok(Json(queue))
 }
 
@@ -729,14 +766,13 @@ async fn get_presence(
     State(state): State<AppState>,
     AxumPath(code): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let presence_path = session_root.join("presence.json");
-    let mut presence = read_json(presence_path.clone())
+    let room_code = touch_session(&state, &code).await?;
+    let presence_key = sess_key(&room_code, "presence");
+    let mut presence = read_json_opt(&state, &presence_key)
         .await
-        .unwrap_or_else(|_| empty_presence(&room_code));
+        .unwrap_or_else(|| empty_presence(&room_code));
     prune_presence(&mut presence);
-    write_json(presence_path, &presence).await?;
+    write_json(&state, &presence_key, &presence).await?;
     Ok(Json(presence))
 }
 
@@ -745,12 +781,11 @@ async fn post_presence(
     AxumPath(code): AxumPath<String>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let presence_path = session_root.join("presence.json");
-    let mut presence = read_json(presence_path.clone())
+    let room_code = touch_session(&state, &code).await?;
+    let presence_key = sess_key(&room_code, "presence");
+    let mut presence = read_json_opt(&state, &presence_key)
         .await
-        .unwrap_or_else(|_| empty_presence(&room_code));
+        .unwrap_or_else(|| empty_presence(&room_code));
     prune_presence(&mut presence);
 
     let client_id = clean_client_id(
@@ -788,7 +823,7 @@ async fn post_presence(
     }
 
     update_presence_counts(&mut presence);
-    write_json(presence_path, &presence).await?;
+    write_json(&state, &presence_key, &presence).await?;
     Ok(Json(presence))
 }
 
@@ -798,14 +833,13 @@ async fn get_reactions(
     State(state): State<AppState>,
     AxumPath(code): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let reactions_path = session_root.join("reactions.json");
-    let mut reactions = read_json(reactions_path.clone())
+    let room_code = touch_session(&state, &code).await?;
+    let reactions_key = sess_key(&room_code, "reactions");
+    let mut reactions = read_json_opt(&state, &reactions_key)
         .await
-        .unwrap_or_else(|_| empty_reactions(&room_code));
+        .unwrap_or_else(|| empty_reactions(&room_code));
     prune_reactions(&mut reactions);
-    write_json(reactions_path, &reactions).await?;
+    write_json(&state, &reactions_key, &reactions).await?;
     Ok(Json(reactions))
 }
 
@@ -814,12 +848,11 @@ async fn post_reaction(
     AxumPath(code): AxumPath<String>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let reactions_path = session_root.join("reactions.json");
-    let mut reactions = read_json(reactions_path.clone())
+    let room_code = touch_session(&state, &code).await?;
+    let reactions_key = sess_key(&room_code, "reactions");
+    let mut reactions = read_json_opt(&state, &reactions_key)
         .await
-        .unwrap_or_else(|_| empty_reactions(&room_code));
+        .unwrap_or_else(|| empty_reactions(&room_code));
     prune_reactions(&mut reactions);
 
     let reaction_type = normalize_reaction_type(
@@ -858,7 +891,7 @@ async fn post_reaction(
     }
 
     reactions["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(reactions_path, &reactions).await?;
+    write_json(&state, &reactions_key, &reactions).await?;
     Ok(Json(reactions))
 }
 
@@ -878,8 +911,8 @@ async fn get_channel_stats(
     AxumPath(channel): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
     let channel_id = clean_channel_id(&channel)?;
-    let path = channel_path(&state, &channel_id)?;
-    let channel = read_json(path).await?;
+    let path = channel_key_checked(&channel_id)?;
+    let channel = read_json(&state, &path).await?;
     Ok(Json(channel.get("stats").cloned().unwrap_or_else(empty_channel_stats)))
 }
 
@@ -893,12 +926,9 @@ async fn put_channel(
     let owner_token = clean_owner_token(
         payload.get("ownerToken").and_then(Value::as_str).unwrap_or(""),
     )?;
-    let path = channel_path(&state, &channel_id)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
+    let path = channel_key_checked(&channel_id)?;
 
-    let mut channel = read_json(path.clone()).await.unwrap_or_else(|_| json!({
+    let mut channel = read_json_opt(&state, &path).await.unwrap_or_else(|| json!({
         "protocolVersion": PROTOCOL_VERSION,
         "channelId": &channel_id,
         "ownerToken": &owner_token,
@@ -976,7 +1006,7 @@ async fn put_channel(
         &channel_id
     ));
 
-    write_json(path, &channel).await?;
+    write_json(&state, &path, &channel).await?;
     Ok(Json(public_channel_payload(channel)))
 }
 
@@ -985,8 +1015,8 @@ async fn read_channel_payload(
     headers: &HeaderMap,
     channel_id: &str,
 ) -> Result<Value, AppError> {
-    let path = channel_path(state, channel_id)?;
-    let mut channel = read_json(path).await?;
+    let path = channel_key_checked(channel_id)?;
+    let mut channel = read_json(state, &path).await?;
     if channel.get("isLive").and_then(Value::as_bool).unwrap_or(false) {
         let updated_at = channel.get("updatedAtUtc").and_then(Value::as_str).and_then(parse_utc);
         if updated_at
@@ -1091,25 +1121,32 @@ async fn get_package(
     State(state): State<AppState>,
     AxumPath(code): AxumPath<String>,
 ) -> Result<Response, AppError> {
-    let room_code = clean_room_code(&code)?;
-    let package_path = existing_session_root(&state, &room_code)
-        .await?
-        .join("spectralis-rich.zip");
-    send_file(package_path, Some("application/vnd.spectralis.shared-play+zip")).await
+    let room_code = touch_session(&state, &code).await?;
+    let track_key = read_json_opt(&state, &sess_key(&room_code, "manifest"))
+        .await
+        .and_then(|m| active_track_id(&m))
+        .map(|id| track_asset_key(&id))
+        .unwrap_or_else(|| "default".to_string());
+    send_blob(
+        &state,
+        &sess_blob_key(&room_code, &format!("tracks/{track_key}.zip")),
+        Some("application/vnd.spectralis.shared-play+zip"),
+    )
+    .await
 }
 
 async fn get_track_package(
     State(state): State<AppState>,
     AxumPath((code, key)): AxumPath<(String, String)>,
 ) -> Result<Response, AppError> {
-    let room_code = clean_room_code(&code)?;
     let track_key = clean_asset_key(&key)?;
-    let package_path = existing_session_root(&state, &room_code)
-        .await?
-        .join("tracks")
-        .join(track_key)
-        .join("spectralis-rich.zip");
-    send_file(package_path, Some("application/vnd.spectralis.shared-play+zip")).await
+    let room_code = touch_session(&state, &code).await?;
+    send_blob(
+        &state,
+        &sess_blob_key(&room_code, &format!("tracks/{track_key}.zip")),
+        Some("application/vnd.spectralis.shared-play+zip"),
+    )
+    .await
 }
 
 // ── Room code generation ──────────────────────────────────────────────────────
@@ -1161,71 +1198,46 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-fn session_root(state: &AppState, room_code: &str) -> Result<PathBuf, AppError> {
-    Ok(state.data_dir.join("sessions").join(clean_room_code(room_code)?))
+/// Leaves under `sp:sess:<code>:` that hold a live room's JSON. TTL is refreshed
+/// on all of them whenever the session is touched.
+const SESSION_LEAVES: &[&str] = &[
+    "manifest",
+    "state",
+    "queue",
+    "presence",
+    "reactions",
+    "streamer-queue",
+    "room:caps",
+    "room:roster",
+];
+
+fn channel_key_checked(channel_id: &str) -> Result<String, AppError> {
+    Ok(channel_key(&clean_channel_id(channel_id)?))
 }
 
-async fn existing_session_root(state: &AppState, room_code: &str) -> Result<PathBuf, AppError> {
-    let root = session_root(state, room_code)?;
-    if fs::metadata(&root).await.is_err() {
+/// Assert a Shared Play session exists (by its manifest key) and refresh the TTL
+/// on every leaf. Returns the cleaned room code.
+async fn touch_session(state: &AppState, room_code: &str) -> Result<String, AppError> {
+    let code = clean_room_code(room_code)?;
+    if !state
+        .store
+        .exists(&sess_key(&code, "manifest"))
+        .await
+        .map_err(AppError::internal)?
+    {
         return Err(AppError::not_found("Shared Play session was not found."));
     }
-    if is_session_expired(&root).await {
-        let _ = fs::remove_dir_all(&root).await;
-        return Err(AppError::not_found("Shared Play session has expired."));
+    for leaf in SESSION_LEAVES {
+        let _ = state.store.expire(&sess_key(&code, leaf), SESSION_TTL).await;
     }
-    Ok(root)
-}
-
-fn channel_path(state: &AppState, channel_id: &str) -> Result<PathBuf, AppError> {
-    Ok(state
-        .data_dir
-        .join("channels")
-        .join(format!("{}.json", clean_channel_id(channel_id)?)))
-}
-
-async fn cleanup_expired_sessions(state: &AppState) {
-    let sessions_root = state.data_dir.join("sessions");
-    let Ok(mut entries) = fs::read_dir(&sessions_root).await else {
-        return;
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let path = entry.path();
-        if is_session_expired(&path).await {
-            let _ = fs::remove_dir_all(path).await;
-        }
-    }
-}
-
-async fn is_session_expired(session_root: &Path) -> bool {
-    let Ok(meta) = fs::metadata(session_root).await else {
-        return false;
-    };
-    if !meta.is_dir() {
-        return false;
-    }
-    let Ok(bytes) = fs::read(session_root.join("manifest.json")).await else {
-        return false;
-    };
-    let Ok(manifest) = serde_json::from_slice::<Value>(&bytes) else {
-        return false;
-    };
-    let Some(expires_at) = first_string(&manifest, &["expiresAtUtc"]) else {
-        return false;
-    };
-    DateTime::parse_from_rfc3339(&expires_at)
-        .map(|v| v.with_timezone(&Utc) <= Utc::now())
-        .unwrap_or(false)
+    Ok(code)
 }
 
 async fn read_session_listener_count(state: &AppState, room_code: &str) -> Result<usize, AppError> {
-    let code = clean_room_code(room_code)?;
-    let presence_path = existing_session_root(state, &code)
-        .await?
-        .join("presence.json");
-    let mut presence = read_json(presence_path)
+    let code = touch_session(state, room_code).await?;
+    let mut presence = read_json_opt(state, &sess_key(&code, "presence"))
         .await
-        .unwrap_or_else(|_| empty_presence(&code));
+        .unwrap_or_else(|| empty_presence(&code));
     prune_presence(&mut presence);
     Ok(presence.get("listenerCount").and_then(Value::as_u64).unwrap_or(0) as usize)
 }
@@ -1684,9 +1696,41 @@ async fn send_file(path: PathBuf, content_type: Option<&str>) -> Result<Response
     let cache_control = cache_control_for_path(&path);
 
     let mut response = Response::new(Body::from(bytes));
+    finish_asset_response(&mut response, &mime, cache_control);
+    Ok(response)
+}
+
+/// Stream a blob out of object storage (package zips, SQ uploads).
+async fn send_blob(state: &AppState, key: &str, content_type: Option<&str>) -> Result<Response, AppError> {
+    let blob = state
+        .store
+        .get_blob(key)
+        .await
+        .map_err(AppError::internal)?
+        .ok_or_else(|| AppError::not_found("File not found."))?;
+    let mime = content_type
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| {
+            if blob.content_type.is_empty() {
+                "application/octet-stream".to_string()
+            } else {
+                blob.content_type.clone()
+            }
+        });
+    let cache_control = if key.ends_with(".zip") {
+        NO_STORE_CACHE_CONTROL
+    } else {
+        SHORT_STATIC_CACHE_CONTROL
+    };
+    let mut response = Response::new(Body::from(blob.bytes));
+    finish_asset_response(&mut response, &mime, cache_control);
+    Ok(response)
+}
+
+fn finish_asset_response(response: &mut Response, mime: &str, cache_control: &'static str) {
     response.headers_mut().insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_str(&mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+        HeaderValue::from_str(mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
     response.headers_mut().insert(
         header::CACHE_CONTROL,
@@ -1700,7 +1744,6 @@ async fn send_file(path: PathBuf, content_type: Option<&str>) -> Result<Response
         "cross-origin-resource-policy",
         HeaderValue::from_static("cross-origin"),
     );
-    Ok(response)
 }
 
 fn cache_control_for_path(path: &Path) -> &'static str {
@@ -1710,20 +1753,29 @@ fn cache_control_for_path(path: &Path) -> &'static str {
     }
 }
 
-async fn read_json(path: PathBuf) -> Result<Value, AppError> {
-    let bytes = fs::read(path).await.map_err(|_| AppError::not_found("Not found."))?;
-    Ok(serde_json::from_slice(&bytes)?)
+/// Read JSON from the store, returning NOT_FOUND when the key is absent.
+async fn read_json(state: &AppState, key: &str) -> Result<Value, AppError> {
+    state
+        .store
+        .get_json(key)
+        .await
+        .map_err(AppError::internal)?
+        .ok_or_else(|| AppError::not_found("Not found."))
 }
 
-async fn write_json(path: PathBuf, value: &Value) -> Result<(), AppError> {
-    let temp_path = path.with_extension(format!(
-        "{}.tmp",
-        path.extension().and_then(|v| v.to_str()).unwrap_or("json")
-    ));
-    let bytes = serde_json::to_vec_pretty(value)?;
-    fs::write(&temp_path, bytes).await?;
-    fs::rename(temp_path, path).await?;
-    Ok(())
+/// Read JSON from the store, returning None when the key is absent or on error.
+async fn read_json_opt(state: &AppState, key: &str) -> Option<Value> {
+    state.store.get_json(key).await.ok().flatten()
+}
+
+/// Write JSON to the store. Session keys (`sp:sess:…`) carry the rolling TTL.
+async fn write_json(state: &AppState, key: &str, value: &Value) -> Result<(), AppError> {
+    let ttl = key.starts_with("sp:sess:").then_some(SESSION_TTL);
+    state
+        .store
+        .put_json(key, value, ttl)
+        .await
+        .map_err(AppError::internal)
 }
 
 // ── Error type ────────────────────────────────────────────────────────────────
@@ -1784,8 +1836,8 @@ async fn get_streamer_queue(
     AxumPath(code): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
     let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     let any_fee_enabled = ["queueEntryFee", "skipRequests", "superSkips"].iter().any(|k| {
         sq.get("settings")
@@ -1801,8 +1853,8 @@ async fn get_streamer_queue(
     // Inject stripe connection status from the channel record
     let channel_id = sq.get("channelId").and_then(Value::as_str).unwrap_or("").to_string();
     let stripe_connected = if !channel_id.is_empty() {
-        if let Ok(ch_path) = channel_path(&state, &channel_id) {
-            read_json(ch_path).await.ok()
+        if let Ok(ch_path) = channel_key_checked(&channel_id) {
+            read_json_opt(&state, &ch_path).await
                 .and_then(|ch| ch.get("stripeAccountId").and_then(Value::as_str).map(|s| !s.is_empty()))
                 .unwrap_or(false)
         } else {
@@ -1826,8 +1878,8 @@ async fn post_stripe_disconnect(
         payload.get("ownerToken").and_then(Value::as_str).unwrap_or(""),
     )?;
 
-    let path = channel_path(&state, &channel_id)?;
-    let mut ch = read_json(path.clone()).await?;
+    let path = channel_key_checked(&channel_id)?;
+    let mut ch = read_json(&state, &path).await?;
 
     let existing_token = ch.get("ownerToken").and_then(Value::as_str).unwrap_or("");
     if !existing_token.is_empty() && existing_token != owner_token {
@@ -1839,7 +1891,7 @@ async fn post_stripe_disconnect(
         obj.remove("stripeConnectedAt");
     }
     ch["stripeDisconnectedAt"] = json!(Utc::now().to_rfc3339());
-    write_json(path, &ch).await?;
+    write_json(&state, &path, &ch).await?;
 
     Ok(Json(json!({ "ok": true, "stripeConnected": false })))
 }
@@ -1856,8 +1908,8 @@ async fn put_streamer_queue_settings(
         payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
     )
     .await?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     if let Some(v) = payload.get("enabled").and_then(Value::as_bool) {
         sq["enabled"] = json!(v);
@@ -1871,7 +1923,7 @@ async fn put_streamer_queue_settings(
     }
 
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
     Ok(Json(public_streamer_queue(sq)))
 }
 
@@ -1881,8 +1933,8 @@ async fn post_streamer_queue_submit(
     Json(payload): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         return Err(AppError::not_found("Streamer queue is not enabled for this session."));
@@ -1962,7 +2014,7 @@ async fn post_streamer_queue_submit(
             .stripe_secret_key
             .as_deref()
             .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
-        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let channel = read_json(&state, &channel_key_checked(channel_id)?).await?;
         let stripe_account_id = channel
             .get("stripeAccountId")
             .and_then(Value::as_str)
@@ -1998,7 +2050,7 @@ async fn post_streamer_queue_submit(
             .ok_or_else(|| AppError::internal("Submissions array missing."))?
             .push(submission);
         sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+        write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
         return Ok((
             StatusCode::ACCEPTED,
@@ -2029,12 +2081,12 @@ async fn post_streamer_queue_submit(
         .ok_or_else(|| AppError::internal("Submissions array missing."))?
         .push(submission);
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
     let mut position = None;
     if !require_approval {
         position = Some(
-            append_submission_to_queue(&session_root, &room_code, &submission_id, url, &title, &artist, &now).await?,
+            append_submission_to_queue(&state, &room_code, &submission_id, url, &title, &artist, &now).await?,
         );
     }
 
@@ -2054,8 +2106,8 @@ async fn post_streamer_queue_skip_request(
     Json(payload): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         return Err(AppError::not_found("Streamer queue is not enabled."));
@@ -2090,7 +2142,7 @@ async fn post_streamer_queue_skip_request(
             .stripe_secret_key
             .as_deref()
             .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
-        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let channel = read_json(&state, &channel_key_checked(channel_id)?).await?;
         let stripe_account_id = channel
             .get("stripeAccountId")
             .and_then(Value::as_str)
@@ -2122,7 +2174,7 @@ async fn post_streamer_queue_skip_request(
             .ok_or_else(|| AppError::internal("Skip requests array missing."))?
             .push(request);
         sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+        write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
         return Ok((
             StatusCode::ACCEPTED,
@@ -2143,7 +2195,7 @@ async fn post_streamer_queue_skip_request(
         .ok_or_else(|| AppError::internal("Skip requests array missing."))?
         .push(request);
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
     Ok((StatusCode::CREATED, Json(json!({ "requestId": request_id, "status": "submitted" }))))
 }
@@ -2154,8 +2206,8 @@ async fn post_streamer_queue_super_skip(
     Json(payload): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let room_code = clean_room_code(&code)?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     if !sq.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
         return Err(AppError::not_found("Streamer queue is not enabled."));
@@ -2190,7 +2242,7 @@ async fn post_streamer_queue_super_skip(
             .stripe_secret_key
             .as_deref()
             .ok_or_else(|| AppError::internal("Stripe is not configured on this server."))?;
-        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let channel = read_json(&state, &channel_key_checked(channel_id)?).await?;
         let stripe_account_id = channel
             .get("stripeAccountId")
             .and_then(Value::as_str)
@@ -2222,7 +2274,7 @@ async fn post_streamer_queue_super_skip(
             .ok_or_else(|| AppError::internal("Super skip requests array missing."))?
             .push(request);
         sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-        write_json(session_root.join("streamer-queue.json"), &sq).await?;
+        write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
         return Ok((
             StatusCode::ACCEPTED,
@@ -2243,7 +2295,7 @@ async fn post_streamer_queue_super_skip(
         .ok_or_else(|| AppError::internal("Super skip requests array missing."))?
         .push(request);
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
     Ok((StatusCode::CREATED, Json(json!({ "requestId": request_id, "status": "submitted" }))))
 }
@@ -2260,8 +2312,8 @@ async fn post_streamer_queue_approve(
         payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
     )
     .await?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     let idx = sq
         .get("submissions")
@@ -2284,10 +2336,10 @@ async fn post_streamer_queue_approve(
         .to_string();
 
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
     if !url.is_empty() {
-        append_submission_to_queue(&session_root, &room_code, &item_id, &url, &title, &artist, &added_at).await?;
+        append_submission_to_queue(&state, &room_code, &item_id, &url, &title, &artist, &added_at).await?;
     }
 
     Ok(Json(json!({ "submissionId": item_id, "status": "queued" })))
@@ -2305,8 +2357,8 @@ async fn post_streamer_queue_reject(
         payload.get("sessionKey").and_then(Value::as_str).unwrap_or(""),
     )
     .await?;
-    let session_root = existing_session_root(&state, &room_code).await?;
-    let mut sq = read_streamer_queue(&session_root, &room_code).await;
+    touch_session(&state, &room_code).await?;
+    let mut sq = read_streamer_queue(&state, &room_code).await;
 
     let idx = sq
         .get("submissions")
@@ -2316,7 +2368,7 @@ async fn post_streamer_queue_reject(
 
     sq["submissions"][idx]["status"] = json!("rejected");
     sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(session_root.join("streamer-queue.json"), &sq).await?;
+    write_json(&state, &sess_key(&room_code, "streamer-queue"), &sq).await?;
 
     Ok(Json(json!({ "submissionId": item_id, "status": "rejected" })))
 }
@@ -2331,8 +2383,8 @@ async fn get_stripe_connect_url(
     let channel_id = clean_channel_id(&channel)?;
     let owner_token = clean_owner_token(params.get("ownerToken").map(|s| s.as_str()).unwrap_or(""))?;
 
-    let path = channel_path(&state, &channel_id)?;
-    let ch = read_json(path).await?;
+    let path = channel_key_checked(&channel_id)?;
+    let ch = read_json(&state, &path).await?;
     let existing_token = ch.get("ownerToken").and_then(Value::as_str).unwrap_or("");
     if !existing_token.is_empty() && existing_token != owner_token {
         return Err(AppError::forbidden("Channel owner token was invalid."));
@@ -2374,11 +2426,8 @@ async fn get_stripe_oauth_callback(
 
     let stripe_account_id = exchange_stripe_code(stripe_key, code).await?;
 
-    let path = channel_path(&state, &channel_id)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-    let mut ch = read_json(path.clone()).await.unwrap_or_else(|_| {
+    let path = channel_key_checked(&channel_id)?;
+    let mut ch = read_json_opt(&state, &path).await.unwrap_or_else(|| {
         json!({
             "protocolVersion": PROTOCOL_VERSION,
             "channelId": &channel_id,
@@ -2387,7 +2436,7 @@ async fn get_stripe_oauth_callback(
     });
     ch["stripeAccountId"] = json!(stripe_account_id);
     ch["stripeConnectedAt"] = json!(Utc::now().to_rfc3339());
-    write_json(path, &ch).await?;
+    write_json(&state, &path, &ch).await?;
 
     let html = r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Stripe Connected</title><style>body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#f0ede8;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}section{text-align:center;padding:32px}h2{font-size:1.5rem;margin-bottom:.5rem}p{color:rgba(240,237,232,.6)}</style></head><body><section><h2>✓ Stripe connected</h2><p>You can close this window and return to Spectralis.</p></section></body></html>"#;
     let mut response = Response::new(Body::from(html));
@@ -2473,10 +2522,10 @@ fn empty_streamer_queue(room_code: &str) -> Value {
     })
 }
 
-async fn read_streamer_queue(session_root: &Path, room_code: &str) -> Value {
-    read_json(session_root.join("streamer-queue.json"))
+async fn read_streamer_queue(state: &AppState, room_code: &str) -> Value {
+    read_json_opt(state, &sess_key(room_code, "streamer-queue"))
         .await
-        .unwrap_or_else(|_| empty_streamer_queue(room_code))
+        .unwrap_or_else(|| empty_streamer_queue(room_code))
 }
 
 fn public_streamer_queue(mut sq: Value) -> Value {
@@ -2495,8 +2544,8 @@ fn public_streamer_queue(mut sq: Value) -> Value {
 async fn validate_session_key(state: &AppState, room_code: &str, provided: &str) -> Result<(), AppError> {
     let cleaned = clean_owner_token(provided)
         .map_err(|_| AppError::forbidden("Session key was invalid."))?;
-    let session_root = existing_session_root(state, room_code).await?;
-    let manifest = read_json(session_root.join("manifest.json")).await?;
+    let room_code = touch_session(state, room_code).await?;
+    let manifest = read_json(state, &sess_key(&room_code, "manifest")).await?;
     let stored = manifest.get("sessionKey").and_then(Value::as_str).unwrap_or("");
     if stored.is_empty() || stored != cleaned {
         return Err(AppError::forbidden("Session key was invalid."));
@@ -2505,7 +2554,7 @@ async fn validate_session_key(state: &AppState, room_code: &str, provided: &str)
 }
 
 async fn append_submission_to_queue(
-    session_root: &Path,
+    state: &AppState,
     room_code: &str,
     submission_id: &str,
     url: &str,
@@ -2513,8 +2562,8 @@ async fn append_submission_to_queue(
     artist: &Option<String>,
     added_at: &str,
 ) -> Result<usize, AppError> {
-    let queue_path = session_root.join("queue.json");
-    let mut queue = read_json(queue_path.clone()).await.unwrap_or_else(|_| empty_queue(room_code));
+    let queue_key = sess_key(room_code, "queue");
+    let mut queue = read_json_opt(state, &queue_key).await.unwrap_or_else(|| empty_queue(room_code));
     let items = queue
         .get_mut("items")
         .and_then(Value::as_array_mut)
@@ -2533,7 +2582,8 @@ async fn append_submission_to_queue(
     }
     let position = items.len();
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-    write_json(queue_path, &queue).await?;
+    write_json(state, &queue_key, &queue).await?;
+    let _ = collab::broadcast_queue(state, room_code, &queue).await;
     Ok(position)
 }
 
@@ -2685,22 +2735,36 @@ fn verify_stripe_signature(body: &[u8], signature_header: &str, secret: &str) ->
     signatures.iter().any(|sig| *sig == computed)
 }
 
+/// Every `sp:sess:<code>:streamer-queue` key and its room code, for the Stripe
+/// webhook sweeps that have only a payment-intent id to go on.
+async fn all_session_sq_keys(state: &AppState) -> Vec<(String, String)> {
+    state
+        .store
+        .scan_keys("sp:sess:*:streamer-queue")
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|key| {
+            let code = key
+                .strip_prefix("sp:sess:")
+                .and_then(|r| r.strip_suffix(":streamer-queue"))?
+                .to_string();
+            Some((key, code))
+        })
+        .collect()
+}
+
 async fn handle_payment_intent_succeeded(state: &AppState, pi_id: &str) -> Result<(), AppError> {
-    let sessions_root = state.data_dir.join("sessions");
-    let Ok(mut entries) = fs::read_dir(&sessions_root).await else {
-        return Ok(());
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let session_root = entry.path();
-        if !session_root.is_dir() {
-            continue;
-        }
-        let sq_path = session_root.join("streamer-queue.json");
-        let Ok(mut sq) = read_json(sq_path.clone()).await else {
+    for (sq_key, code) in all_session_sq_keys(state).await {
+        let Some(mut sq) = read_json_opt(state, &sq_key).await else {
             continue;
         };
 
-        let room_code = sq.get("roomCode").and_then(Value::as_str).unwrap_or("").to_string();
+        let room_code = sq
+            .get("roomCode")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or(code);
         let require_approval = sq
             .get("settings")
             .and_then(|s| s.get("requireApproval"))
@@ -2729,12 +2793,12 @@ async fn handle_payment_intent_succeeded(state: &AppState, pi_id: &str) -> Resul
                     .unwrap_or(&Utc::now().to_rfc3339())
                     .to_string();
                 if !url.is_empty() && !sub_id.is_empty() && !room_code.is_empty() {
-                    let _ = append_submission_to_queue(&session_root, &room_code, &sub_id, &url, &title, &artist, &added_at).await;
+                    let _ = append_submission_to_queue(&state, &room_code, &sub_id, &url, &title, &artist, &added_at).await;
                 }
             }
 
             sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-            let _ = write_json(sq_path, &sq).await;
+            let _ = write_json(state, &sq_key, &sq).await;
             return Ok(());
         }
 
@@ -2752,7 +2816,7 @@ async fn handle_payment_intent_succeeded(state: &AppState, pi_id: &str) -> Resul
         }
         if modified {
             sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-            let _ = write_json(sq_path, &sq).await;
+            let _ = write_json(state, &sq_key, &sq).await;
             return Ok(());
         }
     }
@@ -2760,17 +2824,8 @@ async fn handle_payment_intent_succeeded(state: &AppState, pi_id: &str) -> Resul
 }
 
 async fn handle_payment_intent_failed(state: &AppState, pi_id: &str) -> Result<(), AppError> {
-    let sessions_root = state.data_dir.join("sessions");
-    let Ok(mut entries) = fs::read_dir(&sessions_root).await else {
-        return Ok(());
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let session_root = entry.path();
-        if !session_root.is_dir() {
-            continue;
-        }
-        let sq_path = session_root.join("streamer-queue.json");
-        let Ok(mut sq) = read_json(sq_path.clone()).await else {
+    for (sq_key, _code) in all_session_sq_keys(state).await {
+        let Some(mut sq) = read_json_opt(state, &sq_key).await else {
             continue;
         };
         let mut modified = false;
@@ -2789,12 +2844,11 @@ async fn handle_payment_intent_failed(state: &AppState, pi_id: &str) -> Result<(
         }
         if modified {
             sq["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
-            let _ = write_json(sq_path, &sq).await;
+            let _ = write_json(state, &sq_key, &sq).await;
             return Ok(());
         }
     }
-    Ok(()
-    )
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2806,22 +2860,6 @@ const SQ_STRICT_FP_THRESHOLD: f64 = 0.80;
 const SQ_MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 
 // ── Room storage helpers ──────────────────────────────────────────────────────
-
-fn sq_room_dir(state: &AppState) -> PathBuf {
-    state.data_dir.join("sq-rooms")
-}
-
-fn sq_upload_dir(state: &AppState) -> PathBuf {
-    state.data_dir.join("sq-uploads")
-}
-
-fn sq_pin_dir(state: &AppState) -> PathBuf {
-    state.data_dir.join("sq-discord-pins")
-}
-
-fn sq_pin_path(state: &AppState, pin: &str) -> PathBuf {
-    sq_pin_dir(state).join(format!("{}.json", pin))
-}
 
 fn generate_discord_pin() -> String {
     format!("{:06}", rand::thread_rng().gen_range(0..1_000_000))
@@ -2841,14 +2879,17 @@ fn clean_sq_room_id(value: &str) -> Result<String, AppError> {
     }
 }
 
-fn sq_room_path(state: &AppState, room_id: &str) -> Result<PathBuf, AppError> {
-    Ok(sq_room_dir(state).join(format!("{}.json", clean_sq_room_id(room_id)?)))
+fn sq_room_key_checked(room_id: &str) -> Result<String, AppError> {
+    Ok(sq_room_key(&clean_sq_room_id(room_id)?))
 }
 
 async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, AppError> {
-    let path = sq_room_path(state, room_id)?;
-    let bytes = fs::read(&path).await.map_err(|_| AppError::not_found("Streamer queue room not found."))?;
-    let mut room: Value = serde_json::from_slice(&bytes)?;
+    let mut room = state
+        .store
+        .get_json(&sq_room_key_checked(room_id)?)
+        .await
+        .map_err(AppError::internal)?
+        .ok_or_else(|| AppError::not_found("Streamer queue room not found."))?;
     // Rooms created before acceptingSubmissions existed default to open.
     if room.get("acceptingSubmissions").is_none() {
         room["acceptingSubmissions"] = json!(true);
@@ -2861,11 +2902,7 @@ async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, App
 }
 
 async fn write_sq_room_file(state: &AppState, room_id: &str, room: &Value) -> Result<(), AppError> {
-    let path = sq_room_path(state, room_id)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-    write_json(path, room).await
+    write_json(state, &sq_room_key_checked(room_id)?, room).await
 }
 
 fn sq_owner_token_valid(room: &Value, token: &str) -> bool {
@@ -3504,18 +3541,21 @@ async fn post_sq_discord_pin(
         return Err(AppError::forbidden("Owner token is invalid."));
     }
 
-    fs::create_dir_all(sq_pin_dir(&state)).await?;
     // Collisions with a still-live PIN are astronomically unlikely (1 in a million,
     // and PINs expire in minutes) but retry a few times rather than trust that.
     for _ in 0..5 {
         let pin = generate_discord_pin();
-        let path = sq_pin_path(&state, &pin);
-        if fs::metadata(&path).await.is_ok() {
+        let key = sq_pin_key(&pin);
+        if state.store.exists(&key).await.map_err(AppError::internal)? {
             continue;
         }
         let expires_at = (Utc::now() + Duration::minutes(10)).to_rfc3339();
         let record = json!({ "roomId": &id, "expiresAtUtc": &expires_at });
-        write_json(path, &record).await?;
+        state
+            .store
+            .put_json(&key, &record, Some(std::time::Duration::from_secs(660)))
+            .await
+            .map_err(AppError::internal)?;
         return Ok(Json(json!({ "pin": pin, "expiresAtUtc": expires_at })));
     }
     Err(AppError::internal("Could not generate a unique PIN, try again."))
@@ -3537,11 +3577,15 @@ async fn post_sq_discord_pin_exchange(
         return Err(AppError::bad_request("Invalid PIN."));
     }
 
-    let path = sq_pin_path(&state, &pin);
-    let bytes = fs::read(&path).await.map_err(|_| AppError::not_found("That PIN wasn't found or has expired."))?;
+    let key = sq_pin_key(&pin);
+    let record = state
+        .store
+        .get_json(&key)
+        .await
+        .map_err(AppError::internal)?
+        .ok_or_else(|| AppError::not_found("That PIN wasn't found or has expired."))?;
     // Single-use: consume it before doing anything else, regardless of outcome.
-    let _ = fs::remove_file(&path).await;
-    let record: Value = serde_json::from_slice(&bytes)?;
+    let _ = state.store.del(&key).await;
 
     let expires_at = record.get("expiresAtUtc").and_then(Value::as_str).unwrap_or("");
     let expired = parse_utc(expires_at).map(|dt| Utc::now() > dt).unwrap_or(true);
@@ -3689,7 +3733,7 @@ async fn post_sq_submit(
             return Err(AppError::bad_request("Paid queue requires a channel to be configured."));
         }
         let stripe_key = state.stripe_secret_key.as_deref().ok_or_else(|| AppError::internal("Stripe not configured."))?;
-        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let channel = read_json(&state, &channel_key_checked(channel_id)?).await?;
         let stripe_account = channel.get("stripeAccountId").and_then(Value::as_str)
             .ok_or_else(|| AppError::bad_request("Stripe not connected for this channel."))?
             .to_string();
@@ -3819,9 +3863,16 @@ async fn post_sq_upload(
         .unwrap_or_else(|| ".bin".to_string());
     let file_id = uuid::Uuid::new_v4().to_string();
     let stored_name = format!("{}{}", file_id, ext);
-    let upload_path = sq_upload_dir(&state).join(&stored_name);
-    fs::create_dir_all(sq_upload_dir(&state)).await?;
-    fs::write(&upload_path, &bytes).await?;
+    let upload_key = sq_upload_blob_key(&stored_name);
+    let upload_mime = mime_guess::from_path(&stored_name)
+        .first()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    state
+        .store
+        .put_blob(&upload_key, Bytes::from(bytes.clone()), &upload_mime)
+        .await
+        .map_err(AppError::internal)?;
 
     let fake_payload = json!({
         "displayName": &display_name,
@@ -3841,7 +3892,7 @@ async fn post_sq_upload(
         let tier_fee_key = if valid_tier == "super_skip" { "superSkip" } else { "skip" };
         let tier_fee_enabled = settings.get(tier_fee_key).and_then(|f| f.get("enabled")).and_then(Value::as_bool).unwrap_or(false);
         if !tier_fee_enabled {
-            let _ = fs::remove_file(&upload_path).await;
+            let _ = state.store.delete_blob(&upload_key).await;
             return Err(AppError::bad_request("This queue does not offer that priority tier."));
         }
     }
@@ -3852,7 +3903,7 @@ async fn post_sq_upload(
     })) {
         Ok(v) => v,
         Err(e) => {
-            let _ = fs::remove_file(&upload_path).await;
+            let _ = state.store.delete_blob(&upload_key).await;
             return Err(e);
         }
     };
@@ -3860,13 +3911,13 @@ async fn post_sq_upload(
         a.iter().filter(|s| !matches!(s.get("status").and_then(Value::as_str), Some("rejected") | Some("played") | Some("skipped") | Some("payment_failed"))).count()
     }).unwrap_or(0);
     if active_count >= max_queue {
-        let _ = fs::remove_file(&upload_path).await;
+        let _ = state.store.delete_blob(&upload_key).await;
         return Err(AppError::bad_request("The queue is full right now."));
     }
     if !(is_paid_tier && skip_bypasses_limit) {
         let person_count = sq_count_by_fingerprint(&room, &fp, SQ_NORMAL_FP_THRESHOLD);
         if person_count >= max_per_person {
-            let _ = fs::remove_file(&upload_path).await;
+            let _ = state.store.delete_blob(&upload_key).await;
             return Err(AppError::bad_request("You've reached the maximum number of submissions."));
         }
     }
@@ -3918,10 +3969,9 @@ async fn get_sq_upload(
         .and_then(|s| s.get("fileName").and_then(Value::as_str).map(ToOwned::to_owned))
         .ok_or_else(|| AppError::not_found("Upload not found."))?;
 
-    let path = sq_upload_dir(&state).join(&stored_name);
     let ext = stored_name.rsplit('.').next().unwrap_or("bin");
     let mime = mime_guess::from_ext(ext).first_or_octet_stream().to_string();
-    send_file(path, Some(&mime)).await
+    send_blob(&state, &sq_upload_blob_key(&stored_name), Some(&mime)).await
 }
 
 async fn post_sq_promote(
@@ -3978,7 +4028,7 @@ async fn post_sq_promote(
             return Err(AppError::bad_request("Paid promotion requires a channel to be configured."));
         }
         let stripe_key = state.stripe_secret_key.as_deref().ok_or_else(|| AppError::internal("Stripe not configured."))?;
-        let channel = read_json(channel_path(&state, channel_id)?).await?;
+        let channel = read_json(&state, &channel_key_checked(channel_id)?).await?;
         let stripe_account = channel.get("stripeAccountId").and_then(Value::as_str).ok_or_else(|| AppError::bad_request("Stripe not connected."))?.to_string();
         let currency = tier_fee.get("currency").and_then(Value::as_str).unwrap_or("USD");
         let pi = create_stripe_payment_intent(stripe_key, amount_to_cents(tier_amt), currency, &stripe_account).await?;
@@ -4317,14 +4367,14 @@ async fn post_sq_stripe_disconnect(
         .unwrap_or(id.as_str())
         .to_string();
 
-    let path = channel_path(&state, &channel_id)?;
-    if let Ok(mut ch) = read_json(path.clone()).await {
+    let path = channel_key_checked(&channel_id)?;
+    if let Some(mut ch) = read_json_opt(&state, &path).await {
         if let Some(obj) = ch.as_object_mut() {
             obj.remove("stripeAccountId");
             obj.remove("stripeConnectedAt");
         }
         ch["stripeDisconnectedAt"] = json!(Utc::now().to_rfc3339());
-        let _ = write_json(path, &ch).await;
+        let _ = write_json(&state, &path, &ch).await;
     }
     Ok(Json(json!({ "ok": true, "stripeConnected": false })))
 }
