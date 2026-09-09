@@ -251,6 +251,46 @@ public sealed class PlaylistsViewModel : ViewModelBase
 
     public SmartPlaylist? FindSmartPlaylist(Guid id) => _smartPlaylists.FirstOrDefault(p => p.Id == id);
 
+    /// <summary>The visible browser row (pinned or not) for a playlist id, or null if it's hidden
+    /// or gone. Used by the randomizer to play / expand a playlist the wheel landed on.</summary>
+    public PlaylistRow? FindRow(Guid id) =>
+        PinnedRows.Concat(Rows).FirstOrDefault(r => r.Id == id);
+
+    /// <summary>Resolves a row to (ref, title, subtitle) triples — same refs as
+    /// <see cref="GetPathsForRow"/>, but carrying display names so the randomizer can list a
+    /// playlist's tracks as individual wheel slices.</summary>
+    public IReadOnlyList<(string Ref, string Title, string Subtitle)> GetTrackEntriesForRow(PlaylistRow row)
+    {
+        var byPath = _database.GetAllEntries()
+            .GroupBy(e => e.Track.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Track, StringComparer.OrdinalIgnoreCase);
+
+        (string, string, string) Describe(string reference, string? title, string? artist)
+        {
+            if (!string.IsNullOrWhiteSpace(title))
+                return (reference, title!, artist ?? string.Empty);
+            if (reference.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+                return (reference, "Spotify track", "Spotify");
+            if (byPath.TryGetValue(reference, out var track))
+                return (reference, track.DisplayTitle, track.Artist);
+            return (reference, System.IO.Path.GetFileNameWithoutExtension(reference), string.Empty);
+        }
+
+        if (row.IsSmart)
+        {
+            var smart = FindSmartPlaylist(row.Id);
+            IEnumerable<string> paths = smart is null
+                ? []
+                : SmartPlaylistEvaluator.Evaluate(smart, _database.GetAllEntries());
+            return paths.Select(p => Describe(p, null, null)).ToList();
+        }
+
+        var playlist = FindPlaylist(row.Id);
+        return playlist is null
+            ? []
+            : playlist.Items.Select(i => Describe(PlayableRef(i), i.Title, i.Artist)).ToList();
+    }
+
     private static string PlayableRef(PlaylistItem item) => item.SpotifyTrackUri ?? item.Path;
 
     /// <summary>Resolves a row to its playable paths/uris (static items, evaluated smart rules, or
