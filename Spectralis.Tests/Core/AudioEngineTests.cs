@@ -190,4 +190,29 @@ public sealed class AudioEngineTests : IDisposable
         Assert.NotNull(frame);
         Assert.NotNull(frame.Spectrum);
     }
+
+    [Fact]
+    public void SetPlaybackRate_ClampsToRange()
+    {
+        _engine.SetPlaybackRate(9.0);
+        Assert.Equal(3.5, _engine.PlaybackRate);
+
+        _engine.SetPlaybackRate(0.1);
+        Assert.Equal(0.5, _engine.PlaybackRate);
+    }
+
+    [Fact]
+    public void SetPlaybackRate_KeepsPositionAndFormat()
+    {
+        _engine.Load(CreateWav(seconds: 1.0, sampleRate: 44100));
+        _engine.Play();
+        _engine.Seek(0.4f);
+
+        _engine.SetPlaybackRate(1.5);
+
+        Assert.Equal(1.5, _engine.PlaybackRate);
+        Assert.InRange(_engine.GetPosition(), 0.3f, 0.6f);
+        Assert.Equal(44100, _engine.EffectiveSampleRate);
+        Assert.True(_engine.IsLoaded);
+    }
 }
