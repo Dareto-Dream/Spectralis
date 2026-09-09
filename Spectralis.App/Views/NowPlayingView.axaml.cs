@@ -61,6 +61,7 @@ public partial class NowPlayingView : Grid
 public NowPlayingView()
     {
         InitializeComponent();
+        WireSpeedRepeatButtons();
         DataContextChanged += (_, _) =>
         {
             if (_viewModel is not null)
@@ -415,6 +416,112 @@ public NowPlayingView()
     private void OnToggleTimeDisplay(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
         (DataContext as NowPlayingViewModel)?.ToggleTimeDisplay();
+    }
+
+    private void OnToggleChaptersPanel(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm)
+        {
+            vm.ShowChaptersPanel = !vm.ShowChaptersPanel;
+        }
+    }
+
+    // ── Podcast speed: hold-to-repeat on the −/+ buttons, click-to-type on the number ──
+
+    private DispatcherTimer? _speedRepeatTimer;
+    private int _speedRepeatDirection;
+
+    /// <summary>
+    /// Wires press-and-hold repeat onto the speed −/+ buttons. Registered with
+    /// <c>handledEventsToo</c> because <see cref="Button"/> marks <c>PointerPressed</c> handled
+    /// before instance handlers run, so a plain XAML <c>PointerPressed=</c> attribute never fires.
+    /// </summary>
+    private void WireSpeedRepeatButtons()
+    {
+        Hook(SpeedDownButton, -1);
+        Hook(SpeedUpButton, 1);
+
+        void Hook(Button button, int direction)
+        {
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerPressedEvent,
+                (_, _) => StartSpeedRepeat(direction),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerReleasedEvent,
+                (_, _) => StopSpeedRepeat(),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerCaptureLostEvent,
+                (_, _) => StopSpeedRepeat(),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        }
+    }
+
+    private void StartSpeedRepeat(int direction)
+    {
+        if (DataContext is not NowPlayingViewModel vm)
+        {
+            return;
+        }
+
+        _speedRepeatDirection = direction;
+        vm.StepSpeed(direction);
+
+        _speedRepeatTimer?.Stop();
+        _speedRepeatTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _speedRepeatTimer.Tick += (_, _) =>
+        {
+            _speedRepeatTimer!.Interval = TimeSpan.FromMilliseconds(90);
+            if (DataContext is NowPlayingViewModel v)
+            {
+                v.StepSpeed(_speedRepeatDirection);
+            }
+        };
+        _speedRepeatTimer.Start();
+    }
+
+    private void StopSpeedRepeat()
+    {
+        _speedRepeatTimer?.Stop();
+        _speedRepeatTimer = null;
+    }
+
+    private void OnSpeedInputGotFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
+    {
+        (sender as TextBox)?.SelectAll();
+    }
+
+    private void OnSpeedInputKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (sender is not TextBox box || DataContext is not NowPlayingViewModel vm)
+        {
+            return;
+        }
+
+        if (e.Key == Avalonia.Input.Key.Enter)
+        {
+            vm.SpeedInput = box.Text ?? string.Empty;
+            e.Handled = true;
+            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+        }
+        else if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            box.Text = vm.SpeedInput;
+            e.Handled = true;
+            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+        }
+    }
+
+    private void OnChapterActivated(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && ChaptersList.SelectedItem is ChapterRowViewModel row)
+        {
+            vm.SeekToChapter(row);
+        }
     }
 
     private QueueItemViewModel? SelectedQueueItem => QueueList.SelectedItem as QueueItemViewModel;
