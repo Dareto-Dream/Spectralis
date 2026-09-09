@@ -13,6 +13,24 @@
       <Setter Property="Fill" Value="{StaticResource Brush.Ink.Muted}" />
       <Setter Property="Opacity" Value="0.42" />
     </Style>
+
+    <!-- Speed number reads as plain text until focused, then becomes an obvious input. -->
+    <Style Selector="TextBox.speed-entry">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="TextBox.speed-entry:pointerover">
+      <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
+    </Style>
+    <Style Selector="TextBox.speed-entry:focus">
+      <Setter Property="Background" Value="{StaticResource Brush.Bg.Base}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal.Dim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Ibeam" />
+    </Style>
     <Style Selector="Ellipse.surface-dot.active">
       <Setter Property="Fill" Value="{StaticResource Brush.Signal}" />
       <Setter Property="Opacity" Value="1" />
@@ -150,7 +168,7 @@
   </Panel>
 
   <!-- ============ Playing state (track or album world) ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -305,11 +323,91 @@
                                       DurationSeconds="{Binding LengthSeconds}"
                                       TickBrush="{StaticResource Brush.Signal.Dim}"
                                       IsVisible="{Binding HasBeatGrid}" />
+            <controls:ChapterMarkersOverlay Height="6"
+                                            BoundarySeconds="{Binding ChapterStartSeconds}"
+                                            DurationSeconds="{Binding LengthSeconds}"
+                                            ActiveIndex="{Binding ActiveChapterIndex}"
+                                            TickBrush="{StaticResource Brush.Signal}"
+                                            IsVisible="{Binding HasChapters}" />
           </StackPanel>
           <TextBlock Grid.Column="2" Classes="data" Text="{Binding LengthText}"
                      MinWidth="48" TextAlignment="Right" VerticalAlignment="Center"
                      Margin="10,0,0,0" />
         </Grid>
+
+        <!-- Podcast Mode controls -->
+        <Border Margin="16,4,16,2" Padding="10,6"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="{StaticResource Brush.Signal.Dim}" BorderThickness="1"
+                CornerRadius="4"
+                IsVisible="{Binding IsPodcastMode}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+
+            <!-- Skip + speed (local engine only) -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                        IsVisible="{Binding IsPodcastEngineMode}">
+              <Button Classes="ghost" Command="{Binding SkipBackCommand}"
+                      ToolTip.Tip="Skip back">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <PathIcon Data="{x:Static design:IconData.Previous}" Width="12" Height="12" />
+                  <TextBlock Text="{Binding SkipBackText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="ghost" Command="{Binding SkipForwardCommand}"
+                      ToolTip.Tip="Skip forward">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <TextBlock Text="{Binding SkipForwardText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                  <PathIcon Data="{x:Static design:IconData.Next}" Width="12" Height="12" />
+                </StackPanel>
+              </Button>
+              <Rectangle Width="1" Height="16" Fill="{StaticResource Brush.Border}" Margin="4,0" />
+              <Button Classes="ghost" Content="−" Width="26" x:Name="SpeedDownButton"
+                      ToolTip.Tip="Slower (hold to repeat)" />
+              <TextBox Classes="speed-entry" Text="{Binding SpeedInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                       Width="46" TextAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold"
+                       GotFocus="OnSpeedInputGotFocus" KeyDown="OnSpeedInputKeyDown"
+                       ToolTip.Tip="Playback speed — click to type a value" />
+              <Button Classes="ghost" Content="+" Width="26" x:Name="SpeedUpButton"
+                      ToolTip.Tip="Faster (hold to repeat)" />
+            </StackPanel>
+
+            <TextBlock Grid.Column="0" Classes="muted" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Speed and chapters aren't available for Spotify episodes"
+                       IsVisible="{Binding IsPodcastSpotifyMode}" />
+
+            <!-- Current chapter -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" IsVisible="{Binding HasChapters}">
+              <Button Classes="ghost" Content="‹" Command="{Binding PreviousChapterCommand}"
+                      ToolTip.Tip="Previous chapter" />
+              <TextBlock Text="{Binding CurrentChapterTitle}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" MaxWidth="220"
+                         Cursor="Hand" PointerPressed="OnToggleChaptersPanel"
+                         ToolTip.Tip="Open chapters" />
+              <Button Classes="ghost" Content="›" Command="{Binding NextChapterCommand}"
+                      ToolTip.Tip="Next chapter" />
+            </StackPanel>
+
+            <!-- Sleep timer -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{Binding SleepTimerStatusText}" Classes="muted"
+                         FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center"
+                         IsVisible="{Binding SleepTimerActive}" />
+              <ComboBox ItemsSource="{Binding SleepTimerOptions}"
+                        SelectedItem="{Binding SelectedSleepTimerChoice}"
+                        MinWidth="130"
+                        ToolTip.Tip="Sleep timer">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SleepTimerChoice">
+                    <TextBlock Text="{Binding Label}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+
+          </Grid>
+        </Border>
 
         <!-- Transport bar -->
         <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,8">
@@ -394,6 +492,11 @@
                                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                   IsChecked="{Binding ShowQueue}"
                                   ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+                    <ToggleButton Classes="ghost" Content="Chapters"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowChaptersPanel}"
+                                  IsVisible="{Binding HasChapters}"
+                                  ToolTip.Tip="Toggle chapters panel" />
                     <ToggleButton Classes="ghost" Content="Notes"
                                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                   IsChecked="{Binding ShowNotepadPanel}"
@@ -841,6 +944,52 @@
         <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Effects Chain" Margin="14,12,10,0" />
         <views:EffectsChainControl DockPanel.Dock="Top" DataContext="{Binding EffectsChain}" />
       </DockPanel>
+    </Border>
+
+    <!-- ─── Chapters docked sidebar ───────────────────────────────── -->
+    <Border x:Name="ChaptersSidebarBorder" Grid.Column="7" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowChaptersPanel}">
+      <Grid RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" Margin="16,14,16,8" Spacing="2">
+          <TextBlock Classes="heading" Text="Chapters" />
+          <TextBlock Classes="muted" Text="{Binding CurrentChapterTitle}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <ListBox Grid.Row="1"
+                 x:Name="ChaptersList"
+                 ItemsSource="{Binding Chapters}"
+                 DoubleTapped="OnChapterActivated"
+                 Background="Transparent">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="12,7" />
+            </Style>
+            <Style Selector="TextBlock.current">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ChapterRowViewModel">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Classes="data"
+                           Classes.current="{Binding IsCurrent}"
+                           Text="{Binding Number}"
+                           MinWidth="22" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Title}"
+                           Classes.current="{Binding IsCurrent}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Classes="muted" Text="{Binding StartText}"
+                           FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
     </Border>
 
   </Grid>
