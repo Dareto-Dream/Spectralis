@@ -44,6 +44,7 @@ public partial class RandomizerToolsView : UserControl
         Loaded += (_, _) =>
         {
             WheelCanvas.SizeChanged += (_, _) => DrawWheel();
+            _vm?.RefreshMusicSources();
             DrawWheel();
         };
     }
@@ -153,7 +154,7 @@ public partial class RandomizerToolsView : UserControl
             }
         }
 
-        _vm.FinishSpin(entries[winnerIndex].Text);
+        _vm.FinishSpin(entries[winnerIndex]);
     }
 
     // ── Coin flip ─────────────────────────────────────────────────────────────
@@ -345,6 +346,27 @@ public partial class RandomizerToolsView : UserControl
         if (sender is Button btn && btn.DataContext is SavedWheel wheel && _vm is not null)
             _vm.DeleteWheel(wheel);
     }
+
+    private void OnAddCandidateClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is MusicPickCandidate candidate)
+            _vm?.AddCandidate(candidate);
+    }
+
+    private void OnLoadPlaylistSongsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is MusicPickCandidate candidate)
+            _vm?.LoadPlaylistSongs(candidate);
+    }
+
+    private void OnRemoveEntryClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is WheelEntry entry)
+            _vm?.RemoveEntry(entry);
+    }
+
+    private void OnClearEntriesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        _vm?.ClearEntries();
 
     private static string TruncateEntry(string s, int max) =>
         s.Length <= max ? s : s[..max];
