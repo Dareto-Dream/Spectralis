@@ -43,6 +43,34 @@ public sealed class SharedPlayRequestedTrackVm : ViewModelBase
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
 }
 
+public sealed class SharedPlayMemberVm : ViewModelBase
+{
+    public SharedPlayMemberVm(SharedPlayMember member, Action<SharedPlayMemberVm> promote,
+        Action<SharedPlayMemberVm> demote, Action<SharedPlayMemberVm> kick)
+    {
+        ClientId = member.ClientId;
+        Name = member.Name;
+        Role = member.Role;
+        IsHost = member.IsHost;
+        PromoteCommand = ReactiveCommand.Create(() => promote(this));
+        DemoteCommand = ReactiveCommand.Create(() => demote(this));
+        KickCommand = ReactiveCommand.Create(() => kick(this));
+    }
+
+    public string ClientId { get; }
+    public string Name { get; }
+    public SharedPlayRole Role { get; }
+    public bool IsHost { get; }
+    public bool IsCoDj => Role == SharedPlayRole.CoDj;
+    public string RoleLabel => IsHost ? "Host" : IsCoDj ? "Co-DJ" : "Listener";
+    public bool CanPromote => !IsHost && Role == SharedPlayRole.Follower;
+    public bool CanDemote => !IsHost && Role == SharedPlayRole.CoDj;
+
+    public ReactiveCommand<Unit, Unit> PromoteCommand { get; }
+    public ReactiveCommand<Unit, Unit> DemoteCommand { get; }
+    public ReactiveCommand<Unit, Unit> KickCommand { get; }
+}
+
 public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 {
     private readonly SharedPlaySessionController _controller = new();
@@ -63,16 +91,32 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     private string _joinedStatusText = string.Empty;
     private bool _hostPending;
     private string _copyLinkLabel = "Copy Link";
+    private SharedPlayCapabilities _capabilities = SharedPlayCapabilities.Default;
+    private bool _applyingCaps;
+    private string _skipProgressText = string.Empty;
+
+    /// <summary>Wired by MainWindowViewModel to apply a relayed listener transport
+    /// command (play / pause / seek / next) to the audio engine.</summary>
+    public Action<string, double?>? TransportCommandRequested { get; set; }
 
     public SharedPlayViewModel()
     {
         _controller.StatusChanged += OnStatusChanged;
+        _controller.CommandReceived += OnCommandReceived;
+        _controller.SkipProgressReceived += p => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            SkipProgressText = p is { Votes: > 0 } ? $"Vote-skip {p.Votes}/{p.Required}" : string.Empty);
         _joinRuntime.StatusChanged += OnJoinStatusChanged;
+        _joinRuntime.RoleOrCapsChanged += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(RaiseJoinControlProps);
+        _joinRuntime.SkipProgressChanged += (_, p) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            JoinedSkipText = p.Votes > 0 ? $"Skip {p.Votes}/{p.Required}" : string.Empty);
         _joinRuntime.TrackReady += (_, track) => TrackReadyForEngine?.Invoke(track);
         _joinRuntime.SeekRequested += (_, sec) => SeekRequestedForEngine?.Invoke(sec);
         _joinRuntime.PlayRequested += (_, _) => PlayRequestedForEngine?.Invoke();
         _joinRuntime.PauseRequested += (_, _) => PauseRequestedForEngine?.Invoke();
         LeaveJoinCommand = ReactiveCommand.Create(LeaveJoinedSession, this.WhenAnyValue(x => x.IsJoined));
+        JoinPlayPauseCommand = ReactiveCommand.Create(JoinPlayPause);
+        JoinNextCommand = ReactiveCommand.Create(JoinNext);
+        JoinVoteSkipCommand = ReactiveCommand.Create(JoinVoteSkip);
         HostCommand     = ReactiveCommand.CreateFromTask(HostAsync);
         StopCommand     = ReactiveCommand.Create(Stop);
         CopyLinkCommand = ReactiveCommand.Create(CopyLink, this.WhenAnyValue(x => x.IsHosting));
@@ -82,6 +126,9 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyLinkCommand { get; }
     public ReactiveCommand<Unit, Unit> LeaveJoinCommand { get; }
+    public ReactiveCommand<Unit, Unit> JoinPlayPauseCommand { get; }
+    public ReactiveCommand<Unit, Unit> JoinNextCommand { get; }
+    public ReactiveCommand<Unit, Unit> JoinVoteSkipCommand { get; }
 
     public event Action<string>? CopyToClipboardRequested;
 
@@ -171,10 +218,161 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<SharedPlayRequestedTrackVm> RequestedTracks { get; } = [];
 
+    // ── Collaborative room: roster, capabilities, activity ──────────────────
+    public ObservableCollection<SharedPlayMemberVm> Members { get; } = [];
+    public ObservableCollection<string> ActivityLog { get; } = [];
+
+    public bool RoomSocketConnected => _controller.RoomSocketConnected;
+
+    public string SkipProgressText
+    {
+        get => _skipProgressText;
+        private set => this.RaiseAndSetIfChanged(ref _skipProgressText, value);
+    }
+
+    public bool ListenersCanQueue
+    {
+        get => _capabilities.QueueAdd == "everyone";
+        set => UpdateCaps(_capabilities with { QueueAdd = value ? "everyone" : "codj" },
+            s => s.SharedPlayListenersCanQueue = value);
+    }
+
+    public bool ListenersCanReorder
+    {
+        get => _capabilities.QueueReorder == "everyone";
+        set => UpdateCaps(_capabilities with { QueueReorder = value ? "everyone" : "host" },
+            s => s.SharedPlayListenersCanReorder = value);
+    }
+
+    public bool ListenersCanRemove
+    {
+        get => _capabilities.QueueRemove == "everyone";
+        set => UpdateCaps(_capabilities with { QueueRemove = value ? "everyone" : "host" },
+            s => s.SharedPlayListenersCanRemove = value);
+    }
+
+    public bool ListenersCanControlPlayback
+    {
+        get => _capabilities.Transport == "everyone";
+        set => UpdateCaps(_capabilities with { Transport = value ? "everyone" : "host" },
+            s => s.SharedPlayListenersCanControlPlayback = value);
+    }
+
+    public bool VoteSkipEnabled
+    {
+        get => _capabilities.VoteSkip;
+        set => UpdateCaps(_capabilities with { VoteSkip = value }, s => s.SharedPlayVoteSkipEnabled = value);
+    }
+
+    public int SkipVotesRequired
+    {
+        get => _capabilities.SkipVotesRequired;
+        set
+        {
+            var clamped = Math.Clamp(value, 1, 20);
+            UpdateCaps(_capabilities with { SkipVotesRequired = clamped },
+                s => s.SharedPlaySkipVotesRequired = clamped);
+        }
+    }
+
+    private void UpdateCaps(SharedPlayCapabilities next, Action<AppSettings> persist)
+    {
+        if (_applyingCaps) return;
+        _capabilities = next;
+        _controller.SetCapabilities(next);
+        if (_settings is not null)
+        {
+            persist(_settings);
+            AppSettingsStore.Save(_settings);
+        }
+        RaiseCapProps();
+    }
+
+    private void RaiseCapProps()
+    {
+        this.RaisePropertyChanged(nameof(ListenersCanQueue));
+        this.RaisePropertyChanged(nameof(ListenersCanReorder));
+        this.RaisePropertyChanged(nameof(ListenersCanRemove));
+        this.RaisePropertyChanged(nameof(ListenersCanControlPlayback));
+        this.RaisePropertyChanged(nameof(VoteSkipEnabled));
+        this.RaisePropertyChanged(nameof(SkipVotesRequired));
+    }
+
+    private void OnCommandReceived(SharedPlayIncomingCommand cmd)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            switch (cmd.Cmd)
+            {
+                case "transport":
+                {
+                    var action = cmd.Payload.ValueKind == System.Text.Json.JsonValueKind.Object
+                                 && cmd.Payload.TryGetProperty("action", out var a)
+                        ? a.GetString() ?? ""
+                        : "";
+                    double? position = cmd.Payload.ValueKind == System.Text.Json.JsonValueKind.Object
+                                       && cmd.Payload.TryGetProperty("position", out var p)
+                                       && p.TryGetDouble(out var pv)
+                        ? pv
+                        : null;
+                    if (action.Length > 0)
+                    {
+                        TransportCommandRequested?.Invoke(action, position);
+                        LogActivity($"{cmd.ByName} · {action}");
+                    }
+                    break;
+                }
+                case "queue.add":
+                {
+                    var url = cmd.Payload.ValueKind == System.Text.Json.JsonValueKind.Object
+                              && cmd.Payload.TryGetProperty("item", out var item)
+                              && item.TryGetProperty("url", out var u)
+                        ? u.GetString()
+                        : null;
+                    if (!string.IsNullOrWhiteSpace(url) && QueueTrackRequested is not null)
+                    {
+                        _ = QueueTrackRequested(url);
+                        LogActivity($"{cmd.ByName} added a track");
+                    }
+                    break;
+                }
+                case "queue.remove":
+                {
+                    var id = cmd.Payload.ValueKind == System.Text.Json.JsonValueKind.Object
+                             && cmd.Payload.TryGetProperty("id", out var i) ? i.GetString() : null;
+                    var vm = RequestedTracks.FirstOrDefault(t => t.Id == id);
+                    if (vm is not null) RemoveRequestedTrack(vm);
+                    break;
+                }
+            }
+        });
+    }
+
+    private void LogActivity(string line)
+    {
+        ActivityLog.Insert(0, $"{DateTime.Now:HH:mm}  {line}");
+        while (ActivityLog.Count > 40) ActivityLog.RemoveAt(ActivityLog.Count - 1);
+    }
+
+    private void PromoteMember(SharedPlayMemberVm m) => _controller.SetMemberRole(m.ClientId, SharedPlayRole.CoDj);
+    private void DemoteMember(SharedPlayMemberVm m) => _controller.SetMemberRole(m.ClientId, SharedPlayRole.Follower);
+    private void KickMember(SharedPlayMemberVm m) => _controller.KickMember(m.ClientId);
+
     public void ApplySettings(AppSettings settings)
     {
         _settings = settings;
         _hostingRequested = settings.SharedPlayEnabled;
+        _capabilities = new SharedPlayCapabilities(
+            settings.SharedPlayListenersCanQueue ? "everyone" : "codj",
+            settings.SharedPlayListenersCanRemove ? "everyone" : "host",
+            settings.SharedPlayListenersCanReorder ? "everyone" : "host",
+            settings.SharedPlayListenersCanControlPlayback ? "everyone" : "host",
+            settings.SharedPlayVoteSkipEnabled,
+            Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20));
+        _controller.SetHostDisplayName(string.IsNullOrWhiteSpace(settings.SharedPlayHostName)
+            ? Environment.UserName
+            : settings.SharedPlayHostName);
+        RaiseCapProps();
         ReapplyControllerSettings();
     }
 
@@ -290,7 +488,50 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         IsJoined = _joinRuntime.IsJoined;
         JoinedStatusText = _joinRuntime.StatusText ?? string.Empty;
+        RaiseJoinControlProps();
     }
+
+    private bool _joinedCanControl;
+    private string _joinedRoleLabel = "Listener";
+    private string _joinedSkipText = string.Empty;
+
+    public bool JoinedCanControl
+    {
+        get => _joinedCanControl;
+        private set => this.RaiseAndSetIfChanged(ref _joinedCanControl, value);
+    }
+
+    public string JoinedRoleLabel
+    {
+        get => _joinedRoleLabel;
+        private set => this.RaiseAndSetIfChanged(ref _joinedRoleLabel, value);
+    }
+
+    public string JoinedSkipText
+    {
+        get => _joinedSkipText;
+        private set => this.RaiseAndSetIfChanged(ref _joinedSkipText, value);
+    }
+
+    private void RaiseJoinControlProps()
+    {
+        JoinedCanControl = _joinRuntime.CanControl;
+        JoinedRoleLabel = _joinRuntime.CurrentRole switch
+        {
+            SharedPlayRole.Host => "Host",
+            SharedPlayRole.CoDj => "Co-DJ",
+            _ => "Listener",
+        };
+    }
+
+    public void JoinPlayPause() =>
+        _joinRuntime.SendTransport(NowPlayingIsPlayingProbe?.Invoke() == true ? "pause" : "play");
+    public void JoinNext() => _joinRuntime.SendTransport("next");
+    public void JoinVoteSkip() => _joinRuntime.VoteSkip();
+
+    /// <summary>Wired by MainWindowViewModel so the joined "play/pause" button knows
+    /// whether to send play or pause.</summary>
+    public Func<bool>? NowPlayingIsPlayingProbe { get; set; }
 
     private Task HostAsync()
     {
@@ -345,6 +586,35 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
+        SyncRoomState();
+    }
+
+    private void SyncRoomState()
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _applyingCaps = true;
+            _capabilities = _controller.Capabilities;
+            RaiseCapProps();
+            _applyingCaps = false;
+
+            var live = _controller.Members;
+            var liveIds = live.Select(m => m.ClientId).ToHashSet();
+            foreach (var stale in Members.Where(m => !liveIds.Contains(m.ClientId)).ToList())
+                Members.Remove(stale);
+            foreach (var m in live)
+            {
+                var existing = Members.FirstOrDefault(x => x.ClientId == m.ClientId);
+                if (existing is null)
+                    Members.Add(new SharedPlayMemberVm(m, PromoteMember, DemoteMember, KickMember));
+                else if (existing.Role != m.Role)
+                {
+                    Members.Remove(existing);
+                    Members.Add(new SharedPlayMemberVm(m, PromoteMember, DemoteMember, KickMember));
+                }
+            }
+            this.RaisePropertyChanged(nameof(RoomSocketConnected));
+        });
     }
 
     private static string BuildStatusText(SharedPlaySessionSnapshot snap)
