@@ -91,6 +91,15 @@ public sealed class AppSettings
     public string SharedPlayLiveChannelId { get; set; } = string.Empty;
     public string SharedPlayLiveChannelOwnerToken { get; set; } = string.Empty;
     public string SharedPlayLiveChannelDisplayName { get; set; } = string.Empty;
+    /// <summary>Name the host appears under in a collaborative room's roster.</summary>
+    public string SharedPlayHostName { get; set; } = string.Empty;
+    // Default collaborative-room capabilities for a freshly hosted room.
+    public bool SharedPlayListenersCanQueue { get; set; } = true;
+    public bool SharedPlayListenersCanReorder { get; set; }
+    public bool SharedPlayListenersCanRemove { get; set; }
+    public bool SharedPlayListenersCanControlPlayback { get; set; }
+    public bool SharedPlayVoteSkipEnabled { get; set; } = true;
+    public int SharedPlaySkipVotesRequired { get; set; } = 3;
     public bool SidebarCollapsed { get; set; } = true;
 
     public string SqCdnBaseUrl { get; set; } = string.Empty;
@@ -187,6 +196,13 @@ public sealed class AppSettings
             SharedPlayLiveChannelId = SharedPlayLiveChannelId,
             SharedPlayLiveChannelOwnerToken = SharedPlayLiveChannelOwnerToken,
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
+            SharedPlayHostName = SharedPlayHostName,
+            SharedPlayListenersCanQueue = SharedPlayListenersCanQueue,
+            SharedPlayListenersCanReorder = SharedPlayListenersCanReorder,
+            SharedPlayListenersCanRemove = SharedPlayListenersCanRemove,
+            SharedPlayListenersCanControlPlayback = SharedPlayListenersCanControlPlayback,
+            SharedPlayVoteSkipEnabled = SharedPlayVoteSkipEnabled,
+            SharedPlaySkipVotesRequired = SharedPlaySkipVotesRequired,
             SidebarCollapsed = SidebarCollapsed,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
@@ -269,6 +285,7 @@ public static class AppSettingsStore
             ? settings.PreferredSampleRate
             : 0;
         settings.MidiInstrument = MidiPlaybackInstrumentCatalog.Normalize(settings.MidiInstrument);
+        settings.SharedPlaySkipVotesRequired = Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20);
         settings.DefaultVolume = Math.Clamp(settings.DefaultVolume, 0, 100);
         settings.ObsOverlayPort = settings.ObsOverlayPort <= 0
             ? 5128
