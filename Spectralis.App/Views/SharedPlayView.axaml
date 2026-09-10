@@ -14,8 +14,19 @@
       <StackPanel IsVisible="{Binding IsJoined}" Spacing="8">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <TextBlock Classes="data" Text="{Binding JoinedStatusText}" />
+          <Border Background="#22A882F2" CornerRadius="10" Padding="8,2">
+            <TextBlock Classes="secondary" Text="{Binding JoinedRoleLabel}" />
+          </Border>
         </StackPanel>
         <TextBlock Classes="secondary" Text="You're listening along with someone else's room." />
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding JoinedCanControl}">
+          <Button Content="Play / Pause" Command="{Binding JoinPlayPauseCommand}" Classes="secondary" />
+          <Button Content="Skip" Command="{Binding JoinNextCommand}" Classes="secondary" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !JoinedCanControl}">
+          <Button Content="Vote skip" Command="{Binding JoinVoteSkipCommand}" Classes="secondary" />
+          <TextBlock Classes="data" Text="{Binding JoinedSkipText}" VerticalAlignment="Center" />
+        </StackPanel>
         <Button Content="Leave" Command="{Binding LeaveJoinCommand}" Classes="destructive" HorizontalAlignment="Left" />
       </StackPanel>
 
@@ -45,6 +56,57 @@
 
       <TextBlock Classes="error" Text="{Binding LastError}"
                  IsVisible="{Binding LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+      <!-- Collaborative room controls (host) -->
+      <StackPanel IsVisible="{Binding IsHosting}" Spacing="8">
+        <Separator Margin="0,4" />
+        <TextBlock Classes="heading" Text="Room controls" />
+        <TextBlock Classes="secondary"
+                   Text="What everyone in the room can do. Promote individuals to Co-DJ for full control." />
+        <CheckBox Content="Anyone can add to the queue" IsChecked="{Binding ListenersCanQueue}" />
+        <CheckBox Content="Anyone can reorder the queue" IsChecked="{Binding ListenersCanReorder}" />
+        <CheckBox Content="Anyone can remove tracks" IsChecked="{Binding ListenersCanRemove}" />
+        <CheckBox Content="Anyone can control playback (play / pause / seek / skip)"
+                  IsChecked="{Binding ListenersCanControlPlayback}" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <CheckBox Content="Vote-skip" IsChecked="{Binding VoteSkipEnabled}" VerticalAlignment="Center" />
+          <TextBlock Text="votes needed" Classes="secondary" VerticalAlignment="Center" />
+          <NumericUpDown Value="{Binding SkipVotesRequired}" Minimum="1" Maximum="20" Increment="1"
+                         Width="90" FormatString="0" />
+        </StackPanel>
+        <TextBlock Classes="data" Text="{Binding SkipProgressText}"
+                   IsVisible="{Binding SkipProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <TextBlock Classes="heading" Text="Listeners" Margin="0,6,0,0" />
+        <ItemsControl ItemsSource="{Binding Members}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SharedPlayMemberVm">
+              <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,3,0,3">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" />
+                  <TextBlock Classes="secondary" Text="{Binding RoleLabel}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Make Co-DJ" Command="{Binding PromoteCommand}"
+                        Classes="secondary" Margin="0,0,4,0" IsVisible="{Binding CanPromote}" />
+                <Button Grid.Column="2" Content="Demote" Command="{Binding DemoteCommand}"
+                        Classes="secondary" Margin="0,0,4,0" IsVisible="{Binding CanDemote}" />
+                <Button Grid.Column="3" Content="Kick" Command="{Binding KickCommand}"
+                        Classes="destructive" IsVisible="{Binding !IsHost}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="heading" Text="Activity" Margin="0,6,0,0"
+                   IsVisible="{Binding ActivityLog.Count}" />
+        <ItemsControl ItemsSource="{Binding ActivityLog}" MaxHeight="140">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Classes="secondary" FontSize="12" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
 
       <StackPanel IsVisible="{Binding RequestedTracks.Count, Converter={x:Static ObjectConverters.IsNotNull}}" Spacing="6">
         <Separator Margin="0,4" />
