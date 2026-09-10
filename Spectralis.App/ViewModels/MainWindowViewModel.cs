@@ -151,9 +151,29 @@ public sealed class MainWindowViewModel : ViewModelBase
         SharedPlay.ApplySettings(AppSettings);
         SharedPlay.PlayTrackRequested = PlayStreamerQueueTrackAsync;
         SharedPlay.QueueTrackRequested = QueueStreamerRequestTrackAsync;
+        SharedPlay.TransportCommandRequested = (action, position) =>
+        {
+            switch (action)
+            {
+                case "play" when !NowPlaying.IsPlaying:
+                case "pause" when NowPlaying.IsPlaying:
+                    NowPlaying.TogglePlayback();
+                    break;
+                case "seek" when position is { } p:
+                    NowPlaying.PositionSeconds = p;
+                    break;
+                case "next":
+                    _ = NowPlaying.PlayNextAsync();
+                    break;
+                case "prev":
+                    _ = NowPlaying.PlayPreviousAsync();
+                    break;
+            }
+        };
         NowPlaying.UpcomingQueueTrackReady += SharedPlay.PrepareUpcomingTrack;
         SharedPlay.TrackReadyForEngine += track =>
             _ = NowPlaying.LoadPreparedTrackAsync(track.SourcePath, track, startPlayback: false, ownsTemporaryFile: false);
+        SharedPlay.NowPlayingIsPlayingProbe = () => NowPlaying.IsPlaying;
         SharedPlay.SeekRequestedForEngine += seconds => NowPlaying.PositionSeconds = seconds;
         SharedPlay.PlayRequestedForEngine += () => { if (!NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
         SharedPlay.PauseRequestedForEngine += () => { if (NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
