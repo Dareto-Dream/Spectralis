@@ -34,6 +34,31 @@ public sealed class SharedPlaySessionController : IDisposable
     private string? lastPublishedChannelSignature;
     private readonly Dictionary<string, SharedPlayPreparedTrack> preparedTracks = new(StringComparer.OrdinalIgnoreCase);
 
+    // ── Collaborative room socket ────────────────────────────────────────────
+    private SharedPlayRoomSocket? roomSocket;
+    private string hostDisplayName = "Host";
+    private SharedPlayCapabilities capabilities = SharedPlayCapabilities.Default;
+    private IReadOnlyList<SharedPlayMember> members = Array.Empty<SharedPlayMember>();
+
+    /// <summary>Raised when a permitted listener command arrives for the host to
+    /// apply to the audio engine / queue.</summary>
+    public event Action<SharedPlayIncomingCommand>? CommandReceived;
+
+    /// <summary>Raised as vote-skip votes accumulate.</summary>
+    public event Action<SharedPlaySkipProgress>? SkipProgressReceived;
+
+    public SharedPlayCapabilities Capabilities
+    {
+        get { lock (statusLock) return capabilities; }
+    }
+
+    public IReadOnlyList<SharedPlayMember> Members
+    {
+        get { lock (statusLock) return members; }
+    }
+
+    public bool RoomSocketConnected => roomSocket?.IsConnected ?? false;
+
     public SharedPlaySessionController()
         : this(new SharedPlayCacheStore(), new SharedPlayCdnClient())
     {
@@ -108,6 +133,7 @@ public sealed class SharedPlaySessionController : IDisposable
         {
             oldCancellation.Cancel();
             oldCancellation.Dispose();
+            CloseRoomSocket();
         }
 
         OnStatusChanged();
@@ -261,6 +287,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
         oldCancellation.Cancel();
         oldCancellation.Dispose();
+        CloseRoomSocket();
         OnStatusChanged();
     }
 
@@ -330,14 +357,14 @@ public sealed class SharedPlaySessionController : IDisposable
                 var activeSession = Snapshot.TrackId is not null ? GetSession() : null;
                 if (activeSession is not null && ShouldPublish(playback))
                 {
-                    await cdnClient.PublishPlaybackStateAsync(activeSession, playback, cancellationToken);
+                    await SendPlaybackAsync(activeSession, playback, cancellationToken);
                     MarkPublished(playback);
                     SetError(null);
                 }
 
                 if (activeSession is not null && queue is not null && ShouldPublishQueue(queue))
                 {
-                    await cdnClient.PublishQueueStateAsync(activeSession, queue, cancellationToken);
+                    await SendQueueAsync(activeSession, queue, cancellationToken);
                     MarkQueuePublished(queue);
                     SetError(null);
                 }
@@ -360,6 +387,108 @@ public sealed class SharedPlaySessionController : IDisposable
             SetError(ex.Message);
         }
     }
+
+    // ── Publish: prefer the room socket, fall back to REST ───────────────────
+
+    private async Task SendPlaybackAsync(
+        SharedPlayRoomSession activeSession,
+        SharedPlayPlaybackSnapshot playback,
+        CancellationToken cancellationToken)
+    {
+        var socket = roomSocket;
+        if (socket is { IsConnected: true })
+        {
+            socket.PublishState(playback with { TrackId = activeSession.TrackId });
+            return;
+        }
+        await cdnClient.PublishPlaybackStateAsync(activeSession, playback, cancellationToken);
+    }
+
+    private async Task SendQueueAsync(
+        SharedPlayRoomSession activeSession,
+        SharedPlayQueueSnapshot queue,
+        CancellationToken cancellationToken)
+    {
+        var socket = roomSocket;
+        if (socket is { IsConnected: true })
+        {
+            socket.PublishQueue(queue);
+            return;
+        }
+        await cdnClient.PublishQueueStateAsync(activeSession, queue, cancellationToken);
+    }
+
+    // ── Collaborative room socket lifecycle ─────────────────────────────────
+
+    /// <summary>Sets the display name the host appears under in the room roster.</summary>
+    public void SetHostDisplayName(string? name)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(name) ? "Host" : name.Trim();
+        lock (statusLock) hostDisplayName = trimmed;
+    }
+
+    private void EnsureRoomSocket(SharedPlayRoomSession newSession)
+    {
+        if (roomSocket is not null) return;
+        if (string.IsNullOrEmpty(newSession.RoomCode)) return;
+
+        Uri socketUri;
+        try
+        {
+            socketUri = SharedPlayDefaults.BuildSocketUri(GetCdnBaseUri(), newSession.RoomCode);
+        }
+        catch (Exception ex)
+        {
+            Log($"Room socket URI build failed: {ex.Message}");
+            return;
+        }
+
+        string name;
+        lock (statusLock) name = hostDisplayName;
+
+        var socket = new SharedPlayRoomSocket(
+            socketUri,
+            role: "host",
+            clientId: SharedPlayClientIdentity.Get(),
+            name: name,
+            sessionKey: string.IsNullOrEmpty(newSession.SessionKey) ? null : newSession.SessionKey);
+
+        socket.CapsReceived += caps =>
+        {
+            lock (statusLock) capabilities = caps;
+            OnStatusChanged();
+        };
+        socket.RosterReceived += roster =>
+        {
+            lock (statusLock) members = roster;
+            OnStatusChanged();
+        };
+        socket.CommandReceived += cmd => CommandReceived?.Invoke(cmd);
+        socket.SkipProgressReceived += p => SkipProgressReceived?.Invoke(p);
+        socket.ConnectionChanged += _ => OnStatusChanged();
+
+        roomSocket = socket;
+        socket.Start();
+        Log($"Room socket opening for {newSession.DisplayCode} ({socketUri})");
+    }
+
+    private void CloseRoomSocket()
+    {
+        var socket = roomSocket;
+        roomSocket = null;
+        if (socket is null) return;
+        _ = socket.StopAsync();
+        socket.Dispose();
+        lock (statusLock)
+        {
+            capabilities = SharedPlayCapabilities.Default;
+            members = Array.Empty<SharedPlayMember>();
+        }
+    }
+
+    public void SetCapabilities(SharedPlayCapabilities caps) => roomSocket?.SetCaps(caps);
+    public void SetMemberRole(string clientId, SharedPlayRole role) => roomSocket?.SetMemberRole(clientId, role);
+    public void KickMember(string clientId) => roomSocket?.KickMember(clientId);
 
     private async Task StartSessionForTrackAsync(
         TrackInfo track,
@@ -387,6 +516,8 @@ public sealed class SharedPlaySessionController : IDisposable
                 lastPublishedChannelSignature = null;
                 lastTickPublishedUtc = DateTimeOffset.MinValue;
             }
+
+            EnsureRoomSocket(newSession);
         }
         finally
         {
@@ -721,6 +852,7 @@ public sealed class SharedPlaySessionController : IDisposable
             nextRetryUtc = DateTimeOffset.MinValue;
         }
 
+        CloseRoomSocket();
         OnStatusChanged();
     }
 
@@ -760,6 +892,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
     public void Dispose()
     {
+        CloseRoomSocket();
         cancellation.Cancel();
         cancellation.Dispose();
         operationGate.Dispose();

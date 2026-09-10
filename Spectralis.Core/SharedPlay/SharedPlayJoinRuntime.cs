@@ -30,6 +30,24 @@ public sealed class SharedPlayJoinRuntime : IDisposable
     private long _nextSyncTick;
     private string? _status;
 
+    // ── Realtime room socket (listener) ─────────────────────────────────────
+    private SharedPlayRoomSocket? _socket;
+    private SharedPlayCapabilities _caps = SharedPlayCapabilities.Default;
+    private SharedPlayRole _role = SharedPlayRole.Follower;
+    private SharedPlaySkipProgress? _skipProgress;
+
+    public SharedPlayRole CurrentRole => _role;
+    public SharedPlayCapabilities Caps => _caps;
+    public SharedPlaySkipProgress? SkipProgress => _skipProgress;
+    public bool SocketConnected => _socket?.IsConnected ?? false;
+
+    /// <summary>True when this joined listener may drive playback (co-DJ, or the
+    /// room lets everyone control transport).</summary>
+    public bool CanControl => _role == SharedPlayRole.CoDj || _role == SharedPlayRole.Host || _caps.Transport == "everyone";
+
+    public event EventHandler? RoleOrCapsChanged;
+    public event EventHandler<SharedPlaySkipProgress>? SkipProgressChanged;
+
     public SharedPlayJoinRuntime() : this(new SharedPlayCdnClient(), new SharedPlayJoinedPackageStore())
     {
     }
@@ -104,6 +122,7 @@ public sealed class SharedPlayJoinRuntime : IDisposable
 
             RaiseTrackReady(audioPath);
             await RefreshPlaybackAsync(forceSync: true, enginePositionSeconds: 0, engineIsPlaying: false);
+            OpenRoomSocket(cdnBaseUri, request.RoomCode);
         }
         catch (OperationCanceledException)
         {
@@ -127,7 +146,9 @@ public sealed class SharedPlayJoinRuntime : IDisposable
         if (_session is null || _cts is null) return;
 
         var now = Environment.TickCount64;
-        if (now >= _nextPollTick && !_isPolling)
+        // The realtime socket feeds `_playback`; only fall back to HTTP polling
+        // when it isn't connected.
+        if (!SocketConnected && now >= _nextPollTick && !_isPolling)
         {
             _nextPollTick = now + PollIntervalMs;
             _ = RefreshPlaybackAsync(forceSync: false, enginePositionSeconds, engineIsPlaying);
@@ -140,10 +161,95 @@ public sealed class SharedPlayJoinRuntime : IDisposable
         }
     }
 
+    // ── Co-DJ senders (no-op unless the room grants control) ────────────────
+    public void SendTransport(string action, double? position = null)
+    {
+        if (CanControl) _socket?.SendTransport(action, position);
+    }
+
+    public void RequestQueueAdd(string url, string? title = null)
+    {
+        _socket?.RequestQueueAdd(url, title);
+    }
+
+    public void VoteSkip() => _socket?.VoteSkip();
+
+    private void OpenRoomSocket(Uri cdnBaseUri, string roomCode)
+    {
+        CloseRoomSocket();
+        Uri socketUri;
+        try { socketUri = SharedPlayDefaults.BuildSocketUri(cdnBaseUri, roomCode); }
+        catch { return; }
+
+        var socket = new SharedPlayRoomSocket(
+            socketUri, role: "listener",
+            clientId: SharedPlayClientIdentity.Get(),
+            name: "Listener");
+
+        socket.StateReceived += el =>
+        {
+            var pb = ParsePlayback(el);
+            if (pb is null) return;
+            _playback = pb;
+            if (!string.IsNullOrWhiteSpace(pb.TrackId) && _session is { } s &&
+                !string.Equals(pb.TrackId, s.TrackId, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = TryRefreshTrackAsync(s, pb, _cts?.Token ?? CancellationToken.None);
+            }
+            _status = null;
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+        };
+        socket.Welcomed += (_, caps, _) => { _caps = caps; RoleOrCapsChanged?.Invoke(this, EventArgs.Empty); };
+        socket.CapsReceived += caps => { _caps = caps; RoleOrCapsChanged?.Invoke(this, EventArgs.Empty); };
+        socket.RosterReceived += roster =>
+        {
+            var me = roster.FirstOrDefault(m => m.ClientId == socket.ClientId);
+            if (me is not null && me.Role != _role) { _role = me.Role; RoleOrCapsChanged?.Invoke(this, EventArgs.Empty); }
+        };
+        socket.SkipProgressReceived += p => { _skipProgress = p; SkipProgressChanged?.Invoke(this, p); };
+        socket.Kicked += () => { _status = "The host removed you from this room."; Leave(clearStatus: false); StatusChanged?.Invoke(this, EventArgs.Empty); };
+        socket.ConnectionChanged += _ => StatusChanged?.Invoke(this, EventArgs.Empty);
+
+        _socket = socket;
+        socket.Start();
+    }
+
+    private void CloseRoomSocket()
+    {
+        var socket = _socket;
+        _socket = null;
+        if (socket is null) return;
+        _ = socket.StopAsync();
+        socket.Dispose();
+        _caps = SharedPlayCapabilities.Default;
+        _role = SharedPlayRole.Follower;
+        _skipProgress = null;
+    }
+
+    private static SharedPlayPlaybackSnapshot? ParsePlayback(System.Text.Json.JsonElement el)
+    {
+        // The host publishes {playback:X} → server stores {state:X, playback:X};
+        // a `state` event carries that stored object.
+        if (el.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+        var inner = el;
+        if (el.TryGetProperty("playback", out var pbEl) && pbEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+            inner = pbEl;
+        double D(string name) => inner.TryGetProperty(name, out var v) && v.TryGetDouble(out var d) ? d : 0;
+        bool B(string name) => inner.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
+        string S(string name) => inner.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() ?? "" : "";
+        var host = S("hostClockUtc");
+        var clock = DateTimeOffset.TryParse(host, out var parsed) ? parsed : DateTimeOffset.UtcNow;
+        var trackId = S("trackId");
+        if (trackId.Length == 0) trackId = S("activeTrackId");
+        return new SharedPlayPlaybackSnapshot(B("isPlaying"), D("positionSeconds"), D("durationSeconds"),
+            S("reason"), clock, string.IsNullOrEmpty(trackId) ? null : trackId);
+    }
+
     public void Leave() => Leave(clearStatus: true);
 
     private void Leave(bool clearStatus)
     {
+        CloseRoomSocket();
         _cts?.Cancel();
         _cts?.Dispose();
         _cts = null;
