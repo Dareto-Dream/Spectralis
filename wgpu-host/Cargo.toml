@@ -1,0 +1,27 @@
+[package]
+name = "wgpu-host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Offscreen wgpu renderer for Album Worlds (Phase 2), exposed over a C ABI so
+# Spectralis.App can P/Invoke it. Renders one test scene into an RGBA8 texture,
+# reads it back to CPU memory, and hands the raw pixels to the .NET host for
+# compositing into the Avalonia surface (same shape as the existing offscreen
+# WebView2 -> RenderTargetBitmap capture path in VideoExportEngine.WebView.cs).
+[lib]
+name = "wgpu_host"
+# cdylib for .NET P/Invoke; rlib so `cargo test` can exercise the same
+# extern "C" functions directly without loading a dynamic library.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wgpu = "30"
+pollster = "1"
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.33"
+
+[dev-dependencies]
+# Only for the `dump_frame` example (a manual visual-verification aid) —
+# never linked into the cdylib .NET actually P/Invokes.
+image = { version = "0.25", default-features = false, features = ["png"] }
