@@ -1,7 +1,9 @@
+using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Spectralis.App.Worlds;
 using Spectralis.Core.Worlds;
@@ -18,6 +20,15 @@ namespace Spectralis.App.Views;
 /// (compiled from inline WAT — no wasm32 toolchain needed for this proof) whose on_load fires
 /// play_track/unlock_achievement/register_dsp_preset host imports, and whose
 /// request_exit_to_html export exercises the Wasm-&gt;HTML symmetric hand-off hook.
+///
+/// Rendering runs on a dedicated background thread, not a DispatcherTimer. wgpu_host_render
+/// does a synchronous GPU submit + blocking device.poll + buffer-map round trip every call —
+/// cheap in absolute terms, but running it on Avalonia's single UI thread meant every render
+/// call blocked pointer-input processing behind it, so a drag felt like it landed a full frame
+/// (or several queued frames) late. The render loop now only touches the UI thread to hand off
+/// a finished bitmap via Dispatcher.UIThread.Post; camera state is read with plain volatile
+/// fields (torn reads of a single float aren't possible on .NET, and a one-frame-stale angle is
+/// harmless here).
 /// </summary>
 public partial class WasmWorldTestWindow : Window
 {
@@ -42,11 +53,19 @@ public partial class WasmWorldTestWindow : Window
 
     private WgpuWorldRenderer? _renderer;
     private WasmWorldHost? _wasmHost;
-    private DispatcherTimer? _renderTimer;
+
+    // Guards every call into _wasmHost — the render thread's per-frame Tick() and the UI
+    // thread's button-triggered TriggerExport() must never run concurrently against the same
+    // wasmtime Store, which (like most wasm runtimes) isn't safe to call into from two threads
+    // at once without external synchronization.
+    private readonly object _wasmSync = new();
+
+    private Thread? _renderThread;
+    private volatile bool _running;
     private DateTime _startedUtc;
 
-    private float _camYaw;
-    private float _camPitch = 0.3f;
+    private volatile float _camYaw;
+    private volatile float _camPitch = 0.3f;
     private const float CamDist = 3.2f;
 
     private bool _dragging;
@@ -70,9 +89,9 @@ public partial class WasmWorldTestWindow : Window
         }
         else
         {
-            _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-            _renderTimer.Tick += (_, _) => OnRenderTick();
-            _renderTimer.Start();
+            _running = true;
+            _renderThread = new Thread(RenderLoop) { IsBackground = true, Name = "WasmWorldTestRig-Render" };
+            _renderThread.Start();
         }
 
         _wasmHost = new WasmWorldHost("wasm-world-test-rig");
@@ -87,34 +106,79 @@ public partial class WasmWorldTestWindow : Window
         };
 
         var wasmBytes = Module.ConvertText(TestWorldWat);
-        Log(_wasmHost.Load(wasmBytes) ? "test world loaded" : "test world FAILED to load");
+        bool loaded;
+        lock (_wasmSync)
+        {
+            loaded = _wasmHost.Load(wasmBytes);
+        }
+        Log(loaded ? "test world loaded" : "test world FAILED to load");
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
-        _renderTimer?.Stop();
-        _renderTimer = null;
+        _running = false;
+        _renderThread?.Join(TimeSpan.FromSeconds(2));
+        _renderThread = null;
+
         _wasmHost?.Dispose();
         _wasmHost = null;
         _renderer?.Dispose();
         _renderer = null;
     }
 
-    private void OnRenderTick()
+    /// <summary>Runs entirely off the UI thread — only the final Image.Source assignment hops back on.</summary>
+    private void RenderLoop()
     {
-        if (_renderer is null)
+        while (_running)
+        {
+            var renderer = _renderer;
+            if (renderer is null)
+            {
+                return;
+            }
+
+            var t = (DateTime.UtcNow - _startedUtc).TotalSeconds;
+            var pixels = renderer.RenderFrameBgraPixels(t, _camYaw, _camPitch, CamDist);
+            if (pixels is not null)
+            {
+                // Snapshot before handing off — the next loop iteration overwrites the
+                // renderer's shared scratch buffer as soon as we call RenderFrameBgraPixels again.
+                var snapshot = (byte[])pixels.Clone();
+                Dispatcher.UIThread.Post(() => ApplyFrame(snapshot, renderer.Width, renderer.Height));
+            }
+
+            lock (_wasmSync)
+            {
+                _wasmHost?.Tick(t, playing: true);
+            }
+        }
+    }
+
+    private WriteableBitmap? _displayBitmap;
+
+    private void ApplyFrame(byte[] bgraPixels, int width, int height)
+    {
+        if (!_running)
         {
             return;
         }
 
-        var t = (DateTime.UtcNow - _startedUtc).TotalSeconds;
-        var bitmap = _renderer.RenderFrame(t, _camYaw, _camPitch, CamDist);
-        if (bitmap is not null)
+        if (_displayBitmap is null || _displayBitmap.PixelSize.Width != width || _displayBitmap.PixelSize.Height != height)
         {
-            Surface.Source = bitmap;
+            _displayBitmap?.Dispose();
+            _displayBitmap = new WriteableBitmap(
+                new PixelSize(width, height),
+                new Vector(96, 96),
+                Avalonia.Platform.PixelFormat.Bgra8888,
+                Avalonia.Platform.AlphaFormat.Premul);
         }
 
-        _wasmHost?.Tick(t, playing: true);
+        using (var buffer = _displayBitmap.Lock())
+        {
+            System.Runtime.InteropServices.Marshal.Copy(bgraPixels, 0, buffer.Address, bgraPixels.Length);
+        }
+
+        Surface.Source = _displayBitmap;
     }
 
     private void OnSurfacePointerPressed(object? sender, PointerPressedEventArgs e)
@@ -139,8 +203,13 @@ public partial class WasmWorldTestWindow : Window
 
     private void OnSurfacePointerReleased(object? sender, PointerReleasedEventArgs e) => _dragging = false;
 
-    private void OnRequestSwitchToHtml(object? sender, RoutedEventArgs e) =>
-        _wasmHost?.TriggerExport("request_exit_to_html");
+    private void OnRequestSwitchToHtml(object? sender, RoutedEventArgs e)
+    {
+        lock (_wasmSync)
+        {
+            _wasmHost?.TriggerExport("request_exit_to_html");
+        }
+    }
 
     private void Log(string message) =>
         Dispatcher.UIThread.Post(() => EventLog.Text = $"{DateTime.Now:HH:mm:ss.fff}  {message}\n{EventLog.Text}");
