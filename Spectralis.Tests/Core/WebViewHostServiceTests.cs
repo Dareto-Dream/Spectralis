@@ -249,6 +249,7 @@ public sealed class WebViewHostServiceTests : IDisposable
 
         Assert.Equal(0, fired);
     }
+
 }
 
 public class ContentSecurityPolicyTests

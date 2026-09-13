@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Spectralis.Core.Capsule;
 using Spectralis.Core.Platform;
 using Spectralis.Core.Visualizers;
 
@@ -53,9 +54,6 @@ public sealed class WorldDspPresetRequest
 public sealed class WebViewHostService : IDisposable
 {
     private const int MaxMessageBytes = 64 * 1024;
-    private const int MaxStoreEntries = 1000;
-    private const int MaxStoreKeyBytes = 256;
-    private const int MaxStoreValueBytes = 65536;
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -65,11 +63,10 @@ public sealed class WebViewHostService : IDisposable
     private const int MaxPresenceTextLength = 128;
 
     private readonly IWebViewHost _host;
-    private readonly string? _storeFilePath;
+    private readonly CapsuleScopedStore? _scopedStore;
     private readonly bool _isAlbumWorld;
     private readonly bool _allowPresence;
     private readonly bool _allowDspPreset;
-    private Dictionary<string, JsonNode?>? _store;
 
     /// <param name="storeKey">
     /// Capsule identifier used for per-capsule persistent storage.
@@ -104,11 +101,7 @@ public sealed class WebViewHostService : IDisposable
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
-            var safe = SanitizeFileName(storeKey);
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Spectralis", "capsule-store");
-            _storeFilePath = Path.Combine(dir, safe + ".json");
+            _scopedStore = new CapsuleScopedStore(storeKey);
         }
     }
 
@@ -558,16 +551,15 @@ public sealed class WebViewHostService : IDisposable
 
     private void HandleStoreGet(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
         if (!root.TryGetProperty("requestId", out var idProp) || idProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
         var requestId = idProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes || requestId.Length > 128) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes || requestId.Length > 128) return;
 
-        EnsureStoreLoaded();
-        var value = _store!.TryGetValue(key, out var node) ? node : null;
+        var value = _scopedStore.Get(key);
         var valueJson = value is null ? "null" : value.ToJsonString();
         var safeId = JsonSerializer.Serialize(requestId);
 
@@ -576,86 +568,38 @@ public sealed class WebViewHostService : IDisposable
 
     private void HandleStoreSet(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes) return;
-
-        EnsureStoreLoaded();
-        if (_store!.Count >= MaxStoreEntries && !_store.ContainsKey(key)) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes) return;
 
         if (root.TryGetProperty("value", out var valueProp))
         {
             var valueJson = valueProp.GetRawText();
-            if (valueJson.Length > MaxStoreValueBytes) return;
-            _store[key] = JsonNode.Parse(valueJson);
+            if (valueJson.Length > CapsuleScopedStore.MaxValueBytes) return;
+            _scopedStore.Set(key, JsonNode.Parse(valueJson));
         }
         else
         {
-            _store[key] = null;
+            _scopedStore.Set(key, null);
         }
-
-        SaveStore();
     }
 
     private void HandleStoreRemove(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes) return;
 
-        EnsureStoreLoaded();
-        if (_store!.Remove(key))
-            SaveStore();
+        _scopedStore.Remove(key);
     }
 
     private void HandleStoreClear()
     {
-        if (_storeFilePath is null) return;
-        EnsureStoreLoaded();
-        _store!.Clear();
-        SaveStore();
-    }
-
-    private void EnsureStoreLoaded()
-    {
-        if (_store is not null) return;
-        _store = [];
-
-        if (_storeFilePath is null || !File.Exists(_storeFilePath)) return;
-
-        try
-        {
-            var json = File.ReadAllText(_storeFilePath);
-            var obj = JsonNode.Parse(json) as JsonObject;
-            if (obj is null) return;
-            foreach (var kv in obj)
-                _store[kv.Key] = kv.Value;
-        }
-        catch
-        {
-            _store = [];
-        }
-    }
-
-    private void SaveStore()
-    {
-        if (_storeFilePath is null || _store is null) return;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_storeFilePath)!);
-            var obj = new JsonObject();
-            foreach (var kv in _store)
-                obj[kv.Key] = kv.Value is null ? null : JsonNode.Parse(kv.Value.ToJsonString());
-            File.WriteAllText(_storeFilePath, obj.ToJsonString());
-        }
-        catch
-        {
-            // Store write failure is non-fatal.
-        }
+        _scopedStore?.Clear();
     }
 
     // ===== helpers =====
@@ -685,13 +629,6 @@ public sealed class WebViewHostService : IDisposable
     {
         var text = (value ?? string.Empty).Trim();
         return text.Length > MaxPresenceTextLength ? text[..MaxPresenceTextLength] : text;
-    }
-
-    private static string SanitizeFileName(string key)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var safe = new string(key.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return safe.Length > 64 ? safe[..64] : safe;
     }
 
     public void Dispose() => _host.MessageReceived -= OnMessageReceived;
