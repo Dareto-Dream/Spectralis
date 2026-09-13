@@ -15,6 +15,8 @@ public partial class EffectsChainControl : UserControl
 
     private EqEditorViewModel? EqEditor => ViewModel?.SelectedEffect?.EqEditor;
 
+    private PanEditorViewModel? PanEditor => ViewModel?.SelectedEffect?.PanEditor;
+
     private void OnAddEffect(object? sender, RoutedEventArgs e) => ViewModel?.AddSelectedEffect();
 
     private void OnEqReset(object? sender, RoutedEventArgs e) => EqEditor?.ResetToFlat();
@@ -28,6 +30,20 @@ public partial class EffectsChainControl : UserControl
     }
 
     private void OnEqDeletePreset(object? sender, RoutedEventArgs e) => EqEditor?.DeleteSelectedPreset();
+
+    private void OnPanReset(object? sender, RoutedEventArgs e) => PanEditor?.ResetToDefault();
+
+    private void OnLoadChainPreset(object? sender, RoutedEventArgs e) => ViewModel?.LoadSelectedChainPreset();
+
+    private void OnSaveChainPreset(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+        {
+            vm.SaveCurrentChainAsPreset(vm.NewChainPresetName);
+        }
+    }
+
+    private void OnDeleteChainPreset(object? sender, RoutedEventArgs e) => ViewModel?.DeleteSelectedChainPreset();
 
     private void OnMoveUp(object? sender, RoutedEventArgs e) => ViewModel?.MoveSelectedEffectUp();
 
