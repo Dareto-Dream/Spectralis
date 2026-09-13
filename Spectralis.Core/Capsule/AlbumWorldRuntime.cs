@@ -341,6 +341,23 @@ public sealed class AlbumWorldRuntime : IDisposable
             Path.GetDirectoryName(htmlPath) ?? _albumDir);
     }
 
+    /// <summary>True when this album declares a sandboxed Wasm/wgpu world alongside (or instead
+    /// of) the HTML one — see <see cref="AlbumWorldSection.WasmEntry"/>.</summary>
+    public bool HasWasmWorld => !string.IsNullOrWhiteSpace(_manifest?.World?.WasmEntry);
+
+    /// <summary>
+    /// Reads the Wasm module's raw bytes for <see cref="WasmWorldHost.Load"/>, or null if this
+    /// album declares no Wasm world (<see cref="HasWasmWorld"/> false) or the file is missing.
+    /// </summary>
+    public byte[]? ReadWasmWorldBytes()
+    {
+        if (_manifest?.World?.WasmEntry is not { Length: > 0 } entry || _albumDir is null)
+            return null;
+
+        var path = SafePath(_albumDir, entry);
+        return path is not null && File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
+
     /// <summary>Builds the story EmbeddedHtmlContext from the album manifest, if applicable.</summary>
     public EmbeddedHtmlContext? BuildStoryHtmlContext()
     {
