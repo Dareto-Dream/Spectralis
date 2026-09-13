@@ -63,7 +63,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         _isSidebarCollapsed = AppSettings.SidebarCollapsed;
         Engine = new AudioEngine();
         EffectChain = new EffectChain();
-        EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
+        if (string.IsNullOrWhiteSpace(AppSettings.EffectChainJson))
+        {
+            // First run / never saved: seed the "Default" built-in chain (a blank
+            // flat EQ) instead of leaving the rack truly empty.
+            EffectChain.ReplaceAll(EffectChainPresets.Build(EffectChainPresets.DefaultName));
+        }
+        else
+        {
+            EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
+        }
+
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
 
