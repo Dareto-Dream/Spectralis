@@ -121,6 +121,8 @@ intersects the capsule's requested capabilities with this list. Any requested ca
 | `sharedPlay.packageUpload` | Capsule assets may be uploaded for Shared Play |
 | `timeline.appControl` | Capsule's reactive timeline may issue app control events |
 | `presence.richPresence` | Capsule's embedded HTML may override Discord rich presence text while playing |
+| `worlds.wasm3d` | Capsule may include a sandboxed Wasm/wgpu 3D album world |
+| `audio.dspPreset` | Capsule's embedded HTML/Wasm content may register a whole-rack DSP preset while active |
 
 ### Caching Policy
 
