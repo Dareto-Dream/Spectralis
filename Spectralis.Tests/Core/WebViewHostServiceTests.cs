@@ -203,6 +203,52 @@ public sealed class WebViewHostServiceTests : IDisposable
 
         Assert.Equal(0, fired);
     }
+
+    [Fact]
+    public void DspPreset_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.DspPresetRegisterRequested += (_, _) => fired++;
+        _service.DspPresetReleaseRequested += (_, _) => fired++;
+
+        _service.DispatchMessage("""{"type":"spectral.registerDspPreset","preset":{"Enabled":true,"Effects":[]}}""");
+        _service.DispatchMessage("""{"type":"spectral.releaseDspPreset"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void DspPreset_RegisterAndReleaseDispatchWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowDspPreset: true);
+
+        WorldDspPresetRequest? request = null;
+        var released = 0;
+        service.DspPresetRegisterRequested += (_, e) => request = e;
+        service.DspPresetReleaseRequested += (_, _) => released++;
+
+        host.SimulateMessage("""{"type":"spectral.registerDspPreset","preset":{"Enabled":true,"Effects":[{"Name":"Compressor","Enabled":true,"Params":{"threshold":-12}}]}}""");
+        host.SimulateMessage("""{"type":"spectral.releaseDspPreset"}""");
+
+        Assert.NotNull(request);
+        Assert.Contains("\"Compressor\"", request!.PresetChainJson);
+        Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public void DspPreset_NonObjectPresetDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowDspPreset: true);
+
+        var fired = 0;
+        service.DspPresetRegisterRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.registerDspPreset","preset":"not-an-object"}""");
+
+        Assert.Equal(0, fired);
+    }
 }
 
 public class ContentSecurityPolicyTests
