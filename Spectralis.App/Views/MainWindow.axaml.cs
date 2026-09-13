@@ -913,6 +913,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private WasmWorldTestWindow? _wasmWorldTestWindow;
+
+    private void OnMenuWasmWorldTestRig(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_wasmWorldTestWindow is { IsVisible: true })
+        {
+            _wasmWorldTestWindow.Activate();
+            return;
+        }
+
+        _wasmWorldTestWindow = new WasmWorldTestWindow();
+        _wasmWorldTestWindow.Closed += (_, _) => _wasmWorldTestWindow = null;
+        _wasmWorldTestWindow.Show(this);
+    }
+
     private ScriptedVisualizerManagerWindow? _scriptedVizWindow;
 
     private void OnMenuScriptedVisualizers(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
