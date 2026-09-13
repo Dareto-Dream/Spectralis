@@ -203,6 +203,36 @@ public sealed class WasmWorldHostTests : IDisposable
     }
 
     [Fact]
+    public void TriggerExport_CallsTheNamedExport()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "switch_to_html" (func $switch (param i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "bonus.html")
+              (func (export "go_to_bonus")
+                (call $switch (i32.const 0) (i32.const 10))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        string? entry = null;
+        _host.SwitchToHtmlRequested += (_, e) => entry = e;
+
+        _host.TriggerExport("go_to_bonus");
+
+        Assert.Equal("bonus.html", entry);
+    }
+
+    [Fact]
+    public void TriggerExport_UnknownExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.TriggerExport("does_not_exist"); // must not throw
+    }
+
+    [Fact]
     public void Unload_CallsOnUnloadThenDetaches()
     {
         var wasm = Wat("""
