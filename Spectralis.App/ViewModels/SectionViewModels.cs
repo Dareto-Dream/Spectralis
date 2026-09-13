@@ -802,7 +802,7 @@ public sealed class CapsulesViewModel : ViewModelBase
         _ => Task.FromResult(false);
 
     /// <summary>Wired by MainWindowViewModel to attach/navigate/detach the album world in NowPlaying.</summary>
-    public Action<EmbeddedHtmlContext, string, string>? AlbumWorldAttach { get; set; }
+    public Action<EmbeddedHtmlContext, string, string, byte[]?>? AlbumWorldAttach { get; set; }
     public Action? AlbumWorldNavigate { get; set; }
     public Action? AlbumWorldDetach { get; set; }
     public Action? AlbumWorldTrackPlaybackStarting { get; set; }
@@ -1120,7 +1120,8 @@ public sealed class CapsulesViewModel : ViewModelBase
             {
                 // Show the interactive world map â€” the user picks tracks from it.
                 var readyJson = runtime.BuildWorldStateJson();
-                AlbumWorldAttach?.Invoke(worldHtml, readyJson, worldDir);
+                var wasmBytes = runtime.HasWasmWorld ? runtime.ReadWasmWorldBytes() : null;
+                AlbumWorldAttach?.Invoke(worldHtml, readyJson, worldDir, wasmBytes);
                 AlbumWorldNavigate?.Invoke();
                 Status = $"Album world ready Â· {manifest.Tracks.Count} track(s). Select a track from the world map.";
                 return;
