@@ -315,6 +315,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private EmbeddedHtmlContext? _pinnedAlbumWorldHtml;
     private string? _albumWorldDir;
     private bool _albumWorldShowingWorld;
+    // Phase 2 dual-runtime rework: the world's sandboxed Wasm/wgpu payload (if it declared one
+    // via AlbumWorldSection.WasmEntry), kept alongside the HTML payload above for the lifetime
+    // of the album world so a runtime switch can hand off in either direction without reloading
+    // anything from disk. _embeddedSurfaceUsingWasm is the *current* runtime choice; it only
+    // means anything while _embeddedWasmWorld is non-null.
+    private byte[]? _embeddedWasmWorld;
+    private bool _embeddedSurfaceUsingWasm;
     private string _albumWorldCurrentTrackId = string.Empty;
     private EmbeddedVisualizerContext? _embeddedVisualizer;
     private EmbeddedMarkdownContext? _embeddedMarkdown;
@@ -2689,6 +2696,48 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
     public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
+
+    /// <summary>The active world's sandboxed Wasm/wgpu payload, if it declared one — see
+    /// <see cref="Spectralis.Core.Capsule.AlbumWorldSection.WasmEntry"/>. Null means this world
+    /// is HTML-only (the common case today); the View never even considers Wasm rendering then.</summary>
+    public byte[]? EmbeddedWasmWorld => _embeddedWasmWorld;
+
+    /// <summary>
+    /// True when the embedded surface should currently render via the Wasm/wgpu runtime rather
+    /// than the HTML one — only meaningful while <see cref="EmbeddedWasmWorld"/> is non-null.
+    /// Defaults to Wasm on attach when a world declares one (the flagship "explorable 3D"
+    /// experience); toggled at runtime by <see cref="RequestSwitchToWasm"/>/
+    /// <see cref="RequestSwitchToHtml"/>, which a world triggers via the symmetric
+    /// spectral.worlds.switchToWasm() / switch_to_html hooks.
+    /// </summary>
+    public bool IsEmbeddedSurfaceUsingWasm => _embeddedWasmWorld is not null && _embeddedSurfaceUsingWasm;
+
+    /// <summary>HTML content asked to hand off into the Wasm/wgpu runtime. No-op if this world
+    /// declared no Wasm payload.</summary>
+    public void RequestSwitchToWasm()
+    {
+        if (_embeddedWasmWorld is null || _embeddedSurfaceUsingWasm)
+        {
+            return;
+        }
+
+        _embeddedSurfaceUsingWasm = true;
+        this.RaisePropertyChanged(nameof(IsEmbeddedSurfaceUsingWasm));
+    }
+
+    /// <summary>The Wasm world asked to hand off into the HTML runtime (or exited/failed to
+    /// load) — falls back to whatever HTML payload this world/track already carries.</summary>
+    public void RequestSwitchToHtml()
+    {
+        if (!_embeddedSurfaceUsingWasm)
+        {
+            return;
+        }
+
+        _embeddedSurfaceUsingWasm = false;
+        this.RaisePropertyChanged(nameof(IsEmbeddedSurfaceUsingWasm));
+    }
+
     internal string? AlbumWorldReadyJson { get; set; }
     internal string AlbumWorldCurrentTrackId => _albumWorldCurrentTrackId;
     internal string? AlbumWorldDir => _albumWorldDir;
@@ -2711,15 +2760,19 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
     public event Action<string, double>? AlbumWorldTrackCompleted;
 
-    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir)
+    public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir, byte[]? wasmBytes = null)
     {
         _pinnedAlbumWorldHtml = worldHtml;
         _albumWorldDir = worldDir;
         _albumWorldShowingWorld = true;
         AlbumWorldReadyJson = readyJson;
         EmbeddedHtml = worldHtml;
+        _embeddedWasmWorld = wasmBytes;
+        _embeddedSurfaceUsingWasm = wasmBytes is not null;
         if (_settings.EnableEmbeddedContent)
             UseEmbeddedHtmlSurface();
+        this.RaisePropertyChanged(nameof(EmbeddedWasmWorld));
+        this.RaisePropertyChanged(nameof(IsEmbeddedSurfaceUsingWasm));
         RaiseSurfaceModeChanged();
     }
 
@@ -2728,6 +2781,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _pinnedAlbumWorldHtml = null;
         _albumWorldDir = null;
         _albumWorldShowingWorld = false;
+        _embeddedWasmWorld = null;
+        _embeddedSurfaceUsingWasm = false;
         AlbumWorldReadyJson = null;
         _albumWorldCurrentTrackId = string.Empty;
         if (_pickedInstalledHtml is not null && _settings.EnableEmbeddedContent)
@@ -2740,6 +2795,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             ShowEmbeddedHtml = false;
             EmbeddedHtml = null;
         }
+        this.RaisePropertyChanged(nameof(EmbeddedWasmWorld));
+        this.RaisePropertyChanged(nameof(IsEmbeddedSurfaceUsingWasm));
         RaiseSurfaceModeChanged();
     }
 
