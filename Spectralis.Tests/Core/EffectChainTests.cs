@@ -113,6 +113,6 @@ public sealed class EffectChainTests
     [Fact]
     public void CreateEffect_UnknownName_Throws()
     {
-        Assert.Throws<ArgumentException>(() => EffectChain.CreateEffect("Flanger"));
+        Assert.Throws<ArgumentException>(() => EffectChain.CreateEffect("Bitcrusher"));
     }
 }
