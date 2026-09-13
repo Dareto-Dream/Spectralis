@@ -76,6 +76,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
+        WorldDspPreset = new WorldDspPresetController(EffectChain);
 
         var databasePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -249,6 +250,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
         NowPlaying.CapsulePresenceRequested = req => DiscordPresence.SetCapsulePresenceOverride(req);
         NowPlaying.SessionReset += (_, _) => DiscordPresence.SetCapsulePresenceOverride(null);
+        NowPlaying.CapsuleDspPresetRequested = req =>
+        {
+            if (req is null)
+            {
+                WorldDspPreset.RevertToUser();
+            }
+            else
+            {
+                WorldDspPreset.ApplyWorldPreset(req.PresetChainJson);
+            }
+        };
+        NowPlaying.SessionReset += (_, _) => WorldDspPreset.RevertToUser();
         ObsEditor = new ObsEditorViewModel(
             AppSettings,
             enabled =>
@@ -399,6 +412,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public StreamerSettingsViewModel StreamerSettings { get; }
 
     public DiscordPresenceCoordinator DiscordPresence { get; }
+
+    public WorldDspPresetController WorldDspPreset { get; }
 
     public AudioEngine Engine { get; }
 
