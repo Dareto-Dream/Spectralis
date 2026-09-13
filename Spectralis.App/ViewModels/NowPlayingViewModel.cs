@@ -2701,6 +2701,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// capability. Non-null payload = set override, null = revert to normal track presence.
     /// </summary>
     public Action<Spectralis.Core.Integrations.Web.CapsulePresenceRequest?>? CapsulePresenceRequested { get; set; }
+
+    /// <summary>
+    /// Raised by an embedded capsule surface that declared the <c>audio.dspPreset</c>
+    /// capability. Non-null payload = register/replace the world's DSP preset, null =
+    /// release it and revert to the user's own chain.
+    /// </summary>
+    public Action<Spectralis.Core.Integrations.Web.WorldDspPresetRequest?>? CapsuleDspPresetRequested { get; set; }
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
     public event Action<string, double>? AlbumWorldTrackCompleted;
 
@@ -3639,7 +3646,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void PersistEffectChain()
     {
-        if (!_persistSettings)
+        // A capsule/world-registered preset (WorldDspPresetController) owns the rack right
+        // now — never let it overwrite the user's own saved chain.
+        if (!_persistSettings || _effectChain.IsWorldManaged)
         {
             return;
         }

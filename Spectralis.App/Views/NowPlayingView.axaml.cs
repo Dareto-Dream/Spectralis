@@ -908,11 +908,14 @@ public NowPlayingView()
         var isAlbumWorld = _viewModel?.IsAlbumWorldShowingWorld ?? false;
         var allowPresence = context.Capabilities.Contains(
             Spectralis.Core.Capsule.CapsuleCapability.PresenceRichPresence);
+        var allowDspPreset = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.AudioDspPreset);
         _embeddedService = new WebViewHostService(
             _embeddedHost,
             storeKey: isAlbumWorld ? null : context.Id,
             isAlbumWorld: isAlbumWorld,
-            allowPresence: allowPresence);
+            allowPresence: allowPresence,
+            allowDspPreset: allowDspPreset);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
@@ -921,6 +924,8 @@ public NowPlayingView()
         _embeddedService.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
         _embeddedService.PresenceUpdateRequested += OnEmbeddedPresenceUpdate;
         _embeddedService.PresenceClearRequested += OnEmbeddedPresenceClear;
+        _embeddedService.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
+        _embeddedService.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
         EmbeddedHtmlHost.Content = _embeddedControl;
 
         try
@@ -1011,6 +1016,16 @@ public NowPlayingView()
     private void OnEmbeddedPresenceClear(object? sender, EventArgs e)
     {
         _viewModel?.CapsulePresenceRequested?.Invoke(null);
+    }
+
+    private void OnEmbeddedDspPresetRegister(object? sender, Spectralis.Core.Integrations.Web.WorldDspPresetRequest req)
+    {
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(req);
+    }
+
+    private void OnEmbeddedDspPresetRelease(object? sender, EventArgs e)
+    {
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(null);
     }
 
     private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
@@ -1213,12 +1228,15 @@ public NowPlayingView()
             _embeddedService.SaveBookmarkRequested -= OnEmbeddedSaveBookmark;
             _embeddedService.PresenceUpdateRequested -= OnEmbeddedPresenceUpdate;
             _embeddedService.PresenceClearRequested -= OnEmbeddedPresenceClear;
+            _embeddedService.DspPresetRegisterRequested -= OnEmbeddedDspPresetRegister;
+            _embeddedService.DspPresetReleaseRequested -= OnEmbeddedDspPresetRelease;
             _embeddedService.Dispose();
             _embeddedService = null;
         }
 
-        // A capsule's presence override never outlives its surface.
+        // A capsule's presence override / DSP preset never outlives its surface.
         _viewModel?.CapsulePresenceRequested?.Invoke(null);
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(null);
 
         if (_embeddedHost is not null)
         {
