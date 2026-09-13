@@ -1,0 +1,11 @@
+# The Railway build only needs backend/ (per railway.toml dockerfilePath) and
+# web-share/. Ignore the entire tree, then re-include just those.
+/*
+!/backend/
+!/web-share/
+!/railway.toml
+!/.railwayignore
+
+# ...but not the multi-gigabyte Rust build output.
+/backend/target/
+/backend/data/
