@@ -25,4 +25,26 @@
     <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Same wgpu-host native library the app build produces (see Spectralis.App.csproj's
+       BuildWgpuHost target) — needed here so WgpuWorldRendererTests can P/Invoke it directly. -->
+  <Target Name="BuildWgpuHost" BeforeTargets="Build" Condition="Exists('..\wgpu-host\Cargo.toml')">
+    <Exec Command="cargo build --release --manifest-path &quot;$(MSBuildProjectDirectory)\..\wgpu-host\Cargo.toml&quot;" ContinueOnError="true" />
+  </Target>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <Content Include="..\wgpu-host\target\release\wgpu_host.dll" Link="wgpu_host.dll" Condition="Exists('..\wgpu-host\target\release\wgpu_host.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <Content Include="..\wgpu-host\target\release\libwgpu_host.so" Link="libwgpu_host.so" Condition="Exists('..\wgpu-host\target\release\libwgpu_host.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="..\wgpu-host\target\release\libwgpu_host.dylib" Link="libwgpu_host.dylib" Condition="Exists('..\wgpu-host\target\release\libwgpu_host.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

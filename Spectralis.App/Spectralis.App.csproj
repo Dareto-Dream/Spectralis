@@ -109,6 +109,28 @@
     </Content>
   </ItemGroup>
 
+  <!-- wgpu-host: the offscreen 3D-world renderer (Rust cdylib, P/Invoked from
+       Spectralis.App.Worlds.WgpuHostNative). Built on demand rather than committing a
+       compiled binary. Missing/failing cargo is non-fatal — the app still builds and
+       runs, just without the Wasm/wgpu world runtime (WgpuWorldRenderer.IsAvailable
+       reports this at runtime). -->
+  <PropertyGroup>
+    <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'win'">wgpu_host.dll</WgpuHostDll>
+    <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'linux'">libwgpu_host.so</WgpuHostDll>
+    <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'osx'">libwgpu_host.dylib</WgpuHostDll>
+  </PropertyGroup>
+
+  <Target Name="BuildWgpuHost" BeforeTargets="Build" Condition="Exists('..\wgpu-host\Cargo.toml')">
+    <Exec Command="cargo build --release --manifest-path &quot;$(MSBuildProjectDirectory)\..\wgpu-host\Cargo.toml&quot;" ContinueOnError="true" />
+  </Target>
+
+  <ItemGroup>
+    <Content Include="..\wgpu-host\target\release\$(WgpuHostDll)" Link="$(WgpuHostDll)"
+              Condition="'$(WgpuHostDll)' != '' And Exists('..\wgpu-host\target\release\$(WgpuHostDll)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows10.0.19041.0'">
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
   </ItemGroup>
