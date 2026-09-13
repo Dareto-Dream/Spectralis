@@ -250,6 +250,45 @@ public sealed class WebViewHostServiceTests : IDisposable
         Assert.Equal(0, fired);
     }
 
+    [Fact]
+    public void SwitchToWasm_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.SwitchToWasmRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":"bonus-room"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void SwitchToWasm_DispatchesWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowWasm3D: true);
+
+        SwitchToWasmRequest? request = null;
+        service.SwitchToWasmRequested += (_, e) => request = e;
+
+        host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":"bonus-room"}""");
+
+        Assert.NotNull(request);
+        Assert.Equal("bonus-room", request!.WorldId);
+    }
+
+    [Fact]
+    public void SwitchToWasm_EmptyWorldIdDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowWasm3D: true);
+
+        var fired = 0;
+        service.SwitchToWasmRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":""}""");
+
+        Assert.Equal(0, fired);
+    }
 }
 
 public class ContentSecurityPolicyTests

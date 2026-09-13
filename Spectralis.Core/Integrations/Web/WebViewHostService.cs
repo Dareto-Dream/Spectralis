@@ -46,6 +46,17 @@ public sealed class WorldDspPresetRequest
 }
 
 /// <summary>
+/// Raised when HTML-mode content asks to hand off into a sandboxed Wasm/wgpu 3D world (the
+/// symmetric counterpart to <c>Spectralis.Core.Worlds.WasmWorldHost.SwitchToHtmlRequested</c> —
+/// a Wasm world calls its <c>switch_to_html</c> host import the same way). Only honoured when
+/// the capsule declared the <c>worlds.wasm3d</c> capability.
+/// </summary>
+public sealed class SwitchToWasmRequest
+{
+    public string WorldId { get; init; } = "";
+}
+
+/// <summary>
 /// Drives an <see cref="IWebViewHost"/> for capsule/album-world content: the
 /// spectral.* JS bridge, window.spectral v5 bootstrap, audio frame push, CSP
 /// injection, and per-capsule persistent store. All page input is untrusted:
@@ -67,6 +78,7 @@ public sealed class WebViewHostService : IDisposable
     private readonly bool _isAlbumWorld;
     private readonly bool _allowPresence;
     private readonly bool _allowDspPreset;
+    private readonly bool _allowWasm3D;
 
     /// <param name="storeKey">
     /// Capsule identifier used for per-capsule persistent storage.
@@ -86,18 +98,25 @@ public sealed class WebViewHostService : IDisposable
     /// Gates the <c>spectral.dsp.*</c> bridge messages the same way <paramref name="allowPresence"/>
     /// gates presence.
     /// </param>
+    /// <param name="allowWasm3D">
+    /// True when the hosted capsule declared the <c>worlds.wasm3d</c> capability. Gates
+    /// <c>spectral.worlds.switchToWasm()</c> — the HTML-mode half of the symmetric Wasm/HTML
+    /// hand-off hook.
+    /// </param>
     public WebViewHostService(
         IWebViewHost host,
         string? storeKey = null,
         bool isAlbumWorld = false,
         bool allowPresence = false,
-        bool allowDspPreset = false)
+        bool allowDspPreset = false,
+        bool allowWasm3D = false)
     {
         _host = host;
         _host.MessageReceived += OnMessageReceived;
         _isAlbumWorld = isAlbumWorld;
         _allowPresence = allowPresence;
         _allowDspPreset = allowDspPreset;
+        _allowWasm3D = allowWasm3D;
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
@@ -116,6 +135,7 @@ public sealed class WebViewHostService : IDisposable
     public event EventHandler? PresenceClearRequested;
     public event EventHandler<WorldDspPresetRequest>? DspPresetRegisterRequested;
     public event EventHandler? DspPresetReleaseRequested;
+    public event EventHandler<SwitchToWasmRequest>? SwitchToWasmRequested;
 
     private void OnMessageReceived(object? sender, string messageJson) => DispatchMessage(messageJson);
 
@@ -252,6 +272,17 @@ public sealed class WebViewHostService : IDisposable
                         DspPresetReleaseRequested?.Invoke(this, EventArgs.Empty);
                     break;
 
+                case "spectral.worlds.switchToWasm":
+                {
+                    // Gated on the worlds.wasm3d capability — dropped otherwise.
+                    if (!_allowWasm3D) break;
+                    var worldId = ReadString(root, "worldId");
+                    if (worldId.Length == 0 || worldId.Length > 256) break;
+
+                    SwitchToWasmRequested?.Invoke(this, new SwitchToWasmRequest { WorldId = worldId });
+                    break;
+                }
+
                 // Per-capsule persistent store
                 case "spectral.store.get":
                     HandleStoreGet(root);
@@ -339,6 +370,7 @@ public sealed class WebViewHostService : IDisposable
     ///   spectral.exit()
     ///   spectral.presence.*    — Discord rich presence override (presence.richPresence capability)
     ///   spectral.dsp.*         — register/release a whole-rack DSP preset (audio.dspPreset capability)
+    ///   spectral.worlds.*      — request a hand-off into the Wasm/wgpu world runtime (worlds.wasm3d capability)
     ///
     ///   CSS custom properties on <html>:
     ///     --audio-time, --audio-peak, --audio-rms  (set by embedded frame bridge, not here)
@@ -445,6 +477,19 @@ public sealed class WebViewHostService : IDisposable
                 },
                 release: function() {
                   spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.releaseDspPreset' }));
+                }
+              };
+
+              // ── Dual-runtime hand-off (worlds.wasm3d capability) ─────────────
+              // Requests a sequential/exclusive hand-off into the sandboxed Wasm/wgpu world
+              // runtime — the symmetric counterpart to a Wasm world's switch_to_html import.
+              // Dropped host-side unless the capability was declared.
+              window.spectral.worlds = {
+                switchToWasm: function(worldId) {
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.worlds.switchToWasm',
+                    worldId: String(worldId || '')
+                  }));
                 }
               };
 
