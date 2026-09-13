@@ -121,6 +121,30 @@ public sealed class WasmWorldHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// Calls a zero-argument, no-return export by name, if the module exports it — for
+    /// UI-triggered actions that don't fit <see cref="Tick"/>'s per-frame shape (e.g. a "resume
+    /// story" button invoking a world-defined export). A trap or missing export is swallowed,
+    /// same non-fatal handling as every other guest call.
+    /// </summary>
+    public void TriggerExport(string exportName)
+    {
+        if (_instance is null)
+        {
+            return;
+        }
+
+        _store.Fuel = FuelBudgetPerCall;
+        try
+        {
+            _instance.GetAction(exportName)?.Invoke();
+        }
+        catch (WasmtimeException)
+        {
+            // Dropped call — non-fatal.
+        }
+    }
+
     /// <summary>Calls <c>on_unload</c> (if present) and detaches the instance. The host itself
     /// stays reusable for <see cref="Load"/> with a different module.</summary>
     public void Unload()
