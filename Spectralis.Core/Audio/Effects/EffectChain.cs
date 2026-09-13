@@ -52,6 +52,14 @@ public sealed class EffectChain : IEffectChainBuilder
 
     public void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Clears the rack and adds <paramref name="effects"/> instead, raising <see cref="Changed"/> once.</summary>
+    public void ReplaceAll(IEnumerable<IAudioEffect> effects)
+    {
+        _effects.Clear();
+        _effects.AddRange(effects);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public ISampleProvider BuildChain(ISampleProvider source)
     {
         if (!Enabled)
