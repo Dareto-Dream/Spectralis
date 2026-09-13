@@ -173,6 +173,44 @@ See [../cdn-contract.md](../cdn-contract.md) for the full capability list and CD
 | `sharedPlay.packageUpload` | Capsule assets may be uploaded for Shared Play |
 | `timeline.appControl` | Reactive timeline may issue app control events |
 | `presence.richPresence` | Embedded HTML may override Discord rich presence text (see below) |
+| `worlds.wasm3d` | Capsule may include a sandboxed Wasm/wgpu 3D album world |
+| `audio.dspPreset` | Embedded HTML/Wasm content may register a whole-rack DSP preset (see below) |
+
+---
+
+## DSP Preset Control (`audio.dspPreset`)
+
+A capsule that declares `audio.dspPreset` can register a whole-rack effects preset that is
+auto-applied while its surface is on screen, built only from the app's own effect building
+blocks — a preset can never inject arbitrary DSP, only reference effect names the app already
+knows how to construct.
+
+```js
+// Register — preset is the same shape the app's own saved chain presets use.
+window.spectral.dsp.register({
+  Enabled: true,
+  Effects: [
+    { Name: "Parametric EQ", Enabled: true, Params: { "preamp": 0, "bandCount": 3, /* ... */ } },
+    { Name: "Stereo Widener", Enabled: true, Params: { "amount": 0.4 } }
+  ]
+});
+
+// Release — reverts to the user's own chain.
+window.spectral.dsp.release();
+```
+
+Rules:
+
+- The user's own rack is snapshotted the moment a preset is first applied and restored verbatim
+  on release — never persisted to the user's saved settings while a world preset is active.
+- Only one world preset is active at a time; registering again while active replaces it in place
+  without re-snapshotting (so the user's original chain, not the previous world preset, is what
+  comes back on release).
+- Auto-released when the capsule surface unloads, a session reset happens, or the capsule did not
+  declare the capability (drops the message silently — calling `spectral.dsp.register()`
+  unconditionally is safe).
+- Applying a preset rebuilds the audio output device (~800ms), same cost as loading any other
+  whole-rack preset — avoid registering/releasing rapidly.
 
 ---
 
