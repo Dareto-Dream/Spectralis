@@ -32,6 +32,19 @@ public sealed class CapsulePresenceRequest
 }
 
 /// <summary>
+/// A capsule-registered DSP preset, sent from page JS via <c>window.spectral.dsp.register()</c>.
+/// <see cref="PresetChainJson"/> is the raw JSON object the page passed — same shape
+/// <c>EffectChainState.Serialize</c> produces (<c>{"Enabled":bool,"Effects":[{"Name","Enabled","Params"}]}</c>) —
+/// handed unmodified to <c>EffectChainState.Restore</c>, so a preset can only ever be built
+/// from the app's existing effect factory. Only honoured when the capsule declared the
+/// <c>audio.dspPreset</c> capability.
+/// </summary>
+public sealed class WorldDspPresetRequest
+{
+    public string PresetChainJson { get; init; } = "";
+}
+
+/// <summary>
 /// Drives an <see cref="IWebViewHost"/> for capsule/album-world content: the
 /// spectral.* JS bridge, window.spectral v5 bootstrap, audio frame push, CSP
 /// injection, and per-capsule persistent store. All page input is untrusted:
@@ -55,6 +68,7 @@ public sealed class WebViewHostService : IDisposable
     private readonly string? _storeFilePath;
     private readonly bool _isAlbumWorld;
     private readonly bool _allowPresence;
+    private readonly bool _allowDspPreset;
     private Dictionary<string, JsonNode?>? _store;
 
     /// <param name="storeKey">
@@ -70,12 +84,23 @@ public sealed class WebViewHostService : IDisposable
     /// Gates the <c>spectral.presence.*</c> bridge messages; page JS can always call the
     /// stub, but the host drops the messages unless this is set.
     /// </param>
-    public WebViewHostService(IWebViewHost host, string? storeKey = null, bool isAlbumWorld = false, bool allowPresence = false)
+    /// <param name="allowDspPreset">
+    /// True when the hosted capsule declared the <c>audio.dspPreset</c> capability.
+    /// Gates the <c>spectral.dsp.*</c> bridge messages the same way <paramref name="allowPresence"/>
+    /// gates presence.
+    /// </param>
+    public WebViewHostService(
+        IWebViewHost host,
+        string? storeKey = null,
+        bool isAlbumWorld = false,
+        bool allowPresence = false,
+        bool allowDspPreset = false)
     {
         _host = host;
         _host.MessageReceived += OnMessageReceived;
         _isAlbumWorld = isAlbumWorld;
         _allowPresence = allowPresence;
+        _allowDspPreset = allowDspPreset;
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
@@ -96,6 +121,8 @@ public sealed class WebViewHostService : IDisposable
     public event EventHandler? ExitWorldRequested;
     public event EventHandler<CapsulePresenceRequest>? PresenceUpdateRequested;
     public event EventHandler? PresenceClearRequested;
+    public event EventHandler<WorldDspPresetRequest>? DspPresetRegisterRequested;
+    public event EventHandler? DspPresetReleaseRequested;
 
     private void OnMessageReceived(object? sender, string messageJson) => DispatchMessage(messageJson);
 
@@ -209,6 +236,29 @@ public sealed class WebViewHostService : IDisposable
                         PresenceClearRequested?.Invoke(this, EventArgs.Empty);
                     break;
 
+                case "spectral.registerDspPreset":
+                {
+                    // Gated on the audio.dspPreset capability — dropped otherwise.
+                    if (!_allowDspPreset) break;
+                    if (!root.TryGetProperty("preset", out var presetProp) ||
+                        presetProp.ValueKind != JsonValueKind.Object)
+                        break;
+
+                    var presetJson = presetProp.GetRawText();
+                    if (presetJson.Length > MaxMessageBytes) break;
+
+                    DspPresetRegisterRequested?.Invoke(this, new WorldDspPresetRequest
+                    {
+                        PresetChainJson = presetJson,
+                    });
+                    break;
+                }
+
+                case "spectral.releaseDspPreset":
+                    if (_allowDspPreset)
+                        DspPresetReleaseRequested?.Invoke(this, EventArgs.Empty);
+                    break;
+
                 // Per-capsule persistent store
                 case "spectral.store.get":
                     HandleStoreGet(root);
@@ -295,6 +345,7 @@ public sealed class WebViewHostService : IDisposable
     ///   spectral.seek(sec)
     ///   spectral.exit()
     ///   spectral.presence.*    — Discord rich presence override (presence.richPresence capability)
+    ///   spectral.dsp.*         — register/release a whole-rack DSP preset (audio.dspPreset capability)
     ///
     ///   CSS custom properties on <html>:
     ///     --audio-time, --audio-peak, --audio-rms  (set by embedded frame bridge, not here)
@@ -383,6 +434,24 @@ public sealed class WebViewHostService : IDisposable
                 },
                 clear: function() {
                   spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.presence.clear' }));
+                }
+              };
+
+              // ── DSP preset control ───────────────────────────────────────────
+              // Needs the audio.dspPreset capability; calls are dropped host-side otherwise.
+              // register(preset) — preset is {Enabled, Effects:[{Name, Enabled, Params}]},
+              // the same shape the app's own saved chain presets use. Only effect names the
+              // app already knows how to build are honoured; anything else is skipped.
+              // Auto-reverts to the user's own chain on release() or when the surface unloads.
+              window.spectral.dsp = {
+                register: function(preset) {
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.registerDspPreset',
+                    preset: preset || {}
+                  }));
+                },
+                release: function() {
+                  spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.releaseDspPreset' }));
                 }
               };
 
