@@ -103,6 +103,7 @@
             <MenuItem Header="Karaoke Mode..." Click="OnMenuKaraokeMode" />
             <MenuItem Header="Creator">
               <MenuItem Header="Lyrics Timing Studio" InputGesture="Ctrl+Shift+L" Click="OnMenuTimingStudio" />
+              <MenuItem Header="3D World Test Rig..." Click="OnMenuWasmWorldTestRig" />
             </MenuItem>
             <MenuItem Header="Live">
               <MenuItem Header="Song Wars..." Click="OnMenuSongWars" />
