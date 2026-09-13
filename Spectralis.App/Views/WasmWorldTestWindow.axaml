@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Spectralis.App.Controls"
         x:Class="Spectralis.App.Views.WasmWorldTestWindow"
         Title="3D World Test Rig — Spectralis"
         Icon="/Assets/icon.png"
@@ -14,11 +15,7 @@
             CornerRadius="4"
             ClipToBounds="True">
       <Grid>
-        <Image x:Name="Surface"
-               Stretch="Uniform"
-               PointerPressed="OnSurfacePointerPressed"
-               PointerMoved="OnSurfacePointerMoved"
-               PointerReleased="OnSurfacePointerReleased" />
+        <controls:WgpuWorldSurface x:Name="Surface" Stretch="Uniform" />
         <TextBlock x:Name="UnavailableLabel"
                    Text="wgpu-host native renderer unavailable on this machine (no compatible GPU, or the library wasn't built)."
                    Foreground="#8cffffff"
