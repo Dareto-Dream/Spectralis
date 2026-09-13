@@ -76,10 +76,33 @@ public sealed class EffectChain : IEffectChainBuilder
         "10-Band EQ" => new ParametricEqEffect(),  // legacy persisted name
         "Compressor" => new CompressorEffect(),
         "Reverb" => new ReverbEffect(),
+        // Not in AvailableEffects (so it no longer shows in the "add effect" picker),
+        // but kept creatable so Karaoke Mode's own VocalBlendEffect usage and any
+        // previously persisted rack containing it keep working.
         "Vocal Remover" => new VocalBlendEffect(),
+        "Saturation" => new SaturationEffect(),
+        "Distortion" => new DistortionEffect(),
+        "Chorus" => new ChorusEffect(),
+        "Flanger" => new FlangerEffect(),
+        "Phaser" => new PhaserEffect(),
+        "Stereo Widener" => new StereoWidenerEffect(),
+        "Limiter" => new LimiterEffect(),
+        "Noise Gate" => new NoiseGateEffect(),
+        "De-esser" => new DeEsserEffect(),
+        "Multiband Compressor" => new MultibandCompressorEffect(),
+        "Transient Shaper" => new TransientShaperEffect(),
+        "Convolution Reverb" => new ConvolutionReverbEffect(),
+        "Delay" => new DelayEffect(),
+        "Stereo Panner" => new StereoPannerEffect(),
+        "Room Ambience" => new RoomAmbienceEffect(),
         _ => throw new ArgumentException($"Unknown effect: {displayName}"),
     };
 
     public static string[] AvailableEffects { get; } =
-        ["Parametric EQ", "Compressor", "Reverb", "Vocal Remover"];
+    [
+        "Parametric EQ", "Compressor", "Reverb",
+        "Saturation", "Distortion", "Chorus", "Flanger", "Phaser", "Stereo Widener",
+        "Limiter", "Noise Gate", "De-esser", "Multiband Compressor", "Transient Shaper",
+        "Convolution Reverb", "Delay", "Stereo Panner", "Room Ambience",
+    ];
 }
