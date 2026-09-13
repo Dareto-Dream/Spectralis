@@ -30,6 +30,16 @@ public sealed class AlbumWorldSection
     [JsonPropertyName("entry")] public string Entry { get; set; } = string.Empty;
     [JsonPropertyName("binaryAssets")] public Dictionary<string, string> BinaryAssets { get; set; } = [];
     [JsonPropertyName("dataAssets")] public Dictionary<string, string> DataAssets { get; set; } = [];
+
+    /// <summary>
+    /// Package-relative path to a sandboxed Wasm/wgpu world module (Phase 2 dual-runtime
+    /// rework — see docs/formats/spectral-album-world.md). Optional; empty means this world
+    /// has no Wasm runtime, only the HTML one (<see cref="Entry"/>) — the common case today.
+    /// A world may declare both: the HTML surface can request a hand-off into the Wasm one via
+    /// <c>spectral.worlds.switchToWasm()</c>, and vice versa via the Wasm module's
+    /// <c>switch_to_html</c> host import. Requires the <c>worlds.wasm3d</c> capability.
+    /// </summary>
+    [JsonPropertyName("wasmEntry")] public string WasmEntry { get; set; } = string.Empty;
 }
 
 public sealed class AlbumTrackEntry
