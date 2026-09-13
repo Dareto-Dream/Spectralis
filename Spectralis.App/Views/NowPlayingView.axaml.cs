@@ -40,6 +40,12 @@ public partial class NowPlayingView : Grid
     private DispatcherTimer? _embeddedFramePushTimer;
     private DispatcherTimer? _resizeSettleTimer;
     private string _loadedEmbeddedHtmlId = string.Empty;
+    // Phase 2 dual-runtime rework: the Wasm/wgpu sibling of the WebView-based embedded surface
+    // above. Only ever non-null while a world's manifest declares a Wasm payload AND the
+    // ViewModel currently wants it shown (NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm) —
+    // every existing HTML-only capsule/album-world path is untouched by this.
+    private WgpuWorldSurface? _wgpuSurface;
+    private string? _loadedWasmWorldId;
     private double _lastPushedTime = double.MinValue;
     private bool _lastPushedActive;
     private volatile bool _embeddedExecPending;
@@ -286,7 +292,8 @@ public NowPlayingView()
 
         if (e.PropertyName is nameof(NowPlayingViewModel.ShowEmbeddedHtml) or
             nameof(NowPlayingViewModel.EmbeddedHtml) or
-            nameof(NowPlayingViewModel.HasEmbeddedHtml))
+            nameof(NowPlayingViewModel.HasEmbeddedHtml) or
+            nameof(NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm))
         {
             ApplyEmbeddedHtmlMode();
         }
@@ -855,6 +862,18 @@ public NowPlayingView()
 
     private void ApplyEmbeddedHtmlMode()
     {
+        // Phase 2 dual-runtime rework: a world that declared a Wasm payload and currently wants
+        // it shown gets the wgpu-backed surface instead of a WebView, entirely bypassing the
+        // logic below. Every existing HTML-only capsule/album-world falls straight through
+        // unchanged (EmbeddedWasmWorld is null for all of them).
+        if (_viewModel is { ShowEmbeddedHtml: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
+        {
+            ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id);
+            return;
+        }
+
+        StopWasmWorldMode();
+
         if (_viewModel is not { ShowEmbeddedHtml: true, EmbeddedHtml: { } context })
         {
             StopEmbeddedHtmlMode();
@@ -910,12 +929,15 @@ public NowPlayingView()
             Spectralis.Core.Capsule.CapsuleCapability.PresenceRichPresence);
         var allowDspPreset = context.Capabilities.Contains(
             Spectralis.Core.Capsule.CapsuleCapability.AudioDspPreset);
+        var allowWasm3D = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.WorldsWasm3D);
         _embeddedService = new WebViewHostService(
             _embeddedHost,
             storeKey: isAlbumWorld ? null : context.Id,
             isAlbumWorld: isAlbumWorld,
             allowPresence: allowPresence,
-            allowDspPreset: allowDspPreset);
+            allowDspPreset: allowDspPreset,
+            allowWasm3D: allowWasm3D);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
@@ -926,6 +948,7 @@ public NowPlayingView()
         _embeddedService.PresenceClearRequested += OnEmbeddedPresenceClear;
         _embeddedService.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
         _embeddedService.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
+        _embeddedService.SwitchToWasmRequested += OnEmbeddedSwitchToWasm;
         EmbeddedHtmlHost.Content = _embeddedControl;
 
         try
@@ -944,6 +967,61 @@ public NowPlayingView()
             if (_viewModel is not null)
                 _viewModel.ShowEmbeddedHtml = false;
         }
+    }
+
+    /// <summary>Boots (or no-ops if already showing) the wgpu-backed surface for the given
+    /// world. Falls back to requesting HTML mode if the native renderer is unavailable or the
+    /// module fails to load — mirrors the existing WebView navigation-failure fallback above.</summary>
+    private void ApplyWasmWorldMode(byte[] wasmBytes, string worldId)
+    {
+        if (_wgpuSurface is not null && string.Equals(_loadedWasmWorldId, worldId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        StopEmbeddedHtmlMode();
+        StopWasmWorldMode();
+
+        _loadedWasmWorldId = worldId;
+        _wgpuSurface = new WgpuWorldSurface
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        _wgpuSurface.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
+        _wgpuSurface.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
+        _wgpuSurface.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
+        _wgpuSurface.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
+        _wgpuSurface.SwitchToHtmlRequested += (_, _) => _viewModel?.RequestSwitchToHtml();
+        EmbeddedHtmlHost.Content = _wgpuSurface;
+
+        // storeKey = worldId so this shares the exact same CapsuleScopedStore file the HTML
+        // surface's spectral.store.* would use for the same world — hand-off state (position,
+        // achievements, active DSP preset) survives a runtime switch either direction.
+        if (!_wgpuSurface.AttachWorld(wasmBytes, worldId))
+        {
+            AppLogPaths.AppendTimestamped(_webviewPerfLog,
+                $"[WASM-WORLD] attach failed id={worldId} — falling back to HTML");
+            StopWasmWorldMode();
+            _viewModel?.RequestSwitchToHtml();
+        }
+    }
+
+    private void StopWasmWorldMode()
+    {
+        if (_wgpuSurface is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(EmbeddedHtmlHost.Content, _wgpuSurface))
+        {
+            EmbeddedHtmlHost.Content = null;
+        }
+
+        _wgpuSurface.Dispose();
+        _wgpuSurface = null;
+        _loadedWasmWorldId = null;
     }
 
     private void NavigateEmbeddedHtmlDocument(EmbeddedHtmlContext context, string document, bool isAlbumWorld)
@@ -1026,6 +1104,13 @@ public NowPlayingView()
     private void OnEmbeddedDspPresetRelease(object? sender, EventArgs e)
     {
         _viewModel?.CapsuleDspPresetRequested?.Invoke(null);
+    }
+
+    private void OnEmbeddedSwitchToWasm(object? sender, Spectralis.Core.Integrations.Web.SwitchToWasmRequest req)
+    {
+        // The active world's Wasm bytes are already held by the ViewModel (attached alongside
+        // the HTML payload) — this just flips which runtime the surface renders with.
+        _viewModel?.RequestSwitchToWasm();
     }
 
     private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
@@ -1207,6 +1292,8 @@ public NowPlayingView()
 
     private void StopEmbeddedHtmlMode()
     {
+        StopWasmWorldMode();
+
         if (_embeddedFramePushTimer is not null)
         {
             _embeddedFramePushTimer.Stop();
@@ -1230,6 +1317,7 @@ public NowPlayingView()
             _embeddedService.PresenceClearRequested -= OnEmbeddedPresenceClear;
             _embeddedService.DspPresetRegisterRequested -= OnEmbeddedDspPresetRegister;
             _embeddedService.DspPresetReleaseRequested -= OnEmbeddedDspPresetRelease;
+            _embeddedService.SwitchToWasmRequested -= OnEmbeddedSwitchToWasm;
             _embeddedService.Dispose();
             _embeddedService = null;
         }
