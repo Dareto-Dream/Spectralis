@@ -16,6 +16,8 @@ This directory is where all the real documentation lives (as oppposed to whateve
 | [cdn-contract.md](cdn-contract.md) | CDN endpoint shapes the app expects from `cdn.deltavdevs.com` |
 | [api-contract.md](api-contract.md) | Service routing contract — CDN vs API split, all routes |
 | [song-wars-implementation-plan.md](song-wars-implementation-plan.md) | Song Wars tournament mode implementation plan |
+| [mobile-implementation-plan.md](mobile-implementation-plan.md) | Android/iOS heads — Core split, seams, phases, open questions |
+| [mobile-feature-list.md](mobile-feature-list.md) | Flat in/out feature list for mobile v1, with effort ratings |
 
 ## Capsule & Data Formats
 
