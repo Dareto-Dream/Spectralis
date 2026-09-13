@@ -14,6 +14,13 @@ public sealed class EffectChain : IEffectChainBuilder
 
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// True while a capsule/world-registered DSP preset (<see cref="Spectralis.App.Services.WorldDspPresetController"/>)
+    /// owns the rack. Persistence subscribers should skip writing to <c>AppSettings.EffectChainJson</c>
+    /// while this is set, so a world's preset never clobbers the user's own saved chain.
+    /// </summary>
+    public bool IsWorldManaged { get; set; }
+
     public event EventHandler? Changed;
 
     public void Add(IAudioEffect effect)
