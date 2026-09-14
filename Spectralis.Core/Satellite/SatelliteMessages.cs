@@ -33,6 +33,7 @@ public static class SatelliteProtocol
     public const int EnvelopeVersion = 1;
 
     public const string Hello = "hello";
+    public const string PairingRequired = "pairingRequired";
     public const string PairRequest = "pairRequest";
     public const string PairResult = "pairResult";
     public const string Capabilities = "capabilities";
@@ -45,7 +46,24 @@ public sealed class SatelliteHelloMessage
 {
     public int V { get; init; } = SatelliteProtocol.EnvelopeVersion;
     public string T { get; init; } = SatelliteProtocol.Hello;
+
+    /// <summary>Stable per-install identifier the receiver generates once and persists —
+    /// mirrors SharedPlayClientIdentity's pattern. This (not the PIN) is what makes a
+    /// previously-paired device skip re-pairing on reconnect.</summary>
+    public string DeviceId { get; init; } = "";
+
     public string DisplayName { get; init; } = "";
+}
+
+/// <summary>Server -> client, sent right after <c>hello</c> when this device hasn't paired
+/// before: "go get the PIN from whoever's looking at the source app, then send pairRequest."
+/// The source displays the actual PIN via <c>SatelliteSourceServer.PairingCodeReady</c> — it's
+/// deliberately not included in this message, since the whole point is that the human has to
+/// see it on the source device, not have it silently handed to any process that connects.</summary>
+public sealed class SatellitePairingRequiredMessage
+{
+    public int V { get; init; } = SatelliteProtocol.EnvelopeVersion;
+    public string T { get; init; } = SatelliteProtocol.PairingRequired;
 }
 
 public sealed class SatellitePairRequestMessage
