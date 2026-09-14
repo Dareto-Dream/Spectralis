@@ -19,11 +19,17 @@ public sealed class SatelliteReceiverClient : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private Task? _receiveLoopTask;
     private Task? _clockSyncLoopTask;
+    private SatelliteOpusDecodePipeline? _opusDecoder;
 
     public SatelliteClockSyncEstimator ClockSync { get; } = new();
 
     public bool IsConnected { get; private set; }
 
+    /// <summary>Fires for every received audio frame with <see cref="SatelliteAudioFrame.PcmSamples"/>
+    /// always populated — for an Opus-encoded frame, this client decodes it internally (one
+    /// decoder instance reused for the life of the connection, since Opus decoding carries
+    /// running state across packets) before raising this event, so consumers never need to know
+    /// which codec was negotiated.</summary>
     public event EventHandler<SatelliteAudioFrame>? AudioFrameReceived;
     public event EventHandler? Disconnected;
 
@@ -126,6 +132,13 @@ public sealed class SatelliteReceiverClient : IAsyncDisposable
                 if (frame.Value.Type == SatelliteFrameType.Audio)
                 {
                     var audioFrame = SatelliteAudioFrame.Decode(frame.Value.Payload);
+                    if (audioFrame is { Encoding: SatelliteAudioEncoding.Opus })
+                    {
+                        _opusDecoder ??= new SatelliteOpusDecodePipeline(audioFrame.SampleRate, audioFrame.ChannelCount);
+                        var pcm = _opusDecoder.Decode(audioFrame.OpusPayload, audioFrame.OpusFrameSize);
+                        audioFrame = audioFrame.WithPcmSamples(pcm);
+                    }
+
                     if (audioFrame is not null)
                     {
                         AudioFrameReceived?.Invoke(this, audioFrame);
