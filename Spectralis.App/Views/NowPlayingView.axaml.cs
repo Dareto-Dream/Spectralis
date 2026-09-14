@@ -949,6 +949,7 @@ public NowPlayingView()
         _embeddedService.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
         _embeddedService.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
         _embeddedService.SwitchToWasmRequested += OnEmbeddedSwitchToWasm;
+        _embeddedService.AchievementUnlockRequested += OnEmbeddedAchievementUnlocked;
         EmbeddedHtmlHost.Content = _embeddedControl;
 
         try
@@ -992,6 +993,7 @@ public NowPlayingView()
         _wgpuSurface.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
         _wgpuSurface.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
         _wgpuSurface.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
+        _wgpuSurface.AchievementUnlocked += OnEmbeddedAchievementUnlocked;
         _wgpuSurface.SwitchToHtmlRequested += (_, _) => _viewModel?.RequestSwitchToHtml();
         EmbeddedHtmlHost.Content = _wgpuSurface;
 
@@ -1146,6 +1148,16 @@ public NowPlayingView()
         var worldDir = _viewModel?.AlbumWorldDir;
         if (worldDir is null) return;
         Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
+    }
+
+    /// <summary>Shared by both runtimes: WebViewHostService.AchievementUnlockRequested (HTML,
+    /// spectral.unlockAchievement) and WgpuWorldSurface.AchievementUnlocked (Wasm,
+    /// unlock_achievement host import) — same string payload, same persistence.</summary>
+    private void OnEmbeddedAchievementUnlocked(object? sender, string achievementId)
+    {
+        var worldDir = _viewModel?.AlbumWorldDir;
+        if (worldDir is null) return;
+        Spectralis.Core.Capsule.AlbumWorldSessionStore.UnlockAchievement(worldDir, achievementId);
     }
 
     private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
@@ -1318,6 +1330,7 @@ public NowPlayingView()
             _embeddedService.DspPresetRegisterRequested -= OnEmbeddedDspPresetRegister;
             _embeddedService.DspPresetReleaseRequested -= OnEmbeddedDspPresetRelease;
             _embeddedService.SwitchToWasmRequested -= OnEmbeddedSwitchToWasm;
+            _embeddedService.AchievementUnlockRequested -= OnEmbeddedAchievementUnlocked;
             _embeddedService.Dispose();
             _embeddedService = null;
         }
