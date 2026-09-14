@@ -474,6 +474,18 @@ Save a named bookmark at the current or given position.
 
 The bookmark is written to `session.json` immediately.
 
+#### `spectral.unlockAchievement`
+
+Unlocks an achievement by ID — the symmetric HTML-side counterpart to a Wasm world's
+`unlock_achievement` host import (see the world SDK's `docs/host-imports.md`). Both runtimes
+persist to the same `session.json` via `AlbumWorldSessionStore.UnlockAchievement`, so an
+achievement unlocked from either surface (or from a previous session) shows up in
+`state.session.unlockedAchievements` on the next `onReady`. No-op if already unlocked.
+
+```json
+{ "type": "spectral.unlockAchievement", "achievementId": "entered-the-world" }
+```
+
 #### `spectral.exitWorld`
 
 Return to the normal player UI, unloading the album world.
@@ -647,6 +659,22 @@ APIs because it runs in a real WebView2 context with a virtual host origin
 Use `state.session.trackStats` in `onReady` to show which tracks have been played or completed.
 Use `stats.playedSeconds` to show how much of a track has been heard (useful for percentage
 completion indicators or unlock mechanics).
+
+### Achievements
+
+Unlock an achievement from either runtime — HTML via `spectral.unlockAchievement`, a Wasm world
+via its `unlock_achievement` host import (see the world SDK). Both persist to the same
+`session.json`:
+
+```js
+window.chrome.webview.postMessage(JSON.stringify({
+  type: 'spectral.unlockAchievement',
+  achievementId: 'entered-the-world'
+}));
+```
+
+Read `state.session.unlockedAchievements` in `onReady` to show which ones the listener already
+has. There's no built-in achievement UI yet — showing unlock toasts/badges is on your world.
 
 ### Bookmarks
 

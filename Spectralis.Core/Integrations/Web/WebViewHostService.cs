@@ -131,6 +131,7 @@ public sealed class WebViewHostService : IDisposable
     public event EventHandler<double>? SeekRequested;
     public event EventHandler<AlbumBookmarkRequest>? SaveBookmarkRequested;
     public event EventHandler? ExitWorldRequested;
+    public event EventHandler<string>? AchievementUnlockRequested;
     public event EventHandler<CapsulePresenceRequest>? PresenceUpdateRequested;
     public event EventHandler? PresenceClearRequested;
     public event EventHandler<WorldDspPresetRequest>? DspPresetRegisterRequested;
@@ -223,6 +224,22 @@ public sealed class WebViewHostService : IDisposable
 
                 case "spectral.exitWorld":
                     ExitWorldRequested?.Invoke(this, EventArgs.Empty);
+                    break;
+
+                case "spectral.unlockAchievement":
+                    // Album world only, same as playTrack/addToQueue — persisted via
+                    // AlbumWorldSessionStore.UnlockAchievement, the symmetric HTML-side
+                    // counterpart to WasmWorldHost's unlock_achievement host import.
+                    if (_isAlbumWorld &&
+                        root.TryGetProperty("achievementId", out var achievementIdProp) &&
+                        achievementIdProp.ValueKind == JsonValueKind.String)
+                    {
+                        var achievementId = achievementIdProp.GetString() ?? string.Empty;
+                        if (achievementId.Length > 0 && achievementId.Length <= 256)
+                        {
+                            AchievementUnlockRequested?.Invoke(this, achievementId);
+                        }
+                    }
                     break;
 
                 case "spectral.presence.set":
