@@ -99,6 +99,42 @@ public sealed class WebViewHostServiceTests : IDisposable
         Assert.Equal(256, bookmark.Label.Length);
     }
 
+    [Fact]
+    public void UnlockAchievement_DispatchesInAlbumWorldMode()
+    {
+        string? achievementId = null;
+        _service.AchievementUnlockRequested += (_, e) => achievementId = e;
+
+        _host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":"entered-the-world"}""");
+
+        Assert.Equal("entered-the-world", achievementId);
+    }
+
+    [Fact]
+    public void UnlockAchievement_DroppedOutsideAlbumWorldMode()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host); // isAlbumWorld: false (default)
+
+        var fired = 0;
+        service.AchievementUnlockRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":"entered-the-world"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void UnlockAchievement_EmptyIdDropped()
+    {
+        var fired = 0;
+        _service.AchievementUnlockRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":""}""");
+
+        Assert.Equal(0, fired);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json")]
