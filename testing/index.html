@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spectralis Satellite Speaker</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #11131a; color: #f3f4f6; }
+    body { max-width: 760px; margin: 0 auto; padding: 32px 20px; }
+    h1 { margin-bottom: 6px; font-size: 1.8rem; }
+    .muted { color: #9ca3af; margin-top: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 28px 0; }
+    .card { background: #1d212c; border: 1px solid #303746; border-radius: 12px; padding: 18px; }
+    .label { color: #9ca3af; font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; }
+    .value { font-size: 1.25rem; margin-top: 8px; word-break: break-word; }
+    .connected { color: #6ee7b7; } .disconnected { color: #fca5a5; }
+    .help { background: #171a23; border-left: 3px solid #818cf8; padding: 16px 18px; line-height: 1.55; }
+    code { background: #292e3b; padding: 2px 5px; border-radius: 4px; }
+    #error { color: #fca5a5; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Satellite Speaker</h1>
+  <p class="muted">Spectralis LAN playback receiver</p>
+  <section class="grid">
+    <div class="card"><div class="label">Connection</div><div id="connected" class="value">Loading…</div></div>
+    <div class="card"><div class="label">Source</div><div id="source" class="value">—</div></div>
+    <div class="card"><div class="label">Audio</div><div id="audio" class="value">—</div></div>
+    <div class="card"><div class="label">Frames received</div><div id="frames" class="value">0</div></div>
+    <div class="card"><div class="label">Playback backend</div><div id="backend" class="value">—</div></div>
+    <div class="card"><div class="label">Clock offset</div><div id="clock" class="value">—</div></div>
+  </section>
+  <div class="help">
+    <strong>Pairing</strong><br>
+    Start Satellite in Spectralis, then point this speaker at the port shown there.
+    The six-digit pairing PIN appears in Spectralis when this device connects for the first time.
+    Enter it in the speaker terminal.
+  </div>
+  <p id="error"></p>
+  <script>
+    const $ = id => document.getElementById(id);
+    async function refresh() {
+      try {
+        const s = await fetch('/status', { cache: 'no-store' }).then(r => r.json());
+        $('connected').textContent = s.connected ? 'Connected' : 'Waiting for source';
+        $('connected').className = 'value ' + (s.connected ? 'connected' : 'disconnected');
+        $('source').textContent = s.source;
+        $('audio').textContent = s.sample_rate ? `${s.sample_rate} Hz / ${s.channels} ch` : 'No frames yet';
+        $('frames').textContent = s.frames.toLocaleString();
+        $('backend').textContent = s.audio_backend;
+        $('clock').textContent = s.clock_offset_ms == null ? 'Waiting for sync' : `${s.clock_offset_ms} ms`;
+        $('error').textContent = s.last_error || '';
+      } catch (e) { $('error').textContent = 'Could not reach speaker service: ' + e; }
+    }
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
