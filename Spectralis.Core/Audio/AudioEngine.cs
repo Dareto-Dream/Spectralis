@@ -192,7 +192,10 @@ public sealed class AudioEngine : IDisposable
             CurrentTrack = BuildTrackInfo(nextPath, nextStream, string.Empty, providedInfo);
 
             // Re-wire the speed/resample/effect chain and visualizer onto the new stream.
-            _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(nextStream));
+            _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(nextStream))
+            {
+                RawBlockCaptured = RawAudioBlockCaptured,
+            };
             _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
 
             _device.Init(new SampleProviderSource(_fade));
@@ -331,6 +334,16 @@ public sealed class AudioEngine : IDisposable
     /// <summary>When set, GetVisualizerFrame reads from this source instead of the playback chain.
     /// Used by Spotify loopback so the visualizer shows Spotify audio while the engine is idle.</summary>
     public VisualizerSampleProvider? ExternalVisualizerSource { get; set; }
+
+    /// <summary>
+    /// Optional tap for the raw post-EffectChain interleaved samples of every audio block —
+    /// wired onto <see cref="VisualizerSampleProvider.RawBlockCaptured"/> every time the
+    /// visualizer/fade chain is (re)built, so it survives track changes, effect-chain rebuilds,
+    /// and seamless-advance transitions without callers needing to re-set it. Used by Satellite
+    /// to stream what the listener is actually hearing (DSP already applied) to paired
+    /// receivers. Set once; null by default, so nothing changes for callers that never use it.
+    /// </summary>
+    public Action<float[], int, int, int>? RawAudioBlockCaptured { get; set; }
 
     public VisualizerFrame GetVisualizerFrame(bool includeSpectrogram = false, bool includeRawFft = false)
     {
@@ -529,7 +542,10 @@ public sealed class AudioEngine : IDisposable
 
         _playbackStream.CurrentTime = currentPosition;
 
-        _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(_playbackStream));
+        _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(_playbackStream))
+        {
+            RawBlockCaptured = RawAudioBlockCaptured,
+        };
         _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
         _device = _deviceEnumerator.CreateDevice(_preferredDeviceId, _latencyMs);
         _device.Volume = _volume;
