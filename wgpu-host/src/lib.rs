@@ -83,6 +83,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 /// Bytes-per-row must be a multiple of this for `copy_texture_to_buffer`.
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
 
+/// Caps on guest-submitted geometry (`wgpu_host_set_geometry`) — bounded the same way every
+/// other untrusted-wasm-content boundary in this project is (fuel limits, string length caps in
+/// WasmWorldHost, ...). Index format is u16, so MAX_VERTICES already can't usefully exceed 65536.
+const MAX_VERTICES: u32 = 65_536;
+const MAX_INDICES: u32 = 300_000;
+
 struct WorldRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -393,6 +399,33 @@ impl WorldRenderer {
 
         mapped_ok
     }
+
+    /// Replaces the current geometry with guest-submitted vertices/indices, mirroring
+    /// `Vertex { position: [f32;3], color: [f32;3] }` — the wgpu-host doesn't (yet) support
+    /// normals/UVs/textures, only the same position+flat-color shape the built-in test cube
+    /// uses. Rejects (returns false, leaves existing geometry untouched) empty or
+    /// oversized submissions rather than trying to partially apply them.
+    fn set_geometry(&mut self, vertices: &[Vertex], indices: &[u16]) -> bool {
+        if vertices.is_empty() || indices.is_empty() {
+            return false;
+        }
+        if vertices.len() as u32 > MAX_VERTICES || indices.len() as u32 > MAX_INDICES {
+            return false;
+        }
+
+        self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("spectralis-world-vbuf-guest"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("spectralis-world-ibuf-guest"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        self.index_count = indices.len() as u32;
+        true
+    }
 }
 
 /// Creates a renderer targeting `width`x`height`. Returns null on any device/adapter
@@ -448,6 +481,37 @@ pub extern "C" fn wgpu_host_pixels(handle: *mut c_void, out_ptr: *mut *const u8,
         *out_len = renderer.pixels.len();
     }
     true
+}
+
+/// Replaces the renderer's current geometry with guest-submitted vertices/indices. Vertex
+/// layout is `[f32;3] position, [f32;3] color` interleaved (24 bytes/vertex) — `vertex_count` is
+/// a vertex count, not a float count. `indices_ptr` is u16 indices, `index_count` an index
+/// count. Returns false (geometry unchanged) if either pointer is null, either count is zero, or
+/// either count exceeds this renderer's fixed caps — callers must not treat a false return as
+/// "geometry cleared", the previous geometry (built-in test cube or an earlier valid submission)
+/// stays in place.
+#[no_mangle]
+pub extern "C" fn wgpu_host_set_geometry(
+    handle: *mut c_void,
+    vertices_ptr: *const f32,
+    vertex_count: u32,
+    indices_ptr: *const u16,
+    index_count: u32,
+) -> bool {
+    if handle.is_null() || vertices_ptr.is_null() || indices_ptr.is_null() {
+        return false;
+    }
+    if vertex_count == 0 || index_count == 0 {
+        return false;
+    }
+    if vertex_count > MAX_VERTICES || index_count > MAX_INDICES {
+        return false;
+    }
+
+    let renderer = unsafe { &mut *(handle as *mut WorldRenderer) };
+    let vertices = unsafe { std::slice::from_raw_parts(vertices_ptr as *const Vertex, vertex_count as usize) };
+    let indices = unsafe { std::slice::from_raw_parts(indices_ptr, index_count as usize) };
+    renderer.set_geometry(vertices, indices)
 }
 
 #[no_mangle]
