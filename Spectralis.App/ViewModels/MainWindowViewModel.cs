@@ -246,6 +246,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         TimingStudio = new TimingStudioViewModel(Engine, AppSettings);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
+        Satellite = new SatelliteCoordinator(Engine);
         DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
         NowPlaying.CapsulePresenceRequested = req => DiscordPresence.SetCapsulePresenceOverride(req);
@@ -412,6 +413,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public StreamerSettingsViewModel StreamerSettings { get; }
 
     public DiscordPresenceCoordinator DiscordPresence { get; }
+
+    public SatelliteCoordinator Satellite { get; }
 
     public WorldDspPresetController WorldDspPreset { get; }
 

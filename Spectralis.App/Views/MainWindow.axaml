@@ -107,6 +107,7 @@
             </MenuItem>
             <MenuItem Header="Live">
               <MenuItem Header="Song Wars..." Click="OnMenuSongWars" />
+              <MenuItem Header="Satellite..." Click="OnMenuSatellite" />
             </MenuItem>
           </MenuItem>
           <MenuItem Header="_Help">
