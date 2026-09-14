@@ -7,6 +7,15 @@ using WorldDspPresetRequest = Spectralis.Core.Integrations.Web.WorldDspPresetReq
 
 namespace Spectralis.Core.Worlds;
 
+/// <summary>One <c>submit_geometry</c> call's payload — see <see cref="WasmWorldHost.GeometrySubmitted"/>.
+/// Vertex layout is <c>[f32;3] position, [f32;3] color</c> interleaved, matching wgpu-host's
+/// fixed <c>Vertex</c> struct (no normals/UVs/textures yet).</summary>
+public sealed class WorldGeometrySubmission
+{
+    public required float[] InterleavedVertices { get; init; }
+    public required ushort[] Indices { get; init; }
+}
+
 /// <summary>
 /// Sandboxed host for a single Wasm "album world" module (Phase 2 of the dual-runtime rework —
 /// see docs/formats/spectral-album-world.md for the HTML-mode sibling this mirrors).
@@ -22,6 +31,9 @@ namespace Spectralis.Core.Worlds;
 ///                                                the HTML side's spectral.worlds.switchToWasm)
 ///   storage_get(keyPtr,keyLen,outPtr,outCap) -> i32 bytes written (-1 = not found/buffer too small)
 ///   storage_set(keyPtr,keyLen,valPtr,valLen)
+///   submit_geometry(vertsPtr,vertsByteLen,idxPtr,idxByteLen) -> i32 (1 = accepted, 0 = rejected)
+///                                              — replaces the rendered scene's geometry; see
+///                                                WorldGeometrySubmission for the vertex layout
 ///
 /// storage_get/storage_set share the exact same <see cref="CapsuleScopedStore"/> file the HTML
 /// bridge's spectral.store.* uses for the same world id — this is what lets hand-off state
@@ -39,6 +51,13 @@ public sealed class WasmWorldHost : IDisposable
 
     private const int MaxStringBytes = 4096;
 
+    // Mirrors wgpu-host's MAX_VERTICES (65536) / MAX_INDICES (300000) caps — reject oversized
+    // submissions here, before ever touching the native renderer, rather than relying solely on
+    // its own check.
+    private const int BytesPerVertex = 24; // [f32;3] position + [f32;3] color
+    private const int MaxVertexBytes = 65_536 * BytesPerVertex;
+    private const int MaxIndexBytes = 300_000 * sizeof(ushort);
+
     private readonly Engine _engine;
     private readonly Store _store;
     private readonly Linker _linker;
@@ -52,6 +71,7 @@ public sealed class WasmWorldHost : IDisposable
     public event EventHandler? DspPresetReleaseRequested;
     public event EventHandler<string>? AchievementUnlocked;
     public event EventHandler<string>? SwitchToHtmlRequested;
+    public event EventHandler<WorldGeometrySubmission>? GeometrySubmitted;
 
     /// <param name="storeKey">World id — must match the storeKey the HTML-mode surface for the
     /// same world uses, so both runtimes share one <see cref="CapsuleScopedStore"/> file.</param>
@@ -240,6 +260,47 @@ public sealed class WasmWorldHost : IDisposable
             var entry = ReadString(caller, ptr, len) ?? string.Empty;
             SwitchToHtmlRequested?.Invoke(this, entry);
         });
+
+        _linker.DefineFunction("spectral", "submit_geometry",
+            (Caller caller, int vertsPtr, int vertsByteLen, int idxPtr, int idxByteLen) =>
+            {
+                if (vertsByteLen <= 0 || vertsByteLen > MaxVertexBytes || vertsByteLen % BytesPerVertex != 0)
+                {
+                    return 0;
+                }
+
+                if (idxByteLen <= 0 || idxByteLen > MaxIndexBytes || idxByteLen % sizeof(ushort) != 0)
+                {
+                    return 0;
+                }
+
+                if (!caller.TryGetMemorySpan<byte>("memory", vertsPtr, vertsByteLen, out var vertBytes) ||
+                    !caller.TryGetMemorySpan<byte>("memory", idxPtr, idxByteLen, out var idxBytes))
+                {
+                    return 0;
+                }
+
+                // Wasm linear memory is always little-endian, matching every real CPU this app
+                // runs on (x64/arm64) — BitConverter reads native-endian, so no swap is needed.
+                var vertices = new float[vertsByteLen / sizeof(float)];
+                for (var i = 0; i < vertices.Length; i++)
+                {
+                    vertices[i] = BitConverter.ToSingle(vertBytes.Slice(i * sizeof(float), sizeof(float)));
+                }
+
+                var indices = new ushort[idxByteLen / sizeof(ushort)];
+                for (var i = 0; i < indices.Length; i++)
+                {
+                    indices[i] = BitConverter.ToUInt16(idxBytes.Slice(i * sizeof(ushort), sizeof(ushort)));
+                }
+
+                GeometrySubmitted?.Invoke(this, new WorldGeometrySubmission
+                {
+                    InterleavedVertices = vertices,
+                    Indices = indices,
+                });
+                return 1;
+            });
 
         _linker.DefineFunction("spectral", "storage_get",
             (Caller caller, int keyPtr, int keyLen, int outPtr, int outCap) =>

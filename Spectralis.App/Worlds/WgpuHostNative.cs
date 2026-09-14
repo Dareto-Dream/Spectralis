@@ -27,6 +27,13 @@ internal static class WgpuHostNative
     [return: MarshalAs(UnmanagedType.I1)]
     internal static extern bool wgpu_host_pixels(IntPtr handle, out IntPtr outPtr, out UIntPtr outLen);
 
+    /// <summary>Blittable array params (not raw pointers) — the CLR marshaler pins them for the
+    /// duration of the call, so no <c>unsafe</c> context is needed on this side.</summary>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool wgpu_host_set_geometry(
+        IntPtr handle, float[] vertices, uint vertexCount, ushort[] indices, uint indexCount);
+
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern uint wgpu_host_width(IntPtr handle);
 

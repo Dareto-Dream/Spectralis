@@ -145,6 +145,34 @@ public sealed class WgpuWorldRenderer : IDisposable
         return _bitmap;
     }
 
+    /// <summary>
+    /// Replaces the rendered scene's geometry with guest-submitted vertices/indices — the
+    /// wasm-side counterpart of the built-in test cube. <paramref name="interleavedVertices"/>
+    /// is <c>[f32;3] position, [f32;3] color</c> repeated per vertex (6 floats/vertex, matching
+    /// wgpu-host's <c>Vertex</c> layout — no normals/UVs/textures yet, same as the cube). Returns
+    /// false (geometry left unchanged — still whatever it was before, cube or an earlier valid
+    /// submission) for empty input or anything past wgpu-host's fixed caps (65536 vertices,
+    /// 300000 indices) rather than throwing; a malformed wasm world shouldn't be able to crash
+    /// the renderer, only fail to draw.
+    /// </summary>
+    public bool SubmitGeometry(ReadOnlySpan<float> interleavedVertices, ReadOnlySpan<ushort> indices)
+    {
+        if (_handle == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        const int floatsPerVertex = 6;
+        if (interleavedVertices.Length == 0 || indices.Length == 0 || interleavedVertices.Length % floatsPerVertex != 0)
+        {
+            return false;
+        }
+
+        var vertexCount = interleavedVertices.Length / floatsPerVertex;
+        return WgpuHostNative.wgpu_host_set_geometry(
+            _handle, interleavedVertices.ToArray(), (uint)vertexCount, indices.ToArray(), (uint)indices.Length);
+    }
+
     /// <summary>wgpu-host emits RGBA8; Avalonia's WriteableBitmap here is BGRA8 — swap R/B in place.</summary>
     private static void SwapRedAndBlueInPlace(byte[] rgba)
     {

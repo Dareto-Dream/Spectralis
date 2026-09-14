@@ -174,6 +174,73 @@ public sealed class WasmWorldHostTests : IDisposable
     }
 
     [Fact]
+    public void OnLoad_SubmitGeometry_RaisesEventWithDecodedVerticesAndIndices()
+    {
+        // One vertex: position (1.0, 2.0, 3.0), color (0.0, 0.0, 0.0) — 6 f32s, little-endian
+        // (wasm linear memory is always little-endian): 1.0=3F800000, 2.0=40000000, 3.0=40400000.
+        // One index: 0 (u16, 2 bytes).
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\00\00\80\3f\00\00\00\40\00\00\40\40\00\00\00\00\00\00\00\00\00\00\00\00")
+              (data (i32.const 32) "\00\00")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 24) (i32.const 32) (i32.const 2)))))
+            """);
+
+        WorldGeometrySubmission? submission = null;
+        _host.GeometrySubmitted += (_, e) => submission = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.NotNull(submission);
+        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f }, submission!.InterleavedVertices);
+        Assert.Equal(new ushort[] { 0 }, submission.Indices);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitGeometry_NotAWholeNumberOfVertices_DoesNotRaiseEvent()
+    {
+        // 20 bytes is not a multiple of 24 (bytes per vertex) — must be rejected before ever
+        // reading guest memory into a float array, not truncated/misaligned.
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 32) "\00\00")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 20) (i32.const 32) (i32.const 2)))))
+            """);
+
+        var raised = false;
+        _host.GeometrySubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitGeometry_ZeroLengths_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0)))))
+            """);
+
+        var raised = false;
+        _host.GeometrySubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
     public void Tick_BeforeLoad_IsANoOp()
     {
         _host.Tick(1.0, true); // must not throw
