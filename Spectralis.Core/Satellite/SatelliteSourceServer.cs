@@ -48,6 +48,7 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ConnectedClient> _clients = new();
     private CancellationTokenSource? _cts;
     private Task? _acceptLoopTask;
+    private SatelliteDiscovery? _discovery;
 
     public event EventHandler<SatellitePairingCodeReadyEventArgs>? PairingCodeReady;
     public event EventHandler<SatelliteReceiverSession>? ReceiverConnected;
@@ -74,8 +75,30 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
         _acceptLoopTask = Task.Run(() => AcceptLoopAsync(_cts.Token));
     }
 
+    /// <summary>
+    /// Opt-in: advertises this source on the LAN via mDNS/DNS-SD (<see cref="SatelliteDiscovery.ServiceType"/>)
+    /// so receivers can find it without the host being typed in manually. Separate from
+    /// <see cref="Start"/> deliberately — real mDNS involves an actual OS multicast socket,
+    /// which every test in this codebase that spins up a SatelliteSourceServer would otherwise
+    /// pay for even though none of them need LAN discovery to exercise the protocol itself.
+    /// Requires <see cref="Start"/> to have run first (needs the bound port).
+    /// </summary>
+    public void StartAdvertising(string? instanceName = null)
+    {
+        if (Port == 0)
+        {
+            throw new InvalidOperationException($"{nameof(Start)}() must be called before {nameof(StartAdvertising)}()");
+        }
+
+        _discovery ??= new SatelliteDiscovery();
+        _discovery.StartAdvertising(instanceName ?? Environment.MachineName, Port);
+    }
+
+    public void StopAdvertising() => _discovery?.StopAdvertising();
+
     public async ValueTask DisposeAsync()
     {
+        _discovery?.Dispose();
         _cts?.Cancel();
         try
         {
