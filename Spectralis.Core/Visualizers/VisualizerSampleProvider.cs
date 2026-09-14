@@ -163,9 +163,22 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 
     public WaveFormat WaveFormat => source.WaveFormat;
 
+    /// <summary>
+    /// Optional tap for the raw interleaved samples of every block this provider reads —
+    /// called with (buffer, offset, samplesRead, channels) right after the underlying source
+    /// is read, before the FFT capture below. Unlike <see cref="GetFrame"/> (spectrum/peak/rms
+    /// snapshots), this hands over the actual post-EffectChain PCM audio — used by Satellite to
+    /// stream what the listener is actually hearing to paired receivers. Null by default; never
+    /// invoked, so existing consumers (video export, OBS overlay, the visualizer UI) that never
+    /// set this are entirely unaffected.
+    /// </summary>
+    public Action<float[], int, int, int>? RawBlockCaptured { get; set; }
+
     public int Read(float[] buffer, int offset, int count)
     {
         var samplesRead = source.Read(buffer, offset, count);
+
+        RawBlockCaptured?.Invoke(buffer, offset, samplesRead, channels);
 
         for (var index = 0; index < samplesRead; index += channels)
         {
