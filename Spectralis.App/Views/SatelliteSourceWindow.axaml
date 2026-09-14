@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Spectralis.App.Views"
+        x:Class="Spectralis.App.Views.SatelliteSourceWindow"
+        Title="Satellite — Spectralis"
+        Icon="/Assets/icon.png"
+        Width="520" Height="600"
+        Background="#0a0a0a">
+
+  <Grid RowDefinitions="Auto,Auto,Auto,*,*" Margin="14">
+
+    <Border Grid.Row="0"
+            Background="#111111"
+            BorderBrush="#2a2a2a"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="12">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="Stream this player's audio to other devices on your network."
+                     Foreground="#8cffffff" FontFamily="Segoe UI, Arial" FontSize="11" TextWrapping="Wrap" />
+          <TextBlock x:Name="StatusLabel" Text="Not running"
+                     Foreground="#ffffff" FontFamily="Segoe UI, Arial" FontSize="13" FontWeight="SemiBold" />
+        </StackPanel>
+        <Button x:Name="ToggleButton" Grid.Column="1" Content="Start Broadcasting"
+                Click="OnToggleClicked" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Border x:Name="PairingPanel"
+            Grid.Row="1"
+            Background="#1a1408"
+            BorderBrush="#8a6d1f"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="12"
+            Margin="0,10,0,0"
+            IsVisible="False">
+      <StackPanel Spacing="6">
+        <TextBlock x:Name="PairingDeviceLabel" Text="New device wants to pair"
+                   Foreground="#ffe9a8" FontFamily="Segoe UI, Arial" FontSize="12" FontWeight="SemiBold" />
+        <TextBlock x:Name="PairingPinLabel" Text="000000"
+                   Foreground="#ffffff" FontFamily="Consolas, Cascadia Mono, monospace" FontSize="28"
+                   HorizontalAlignment="Center" Margin="0,4" />
+        <TextBlock Text="Enter this PIN on the device you're pairing. It only needs to be entered once."
+                   Foreground="#8cffe9a8" FontFamily="Segoe UI, Arial" FontSize="11" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <TextBlock Grid.Row="2" Text="Connected"
+               Foreground="#8cffffff" FontFamily="Segoe UI, Arial" FontSize="11" FontWeight="SemiBold"
+               Margin="2,14,0,6" />
+
+    <Border Grid.Row="3"
+            Background="#111111"
+            BorderBrush="#2a2a2a"
+            BorderThickness="1"
+            CornerRadius="4"
+            MinHeight="90">
+      <ScrollViewer>
+        <ItemsControl x:Name="ConnectedList" Margin="8">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" Foreground="#ffffff" FontFamily="Segoe UI, Arial" FontSize="12" Margin="0,4" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <Grid Grid.Row="4" RowDefinitions="Auto,*" Margin="0,14,0,0">
+      <TextBlock Text="Paired Devices"
+                 Foreground="#8cffffff" FontFamily="Segoe UI, Arial" FontSize="11" FontWeight="SemiBold"
+                 Margin="2,0,0,6" />
+      <Border Grid.Row="1"
+              Background="#111111"
+              BorderBrush="#2a2a2a"
+              BorderThickness="1"
+              CornerRadius="4"
+              MinHeight="90">
+        <ScrollViewer>
+          <ItemsControl x:Name="PairedList" Margin="8">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="views:PairedDeviceRow">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                  <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="#ffffff"
+                             FontFamily="Segoe UI, Arial" FontSize="12" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Content="Forget" Tag="{Binding DeviceId}" Click="OnForgetDeviceClicked" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

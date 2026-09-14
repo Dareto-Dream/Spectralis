@@ -913,6 +913,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private SatelliteSourceWindow? _satelliteWindow;
+
+    private void OnMenuSatellite(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        if (_satelliteWindow is { IsVisible: true })
+        {
+            _satelliteWindow.Activate();
+            return;
+        }
+
+        _satelliteWindow = new SatelliteSourceWindow(vm.Satellite);
+        _satelliteWindow.Closed += (_, _) => _satelliteWindow = null;
+        _satelliteWindow.Show(this);
+    }
+
     private WasmWorldTestWindow? _wasmWorldTestWindow;
 
     private void OnMenuWasmWorldTestRig(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
