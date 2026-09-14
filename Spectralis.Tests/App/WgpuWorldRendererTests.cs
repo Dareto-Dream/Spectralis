@@ -93,4 +93,82 @@ public sealed class WgpuWorldRendererTests
         Assert.Equal(1, renderer.Width);
         Assert.Equal(1, renderer.Height);
     }
+
+    [Fact]
+    public void SubmitGeometry_ThenRender_ReplacesTheDefaultCube()
+    {
+        using var renderer = WgpuWorldRenderer.Create(64, 48);
+        if (renderer is null)
+        {
+            return; // no native lib / no GPU adapter on this machine — not a code defect
+        }
+
+        // A single flat-colored yellow triangle facing the camera — same shape as wgpu-host's
+        // own Rust smoke test (set_geometry_replaces_the_default_cube_and_renders), but proving
+        // the .NET marshaling path (managed float[]/ushort[] -> pinned native pointers) actually
+        // carries the data through correctly, not just that the native side works in isolation.
+        float[] vertices =
+        [
+            0.0f, 0.8f, 0.0f, 1.0f, 1.0f, 0.0f, // top, yellow
+            -0.8f, -0.8f, 0.0f, 1.0f, 1.0f, 0.0f, // bottom-left
+            0.8f, -0.8f, 0.0f, 1.0f, 1.0f, 0.0f, // bottom-right
+        ];
+        ushort[] indices = [0, 1, 2];
+
+        var accepted = renderer.SubmitGeometry(vertices, indices);
+        Assert.True(accepted);
+
+        var pixels = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f);
+        Assert.NotNull(pixels);
+
+        // BGRA order here: yellow is high B-channel... no, yellow = high R+G, low B (RGB), so
+        // in BGRA bytes that's low B, high G, high R.
+        var yellowPixels = 0;
+        for (var i = 0; i < pixels!.Length; i += 4)
+        {
+            var b = pixels[i];
+            var g = pixels[i + 1];
+            var r = pixels[i + 2];
+            if (r > 200 && g > 200 && b < 60)
+            {
+                yellowPixels++;
+            }
+        }
+
+        Assert.True(yellowPixels > 50, $"expected the submitted yellow triangle to be visible, got {yellowPixels} matching pixels");
+    }
+
+    [Fact]
+    public void SubmitGeometry_EmptyInput_RejectedWithoutDisturbingExistingScene()
+    {
+        using var renderer = WgpuWorldRenderer.Create(32, 32);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        Assert.False(renderer.SubmitGeometry(ReadOnlySpan<float>.Empty, [1, 2, 3]));
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 1f, 1f, 1f], ReadOnlySpan<ushort>.Empty));
+
+        // Not a multiple of 6 floats/vertex.
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 1f, 1f], [0]));
+
+        // Renderer must still work after rejected submissions (default cube untouched).
+        var pixels = renderer.RenderFrameBgraPixels(0.5, 0.3f, 0.2f, 3.0f);
+        Assert.NotNull(pixels);
+    }
+
+    [Fact]
+    public void SubmitGeometry_OnDisposedRenderer_ReturnsFalseInsteadOfCrashing()
+    {
+        var renderer = WgpuWorldRenderer.Create(16, 16);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        renderer.Dispose();
+
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 1f, 1f, 1f], [0, 0, 0]));
+    }
 }

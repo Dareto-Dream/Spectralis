@@ -32,6 +32,16 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private WgpuWorldRenderer? _renderer;
     private WasmWorldHost? _wasmHost;
 
+    // A world's on_load/on_tick can call submit_geometry from either the render thread (during
+    // Tick, under _wasmSync) or the UI thread (a TriggerExport-driven action, also under
+    // _wasmSync) — but the native renderer handle itself is only ever touched from the render
+    // thread (RenderFrameBgraPixels runs there, unsynchronized, since nothing else was expected
+    // to call into it). Rather than add locking around every native renderer call, geometry
+    // submissions are staged here and applied on the render thread right before the next frame —
+    // keeps the "one thread owns the native handle" invariant intact.
+    private readonly object _geometryLock = new();
+    private WorldGeometrySubmission? _pendingGeometry;
+
     // Guards every call into _wasmHost: the render thread's per-frame Tick() and any
     // UI-thread-triggered TriggerExport() must never run concurrently against the same
     // wasmtime Store (see WasmWorldTestWindow, where this pattern was first proven out).
@@ -86,6 +96,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _wasmHost.DspPresetReleaseRequested += (_, e) => DspPresetReleaseRequested?.Invoke(this, e);
         _wasmHost.AchievementUnlocked += (_, e) => AchievementUnlocked?.Invoke(this, e);
         _wasmHost.SwitchToHtmlRequested += (_, e) => SwitchToHtmlRequested?.Invoke(this, e);
+        _wasmHost.GeometrySubmitted += (_, e) =>
+        {
+            lock (_geometryLock)
+            {
+                _pendingGeometry = e;
+            }
+        };
 
         bool loaded;
         lock (_wasmSync)
@@ -132,6 +149,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _renderer?.Dispose();
         _renderer = null;
         Source = null;
+
+        lock (_geometryLock)
+        {
+            _pendingGeometry = null;
+        }
     }
 
     private void RenderLoop()
@@ -142,6 +164,18 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             if (renderer is null)
             {
                 return;
+            }
+
+            WorldGeometrySubmission? geometry;
+            lock (_geometryLock)
+            {
+                geometry = _pendingGeometry;
+                _pendingGeometry = null;
+            }
+
+            if (geometry is not null)
+            {
+                renderer.SubmitGeometry(geometry.InterleavedVertices, geometry.Indices);
             }
 
             var t = (DateTime.UtcNow - _startedUtc).TotalSeconds;
