@@ -24,6 +24,7 @@
     <PackageReference Include="System.Reactive" Version="6.0.1" />
     <PackageReference Include="Jint" Version="3.1.0" />
     <PackageReference Include="Wasmtime" Version="44.0.0" />
+    <PackageReference Include="Concentus" Version="2.2.2" />
   </ItemGroup>
 
 </Project>

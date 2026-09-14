@@ -273,8 +273,11 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
     }
 
     /// <summary>Sends one audio+FFT frame to every connected, paired receiver — per-receiver,
-    /// strips the FFT bins for anyone who declared <see cref="SatelliteDisplay.None"/>. Errors
-    /// writing to one receiver don't affect delivery to the others.</summary>
+    /// strips the FFT bins for anyone who declared <see cref="SatelliteDisplay.None"/>, and
+    /// re-encodes to Opus for anyone who negotiated it (each receiver has its own encoder
+    /// pipeline, so a raw PCM block may turn into zero, one, or more Opus packets per receiver
+    /// depending on that receiver's own buffering state). Errors writing to one receiver don't
+    /// affect delivery to the others.</summary>
     public async Task BroadcastAudioFrameAsync(SatelliteAudioFrame frame, CancellationToken ct = default)
     {
         foreach (var client in _clients.Values)
@@ -284,20 +287,11 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
                 continue; // still mid-handshake
             }
 
-            var outgoing = session.Display == SatelliteDisplay.None && frame.FftBins.Length > 0
-                ? new SatelliteAudioFrame
-                {
-                    SourceClockMs = frame.SourceClockMs,
-                    SampleRate = frame.SampleRate,
-                    ChannelCount = frame.ChannelCount,
-                    PcmSamples = frame.PcmSamples,
-                    FftBins = [],
-                }
-                : frame;
+            float[] fftBins = session.Display == SatelliteDisplay.None ? [] : frame.FftBins;
 
             try
             {
-                await client.WriteAudioAsync(outgoing, ct).ConfigureAwait(false);
+                await client.WriteAudioAsync(frame, fftBins, ct).ConfigureAwait(false);
             }
             catch (IOException)
             {
@@ -321,6 +315,8 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
     private sealed class ConnectedClient(TcpClient tcpClient, NetworkStream stream) : IDisposable
     {
         private readonly SemaphoreSlim _writeLock = new(1, 1);
+        private SatelliteOpusEncodePipeline? _opusPipeline;
+        private bool _opusPipelineAttempted;
 
         public NetworkStream Stream { get; } = stream;
         public SatelliteReceiverSession? Session { get; set; }
@@ -339,7 +335,70 @@ public sealed class SatelliteSourceServer : IAsyncDisposable
             }
         }
 
-        public async Task WriteAudioAsync(SatelliteAudioFrame frame, CancellationToken ct)
+        /// <summary>Encodes <paramref name="frame"/>'s PCM for this specific receiver — straight
+        /// through for Pcm, or via this connection's own Opus pipeline (lazily created, reused
+        /// for the life of the connection) when the receiver negotiated Opus and the source's
+        /// sample rate is Opus-native. A raw block can turn into zero or several Opus packets
+        /// here depending on this connection's buffering state, so this may write more than one
+        /// wire frame per call. <paramref name="fftBins"/> is attached to only the first (or
+        /// only) frame emitted — it's a point-in-time visualizer snapshot, not something that
+        /// needs to repeat across every Opus packet a single raw block happened to produce.</summary>
+        public async Task WriteAudioAsync(SatelliteAudioFrame frame, float[] fftBins, CancellationToken ct)
+        {
+            var wantsOpus = Session?.Codec == SatelliteCodec.Opus;
+            var pipeline = wantsOpus ? GetOrCreateOpusPipeline(frame.SampleRate, frame.ChannelCount) : null;
+
+            if (pipeline is null)
+            {
+                var outgoing = ReferenceEquals(fftBins, frame.FftBins)
+                    ? frame
+                    : new SatelliteAudioFrame
+                    {
+                        SourceClockMs = frame.SourceClockMs,
+                        SampleRate = frame.SampleRate,
+                        ChannelCount = frame.ChannelCount,
+                        Encoding = frame.Encoding,
+                        PcmSamples = frame.PcmSamples,
+                        FftBins = fftBins,
+                    };
+                await WriteOneAsync(outgoing, ct).ConfigureAwait(false);
+                return;
+            }
+
+            var packets = pipeline.Encode(frame.PcmSamples);
+            for (var i = 0; i < packets.Count; i++)
+            {
+                var outgoing = new SatelliteAudioFrame
+                {
+                    SourceClockMs = frame.SourceClockMs,
+                    SampleRate = frame.SampleRate,
+                    ChannelCount = frame.ChannelCount,
+                    Encoding = SatelliteAudioEncoding.Opus,
+                    OpusPayload = packets[i],
+                    OpusFrameSize = pipeline.FrameSizePerChannel,
+                    FftBins = i == 0 ? fftBins : [],
+                };
+                await WriteOneAsync(outgoing, ct).ConfigureAwait(false);
+            }
+        }
+
+        private SatelliteOpusEncodePipeline? GetOrCreateOpusPipeline(int sampleRate, int channels)
+        {
+            if (_opusPipelineAttempted)
+            {
+                return _opusPipeline;
+            }
+
+            _opusPipelineAttempted = true;
+            if (SatelliteOpusCodec.IsRateSupported(sampleRate))
+            {
+                _opusPipeline = new SatelliteOpusEncodePipeline(sampleRate, channels);
+            }
+
+            return _opusPipeline;
+        }
+
+        private async Task WriteOneAsync(SatelliteAudioFrame frame, CancellationToken ct)
         {
             var payload = frame.Encode();
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);

@@ -3,10 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace Spectralis.Core.Satellite;
 
-/// <summary>Codec a receiver can ask for. Only <see cref="Pcm"/> is actually encoded by the
-/// source today — <see cref="Opus"/> is a declared, negotiable capability so the handshake
-/// shape doesn't need to change when real Opus encoding lands, but requesting it currently just
-/// gets you Pcm anyway (see SatelliteSourceServer).</summary>
+/// <summary>Codec a receiver can ask for. <see cref="Opus"/> is real (see
+/// <see cref="SatelliteOpusCodec"/>), but only when the source's current audio engine sample
+/// rate is one of Opus's native rates (8k/12k/16k/24k/48k) — if it isn't, the source falls back
+/// to <see cref="Pcm"/> for that receiver rather than resampling (see SatelliteSourceServer).</summary>
 public enum SatelliteCodec
 {
     Pcm,
