@@ -231,6 +231,130 @@ public sealed class SatelliteIntegrationTests : IAsyncLifetime
         Assert.False(string.IsNullOrEmpty(result));
     }
 
+    [Fact]
+    public async Task OpusNegotiated_BroadcastAudioFrame_ArrivesAsRealDecodedAudio()
+    {
+        // Proves the full Opus path over a real socket: the source's per-connection
+        // SatelliteOpusEncodePipeline buffers+encodes, the wire carries real Opus packets (not
+        // Pcm), and SatelliteReceiverClient decodes them back via SatelliteOpusDecodePipeline
+        // before ever raising AudioFrameReceived — a consumer never sees OpusPayload directly.
+        _pairedDevices.MarkPaired("device-opus", "Opus Receiver");
+        var (client, connected) = await ConnectAsync("device-opus", codec: SatelliteCodec.Opus, display: SatelliteDisplay.None, obtainPin: null);
+        await using var _ = client;
+        Assert.True(connected);
+        await WaitUntilAsync(() => _server.ConnectedReceivers.Count == 1);
+        Assert.Equal(SatelliteCodec.Opus, _server.ConnectedReceivers.Single().Codec);
+
+        var receivedPcm = new List<float>();
+        var receivedEncodings = new List<SatelliteAudioEncoding>();
+        client.AudioFrameReceived += (_, frame) =>
+        {
+            lock (receivedPcm)
+            {
+                receivedEncodings.Add(frame.Encoding);
+                receivedPcm.AddRange(frame.PcmSamples);
+            }
+        };
+
+        // Feed the source in irregular, non-frame-aligned chunk sizes (like real NAudio blocks)
+        // so the per-connection reframing buffer actually has to do its job across several
+        // BroadcastAudioFrameAsync calls, not just one conveniently-sized one.
+        const int sampleRate = 48000;
+        const int channels = 2;
+        var chunkSizes = new[] { 500, 700, 900, 1100, 800 }; // samples/channel; sums to 4000 (> 4 opus frames)
+        var totalSamplesPerChannel = chunkSizes.Sum();
+        var tone = MakeStereoTone(sampleRate, totalSamplesPerChannel, freqHz: 440);
+
+        var offset = 0;
+        foreach (var chunkSamples in chunkSizes)
+        {
+            var chunk = tone[(offset * channels)..((offset + chunkSamples) * channels)];
+            await _server.BroadcastAudioFrameAsync(new SatelliteAudioFrame
+            {
+                SourceClockMs = SatelliteClock.NowMs(),
+                SampleRate = sampleRate,
+                ChannelCount = channels,
+                PcmSamples = chunk,
+                FftBins = [1f, 2f, 3f], // receiver declared display=none — should never arrive
+            });
+            offset += chunkSamples;
+        }
+
+        // 4000 samples/channel @ 960/frame = 4 full frames guaranteed, regardless of exact chunk
+        // alignment; wait for at least that much decoded audio to arrive over the socket.
+        await WaitUntilAsync(() =>
+        {
+            lock (receivedPcm)
+            {
+                return receivedPcm.Count >= 960 * 4 * channels;
+            }
+        }, timeoutMs: 10000);
+
+        float[] pcmSnapshot;
+        SatelliteAudioEncoding[] encodingSnapshot;
+        lock (receivedPcm)
+        {
+            pcmSnapshot = receivedPcm.ToArray();
+            encodingSnapshot = receivedEncodings.ToArray();
+        }
+
+        Assert.All(encodingSnapshot, e => Assert.Equal(SatelliteAudioEncoding.Opus, e));
+        Assert.DoesNotContain(_server.ConnectedReceivers, r => r.Display != SatelliteDisplay.None); // sanity on test setup
+        AssertToneRecovered(tone, pcmSnapshot, sampleRate, channels, freqHz: 440);
+    }
+
+    private static float[] MakeStereoTone(int sampleRate, int samplesPerChannel, double freqHz)
+    {
+        var buffer = new float[samplesPerChannel * 2];
+        for (var i = 0; i < samplesPerChannel; i++)
+        {
+            var s = (float)(Math.Sin(2 * Math.PI * freqHz * i / sampleRate) * 0.5);
+            buffer[i * 2] = s;
+            buffer[i * 2 + 1] = s;
+        }
+
+        return buffer;
+    }
+
+    /// <summary>Same cross-correlation-based alignment technique as SatelliteOpusCodecTests —
+    /// Opus's fixed algorithmic delay means decoded audio lags the source by a small, constant
+    /// number of samples, so a naive sample-by-sample diff on a periodic tone is meaningless.</summary>
+    private static void AssertToneRecovered(float[] original, float[] decoded, int sampleRate, int channels, double freqHz)
+    {
+        var origL = new double[original.Length / channels];
+        var decL = new double[decoded.Length / channels];
+        for (var i = 0; i < origL.Length; i++) origL[i] = original[i * channels];
+        for (var i = 0; i < decL.Length; i++) decL[i] = decoded[i * channels];
+
+        var maxLag = Math.Min(sampleRate / 100, decL.Length - 1);
+        var bestLag = 0;
+        var bestScore = double.MinValue;
+        for (var lag = 0; lag <= maxLag; lag++)
+        {
+            double score = 0;
+            var n = Math.Min(origL.Length, decL.Length - lag);
+            for (var i = 0; i < n; i++) score += origL[i] * decL[i + lag];
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestLag = lag;
+            }
+        }
+
+        var skip = sampleRate / 50; // one frame
+        var compareCount = Math.Min(origL.Length, decL.Length - bestLag) - skip * 2;
+        Assert.True(compareCount > sampleRate / 50, "not enough overlap to compare after alignment");
+
+        double err = 0;
+        for (var i = skip; i < skip + compareCount; i++)
+        {
+            err += Math.Abs(origL[i] - decL[i + bestLag]);
+        }
+
+        var avgErr = err / compareCount;
+        Assert.True(avgErr < 0.05, $"avg abs err {avgErr} too high after real network round trip (best lag {bestLag})");
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 5000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
