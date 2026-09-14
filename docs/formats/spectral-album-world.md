@@ -137,7 +137,8 @@ Format name: `spectralis-album`, version: `1`.
 "world": {
   "entry": "world/index.html",
   "binaryAssets": { },
-  "dataAssets": { }
+  "dataAssets": { },
+  "wasmEntry": "world/world.wasm"
 }
 ```
 
@@ -146,9 +147,44 @@ Format name: `spectralis-album`, version: `1`.
 | `entry` | Yes (if section present) | Path within ZIP to the HTML file that boots the world |
 | `binaryAssets` | No | Named binary assets (images, fonts) available at the virtual host |
 | `dataAssets` | No | Named data assets (JSON configs, manifests) |
+| `wasmEntry` | No | Path within ZIP to a sandboxed Wasm/wgpu 3D world module (dual-runtime rework). Requires the `worlds.wasm3d` capability. Empty/absent means this world is HTML-only — the common case. |
 
 **`world` is optional.** If absent or if `entry` does not resolve to an existing file in the
 extracted album directory, the player shows the fallback tracklist UI instead of loading WebView2.
+
+### Dual-Runtime Worlds (`wasmEntry`)
+
+A world may declare `wasmEntry` alongside `entry` to ship a sandboxed Wasm/wgpu 3D
+experience — see [`Spectralis.Core/Worlds/WasmWorldHost.cs`](../../Spectralis.Core/Worlds/WasmWorldHost.cs)
+for the host-import surface (`play_track`, `unlock_achievement`, `register_dsp_preset`,
+`switch_to_html`, `storage_get`/`storage_set`, ...). Both `entry` and `wasmEntry` are required
+together today — the HTML entry is the fallback surface a Wasm world hands off into via its
+`switch_to_html` host import (and what older app versions / a failed Wasm load fall back to),
+and the HTML surface can request the reverse hand-off via `spectral.worlds.switchToWasm()`.
+Requires the `worlds.wasm3d` capability in addition to `album.world`.
+
+Hand-off state (playback position, achievements, the active DSP preset) is carried through a
+shared per-world key-value store (`Spectralis.Core.Capsule.CapsuleScopedStore`) reachable from
+both runtimes under the same key, so switching mid-listen doesn't reset anything.
+
+### Lite Bundles
+
+A **Lite bundle** is a derived package with the Wasm world stripped — `world.wasmEntry` and the
+`worlds.wasm3d` capability removed, everything else (tracks, audio, art, lyrics, the HTML
+world/story content) kept byte-for-byte. It's for distributing a lighter variant (no native
+renderer / GPU required) without hand-maintaining two separate packages.
+
+Generate one from an already-signed `.spectral` file with `tools/world_to_lite.py`:
+
+```sh
+python tools/world_to_lite.py my-album.spectral
+# -> my-album-lite.spectral, re-signed with the same creator key
+```
+
+The tool re-signs the output as the same creator (it needs that private key available locally,
+default search `~/.spectralis/keys/*.pem`, or pass `--key path/to/key.pem` explicitly) and
+self-verifies the result before exiting — same convention as the per-song `pack_<song>.py`
+signing scripts.
 
 ### How the World is Served
 
