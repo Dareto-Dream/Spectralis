@@ -94,9 +94,14 @@ public sealed class SpotifyPlaybackHostService
 
     public async Task StopAsync()
     {
+        // Only pauses — the SDK device stays connected and ready. Nulling _deviceId here used to
+        // strand EnsureDeviceReadyAsync: it saw _navigated already true (so skipped re-navigating
+        // the WebView) and then just sat waiting for a fresh 'ready' message that was never coming
+        // again, since the still-alive player was never told to disconnect. That's why "play
+        // Spotify again" after a stop would burn its whole timeout and then keep failing forever
+        // on every subsequent attempt.
         if (_deviceId is not null)
             await _spotify.PauseAsync(_resolveClientId(), _deviceId);
-        _deviceId = null;
         _statusMessage = null;
     }
 
