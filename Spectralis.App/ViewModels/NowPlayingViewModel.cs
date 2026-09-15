@@ -114,6 +114,20 @@ public sealed class QueueItemViewModel : ViewModelBase
         _isCurrent = isCurrent;
     }
 
+    /// <summary>A row queried live from Spotify's own device queue (see
+    /// NowPlayingViewModel.RefreshSpotifyQueueAsync) — <paramref name="trackUri"/> is the
+    /// "spotify:track:..." uri Spotify reported for this row, kept in <see cref="Path"/> so
+    /// double-clicking it can jump Spotify's own playback there.</summary>
+    public QueueItemViewModel(int index, string trackUri, string title, string subtitle, bool isCurrent)
+    {
+        Index = index;
+        Path = trackUri;
+        Title = title;
+        Subtitle = subtitle;
+        IsUrl = false;
+        _isCurrent = isCurrent;
+    }
+
     /// <summary>Known display metadata (a Spotify track's real title/artist, from the playlist
     /// that queued it) — used instead of trying to derive anything from the raw entry, which for
     /// a "spotify:track:..." uri has no meaningful filename/host to extract at all.</summary>
@@ -340,6 +354,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// entry point. Next/Previous/auto-advance must stay Queue-driven in that case instead of
     /// deferring to Spotify's own context queue, since the next Queue entry may be a local file.</summary>
     private bool _queueDrivenSpotifyTrack;
+    /// <summary>The context (playlist/album URI) behind the current non-queue-driven Spotify
+    /// session, when known — set by <see cref="PlaySpotifyContextAsync"/>, null for the standalone
+    /// "Play Spotify" flow (which resumes whatever context Spotify itself already had). Lets a
+    /// Queue-panel double-click jump straight to that track within the context via
+    /// <see cref="SpotifyPlaybackHostService.PlayContextAtTrackAsync"/> instead of just starting
+    /// it as a bare, context-less single track.</summary>
+    private string? _spotifyContextUri;
     /// <summary>True from the moment a Stop is requested until the next Spotify play command
     /// fires. StopSpotifyPlayback's PauseAsync call is fire-and-forget, and the SDK still reports
     /// a player_state_changed event once that pause actually lands — without this guard, that late
@@ -587,6 +608,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         {
             this.RaiseAndSetIfChanged(ref _showQueue, value);
             this.RaisePropertyChanged(nameof(AnyPanelOpen));
+
+            // Spotify-driven playback (standalone "Play Spotify" or a synced playlist played as
+            // a Spotify context) doesn't keep Spectralis's own Queue populated — opening the
+            // panel should show what Spotify actually has queued right now, not whatever the
+            // last per-track refresh happened to catch.
+            if (value && _spotifyState is not null && !_queueDrivenSpotifyTrack && _spotifyHost is not null)
+            {
+                _ = RefreshSpotifyQueueAsync();
+            }
         }
     }
 
@@ -1224,9 +1254,25 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>Jumps playback to a row the user activated in the queue panel.</summary>
     public async Task PlayQueueItemAsync(QueueItemViewModel item)
     {
+        // When Spotify itself (not Spectralis's own Queue) is driving playback, QueueItems was
+        // built live from Spotify's own device queue (see RefreshSpotifyQueueAsync) rather than
+        // from Queue — item.Index doesn't correspond to a Queue entry at all here, so jump via
+        // the Spotify API instead of touching the local Queue.
+        if (_spotifyState is not null && !_queueDrivenSpotifyTrack && _spotifyHost is not null)
+        {
+            if (!string.IsNullOrEmpty(item.Path))
+            {
+                await SkipToSpotifyQueueTrackAsync(item.Path);
+            }
+            return;
+        }
+
         if (Queue.SetCurrent(item.Index) is { } path)
         {
-            await LoadCurrentQueueTrackAsync(path, startPlayback: true);
+            // LoadQueueItemAsync (not LoadCurrentQueueTrackAsync directly) so a "spotify:track:..."
+            // entry in a mixed local+Spotify playlist routes to LoadSpotifyQueueTrackAsync instead
+            // of being handed to the local engine as a bogus file path.
+            await LoadQueueItemAsync(path, startPlayback: true);
         }
     }
 
@@ -2530,10 +2576,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         QueueItems.Clear();
         var current = snapshot.Current;
         if (current is not null)
-            QueueItems.Add(new QueueItemViewModel(0, current.Name ?? "", BuildSpotifySubtitle(current), isCurrent: true));
+            QueueItems.Add(new QueueItemViewModel(0, current.Uri ?? "", current.Name ?? "", BuildSpotifySubtitle(current), isCurrent: true));
         var i = 1;
         foreach (var track in snapshot.Queue.Take(50))
-            QueueItems.Add(new QueueItemViewModel(i++, track.Name ?? "", BuildSpotifySubtitle(track), isCurrent: false));
+            QueueItems.Add(new QueueItemViewModel(i++, track.Uri ?? "", track.Name ?? "", BuildSpotifySubtitle(track), isCurrent: false));
         this.RaisePropertyChanged(nameof(HasQueueItems));
         this.RaisePropertyChanged(nameof(QueueHeaderText));
         this.RaisePropertyChanged(nameof(QueueUpcomingText));
@@ -2682,9 +2728,78 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
 
         _queueDrivenSpotifyTrack = false;
+        _spotifyContextUri = null;
         _spotifyStopRequested = false;
         RemoteStatus = "Connecting to Spotify...";
         var started = await SpotifyHost.PlayAsync();
+        RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
+    }
+
+    /// <summary>Starts playback of a Spotify context (a playlist/album/artist URI) directly,
+    /// for a playlist synced entirely from Spotify — rather than unrolling every track into
+    /// Spectralis's own Queue and driving them one at a time via <see cref="LoadSpotifyQueueTrackAsync"/>.
+    /// Spotify's own device queue is authoritative from here (Next/Previous defer to it, same as
+    /// the standalone "Play Spotify" flow), and the Queue panel mirrors it live via
+    /// <see cref="RefreshSpotifyQueueAsync"/> on every track change instead of a one-time snapshot
+    /// that goes stale as soon as the context advances on Spotify's side.</summary>
+    public async Task<bool> PlaySpotifyContextAsync(string contextUri)
+    {
+        if (SpotifyHost is null)
+        {
+            RemoteStatus = "Spotify playback host is not ready.";
+            return false;
+        }
+
+        _queueDrivenSpotifyTrack = false;
+        _spotifyContextUri = contextUri;
+        _spotifyStopRequested = false;
+        RemoteStatus = "Connecting to Spotify...";
+        var started = await SpotifyHost.PlayUriAsync(contextUri);
+        RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
+        return started;
+    }
+
+    /// <summary>Starts playback of an explicit, ordered list of Spotify track uris as one real
+    /// Spotify-side queue — for a playlist made up entirely of Spotify tracks that was never
+    /// actually synced from/linked to a real Spotify playlist (e.g. built by hand via Library
+    /// search's "add to playlist", or the synthetic Liked Songs playlist, both of which have no
+    /// <c>SpotifyPlaylistId</c> to build a context_uri from). Same non-queue-driven treatment as
+    /// <see cref="PlaySpotifyContextAsync"/> — Spotify's own device queue takes over from here —
+    /// except there's no context uri to jump within, so a Queue-panel double-click on one of these
+    /// rows falls back to a single-track play instead of <see cref="SkipToSpotifyQueueTrackAsync"/>'s
+    /// context-offset jump.</summary>
+    public async Task<bool> PlaySpotifyTrackListAsync(IReadOnlyList<string> trackUris)
+    {
+        if (SpotifyHost is null)
+        {
+            RemoteStatus = "Spotify playback host is not ready.";
+            return false;
+        }
+
+        _queueDrivenSpotifyTrack = false;
+        _spotifyContextUri = null;
+        _spotifyStopRequested = false;
+        RemoteStatus = "Connecting to Spotify...";
+        var started = await SpotifyHost.PlayTracksAsync(trackUris);
+        RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
+        return started;
+    }
+
+    /// <summary>Jumps to a row the user double-clicked in the Queue panel while Spotify (not
+    /// Spectralis's own Queue) is driving playback — the closest real equivalent to "reordering"
+    /// Spotify's live device queue, since the Web API exposes no endpoint to reorder or seek
+    /// within it directly (see <see cref="SpotifyService.PlayContextAtTrackAsync"/>).</summary>
+    private async Task SkipToSpotifyQueueTrackAsync(string trackUri)
+    {
+        if (SpotifyHost is null)
+        {
+            return;
+        }
+
+        RemoteStatus = "Connecting to Spotify...";
+        var started = _spotifyContextUri is not null
+            ? await SpotifyHost.PlayContextAtTrackAsync(_spotifyContextUri, trackUri)
+            : await SpotifyHost.PlayUriAsync(trackUri);
         RemoteStatus = started ? "Spotify playback requested" : SpotifyHost.StatusMessage ?? "Spotify playback failed";
     }
 
@@ -3476,6 +3591,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _ = _spotifyHost?.StopAsync();
         _spotifyState = null;
         _queueDrivenSpotifyTrack = false;
+        _spotifyContextUri = null;
         StopSpotifyLoopback();
         _spotifyVisualizer = null;
         _engine.ExternalVisualizerSource = null;
