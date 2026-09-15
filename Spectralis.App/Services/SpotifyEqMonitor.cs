@@ -34,11 +34,23 @@ public sealed class SpotifyEqMonitor : IDisposable
     public string? Status { get; private set; }
 
     /// <summary>
-    /// Begins capture → effects chain → playback. <paramref name="tap"/> receives the
-    /// processed signal so the visualizer reflects the EQ'd audio;
-    /// <paramref name="setWebViewMuted"/> silences the raw WebView output while running.
+    /// Begins capture → effects chain → playback. <paramref name="captureProcessId"/> must be a
+    /// process the WebView's audio is a descendant of, NOT the WebView2 browser sub-process
+    /// itself — activating process-loopback directly against that sandboxed/broker process
+    /// reliably fails with E_ILLEGAL_METHOD_CALL ("a method was called at an unexpected time"),
+    /// even on a clean attempt well after audio is confirmed playing (so it isn't a startup
+    /// race). Pass the hosting .NET process id instead; <see cref="ProcessLoopbackCapture"/>'s
+    /// IncludeTargetProcessTree mode recursively covers the WebView's descendants from there —
+    /// the same target <see cref="Spectralis.Core.Audio.Loopback.WindowsLoopbackCaptureSource"/>'s
+    /// plain tap already uses successfully. <paramref name="tap"/> receives the processed signal
+    /// so the visualizer reflects the EQ'd audio; <paramref name="setWebViewMuted"/> silences the
+    /// raw WebView output while running. Runs on the caller's thread (the UI/WebView2
+    /// message-dispatch thread) — must await <see cref="ProcessLoopbackCapture.StartAsync"/>
+    /// rather than its blocking <c>Start</c> wrapper, or a still-in-flight activation can be
+    /// reentered by the very next WebView2 message. See that method's doc comment for the full
+    /// mechanism.
     /// </summary>
-    public bool Start(int browserProcessId, EffectChain chain, VisualizerSampleProvider tap, Action<bool> setWebViewMuted)
+    public async Task<bool> StartAsync(int captureProcessId, EffectChain chain, VisualizerSampleProvider tap, Action<bool> setWebViewMuted)
     {
         Stop();
         try
@@ -49,8 +61,8 @@ public sealed class SpotifyEqMonitor : IDisposable
             var processed = chain.BuildChain(source);
             var monitored = new VisualizerTee(processed, tap);
 
-            _capture = new ProcessLoopbackCapture(browserProcessId);
-            _capture.Start(Write);
+            _capture = new ProcessLoopbackCapture(captureProcessId);
+            await _capture.StartAsync(Write);
 
             _output = new WaveOutEvent { DesiredLatency = 120, NumberOfBuffers = 3 };
             _output.Init(monitored);
