@@ -40,13 +40,37 @@ public sealed class ProcessLoopbackCapture : IDisposable
 
     public static bool IsSupported => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348);
 
-    /// <summary>Begins capture. <paramref name="sink"/> receives (buffer, offset, sampleCount, channels).</summary>
-    public void Start(Action<float[], int, int, int> sink)
+    /// <summary>Synchronous convenience wrapper for callers on threads where blocking briefly is
+    /// safe. Do NOT call this from a WebView2 message-dispatch/UI thread — see
+    /// <see cref="StartAsync"/> for why.</summary>
+    public void Start(Action<float[], int, int, int> sink) => StartAsync(sink).GetAwaiter().GetResult();
+
+    /// <summary>Begins capture. <paramref name="sink"/> receives (buffer, offset, sampleCount, channels).
+    /// Genuinely async end to end — <c>ActivateAudioInterfaceAsync</c>'s completion is delivered on
+    /// an arbitrary COM callback thread. Calling this used to be collapsed to a synchronous
+    /// <c>.GetAwaiter().GetResult()</c> everywhere, including from the Spotify EQ monitor
+    /// (<see cref="Spectralis.App.Services.SpotifyEqMonitor"/>), which runs on the UI/WebView2
+    /// message-dispatch thread. Blocking that thread synchronously on a pending cross-thread COM
+    /// completion is a classic STA reentrancy hazard: Windows can pump window messages to avoid
+    /// deadlocking the wait, which can let the very next WebView2 message (another
+    /// player_state_changed) re-enter this same call path and start a second, overlapping
+    /// activation attempt before the first has even finished — exactly the shape of bug that trips
+    /// <c>E_ILLEGAL_METHOD_CALL</c> ("a method was called at an unexpected time"). Callers on that
+    /// thread must await this directly instead of going through the blocking <see cref="Start"/>.</summary>
+    public async Task StartAsync(Action<float[], int, int, int> sink)
     {
         onSamples = sink;
         stopping = false;
 
-        audioClient = ActivateProcessLoopbackAudioClientAsync(processId).GetAwaiter().GetResult();
+        try
+        {
+            audioClient = await ActivateProcessLoopbackAudioClientAsync(processId);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"ActivateAudioInterfaceAsync: {ex.Message}", ex);
+        }
+
         waveFormat = new WaveFormat(44100, 16, 2);
         bytesPerFrame = waveFormat.BlockAlign;
 
@@ -56,16 +80,23 @@ public sealed class ProcessLoopbackCapture : IDisposable
             AudioClientStreamFlags.AutoConvertPcm |
             AudioClientStreamFlags.SrcDefaultQuality;
 
-        audioClient.Initialize(
-            AudioClientShareMode.Shared,
-            streamFlags,
-            0,
-            0,
-            waveFormat,
-            Guid.Empty);
+        try
+        {
+            audioClient.Initialize(
+                AudioClientShareMode.Shared,
+                streamFlags,
+                0,
+                0,
+                waveFormat,
+                Guid.Empty);
 
-        captureEvent = new EventWaitHandle(false, EventResetMode.AutoReset);
-        audioClient.SetEventHandle(captureEvent.SafeWaitHandle.DangerousGetHandle());
+            captureEvent = new EventWaitHandle(false, EventResetMode.AutoReset);
+            audioClient.SetEventHandle(captureEvent.SafeWaitHandle.DangerousGetHandle());
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"AudioClient.Initialize/SetEventHandle: {ex.Message}", ex);
+        }
 
         recordBuffer = new byte[Math.Max(bytesPerFrame, audioClient.BufferSize * bytesPerFrame)];
         captureThread = new Thread(CaptureThread)
