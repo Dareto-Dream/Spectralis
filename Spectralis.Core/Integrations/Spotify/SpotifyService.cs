@@ -136,6 +136,58 @@ public sealed class SpotifyService : IDisposable
         return await SendApiAsync(HttpMethod.Put, path, token, body);
     }
 
+    /// <summary>Plays a whole ordered list of tracks as a single real Spotify-side queue (one
+    /// "uris" play call) so Spotify auto-advances through all of them and its own device queue
+    /// shows the rest — for a playlist assembled entirely from Spotify tracks but never actually
+    /// synced from/linked to a real Spotify playlist (so there's no context_uri to point at, e.g.
+    /// one built by hand via Library search's "add to playlist"), where the alternative would be
+    /// starting each track individually and never advancing. Spotify's play endpoint caps "uris"
+    /// at 100 entries.</summary>
+    public async Task<bool> PlayTracksAsync(IReadOnlyList<string> trackUris, string clientId, string? deviceId = null)
+    {
+        if (trackUris.Count == 0) return false;
+
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null) return false;
+
+        var path = string.IsNullOrWhiteSpace(deviceId)
+            ? "/me/player/play"
+            : $"/me/player/play?device_id={Uri.EscapeDataString(deviceId)}";
+        var body = JsonSerializer.Serialize(new { uris = trackUris.Take(100).ToArray() });
+        return await SendApiAsync(HttpMethod.Put, path, token, body);
+    }
+
+    /// <summary>Appends one track to the very end of Spotify's live playback queue — the only
+    /// queue mutation the Web API actually exposes (no bulk form, no reorder, no remove). Used to
+    /// chain past <see cref="PlayTracksAsync"/>'s 100-uri play-call cap by enqueueing everything
+    /// past the first 100 one at a time.</summary>
+    public async Task<bool> AddToQueueAsync(string trackUri, string clientId, string? deviceId = null)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null) return false;
+
+        var path = $"/me/player/queue?uri={Uri.EscapeDataString(trackUri)}";
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            path += $"&device_id={Uri.EscapeDataString(deviceId)}";
+        return await SendApiAsync(HttpMethod.Post, path, token, "");
+    }
+
+    /// <summary>Jumps directly to a specific track within a context (playlist/album) that's
+    /// already playing — used to skip to a row the user double-clicked in the Queue panel, since
+    /// Spotify's Web API has no "reorder/seek-within the live queue" endpoint of its own; asking
+    /// it to replay the context with an offset at that track is the closest real equivalent.</summary>
+    public async Task<bool> PlayContextAtTrackAsync(string contextUri, string trackUri, string clientId, string? deviceId = null)
+    {
+        var token = await GetFreshAccessTokenAsync(clientId);
+        if (token is null) return false;
+
+        var path = string.IsNullOrWhiteSpace(deviceId)
+            ? "/me/player/play"
+            : $"/me/player/play?device_id={Uri.EscapeDataString(deviceId)}";
+        var body = JsonSerializer.Serialize(new { context_uri = contextUri, offset = new { uri = trackUri } });
+        return await SendApiAsync(HttpMethod.Put, path, token, body);
+    }
+
     private static bool IsSpotifyContextUri(string playbackUri)
     {
         var parts = playbackUri.Split(':', StringSplitOptions.RemoveEmptyEntries);
@@ -460,9 +512,18 @@ public sealed class SpotifyService : IDisposable
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(json, Encoding.UTF8, "application/json");
             using var response = await Http.SendAsync(req);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                Debug.WriteLine($"Spotify API {method} {path} -> {(int)response.StatusCode}: {body}");
+            }
             return response.IsSuccessStatusCode;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Spotify API {method} {path} threw: {ex.Message}");
+            return false;
+        }
     }
 
     private static SpotifyDevice ReadDevice(JsonElement element) =>
@@ -484,6 +545,7 @@ public sealed class SpotifyService : IDisposable
         var (artists, album, artUrl) = ReadTrackDetails(element);
         return new SpotifyPlaybackTrack(
             element.TryGetProperty("id", out var idEl) ? idEl.GetString() : null,
+            element.TryGetProperty("uri", out var uriEl) ? uriEl.GetString() : null,
             element.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "",
             artists,
             album,
@@ -695,6 +757,7 @@ public sealed record SpotifyDevice(
 
 public sealed record SpotifyPlaybackTrack(
     string? Id,
+    string? Uri,
     string Name,
     string? Artist,
     string? Album,
