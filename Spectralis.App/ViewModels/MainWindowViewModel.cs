@@ -91,7 +91,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             PlayFromLibraryAsync,
             AppSettings);
         Library.InitializeWatchedFolders(AppSettings.LibraryAutoScanOnOpen);
-        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata);
+        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata, NowPlaying.PlaySpotifyContextAsync, NowPlaying.PlaySpotifyTrackListAsync);
         Podcasts = new PodcastsViewModel(
             LibraryDatabase,
             AppSettings,
