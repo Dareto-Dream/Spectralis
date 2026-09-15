@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #05050a; color: #eee; font: 14px system-ui, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header { padding: 24px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { opacity: 0.6; margin-top: 4px; }
+  #tracks { flex: 1; overflow: auto; padding: 0 24px 24px; }
+  .track { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+  .track:hover { background: rgba(255,255,255,0.06); }
+  .track.playing { background: rgba(120,160,255,0.15); }
+  .track .check { width: 16px; opacity: 0.6; }
+  .track .title { flex: 1; }
+  .track .time { opacity: 0.5; font-variant-numeric: tabular-nums; }
+  #exit { position: fixed; top: 16px; right: 16px; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2); background: transparent; color: #eee; cursor: pointer; }
+  #exit:hover { background: rgba(255,255,255,0.08); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="title">{{TITLE}}</h1>
+    <p id="artist"></p>
+  </header>
+  <div id="tracks"></div>
+</div>
+<button id="exit">Exit world</button>
+<script>
+/*
+ * Starter album world — scaffolded by spectral-mcp's new_album_world_project.
+ *
+ * This is deliberately minimal (a track list you can click), wired to the REAL host contract
+ * from docs/formats/spectral-album-world.md so it loads and plays correctly the moment it's
+ * packed. Replace the rendering below with the real creative world; keep the
+ * `window.spectral.*` wiring as-is (or extend it).
+ *
+ * Full JS API reference: spectral://docs/album-world-format (or
+ * docs/formats/spectral-album-world.md directly). Quick summary:
+ *   C# -> world callbacks: onReady(state), onTrackChanged(info), onPlaybackFrame(frame),
+ *     onTrackCompleted(trackId, stats). All pre-stubbed as no-ops before onReady fires.
+ *   world -> C# messages (window.chrome.webview.postMessage(JSON.stringify({type, ...}))):
+ *     spectral.playTrack, spectral.addToQueue, spectral.pause/resume, spectral.seek,
+ *     spectral.saveBookmark, spectral.unlockAchievement, spectral.exitWorld.
+ *
+ * If this world also ships a Wasm/wgpu 3D runtime (manifest.world.wasmEntry, see
+ * scaffold_wasm_world), it can hand off here via `switch_to_html`, and this page can hand off
+ * to it via window.spectral.worlds.switchToWasm() (present in the bridge bootstrap
+ * regardless — it's always safe to call, dropped silently if there's no wasm side).
+ */
+
+function post(type, extra) {
+  window.chrome.webview.postMessage(JSON.stringify(Object.assign({ type: type }, extra || {})));
+}
+
+var state = null;
+
+function render() {
+  if (!state) return;
+  document.getElementById('artist').textContent = state.artist || '';
+
+  var container = document.getElementById('tracks');
+  container.innerHTML = '';
+  var currentId = state.session && state.session.currentTrackId;
+  var stats = (state.session && state.session.trackStats) || {};
+
+  state.tracks.forEach(function (track) {
+    var row = document.createElement('div');
+    row.className = 'track' + (track.id === currentId ? ' playing' : '');
+
+    var check = document.createElement('span');
+    check.className = 'check';
+    check.textContent = stats[track.id] && stats[track.id].completed ? '✓' : '';
+
+    var title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = track.title;
+
+    var time = document.createElement('span');
+    time.className = 'time';
+    var mins = Math.floor((track.durationSeconds || 0) / 60);
+    var secs = Math.floor((track.durationSeconds || 0) % 60);
+    time.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+    row.appendChild(check);
+    row.appendChild(title);
+    row.appendChild(time);
+    row.addEventListener('click', function () {
+      post('spectral.playTrack', { trackId: track.id });
+    });
+
+    container.appendChild(row);
+  });
+}
+
+window.spectral.onReady = function (s) {
+  state = s;
+  render();
+};
+
+window.spectral.onTrackChanged = function (info) {
+  if (state) {
+    state.session = state.session || {};
+    state.session.currentTrackId = info.id;
+  }
+  render();
+};
+
+window.spectral.onPlaybackFrame = function (frame) {
+  // frame: { levels, peak, rms, time, active, trackId } — drive any live visuals here.
+};
+
+window.spectral.onTrackCompleted = function (trackId, stats) {
+  if (state && state.session) {
+    state.session.trackStats = state.session.trackStats || {};
+    state.session.trackStats[trackId] = Object.assign(
+      { completed: true },
+      state.session.trackStats[trackId],
+      stats
+    );
+  }
+  render();
+  // Decide what plays next, or let the listener pick from the track list.
+};
+
+document.getElementById('exit').addEventListener('click', function () {
+  post('spectral.exitWorld');
+});
+</script>
+</body>
+</html>
