@@ -73,6 +73,9 @@ Thumbs.db
 *.tmp.png
 
 
+# Rust
+target/
+
 # Python
 __pycache__/
 *.pyc
