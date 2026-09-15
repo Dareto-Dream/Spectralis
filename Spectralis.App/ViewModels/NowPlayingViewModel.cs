@@ -354,6 +354,20 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private long _spotifyPositionSetAtTick;
     private WindowsLoopbackCaptureSource? _spotifyLoopback;
     private SpotifyEqMonitor? _spotifyEqMonitor;
+    /// <summary>True once <see cref="SpotifyEqMonitor.Start"/> has already failed for the current
+    /// playback session — without this, EnsureSpotifyLoopbackRunning (called on every single
+    /// player_state_changed tick, several per second while playing) retried the full activate
+    /// COM interface / WaveOutEvent setup every single time, which is both the log spam AND
+    /// very likely the actual cause of the failure: each attempt raced the still-in-progress
+    /// (background-thread, up to 750ms) teardown of the sibling instance it had just disposed
+    /// milliseconds earlier, hitting the WebView's audio session mid-transition. Reset in
+    /// StopSpotifyLoopback so a fresh play session gets one more clean attempt.</summary>
+    private bool _spotifyEqAttemptFailed;
+    /// <summary>Set synchronously before the first `await` in EnsureSpotifyLoopbackRunningAsync
+    /// and cleared in a finally — guards against a second player_state_changed tick re-entering
+    /// the attempt while the first one is still pending on its own `await`, now that it's no
+    /// longer a blocking call (see ProcessLoopbackCapture.StartAsync's doc comment).</summary>
+    private bool _spotifyEqAttemptInProgress;
     private VisualizerSampleProvider? _spotifyVisualizer;
     private SelectionOption<int> _selectedSampleRate;
     private SelectionOption<int> _selectedCycleDuration;
@@ -2443,9 +2457,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _currentTrackIsPodcast = false;
         RaisePodcastModeChanged();
 
-        // Start loopback when playing, stop when paused
+        // Start loopback when playing, stop when paused. Fire-and-forget: awaiting here would
+        // delay the rest of this method (art/lyrics) on the COM activation round-trip, and the
+        // in-progress guard inside EnsureSpotifyLoopbackRunningAsync already makes overlapping
+        // calls from rapid-fire state_changed ticks safe.
         if (!state.IsPaused)
-            EnsureSpotifyLoopbackRunning();
+            _ = EnsureSpotifyLoopbackRunningAsync();
         else
             StopSpotifyLoopback();
 
@@ -2539,38 +2556,92 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private bool HasEnabledEqEffect() =>
         _effectChain.Enabled && _effectChain.Effects.Any(e => e is ParametricEqEffect { Enabled: true });
 
-    private void EnsureSpotifyLoopbackRunning()
+    private async Task EnsureSpotifyLoopbackRunningAsync()
     {
         if (!OperatingSystem.IsWindows()) return;
 
         // Experimental opt-in: instead of only tapping Spotify audio for the visualizer,
         // capture it, run it through the effects chain, and re-output it — muting the raw
         // WebView audio so it isn't heard twice. Falls back to the plain tap on any failure.
+        //
+        // _spotifyHost.WebViewBrowserProcessId (used only to confirm the WebView host is up) is
+        // deliberately NOT the capture target below: ActivateAudioInterfaceAsync's process-loopback
+        // reliably fails with E_ILLEGAL_METHOD_CALL when aimed directly at that WebView2 browser
+        // sub-process (it's a sandboxed/broker process with its own security boundary), even on a
+        // clean first attempt well after audio is confirmed playing — so it isn't a startup race.
+        // The plain tap below already targets Environment.ProcessId with IncludeTargetProcessTree,
+        // which recursively covers that same WebView's descendants, and reliably succeeds — so the
+        // EQ monitor targets the same thing.
         if (_settings.EqSpotifyAudioExperimental && _spotifyEqMonitor is null &&
+            !_spotifyEqAttemptFailed && !_spotifyEqAttemptInProgress &&
             SpotifyEqMonitor.IsSupported && HasEnabledEqEffect() &&
-            _spotifyHost?.WebViewBrowserProcessId is int browserPid)
+            _spotifyHost?.WebViewBrowserProcessId is not null)
         {
-            EnsureSpotifyVisualizer();
-            var monitor = new SpotifyEqMonitor();
-            var ok = monitor.Start(browserPid, _effectChain, _spotifyVisualizer!, muted =>
+            // Set before the first await (see field doc comment) — this whole call runs on the
+            // UI/WebView2 message-dispatch thread, and a still-pending attempt must not be
+            // re-entered by the next player_state_changed tick arriving before this one resolves.
+            _spotifyEqAttemptInProgress = true;
+            try
             {
-                if (_spotifyHost is not null)
-                {
-                    _spotifyHost.WebViewAudioMuted = muted;
-                }
-            });
-            AppLogPaths.AppendTimestamped(SpotifyPlaybackHostService.SpotifyLogPath,
-                ok ? "Spotify EQ monitor started" : $"Spotify EQ monitor failed — {monitor.Status}");
-            if (ok)
-            {
-                _spotifyEqMonitor = monitor;
-                return;
-            }
+                EnsureSpotifyVisualizer();
 
-            monitor.Dispose();
+                // Small defensive retry for any other transient activation hiccup — capped at 3
+                // tries total, gated behind _spotifyEqAttemptInProgress the whole time so it can't
+                // overlap with another attempt (not the same bug as the old per-tick retry storm).
+                const int maxAttempts = 3;
+                for (var attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    var monitor = new SpotifyEqMonitor();
+                    // Run the whole activation on a genuine background thread rather than awaiting
+                    // it inline here. Even with a real `await`, this method's *first* attempt still
+                    // executes synchronously up to that await point on the original caller's thread
+                    // — the UI/WebView2 message-dispatch thread — which is exactly the thread every
+                    // attempt reliably failed on above, while WindowsLoopbackCaptureSource's plain
+                    // tap (which only ever runs after this loop, once prior awaits have already
+                    // hopped execution off that thread) reliably succeeds on the same target
+                    // process. Task.Run guarantees that separation for every attempt, not just
+                    // ones lucky enough to land after a prior await.
+                    var ok = await Task.Run(() => monitor.StartAsync(Environment.ProcessId, _effectChain, _spotifyVisualizer!, muted =>
+                    {
+                        // The mute toggle flips a WebView2 property, which — like the rest of
+                        // WebView2's API — has thread affinity to the UI thread it was created on;
+                        // this callback can now fire from the background thread above, so hop back.
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            if (_spotifyHost is not null)
+                            {
+                                _spotifyHost.WebViewAudioMuted = muted;
+                            }
+                        });
+                    }));
+                    AppLogPaths.AppendTimestamped(SpotifyPlaybackHostService.SpotifyLogPath,
+                        ok ? $"Spotify EQ monitor started (attempt {attempt}/{maxAttempts})"
+                           : $"Spotify EQ monitor failed (attempt {attempt}/{maxAttempts}) — {monitor.Status}");
+                    if (ok)
+                    {
+                        _spotifyEqMonitor = monitor;
+                        return;
+                    }
+
+                    monitor.Dispose();
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(400);
+                    }
+                }
+
+                _spotifyEqAttemptFailed = true;
+            }
+            finally
+            {
+                _spotifyEqAttemptInProgress = false;
+            }
         }
 
-        if (_spotifyLoopback is not null) return;
+        // Also bail while an EQ-monitor attempt is still pending on its own await (see above) —
+        // starting the plain fallback concurrently would be a second, overlapping process-loopback
+        // activation against the same target process, the exact race this whole rework avoids.
+        if (_spotifyLoopback is not null || _spotifyEqMonitor is not null || _spotifyEqAttemptInProgress) return;
         EnsureSpotifyVisualizer();
         _spotifyLoopback = new WindowsLoopbackCaptureSource();
         var started = _spotifyLoopback.Start(_spotifyVisualizer!);
@@ -2582,6 +2653,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         _spotifyEqMonitor?.Dispose();
         _spotifyEqMonitor = null;
+        _spotifyEqAttemptFailed = false;
         _spotifyLoopback?.Stop();
         _spotifyLoopback?.Dispose();
         _spotifyLoopback = null;
