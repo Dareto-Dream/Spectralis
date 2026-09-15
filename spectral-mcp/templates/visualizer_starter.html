@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}} - Visualizer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+  #cover { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<img id="cover" src="delta-asset:cover" crossorigin="anonymous">
+<script>
+/*
+ * Starter capsule visualizer — scaffolded by spectral-mcp's new_capsule_project.
+ *
+ * This is deliberately minimal (a placeholder pulse), wired to the REAL host contract so it
+ * loads correctly the moment it's packed. Replace the drawing code below with the real
+ * creative visuals; keep the host-contract plumbing above `// ---- draw ----` as-is.
+ *
+ * Host contract (see docs/formats/spectralis-capsule.md, EmbeddedHtmlDocument.cs):
+ *   - document.documentElement gets CSS custom properties set every frame while playing:
+ *       --audio-peak, --audio-rms   (0..1)
+ *       --audio-time                (seconds, current playback position)
+ *       --spectral-duration         (seconds, track length, set once known)
+ *       --spectral-progress         (0..1, time / duration)
+ *     and the class `audio-active` is toggled on <html> (present while actually playing).
+ *   - `delta-asset:<name>` / `delta-bin:<name>` in an <img src> or CSS url() are resolved to
+ *     data: URIs from the capsule's binaryAssets — see manifest.json's visualizers[].binaryAssets.
+ *   - `"delta-data-json:<name>"` (as a quoted JS string literal, exactly like that) is resolved
+ *     to a JSON-encoded string from dataAssets — e.g. lyrics text. Keep the quotes in your source.
+ *   - `window.spectral` (presence.set/clear, dsp.register/release, worlds.switchToHtml,
+ *     store.get/set, meta) is always injected — see spectral://docs/capsule-format for the
+ *     full bridge, or spectral://docs/album-world-format for the world-page JS API if this
+ *     visualizer ends up inside a .spectral album track instead.
+ *   - Supports `?t=<seconds>` in the page URL: forces a fixed playback time, for deterministic
+ *     screenshots/thumbnails. When present, the preview clock below is frozen at that time.
+ *
+ * When opened standalone (file://, no host), none of the above CSS vars/class ever appear —
+ * the fallback preview clock below fakes a plausible frame so you can iterate without the app.
+ */
+
+(function () {
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var cover = document.getElementById('cover');
+
+  function resize() {
+    canvas.width = window.innerWidth * devicePixelRatio;
+    canvas.height = window.innerHeight * devicePixelRatio;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  var root = document.documentElement;
+  function cssNum(name, fallback) {
+    var raw = getComputedStyle(root).getPropertyValue(name).trim();
+    var n = parseFloat(raw);
+    return isFinite(n) ? n : fallback;
+  }
+
+  var fixedTime = null;
+  var params = new URLSearchParams(location.search);
+  if (params.has('t')) {
+    var t = parseFloat(params.get('t'));
+    if (isFinite(t)) fixedTime = t;
+  }
+
+  var previewStart = performance.now();
+  var previewDuration = 60; // used only when nothing real is available yet
+
+  function synthesizeFrame(tSeconds) {
+    // Cheap standalone-preview stand-in for real audio levels — replace with something more
+    // interesting if you want a nicer file:// preview; it's never used once the app is hosting.
+    var peak = 0.5 + 0.5 * Math.sin(tSeconds * 2.4);
+    var rms = 0.3 + 0.2 * Math.sin(tSeconds * 1.1 + 1.7);
+    return { peak: Math.max(0, peak), rms: Math.max(0, rms) };
+  }
+
+  function currentFrame() {
+    var active = root.classList.contains('audio-active');
+    var duration = cssNum('--spectral-duration', previewDuration);
+
+    if (fixedTime !== null) {
+      var synth = synthesizeFrame(fixedTime);
+      return { time: fixedTime, peak: synth.peak, rms: synth.rms, active: true, duration: duration, hosted: false };
+    }
+
+    if (active) {
+      return {
+        time: cssNum('--audio-time', 0),
+        peak: cssNum('--audio-peak', 0),
+        rms: cssNum('--audio-rms', 0),
+        active: true,
+        duration: duration,
+        hosted: true,
+      };
+    }
+
+    // Not hosted (or paused) — standalone preview clock.
+    var elapsed = ((performance.now() - previewStart) / 1000) % previewDuration;
+    var synth2 = synthesizeFrame(elapsed);
+    return { time: elapsed, peak: synth2.peak, rms: synth2.rms, active: true, duration: previewDuration, hosted: false };
+  }
+
+  // ---- draw ----------------------------------------------------------------
+  // Replace everything below with the real visual. `frame` has {time, peak, rms, active,
+  // duration, hosted}. `cover` is the <img> above (only valid once cover.naturalWidth > 0).
+
+  function draw(frame) {
+    var W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    if (cover.complete && cover.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.filter = 'blur(40px)';
+      var iw = cover.naturalWidth, ih = cover.naturalHeight;
+      var scale = Math.max(W / iw, H / ih) * 1.1;
+      var dw = iw * scale, dh = ih * scale;
+      ctx.drawImage(cover, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.restore();
+    }
+
+    var cx = W / 2, cy = H / 2;
+    var radius = Math.min(W, H) * (0.18 + 0.08 * frame.peak);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(220, 230, 255, ' + (0.35 + 0.5 * frame.rms) + ')';
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.stroke();
+
+    ctx.font = (14 * devicePixelRatio) + 'px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      frame.hosted ? 'placeholder visualizer — replace this' : 'file:// preview (not hosted)',
+      cx,
+      H - 24 * devicePixelRatio
+    );
+  }
+
+  function loop() {
+    draw(currentFrame());
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
