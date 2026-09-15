@@ -115,10 +115,80 @@ public sealed class SpotifyPlaybackHostService
     public async Task<bool> PlayUriAsync(string uri)
     {
         if (!await EnsureDeviceReadyAsync())
+        {
+            AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayUriAsync({uri}): device not ready — {_statusMessage}");
             return false;
+        }
 
         await _host.ExecuteScriptAsync("window.spotifyActivate && window.spotifyActivate()");
         var played = await _spotify.PlayUriAsync(uri, _resolveClientId(), _deviceId);
+        AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayUriAsync({uri}): result={played}");
+        if (played)
+            _statusMessage = "Spotify playback requested";
+        return played;
+    }
+
+    /// <summary>Plays a whole ordered track list as one real Spotify-side queue — see
+    /// <see cref="SpotifyService.PlayTracksAsync"/> for why this exists alongside the
+    /// context_uri-based <see cref="PlayUriAsync"/>.</summary>
+    public async Task<bool> PlayTracksAsync(IReadOnlyList<string> trackUris)
+    {
+        if (!await EnsureDeviceReadyAsync())
+        {
+            AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayTracksAsync(count={trackUris.Count}): device not ready — {_statusMessage}");
+            return false;
+        }
+
+        await _host.ExecuteScriptAsync("window.spotifyActivate && window.spotifyActivate()");
+        var played = await _spotify.PlayTracksAsync(trackUris, _resolveClientId(), _deviceId);
+        AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayTracksAsync(count={trackUris.Count}): result={played}");
+        if (played)
+        {
+            _statusMessage = "Spotify playback requested";
+            if (trackUris.Count > 100)
+            {
+                _ = EnqueueRemainingAsync(trackUris.Skip(100).ToList());
+            }
+        }
+        return played;
+    }
+
+    /// <summary>Chains past <see cref="PlayTracksAsync"/>'s 100-uri play-call cap by appending
+    /// everything beyond the first 100 to Spotify's live queue one at a time (POST
+    /// /me/player/queue has no bulk form) — so a long all-Spotify playlist plays all the way
+    /// through instead of stopping after 100 tracks. Runs in the background after the initial
+    /// play call already returned; a mid-list failure (device change, rate limit, revoked track)
+    /// just stops enqueueing there rather than retrying forever.</summary>
+    private async Task EnqueueRemainingAsync(IReadOnlyList<string> remainingUris)
+    {
+        var clientId = _resolveClientId();
+        var queued = 0;
+        foreach (var uri in remainingUris)
+        {
+            if (!await _spotify.AddToQueueAsync(uri, clientId, _deviceId))
+            {
+                AppLogPaths.AppendTimestamped(SpotifyLogPath, $"EnqueueRemainingAsync: stopped after {queued}/{remainingUris.Count} — add-to-queue failed for {uri}");
+                return;
+            }
+            queued++;
+        }
+        AppLogPaths.AppendTimestamped(SpotifyLogPath, $"EnqueueRemainingAsync: queued {queued}/{remainingUris.Count} remaining tracks");
+    }
+
+    /// <summary>Skips directly to <paramref name="trackUri"/> within <paramref name="contextUri"/>
+    /// (a playlist/album already playing) — used when the user double-clicks a row in the Queue
+    /// panel that Spotify itself is driving.</summary>
+    public async Task<bool> PlayContextAtTrackAsync(string contextUri, string trackUri)
+    {
+        if (!await EnsureDeviceReadyAsync())
+        {
+            AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayContextAtTrackAsync({contextUri}, {trackUri}): device not ready — {_statusMessage}");
+            return false;
+        }
+
+        await _host.ExecuteScriptAsync("window.spotifyActivate && window.spotifyActivate()");
+        var played = await _spotify.PlayContextAtTrackAsync(contextUri, trackUri, _resolveClientId(), _deviceId);
+        AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayContextAtTrackAsync({contextUri}, {trackUri}): result={played}");
         if (played)
             _statusMessage = "Spotify playback requested";
         return played;
