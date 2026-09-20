@@ -157,11 +157,22 @@ extracted album directory, the player shows the fallback tracklist UI instead of
 A world may declare `wasmEntry` alongside `entry` to ship a sandboxed Wasm/wgpu 3D
 experience — see [`Spectralis.Core/Worlds/WasmWorldHost.cs`](../../Spectralis.Core/Worlds/WasmWorldHost.cs)
 for the host-import surface (`play_track`, `unlock_achievement`, `register_dsp_preset`,
-`switch_to_html`, `storage_get`/`storage_set`, ...). Both `entry` and `wasmEntry` are required
-together today — the HTML entry is the fallback surface a Wasm world hands off into via its
-`switch_to_html` host import (and what older app versions / a failed Wasm load fall back to),
-and the HTML surface can request the reverse hand-off via `spectral.worlds.switchToWasm()`.
-Requires the `worlds.wasm3d` capability in addition to `album.world`.
+`switch_to_html`, `storage_get`/`storage_set`, `set_camera_pose`, ...). Both `entry` and
+`wasmEntry` are required together today — the HTML entry is the fallback surface a Wasm world
+hands off into via its `switch_to_html` host import (and what older app versions / a failed Wasm
+load fall back to), and the HTML surface can request the reverse hand-off via
+`spectral.worlds.switchToWasm()`. Requires the `worlds.wasm3d` capability in addition to
+`album.world`.
+
+The renderer's camera is fully positional and guest-owned: `wgpu-host` has no orbit/target math
+of its own, a world reports its own eye position + yaw/pitch every frame via `set_camera_pose`,
+and the host forwards held-key state and pointer-drag look deltas into the guest's optional
+`on_input(moveForward, moveRight, lookYawDelta, lookPitchDelta, interact)` export ahead of each
+frame's render — see the `WasmWorldHost` class doc for the exact argument shapes. A world that
+never calls `set_camera_pose` sits at a fixed default view. This is what makes a walkable room
+possible: movement, look, and interact-detection (a world can raycast against its own submitted
+geometry once it knows where the camera is) are all guest logic, not something wgpu-host does
+for you.
 
 Hand-off state (playback position, achievements, the active DSP preset) is carried through a
 shared per-world key-value store (`Spectralis.Core.Capsule.CapsuleScopedStore`) reachable from
