@@ -176,17 +176,17 @@ public sealed class WasmWorldHostTests : IDisposable
     [Fact]
     public void OnLoad_SubmitGeometry_RaisesEventWithDecodedVerticesAndIndices()
     {
-        // One vertex: position (1.0, 2.0, 3.0), color (0.0, 0.0, 0.0) — 6 f32s, little-endian
-        // (wasm linear memory is always little-endian): 1.0=3F800000, 2.0=40000000, 3.0=40400000.
-        // One index: 0 (u16, 2 bytes).
+        // One vertex: position (1.0, 2.0, 3.0), uv (0.0, 0.0), color (0.0, 0.0, 0.0) — 8 f32s,
+        // little-endian (wasm linear memory is always little-endian): 1.0=3F800000,
+        // 2.0=40000000, 3.0=40400000. One index: 0 (u32, 4 bytes).
         var wasm = Wat("""
             (module
               (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
               (memory (export "memory") 1)
-              (data (i32.const 0) "\00\00\80\3f\00\00\00\40\00\00\40\40\00\00\00\00\00\00\00\00\00\00\00\00")
-              (data (i32.const 32) "\00\00")
+              (data (i32.const 0) "\00\00\80\3f\00\00\00\40\00\00\40\40\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+              (data (i32.const 32) "\00\00\00\00")
               (func (export "on_load")
-                (drop (call $submit (i32.const 0) (i32.const 24) (i32.const 32) (i32.const 2)))))
+                (drop (call $submit (i32.const 0) (i32.const 32) (i32.const 32) (i32.const 4)))))
             """);
 
         WorldGeometrySubmission? submission = null;
@@ -195,22 +195,22 @@ public sealed class WasmWorldHostTests : IDisposable
         Assert.True(_host.Load(wasm));
 
         Assert.NotNull(submission);
-        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f }, submission!.InterleavedVertices);
-        Assert.Equal(new ushort[] { 0 }, submission.Indices);
+        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, submission!.InterleavedVertices);
+        Assert.Equal(new uint[] { 0 }, submission.Indices);
     }
 
     [Fact]
     public void OnLoad_SubmitGeometry_NotAWholeNumberOfVertices_DoesNotRaiseEvent()
     {
-        // 20 bytes is not a multiple of 24 (bytes per vertex) — must be rejected before ever
+        // 28 bytes is not a multiple of 32 (bytes per vertex) — must be rejected before ever
         // reading guest memory into a float array, not truncated/misaligned.
         var wasm = Wat("""
             (module
               (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
               (memory (export "memory") 1)
-              (data (i32.const 32) "\00\00")
+              (data (i32.const 32) "\00\00\00\00")
               (func (export "on_load")
-                (drop (call $submit (i32.const 0) (i32.const 20) (i32.const 32) (i32.const 2)))))
+                (drop (call $submit (i32.const 0) (i32.const 28) (i32.const 32) (i32.const 4)))))
             """);
 
         var raised = false;
@@ -234,6 +234,69 @@ public sealed class WasmWorldHostTests : IDisposable
 
         var raised = false;
         _host.GeometrySubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_RaisesEventWithDecodedPixelsAndDimensions()
+    {
+        // A 1x2 RGBA8 atlas: red pixel, then green pixel.
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\ff\00\00\ff\00\ff\00\ff")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 8) (i32.const 1) (i32.const 2)))))
+            """);
+
+        WorldTextureSubmission? submission = null;
+        _host.TextureSubmitted += (_, e) => submission = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.NotNull(submission);
+        Assert.Equal(1u, submission!.Width);
+        Assert.Equal(2u, submission.Height);
+        Assert.Equal(new byte[] { 0xff, 0x00, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff }, submission.Rgba);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_ByteLengthDoesNotMatchDimensions_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\ff\00\00\ff")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 4) (i32.const 2) (i32.const 2)))))
+            """);
+
+        var raised = false;
+        _host.TextureSubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_NonPositiveDimensions_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 1)))))
+            """);
+
+        var raised = false;
+        _host.TextureSubmitted += (_, _) => raised = true;
 
         Assert.True(_host.Load(wasm));
 
