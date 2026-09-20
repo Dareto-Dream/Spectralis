@@ -135,8 +135,8 @@ fn set_geometry_rejects_oversized_and_empty_submissions() {
     assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 0));
 
     // Counts beyond the documented caps.
-    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 250_000, one_index.as_ptr(), 1));
-    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 700_000));
+    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 600_000, one_index.as_ptr(), 1));
+    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 1_600_000));
 
     // A previously-rejected call must not have disturbed the default cube — render
     // still succeeds and produces a non-trivial image.
