@@ -2,7 +2,8 @@
 template. See spectral://docs/world-sdk-host-imports (or spectralis-world-sdk/docs/host-imports.md
 directly) for the exact host-import API the scaffolded crate can call, and
 spectral://docs/world-sdk-readme for what a world can/can't do today — no scene-graph, one flat
-vertex/index buffer via submit_geometry, the host still owns the only camera.
+vertex/index buffer via submit_geometry plus one shared texture atlas via submit_texture, and
+the guest (not the host) drives the camera via set_camera_pose.
 """
 
 from __future__ import annotations
