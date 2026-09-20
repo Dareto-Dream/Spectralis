@@ -58,9 +58,11 @@ MODULE_RUNTIMES = {"wasm", "html", "markdown", "h264", "vp9", "av1", "h265"}
 MODULE_ID_MAX_LEN = 64
 
 # spectralis-world-sdk/docs/host-imports.md submit_geometry/submit_texture caps (mirrors
-# WasmWorldHost.cs / wgpu-host's MAX_VERTICES/MAX_INDICES/MAX_TEXTURE_DIM).
-WASM_GEOMETRY_MAX_VERTICES = 200_000
-WASM_GEOMETRY_MAX_INDICES = 600_000
+# WasmWorldHost.cs / wgpu-host's MAX_VERTICES/MAX_INDICES/MAX_TEXTURE_DIM). Sized with headroom
+# over an actual measured room export (indie_bedroom.blend, full detail: ~211k vertices / ~1.2M
+# indices), not a round-number guess.
+WASM_GEOMETRY_MAX_VERTICES = 500_000
+WASM_GEOMETRY_MAX_INDICES = 1_500_000
 WASM_TEXTURE_MAX_DIM = 4096
 
 # docs/formats/reactive-timeline.md enums.

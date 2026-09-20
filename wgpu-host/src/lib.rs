@@ -101,9 +101,11 @@ const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
 /// Caps on guest-submitted geometry (`wgpu_host_set_geometry`) — bounded the same way every
 /// other untrusted-wasm-content boundary in this project is (fuel limits, string length caps in
 /// WasmWorldHost, ...). Indices are u32 now (see `wgpu_host_set_geometry` doc), so these are
-/// picked as a sane ceiling for a real room-sized mesh, not a format limitation.
-const MAX_VERTICES: u32 = 200_000;
-const MAX_INDICES: u32 = 600_000;
+/// picked as a sane ceiling for a real room-sized mesh, not a format limitation — sized with
+/// headroom over an actual measured room export (indie_bedroom.blend, full detail: ~211k
+/// vertices / ~1.2M indices), not a round-number guess.
+const MAX_VERTICES: u32 = 500_000;
+const MAX_INDICES: u32 = 1_500_000;
 
 /// Cap on a guest-submitted texture atlas (`wgpu_host_set_texture`) in either dimension — bounds
 /// GPU memory for a single RGBA8 upload (4096x4096 RGBA8 is 64MiB, already a generous atlas).

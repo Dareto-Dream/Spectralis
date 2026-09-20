@@ -156,7 +156,7 @@ public sealed class WgpuWorldRenderer : IDisposable
     /// still renders flat per-vertex color (the default atlas is a 1x1 white pixel, a no-op
     /// multiply). Returns false (geometry left unchanged — still whatever it was before, cube or
     /// an earlier valid submission) for empty input or anything past wgpu-host's fixed caps
-    /// (200000 vertices, 600000 indices) rather than throwing; a malformed wasm world shouldn't
+    /// (500000 vertices, 1500000 indices) rather than throwing; a malformed wasm world shouldn't
     /// be able to crash the renderer, only fail to draw.
     /// </summary>
     public bool SubmitGeometry(ReadOnlySpan<float> interleavedVertices, ReadOnlySpan<uint> indices)

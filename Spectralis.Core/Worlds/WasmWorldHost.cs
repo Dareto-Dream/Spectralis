@@ -93,12 +93,13 @@ public sealed class WasmWorldHost : IDisposable
 
     private const int MaxStringBytes = 4096;
 
-    // Mirrors wgpu-host's MAX_VERTICES (200000) / MAX_INDICES (600000) caps — reject oversized
+    // Mirrors wgpu-host's MAX_VERTICES (500000) / MAX_INDICES (1500000) caps — reject oversized
     // submissions here, before ever touching the native renderer, rather than relying solely on
-    // its own check.
+    // its own check. Sized with headroom over an actual measured room export (indie_bedroom.blend,
+    // full detail: ~211k vertices / ~1.2M indices).
     private const int BytesPerVertex = 32; // [f32;3] position + [f32;2] uv + [f32;3] color
-    private const int MaxVertexBytes = 200_000 * BytesPerVertex;
-    private const int MaxIndexBytes = 600_000 * sizeof(uint);
+    private const int MaxVertexBytes = 500_000 * BytesPerVertex;
+    private const int MaxIndexBytes = 1_500_000 * sizeof(uint);
 
     // Mirrors wgpu-host's MAX_TEXTURE_DIM (4096) cap.
     private const int MaxTextureDim = 4096;
