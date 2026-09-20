@@ -14,10 +14,17 @@ namespace Spectralis.App.Controls;
 /// <summary>
 /// Composites a sandboxed Wasm/wgpu album world into the Avalonia visual tree. Owns the
 /// wgpu-host renderer, a background render thread (see the threading note below — rendering
-/// must never run on the UI thread), a <see cref="WasmWorldHost"/>, and a mouse-driven orbit
-/// camera. Drop it into any <see cref="ContentControl"/>'s <c>Content</c> the same way
-/// <c>NowPlayingView</c> already swaps in its WebView control for the HTML-mode surface — this
-/// is the Wasm-mode sibling of that same slot, not a new container.
+/// must never run on the UI thread), and a <see cref="WasmWorldHost"/>. Drop it into any
+/// <see cref="ContentControl"/>'s <c>Content</c> the same way <c>NowPlayingView</c> already
+/// swaps in its WebView control for the HTML-mode surface — this is the Wasm-mode sibling of
+/// that same slot, not a new container.
+///
+/// Camera: this control no longer computes a camera itself — WASD-held state and mouse-drag
+/// look deltas are forwarded into the guest every frame via <see cref="WasmWorldHost.Input"/>,
+/// and the frame is rendered from whatever pose the guest reports back via
+/// <see cref="WasmWorldHost.GetCameraPose"/> (backed by its own <c>set_camera_pose</c> host
+/// import call). A world that never calls <c>set_camera_pose</c> just sits at
+/// <see cref="CameraPose.Default"/>.
 ///
 /// Threading: <see cref="WgpuHostNative.wgpu_host_render"/> does a synchronous GPU submit +
 /// blocking device.poll + buffer-map round trip every call. Running that on Avalonia's single
@@ -27,10 +34,22 @@ namespace Spectralis.App.Controls;
 /// </summary>
 public sealed class WgpuWorldSurface : Image, IDisposable
 {
-    private const float CamDist = 3.2f;
-
     private WgpuWorldRenderer? _renderer;
     private WasmWorldHost? _wasmHost;
+
+    // Written from the UI thread (pointer/keyboard events), consumed-and-reset once per frame on
+    // the render thread — see RenderLoop. Guarded by _inputLock rather than volatile fields since
+    // several related values (both look-delta axes, the interact edge flag) need to be read and
+    // cleared together atomically.
+    private readonly object _inputLock = new();
+    private bool _moveForwardHeld;
+    private bool _moveBackHeld;
+    private bool _moveLeftHeld;
+    private bool _moveRightHeld;
+    private double _pendingLookYawDelta;
+    private double _pendingLookPitchDelta;
+    private bool _pendingInteract;
+    private DateTime _lastFrameUtc;
 
     // A world's on_load/on_tick can call submit_geometry from either the render thread (during
     // Tick, under _wasmSync) or the UI thread (a TriggerExport-driven action, also under
@@ -51,9 +70,6 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private volatile bool _running;
     private DateTime _startedUtc;
 
-    private volatile float _camYaw;
-    private volatile float _camPitch = 0.3f;
-
     private bool _dragging;
     private Point _lastPointer;
 
@@ -61,6 +77,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
     public bool IsWasmAvailable => WgpuWorldRenderer.IsAvailable;
     public bool IsAttached => _renderer is not null;
+
+    public WgpuWorldSurface()
+    {
+        // Needed to actually receive OnKeyDown/OnKeyUp for WASD — Avalonia only routes key
+        // events to a focused element, and an Image isn't focusable by default.
+        Focusable = true;
+    }
 
     public event EventHandler<AlbumTrackPlayRequest>? PlayTrackRequested;
     public event EventHandler<string>? AddToQueueRequested;
@@ -117,8 +140,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         }
 
         _startedUtc = DateTime.UtcNow;
-        _camYaw = 0f;
-        _camPitch = 0.3f;
+        _lastFrameUtc = default;
+        lock (_inputLock)
+        {
+            _moveForwardHeld = _moveBackHeld = _moveLeftHeld = _moveRightHeld = false;
+            _pendingLookYawDelta = _pendingLookPitchDelta = 0;
+            _pendingInteract = false;
+        }
         _running = true;
         _renderThread = new Thread(RenderLoop) { IsBackground = true, Name = "WgpuWorldSurface-Render" };
         _renderThread.Start();
@@ -178,17 +206,40 @@ public sealed class WgpuWorldSurface : Image, IDisposable
                 renderer.SubmitGeometry(geometry.InterleavedVertices, geometry.Indices);
             }
 
-            var t = (DateTime.UtcNow - _startedUtc).TotalSeconds;
-            var pixels = renderer.RenderFrameBgraPixels(t, _camYaw, _camPitch, CamDist);
+            var now = DateTime.UtcNow;
+            var dt = _lastFrameUtc == default ? 0.0 : (now - _lastFrameUtc).TotalSeconds;
+            _lastFrameUtc = now;
+
+            double moveForward, moveRight, lookYawDelta, lookPitchDelta;
+            bool interact;
+            lock (_inputLock)
+            {
+                moveForward = (_moveForwardHeld ? 1.0 : 0.0) - (_moveBackHeld ? 1.0 : 0.0);
+                moveRight = (_moveRightHeld ? 1.0 : 0.0) - (_moveLeftHeld ? 1.0 : 0.0);
+                lookYawDelta = _pendingLookYawDelta;
+                lookPitchDelta = _pendingLookPitchDelta;
+                interact = _pendingInteract;
+                _pendingLookYawDelta = 0;
+                _pendingLookPitchDelta = 0;
+                _pendingInteract = false;
+            }
+            moveForward *= dt;
+            moveRight *= dt;
+
+            var t = (now - _startedUtc).TotalSeconds;
+            lock (_wasmSync)
+            {
+                _wasmHost?.Input(moveForward, moveRight, lookYawDelta, lookPitchDelta, interact);
+                _wasmHost?.Tick(t, playing: true);
+            }
+
+            var pose = _wasmHost?.GetCameraPose() ?? CameraPose.Default;
+            var pixels = renderer.RenderFrameBgraPixels(
+                t, (float)pose.X, (float)pose.Y, (float)pose.Z, (float)pose.Yaw, (float)pose.Pitch);
             if (pixels is not null)
             {
                 var snapshot = (byte[])pixels.Clone();
                 Dispatcher.UIThread.Post(() => ApplyFrame(snapshot, renderer.Width, renderer.Height));
-            }
-
-            lock (_wasmSync)
-            {
-                _wasmHost?.Tick(t, playing: true);
             }
         }
     }
@@ -217,6 +268,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        Focus();
         _dragging = true;
         _lastPointer = e.GetPosition(this);
     }
@@ -232,14 +284,61 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         var pos = e.GetPosition(this);
         var delta = pos - _lastPointer;
         _lastPointer = pos;
-        _camYaw += (float)(delta.X * 0.01);
-        _camPitch = Math.Clamp(_camPitch - (float)(delta.Y * 0.01), -1.4f, 1.4f);
+        lock (_inputLock)
+        {
+            // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
+            // accumulation (and pitch clamping) from here via on_input, this control no longer
+            // tracks a camera angle of its own.
+            _pendingLookYawDelta += delta.X * 0.01;
+            _pendingLookPitchDelta += -delta.Y * 0.01;
+        }
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
         _dragging = false;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        SetMoveKeyHeld(e.Key, held: true);
+        if (e.Key is Key.E or Key.Space)
+        {
+            lock (_inputLock)
+            {
+                _pendingInteract = true;
+            }
+        }
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        SetMoveKeyHeld(e.Key, held: false);
+    }
+
+    private void SetMoveKeyHeld(Key key, bool held)
+    {
+        lock (_inputLock)
+        {
+            switch (key)
+            {
+                case Key.W:
+                    _moveForwardHeld = held;
+                    break;
+                case Key.S:
+                    _moveBackHeld = held;
+                    break;
+                case Key.A:
+                    _moveLeftHeld = held;
+                    break;
+                case Key.D:
+                    _moveRightHeld = held;
+                    break;
+            }
+        }
     }
 
     public void Dispose() => DetachWorld();
