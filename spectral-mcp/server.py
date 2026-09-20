@@ -103,7 +103,7 @@ def new_album_world_project(dest_folder: str, title: str, artist: str, tracks: l
     return album_world.new_album_world_project(dest_folder, title, artist, tracks)
 
 
-@mcp.tool(description="Scaffolds a new Wasm/wgpu 3D album-world crate from spectralis-world-sdk's rust-minimal template, renamed to crate_name. Build with `cargo build --target wasm32-unknown-unknown --release`, then point an album manifest's world.wasmEntry at the output .wasm and add the worlds.wasm3d capability. Current real limits: no scene-graph, one flat vertex/index buffer via submit_geometry, host owns the only camera — see spectral://docs/world-sdk-host-imports.")
+@mcp.tool(description="Scaffolds a new Wasm/wgpu 3D album-world crate from spectralis-world-sdk's rust-minimal template, renamed to crate_name. Build with `cargo build --target wasm32-unknown-unknown --release`, then point an album manifest's world.wasmEntry at the output .wasm and add the worlds.wasm3d capability. Current real limits: no scene-graph, one flat vertex/index buffer via submit_geometry plus one shared texture atlas via submit_texture, guest (not host) drives the camera via set_camera_pose — see spectral://docs/world-sdk-host-imports.")
 def scaffold_wasm_world(dest_folder: str, crate_name: str) -> dict:
     return wasm_scaffold.scaffold_wasm_world(dest_folder, crate_name)
 
