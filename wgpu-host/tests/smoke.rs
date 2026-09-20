@@ -17,7 +17,7 @@ fn create_render_and_read_pixels_roundtrip() {
     assert_eq!(wgpu_host_width(handle), 64);
     assert_eq!(wgpu_host_height(handle), 48);
 
-    let ok = wgpu_host_render(handle, 0.6, 0.4, 0.3, 3.0);
+    let ok = wgpu_host_render(handle, 0.6, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.3);
     assert!(ok, "render call failed");
 
     let mut ptr: *const u8 = std::ptr::null();
@@ -94,9 +94,9 @@ fn set_geometry_replaces_the_default_cube_and_renders() {
     let ok = wgpu_host_set_geometry(handle, vertices.as_ptr(), 3, indices.as_ptr(), 3);
     assert!(ok, "set_geometry should accept a well-formed single triangle");
 
-    // Look straight down -z at the origin so the triangle is guaranteed on-screen
-    // regardless of the orbit-camera math used for the built-in cube's default view.
-    let rendered = wgpu_host_render(handle, 0.0, 0.0, 0.0, 3.0);
+    // Eye on +z looking down -z (yaw = PI) straight at the origin, guaranteeing the triangle
+    // (which sits in the z=0 plane) is on-screen regardless of pitch.
+    let rendered = wgpu_host_render(handle, 0.0, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.0);
     assert!(rendered, "render call failed after set_geometry");
 
     let mut ptr: *const u8 = std::ptr::null();
@@ -140,14 +140,14 @@ fn set_geometry_rejects_oversized_and_empty_submissions() {
 
     // A previously-rejected call must not have disturbed the default cube — render
     // still succeeds and produces a non-trivial image.
-    assert!(wgpu_host_render(handle, 0.5, 0.3, 0.2, 3.0));
+    assert!(wgpu_host_render(handle, 0.5, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.2));
 
     wgpu_host_destroy(handle);
 }
 
 #[test]
 fn null_handle_calls_are_safe_no_ops() {
-    assert!(!wgpu_host_render(std::ptr::null_mut(), 0.0, 0.0, 0.0, 0.0));
+    assert!(!wgpu_host_render(std::ptr::null_mut(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
     assert_eq!(wgpu_host_width(std::ptr::null_mut()), 0);
     assert_eq!(wgpu_host_height(std::ptr::null_mut()), 0);
 

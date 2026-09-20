@@ -13,7 +13,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let ok = wgpu_host_render(handle, 0.7, 0.5, 0.35, 3.2);
+    let ok = wgpu_host_render(handle, 0.7, 1.4, 1.1, 2.6, std::f32::consts::PI + 0.5, -0.35);
     if !ok {
         eprintln!("render failed");
         std::process::exit(1);

@@ -1,10 +1,10 @@
 //! Offscreen wgpu renderer for Album Worlds, exposed over a C ABI.
 //!
-//! Scope (Phase 2 test world): a single rotating/orbit-camera cube scene,
-//! proving the full pipeline — device init, depth-tested 3D geometry, a
-//! host-driven camera, and CPU readback for compositing into Avalonia —
-//! end to end. Not a general scene graph; that is explicit follow-up work
-//! tracked in the authoring SDK, not this crate.
+//! Scope (Phase 2 test world): a spinning built-in cube plus a positional first-person camera
+//! a guest world drives by calling `set_camera_pose` every frame, proving the full pipeline —
+//! device init, depth-tested 3D geometry, a guest-driven camera, and CPU readback for
+//! compositing into Avalonia — end to end. Not a general scene graph; that is explicit
+//! follow-up work tracked in the authoring SDK, not this crate.
 
 use std::ffi::c_void;
 use std::mem;
@@ -108,6 +108,10 @@ struct WorldRenderer {
     /// Tightly-packed RGBA8 pixels from the most recent `render` call, row-padding
     /// already stripped. Read via `wgpu_host_pixels`; overwritten by the next render.
     pixels: Vec<u8>,
+    /// True once `set_geometry` has replaced the built-in cube — a guest's room shouldn't spin
+    /// in place the way the demo cube does, so the per-frame model rotation only applies before
+    /// any real geometry has been submitted.
+    is_guest_geometry: bool,
 }
 
 fn pad_bytes_per_row(unpadded: u32) -> u32 {
@@ -294,24 +298,29 @@ impl WorldRenderer {
             padded_bytes_per_row,
             unpadded_bytes_per_row,
             pixels: vec![0u8; (unpadded_bytes_per_row * height) as usize],
+            is_guest_geometry: false,
         })
     }
 
-    /// Renders one frame of the test scene: a cube spinning over time, viewed
-    /// through a host-driven orbit camera (yaw/pitch/distance, radians/world units).
-    fn render(&mut self, time_seconds: f32, cam_yaw: f32, cam_pitch: f32, cam_dist: f32) -> bool {
+    /// Renders one frame through a positional first-person camera: `eye` is world-space
+    /// position, `yaw`/`pitch` (radians) give the look direction — there's no orbit target and
+    /// no fixed distance, the guest world walks the camera around by calling `set_camera_pose`
+    /// every frame (see `WasmWorldHost.Input`/`set_camera_pose`). Before any real geometry is
+    /// submitted, the built-in test cube still spins in place over time regardless of camera
+    /// position, same as before this camera model changed.
+    fn render(&mut self, time_seconds: f32, eye_x: f32, eye_y: f32, eye_z: f32, yaw: f32, pitch: f32) -> bool {
         let aspect = self.width as f32 / self.height as f32;
         let proj = perspective(45f32.to_radians(), aspect, 0.1, 100.0);
 
-        let cam_dist = cam_dist.max(0.5);
-        let eye = Vec3::new(
-            cam_dist * cam_pitch.cos() * cam_yaw.sin(),
-            cam_dist * cam_pitch.sin(),
-            cam_dist * cam_pitch.cos() * cam_yaw.cos(),
-        );
-        let view = look_at_mat4(eye, Vec3::ZERO, Vec3::Y);
+        let eye = Vec3::new(eye_x, eye_y, eye_z);
+        let forward = Vec3::new(pitch.cos() * yaw.sin(), pitch.sin(), pitch.cos() * yaw.cos());
+        let view = look_at_mat4(eye, eye + forward, Vec3::Y);
 
-        let model = Mat4::from_rotation_y(time_seconds * 0.8) * Mat4::from_rotation_x(time_seconds * 0.35);
+        let model = if self.is_guest_geometry {
+            Mat4::IDENTITY
+        } else {
+            Mat4::from_rotation_y(time_seconds * 0.8) * Mat4::from_rotation_x(time_seconds * 0.35)
+        };
         let view_proj = proj * view * model;
 
         let uniform = CameraUniform { view_proj: view_proj.to_cols_array_2d() };
@@ -424,6 +433,7 @@ impl WorldRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
         self.index_count = indices.len() as u32;
+        self.is_guest_geometry = true;
         true
     }
 }
@@ -449,21 +459,24 @@ pub extern "C" fn wgpu_host_destroy(handle: *mut c_void) {
     }
 }
 
-/// Renders one frame. Returns false on failure (readback timeout/error); the
-/// previous frame's pixels (if any) remain available via `wgpu_host_pixels`.
+/// Renders one frame through a positional camera (`eye_x/y/z` world position, `yaw`/`pitch`
+/// radians look direction — see `WorldRenderer::render`). Returns false on failure (readback
+/// timeout/error); the previous frame's pixels (if any) remain available via `wgpu_host_pixels`.
 #[no_mangle]
 pub extern "C" fn wgpu_host_render(
     handle: *mut c_void,
     time_seconds: f32,
-    cam_yaw: f32,
-    cam_pitch: f32,
-    cam_dist: f32,
+    eye_x: f32,
+    eye_y: f32,
+    eye_z: f32,
+    yaw: f32,
+    pitch: f32,
 ) -> bool {
     if handle.is_null() {
         return false;
     }
     let renderer = unsafe { &mut *(handle as *mut WorldRenderer) };
-    renderer.render(time_seconds, cam_yaw, cam_pitch, cam_dist)
+    renderer.render(time_seconds, eye_x, eye_y, eye_z, yaw, pitch)
 }
 
 /// Points `out_ptr`/`out_len` at the tightly-packed RGBA8 pixels from the most
