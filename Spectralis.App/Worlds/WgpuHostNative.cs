@@ -21,7 +21,8 @@ internal static class WgpuHostNative
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]
-    internal static extern bool wgpu_host_render(IntPtr handle, float timeSeconds, float camYaw, float camPitch, float camDist);
+    internal static extern bool wgpu_host_render(
+        IntPtr handle, float timeSeconds, float eyeX, float eyeY, float eyeZ, float yaw, float pitch);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]

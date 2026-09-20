@@ -16,6 +16,18 @@ public sealed class WorldGeometrySubmission
     public required ushort[] Indices { get; init; }
 }
 
+/// <summary>A world's positional first-person camera, as last reported via <c>set_camera_pose</c>
+/// — world-space eye position plus yaw/pitch (radians) look direction. There's no orbit target
+/// and no fixed distance; the guest walks this around on its own (e.g. accumulating movement in
+/// <see cref="WasmWorldHost.Input"/>) and pushes the result here every frame.</summary>
+public readonly record struct CameraPose(double X, double Y, double Z, double Yaw, double Pitch)
+{
+    /// <summary>Eye a few units back on +Z looking toward the origin (yaw = pi), matching where
+    /// the old orbit camera's default view sat — used until a world calls <c>set_camera_pose</c>
+    /// for the first time.</summary>
+    public static readonly CameraPose Default = new(0, 1.6, 4.0, Math.PI, 0);
+}
+
 /// <summary>
 /// Sandboxed host for a single Wasm "album world" module (Phase 2 of the dual-runtime rework —
 /// see docs/formats/spectral-album-world.md for the HTML-mode sibling this mirrors).
@@ -34,6 +46,20 @@ public sealed class WorldGeometrySubmission
 ///   submit_geometry(vertsPtr,vertsByteLen,idxPtr,idxByteLen) -> i32 (1 = accepted, 0 = rejected)
 ///                                              — replaces the rendered scene's geometry; see
 ///                                                WorldGeometrySubmission for the vertex layout
+///   set_camera_pose(x,y,z,yaw,pitch: f64)     — reports the guest's own positional camera; see
+///                                                CameraPose. wgpu-host has no orbit/target math
+///                                                anymore, so a world that never calls this stays
+///                                                parked at CameraPose.Default.
+///
+/// Guest export called from the host (beyond on_load/on_tick/on_unload):
+///   on_input(moveForward,moveRight,lookYawDelta,lookPitchDelta: f64, interact: i32) — optional;
+///     called once per rendered frame, ahead of on_tick, so a world can update its own position
+///     via set_camera_pose before that frame renders. moveForward/moveRight are already
+///     dt-scaled unit axis values (host multiplies held-key state by elapsed seconds) — a world
+///     picks its own movement speed and multiplies. lookYawDelta/lookPitchDelta are raw pointer-
+///     drag deltas in radians since the last frame, un-clamped (a world should clamp its own
+///     accumulated pitch to avoid flipping over). interact is 1 on the frame an interact
+///     key/click was pressed, 0 otherwise (edge-triggered, not held).
 ///
 /// storage_get/storage_set share the exact same <see cref="CapsuleScopedStore"/> file the HTML
 /// bridge's spectral.store.* uses for the same world id — this is what lets hand-off state
@@ -64,6 +90,9 @@ public sealed class WasmWorldHost : IDisposable
     private readonly CapsuleScopedStore _scopedStore;
     private Instance? _instance;
 
+    private readonly object _poseLock = new();
+    private CameraPose _cameraPose = CameraPose.Default;
+
     public event EventHandler<AlbumTrackPlayRequest>? PlayTrackRequested;
     public event EventHandler<string>? AddToQueueRequested;
     public event EventHandler<AlbumBookmarkRequest>? SaveBookmarkRequested;
@@ -87,6 +116,19 @@ public sealed class WasmWorldHost : IDisposable
     }
 
     public bool IsLoaded => _instance is not null;
+
+    /// <summary>The world's last-reported camera pose (see <see cref="CameraPose"/>) —
+    /// <see cref="CameraPose.Default"/> until the guest calls <c>set_camera_pose</c> at least
+    /// once. Safe to call from any thread; the renderer thread reads this every frame while
+    /// <see cref="Input"/>/<see cref="Tick"/> (which may write it via the guest's host import
+    /// calls) run on whichever thread owns the wasmtime store.</summary>
+    public CameraPose GetCameraPose()
+    {
+        lock (_poseLock)
+        {
+            return _cameraPose;
+        }
+    }
 
     /// <summary>Compiles and instantiates the module and invokes its <c>on_load</c> export (if any).
     /// Returns false on any failure (malformed module, missing required imports, or a trap during
@@ -134,6 +176,31 @@ public sealed class WasmWorldHost : IDisposable
         try
         {
             _instance.GetAction<double, int>("on_tick")?.Invoke(positionSeconds, playing ? 1 : 0);
+        }
+        catch (WasmtimeException)
+        {
+            // Dropped frame — non-fatal.
+        }
+    }
+
+    /// <summary>Calls the module's optional <c>on_input(moveForward, moveRight, lookYawDelta,
+    /// lookPitchDelta: f64, interact: i32)</c> export, if any — see the class doc for the exact
+    /// shape of each argument. Meant to be called once per rendered frame, ahead of
+    /// <see cref="Tick"/>, so a world can react to input (typically by calling
+    /// <c>set_camera_pose</c>) before that frame renders. A trap or missing export is swallowed,
+    /// same non-fatal handling as every other guest call.</summary>
+    public void Input(double moveForward, double moveRight, double lookYawDelta, double lookPitchDelta, bool interact)
+    {
+        if (_instance is null)
+        {
+            return;
+        }
+
+        _store.Fuel = FuelBudgetPerCall;
+        try
+        {
+            _instance.GetAction<double, double, double, double, int>("on_input")?
+                .Invoke(moveForward, moveRight, lookYawDelta, lookPitchDelta, interact ? 1 : 0);
         }
         catch (WasmtimeException)
         {
@@ -300,6 +367,21 @@ public sealed class WasmWorldHost : IDisposable
                     Indices = indices,
                 });
                 return 1;
+            });
+
+        _linker.DefineFunction("spectral", "set_camera_pose",
+            (Caller _, double x, double y, double z, double yaw, double pitch) =>
+            {
+                if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z) ||
+                    !double.IsFinite(yaw) || !double.IsFinite(pitch))
+                {
+                    return;
+                }
+
+                lock (_poseLock)
+                {
+                    _cameraPose = new CameraPose(x, y, z, yaw, pitch);
+                }
             });
 
         _linker.DefineFunction("spectral", "storage_get",

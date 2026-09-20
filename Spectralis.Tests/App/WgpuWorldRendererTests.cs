@@ -25,7 +25,7 @@ public sealed class WgpuWorldRendererTests
             return; // no native lib / no GPU adapter on this machine — not a code defect
         }
 
-        var pixels = renderer.RenderFrameBgraPixels(0.6, 0.4f, 0.3f, 3.0f);
+        var pixels = renderer.RenderFrameBgraPixels(0.6, 0.0f, 0.0f, 3.0f, MathF.PI, 0.3f);
 
         Assert.NotNull(pixels);
         Assert.Equal(64 * 48 * 4, pixels!.Length);
@@ -60,8 +60,8 @@ public sealed class WgpuWorldRendererTests
             return;
         }
 
-        var first = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f);
-        var second = renderer.RenderFrameBgraPixels(1.0, 0.5f, 0.2f, 3.0f);
+        var first = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f);
+        var second = renderer.RenderFrameBgraPixels(1.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.2f);
 
         Assert.NotNull(first);
         Assert.Same(first, second);
@@ -78,7 +78,7 @@ public sealed class WgpuWorldRendererTests
 
         renderer.Dispose();
 
-        Assert.Null(renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f));
+        Assert.Null(renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class WgpuWorldRendererTests
         var accepted = renderer.SubmitGeometry(vertices, indices);
         Assert.True(accepted);
 
-        var pixels = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f);
+        var pixels = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f);
         Assert.NotNull(pixels);
 
         // BGRA order here: yellow is high B-channel... no, yellow = high R+G, low B (RGB), so
@@ -154,7 +154,7 @@ public sealed class WgpuWorldRendererTests
         Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 1f, 1f], [0]));
 
         // Renderer must still work after rejected submissions (default cube untouched).
-        var pixels = renderer.RenderFrameBgraPixels(0.5, 0.3f, 0.2f, 3.0f);
+        var pixels = renderer.RenderFrameBgraPixels(0.5, 0.0f, 0.0f, 3.0f, MathF.PI, 0.2f);
         Assert.NotNull(pixels);
     }
 

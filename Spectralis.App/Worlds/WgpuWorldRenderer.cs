@@ -81,20 +81,23 @@ public sealed class WgpuWorldRenderer : IDisposable
     }
 
     /// <summary>
-    /// Renders one frame with a host-driven orbit camera and returns tightly-packed BGRA8
-    /// pixels (Avalonia's convention, matching <c>AvaloniaVizCanvas.DrawPixels</c>) — doesn't
-    /// touch any Avalonia platform/rendering services, so it's usable from a plain unit test.
-    /// The returned array is reused/overwritten every call. Null means the native render or
-    /// readback call failed (dropped frame, non-fatal).
+    /// Renders one frame through a positional camera — <paramref name="eyeX"/>/<paramref name="eyeY"/>/
+    /// <paramref name="eyeZ"/> is world-space eye position, <paramref name="yaw"/>/<paramref name="pitch"/>
+    /// (radians) is look direction — and returns tightly-packed BGRA8 pixels (Avalonia's
+    /// convention, matching <c>AvaloniaVizCanvas.DrawPixels</c>). The pose normally comes from
+    /// the loaded world's own <c>set_camera_pose</c> calls (see <see cref="Spectralis.Core.Worlds.WasmWorldHost"/>),
+    /// not from anything this class tracks itself. Doesn't touch any Avalonia platform/rendering
+    /// services, so it's usable from a plain unit test. The returned array is reused/overwritten
+    /// every call. Null means the native render or readback call failed (dropped frame, non-fatal).
     /// </summary>
-    public byte[]? RenderFrameBgraPixels(double timeSeconds, float camYaw, float camPitch, float camDist)
+    public byte[]? RenderFrameBgraPixels(double timeSeconds, float eyeX, float eyeY, float eyeZ, float yaw, float pitch)
     {
         if (_handle == IntPtr.Zero)
         {
             return null;
         }
 
-        if (!WgpuHostNative.wgpu_host_render(_handle, (float)timeSeconds, camYaw, camPitch, camDist))
+        if (!WgpuHostNative.wgpu_host_render(_handle, (float)timeSeconds, eyeX, eyeY, eyeZ, yaw, pitch))
         {
             return null;
         }
@@ -123,9 +126,9 @@ public sealed class WgpuWorldRenderer : IDisposable
     /// call — draw it immediately, don't hold onto the reference past the next call. Null means
     /// the native render/readback call failed (dropped frame, non-fatal).
     /// </summary>
-    public WriteableBitmap? RenderFrame(double timeSeconds, float camYaw, float camPitch, float camDist)
+    public WriteableBitmap? RenderFrame(double timeSeconds, float eyeX, float eyeY, float eyeZ, float yaw, float pitch)
     {
-        var pixels = RenderFrameBgraPixels(timeSeconds, camYaw, camPitch, camDist);
+        var pixels = RenderFrameBgraPixels(timeSeconds, eyeX, eyeY, eyeZ, yaw, pitch);
         if (pixels is null)
         {
             return null;
