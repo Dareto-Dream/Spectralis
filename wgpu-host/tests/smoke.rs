@@ -28,9 +28,9 @@ fn create_render_and_read_pixels_roundtrip() {
 
     let pixels = unsafe { std::slice::from_raw_parts(ptr, len) };
 
-    // The clear color is a fixed dark blue-gray; if the cube actually rendered,
-    // at least some pixels must differ from it (and from each other, since the
-    // cube has distinct per-vertex colors on visible faces).
+    // The clear color is a fixed dark blue-gray; if the cube actually rendered, at least some
+    // pixels must differ from it (and from each other, since the cube has distinct per-vertex
+    // colors on visible faces, sampled against the default 1x1 white atlas which is a no-op).
     let clear = [
         (0.05f32 * 255.0) as u8,
         (0.05f32 * 255.0) as u8,
@@ -82,14 +82,14 @@ fn set_geometry_replaces_the_default_cube_and_renders() {
     }
 
     // A single flat-colored triangle facing the camera, filling most of the view.
-    // Layout matches Vertex { position: [f32;3], color: [f32;3] }, interleaved.
+    // Layout matches Vertex { position: [f32;3], uv: [f32;2], color: [f32;3] }, interleaved.
     #[rustfmt::skip]
-    let vertices: [f32; 18] = [
-        0.0,  0.8, 0.0,   1.0, 1.0, 0.0, // top, yellow
-        -0.8, -0.8, 0.0,  1.0, 1.0, 0.0, // bottom-left
-        0.8, -0.8, 0.0,   1.0, 1.0, 0.0, // bottom-right
+    let vertices: [f32; 24] = [
+        0.0,  0.8, 0.0,   0.0, 0.0,   1.0, 1.0, 0.0, // top, yellow
+        -0.8, -0.8, 0.0,  0.0, 0.0,   1.0, 1.0, 0.0, // bottom-left
+        0.8, -0.8, 0.0,   0.0, 0.0,   1.0, 1.0, 0.0, // bottom-right
     ];
-    let indices: [u16; 3] = [0, 1, 2];
+    let indices: [u32; 3] = [0, 1, 2];
 
     let ok = wgpu_host_set_geometry(handle, vertices.as_ptr(), 3, indices.as_ptr(), 3);
     assert!(ok, "set_geometry should accept a well-formed single triangle");
@@ -127,19 +127,91 @@ fn set_geometry_rejects_oversized_and_empty_submissions() {
         return;
     }
 
-    let one_vertex: [f32; 6] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    let one_index: [u16; 1] = [0];
+    let one_vertex: [f32; 8] = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let one_index: [u32; 1] = [0];
 
     // Zero counts, regardless of what the pointers point to.
     assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 0, one_index.as_ptr(), 1));
     assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 0));
 
     // Counts beyond the documented caps.
-    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 70_000, one_index.as_ptr(), 1));
-    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 400_000));
+    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 250_000, one_index.as_ptr(), 1));
+    assert!(!wgpu_host_set_geometry(handle, one_vertex.as_ptr(), 1, one_index.as_ptr(), 700_000));
 
     // A previously-rejected call must not have disturbed the default cube — render
     // still succeeds and produces a non-trivial image.
+    assert!(wgpu_host_render(handle, 0.5, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.2));
+
+    wgpu_host_destroy(handle);
+}
+
+#[test]
+fn set_texture_then_geometry_samples_the_guest_atlas() {
+    let handle = wgpu_host_create(64, 48);
+    if handle.is_null() {
+        eprintln!("skipping: no compatible GPU adapter on this machine");
+        return;
+    }
+
+    // 2x2 solid-magenta atlas.
+    let rgba: [u8; 16] = [
+        255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255,
+    ];
+    assert!(wgpu_host_set_texture(handle, rgba.as_ptr(), rgba.len(), 2, 2));
+
+    // White vertex color so the sampled texture color passes through unmodified; uv (0.5, 0.5)
+    // samples dead center of the atlas regardless of filtering.
+    #[rustfmt::skip]
+    let vertices: [f32; 24] = [
+        0.0,  0.8, 0.0,   0.5, 0.5,   1.0, 1.0, 1.0,
+        -0.8, -0.8, 0.0,  0.5, 0.5,   1.0, 1.0, 1.0,
+        0.8, -0.8, 0.0,   0.5, 0.5,   1.0, 1.0, 1.0,
+    ];
+    let indices: [u32; 3] = [0, 1, 2];
+    assert!(wgpu_host_set_geometry(handle, vertices.as_ptr(), 3, indices.as_ptr(), 3));
+
+    assert!(wgpu_host_render(handle, 0.0, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.0));
+
+    let mut ptr: *const u8 = std::ptr::null();
+    let mut len: usize = 0;
+    assert!(wgpu_host_pixels(handle, &mut ptr, &mut len));
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, len) };
+
+    let mut magenta_pixels = 0usize;
+    for chunk in pixels.chunks_exact(4) {
+        if chunk[0] > 200 && chunk[1] < 60 && chunk[2] > 200 {
+            magenta_pixels += 1;
+        }
+    }
+    assert!(
+        magenta_pixels > 50,
+        "expected the guest texture's magenta to show through the triangle, got {magenta_pixels} matching pixels"
+    );
+
+    wgpu_host_destroy(handle);
+}
+
+#[test]
+fn set_texture_rejects_dimension_mismatch_and_oversized_dimensions() {
+    let handle = wgpu_host_create(16, 16);
+    if handle.is_null() {
+        eprintln!("skipping: no compatible GPU adapter on this machine");
+        return;
+    }
+
+    let rgba: [u8; 4] = [1, 2, 3, 4];
+
+    // Length doesn't match width*height*4.
+    assert!(!wgpu_host_set_texture(handle, rgba.as_ptr(), rgba.len(), 2, 2));
+
+    // Zero dimensions.
+    assert!(!wgpu_host_set_texture(handle, rgba.as_ptr(), rgba.len(), 0, 1));
+    assert!(!wgpu_host_set_texture(handle, rgba.as_ptr(), rgba.len(), 1, 0));
+
+    // Past the documented cap.
+    assert!(!wgpu_host_set_texture(handle, rgba.as_ptr(), rgba.len(), 8192, 1));
+
+    // Renderer still works after rejected submissions.
     assert!(wgpu_host_render(handle, 0.5, 0.0, 0.0, 3.0, std::f32::consts::PI, 0.2));
 
     wgpu_host_destroy(handle);
@@ -155,10 +227,14 @@ fn null_handle_calls_are_safe_no_ops() {
     let mut len: usize = 0;
     assert!(!wgpu_host_pixels(std::ptr::null_mut(), &mut ptr, &mut len));
 
-    let vertices: [f32; 6] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    let indices: [u16; 1] = [0];
+    let vertices: [f32; 8] = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let indices: [u32; 1] = [0];
     assert!(!wgpu_host_set_geometry(std::ptr::null_mut(), vertices.as_ptr(), 1, indices.as_ptr(), 1));
     assert!(!wgpu_host_set_geometry(handle_stub(), std::ptr::null(), 1, indices.as_ptr(), 1));
+
+    let rgba: [u8; 4] = [0, 0, 0, 0];
+    assert!(!wgpu_host_set_texture(std::ptr::null_mut(), rgba.as_ptr(), rgba.len(), 1, 1));
+    assert!(!wgpu_host_set_texture(handle_stub(), std::ptr::null(), 0, 1, 1));
 
     // Must not crash.
     wgpu_host_destroy(std::ptr::null_mut());
@@ -166,7 +242,7 @@ fn null_handle_calls_are_safe_no_ops() {
 
 /// A handle that's non-null but was never created by `wgpu_host_create` would be unsound to
 /// dereference — this only needs to be non-null to exercise the null-pointer-field checks in
-/// `wgpu_host_set_geometry` before it would ever touch the handle itself.
+/// `wgpu_host_set_geometry`/`wgpu_host_set_texture` before they would ever touch the handle itself.
 fn handle_stub() -> *mut std::ffi::c_void {
     std::ptr::NonNull::<u8>::dangling().as_ptr() as *mut std::ffi::c_void
 }
