@@ -51,15 +51,16 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private bool _pendingInteract;
     private DateTime _lastFrameUtc;
 
-    // A world's on_load/on_tick can call submit_geometry from either the render thread (during
-    // Tick, under _wasmSync) or the UI thread (a TriggerExport-driven action, also under
-    // _wasmSync) — but the native renderer handle itself is only ever touched from the render
-    // thread (RenderFrameBgraPixels runs there, unsynchronized, since nothing else was expected
-    // to call into it). Rather than add locking around every native renderer call, geometry
+    // A world's on_load/on_tick can call submit_geometry/submit_texture from either the render
+    // thread (during Tick, under _wasmSync) or the UI thread (a TriggerExport-driven action, also
+    // under _wasmSync) — but the native renderer handle itself is only ever touched from the
+    // render thread (RenderFrameBgraPixels runs there, unsynchronized, since nothing else was
+    // expected to call into it). Rather than add locking around every native renderer call,
     // submissions are staged here and applied on the render thread right before the next frame —
     // keeps the "one thread owns the native handle" invariant intact.
     private readonly object _geometryLock = new();
     private WorldGeometrySubmission? _pendingGeometry;
+    private WorldTextureSubmission? _pendingTexture;
 
     // Guards every call into _wasmHost: the render thread's per-frame Tick() and any
     // UI-thread-triggered TriggerExport() must never run concurrently against the same
@@ -126,6 +127,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
                 _pendingGeometry = e;
             }
         };
+        _wasmHost.TextureSubmitted += (_, e) =>
+        {
+            lock (_geometryLock)
+            {
+                _pendingTexture = e;
+            }
+        };
 
         bool loaded;
         lock (_wasmSync)
@@ -181,6 +189,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         lock (_geometryLock)
         {
             _pendingGeometry = null;
+            _pendingTexture = null;
         }
     }
 
@@ -195,10 +204,20 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             }
 
             WorldGeometrySubmission? geometry;
+            WorldTextureSubmission? texture;
             lock (_geometryLock)
             {
                 geometry = _pendingGeometry;
                 _pendingGeometry = null;
+                texture = _pendingTexture;
+                _pendingTexture = null;
+            }
+
+            // Texture first — geometry submitted the same frame may carry uv coordinates meant
+            // to address whatever atlas is bound by the time it renders.
+            if (texture is not null)
+            {
+                renderer.SetTexture(texture.Rgba, texture.Width, texture.Height);
             }
 
             if (geometry is not null)

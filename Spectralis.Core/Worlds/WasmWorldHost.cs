@@ -8,12 +8,23 @@ using WorldDspPresetRequest = Spectralis.Core.Integrations.Web.WorldDspPresetReq
 namespace Spectralis.Core.Worlds;
 
 /// <summary>One <c>submit_geometry</c> call's payload — see <see cref="WasmWorldHost.GeometrySubmitted"/>.
-/// Vertex layout is <c>[f32;3] position, [f32;3] color</c> interleaved, matching wgpu-host's
-/// fixed <c>Vertex</c> struct (no normals/UVs/textures yet).</summary>
+/// Vertex layout is <c>[f32;3] position, [f32;2] uv, [f32;3] color</c> interleaved, matching
+/// wgpu-host's fixed <c>Vertex</c> struct. <c>uv</c> addresses whatever atlas was last submitted
+/// via <c>submit_texture</c> (see <see cref="WorldTextureSubmission"/>) — irrelevant until a
+/// world actually submits one, since the default atlas is a 1x1 white pixel.</summary>
 public sealed class WorldGeometrySubmission
 {
     public required float[] InterleavedVertices { get; init; }
-    public required ushort[] Indices { get; init; }
+    public required uint[] Indices { get; init; }
+}
+
+/// <summary>One <c>submit_texture</c> call's payload — see <see cref="WasmWorldHost.TextureSubmitted"/>.
+/// <c>Rgba</c> is tightly-packed RGBA8, row-major, exactly <c>Width * Height * 4</c> bytes.</summary>
+public sealed class WorldTextureSubmission
+{
+    public required byte[] Rgba { get; init; }
+    public required uint Width { get; init; }
+    public required uint Height { get; init; }
 }
 
 /// <summary>A world's positional first-person camera, as last reported via <c>set_camera_pose</c>
@@ -45,7 +56,12 @@ public readonly record struct CameraPose(double X, double Y, double Z, double Ya
 ///   storage_set(keyPtr,keyLen,valPtr,valLen)
 ///   submit_geometry(vertsPtr,vertsByteLen,idxPtr,idxByteLen) -> i32 (1 = accepted, 0 = rejected)
 ///                                              — replaces the rendered scene's geometry; see
-///                                                WorldGeometrySubmission for the vertex layout
+///                                                WorldGeometrySubmission for the vertex layout.
+///                                                Indices are u32 (idxByteLen a multiple of 4).
+///   submit_texture(rgbaPtr,rgbaByteLen,width,height: i32) -> i32 (1 = accepted, 0 = rejected)
+///                                              — replaces the shared texture atlas guest
+///                                                geometry's uv attribute samples against; see
+///                                                WorldTextureSubmission.
 ///   set_camera_pose(x,y,z,yaw,pitch: f64)     — reports the guest's own positional camera; see
 ///                                                CameraPose. wgpu-host has no orbit/target math
 ///                                                anymore, so a world that never calls this stays
@@ -77,12 +93,16 @@ public sealed class WasmWorldHost : IDisposable
 
     private const int MaxStringBytes = 4096;
 
-    // Mirrors wgpu-host's MAX_VERTICES (65536) / MAX_INDICES (300000) caps — reject oversized
+    // Mirrors wgpu-host's MAX_VERTICES (200000) / MAX_INDICES (600000) caps — reject oversized
     // submissions here, before ever touching the native renderer, rather than relying solely on
     // its own check.
-    private const int BytesPerVertex = 24; // [f32;3] position + [f32;3] color
-    private const int MaxVertexBytes = 65_536 * BytesPerVertex;
-    private const int MaxIndexBytes = 300_000 * sizeof(ushort);
+    private const int BytesPerVertex = 32; // [f32;3] position + [f32;2] uv + [f32;3] color
+    private const int MaxVertexBytes = 200_000 * BytesPerVertex;
+    private const int MaxIndexBytes = 600_000 * sizeof(uint);
+
+    // Mirrors wgpu-host's MAX_TEXTURE_DIM (4096) cap.
+    private const int MaxTextureDim = 4096;
+    private const int MaxTextureBytes = MaxTextureDim * MaxTextureDim * 4;
 
     private readonly Engine _engine;
     private readonly Store _store;
@@ -101,6 +121,7 @@ public sealed class WasmWorldHost : IDisposable
     public event EventHandler<string>? AchievementUnlocked;
     public event EventHandler<string>? SwitchToHtmlRequested;
     public event EventHandler<WorldGeometrySubmission>? GeometrySubmitted;
+    public event EventHandler<WorldTextureSubmission>? TextureSubmitted;
 
     /// <param name="storeKey">World id — must match the storeKey the HTML-mode surface for the
     /// same world uses, so both runtimes share one <see cref="CapsuleScopedStore"/> file.</param>
@@ -336,7 +357,7 @@ public sealed class WasmWorldHost : IDisposable
                     return 0;
                 }
 
-                if (idxByteLen <= 0 || idxByteLen > MaxIndexBytes || idxByteLen % sizeof(ushort) != 0)
+                if (idxByteLen <= 0 || idxByteLen > MaxIndexBytes || idxByteLen % sizeof(uint) != 0)
                 {
                     return 0;
                 }
@@ -355,16 +376,43 @@ public sealed class WasmWorldHost : IDisposable
                     vertices[i] = BitConverter.ToSingle(vertBytes.Slice(i * sizeof(float), sizeof(float)));
                 }
 
-                var indices = new ushort[idxByteLen / sizeof(ushort)];
+                var indices = new uint[idxByteLen / sizeof(uint)];
                 for (var i = 0; i < indices.Length; i++)
                 {
-                    indices[i] = BitConverter.ToUInt16(idxBytes.Slice(i * sizeof(ushort), sizeof(ushort)));
+                    indices[i] = BitConverter.ToUInt32(idxBytes.Slice(i * sizeof(uint), sizeof(uint)));
                 }
 
                 GeometrySubmitted?.Invoke(this, new WorldGeometrySubmission
                 {
                     InterleavedVertices = vertices,
                     Indices = indices,
+                });
+                return 1;
+            });
+
+        _linker.DefineFunction("spectral", "submit_texture",
+            (Caller caller, int rgbaPtr, int rgbaByteLen, int width, int height) =>
+            {
+                if (width <= 0 || height <= 0 || width > MaxTextureDim || height > MaxTextureDim)
+                {
+                    return 0;
+                }
+
+                if (rgbaByteLen != width * height * 4 || rgbaByteLen > MaxTextureBytes)
+                {
+                    return 0;
+                }
+
+                if (!caller.TryGetMemorySpan<byte>("memory", rgbaPtr, rgbaByteLen, out var rgbaBytes))
+                {
+                    return 0;
+                }
+
+                TextureSubmitted?.Invoke(this, new WorldTextureSubmission
+                {
+                    Rgba = rgbaBytes.ToArray(),
+                    Width = (uint)width,
+                    Height = (uint)height,
                 });
                 return 1;
             });

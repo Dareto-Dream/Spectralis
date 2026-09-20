@@ -151,21 +151,22 @@ public sealed class WgpuWorldRenderer : IDisposable
     /// <summary>
     /// Replaces the rendered scene's geometry with guest-submitted vertices/indices — the
     /// wasm-side counterpart of the built-in test cube. <paramref name="interleavedVertices"/>
-    /// is <c>[f32;3] position, [f32;3] color</c> repeated per vertex (6 floats/vertex, matching
-    /// wgpu-host's <c>Vertex</c> layout — no normals/UVs/textures yet, same as the cube). Returns
-    /// false (geometry left unchanged — still whatever it was before, cube or an earlier valid
-    /// submission) for empty input or anything past wgpu-host's fixed caps (65536 vertices,
-    /// 300000 indices) rather than throwing; a malformed wasm world shouldn't be able to crash
-    /// the renderer, only fail to draw.
+    /// is <c>[f32;3] position, [f32;2] uv, [f32;3] color</c> repeated per vertex (8 floats/vertex,
+    /// matching wgpu-host's <c>Vertex</c> layout). A world that never calls <see cref="SetTexture"/>
+    /// still renders flat per-vertex color (the default atlas is a 1x1 white pixel, a no-op
+    /// multiply). Returns false (geometry left unchanged — still whatever it was before, cube or
+    /// an earlier valid submission) for empty input or anything past wgpu-host's fixed caps
+    /// (200000 vertices, 600000 indices) rather than throwing; a malformed wasm world shouldn't
+    /// be able to crash the renderer, only fail to draw.
     /// </summary>
-    public bool SubmitGeometry(ReadOnlySpan<float> interleavedVertices, ReadOnlySpan<ushort> indices)
+    public bool SubmitGeometry(ReadOnlySpan<float> interleavedVertices, ReadOnlySpan<uint> indices)
     {
         if (_handle == IntPtr.Zero)
         {
             return false;
         }
 
-        const int floatsPerVertex = 6;
+        const int floatsPerVertex = 8;
         if (interleavedVertices.Length == 0 || indices.Length == 0 || interleavedVertices.Length % floatsPerVertex != 0)
         {
             return false;
@@ -174,6 +175,29 @@ public sealed class WgpuWorldRenderer : IDisposable
         var vertexCount = interleavedVertices.Length / floatsPerVertex;
         return WgpuHostNative.wgpu_host_set_geometry(
             _handle, interleavedVertices.ToArray(), (uint)vertexCount, indices.ToArray(), (uint)indices.Length);
+    }
+
+    /// <summary>
+    /// Replaces the shared texture atlas guest geometry's <c>uv</c> attribute samples against.
+    /// <paramref name="rgba"/> must be exactly <paramref name="width"/> * <paramref name="height"/>
+    /// * 4 bytes, tightly-packed RGBA8, row-major. Returns false (atlas left unchanged) for empty
+    /// input, a dimension mismatch, or anything past wgpu-host's fixed cap (4096 per side) rather
+    /// than throwing, same non-fatal-on-malformed-input contract as <see cref="SubmitGeometry"/>.
+    /// </summary>
+    public bool SetTexture(ReadOnlySpan<byte> rgba, uint width, uint height)
+    {
+        if (_handle == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (rgba.Length == 0 || rgba.Length != (long)width * height * 4)
+        {
+            return false;
+        }
+
+        var bytes = rgba.ToArray();
+        return WgpuHostNative.wgpu_host_set_texture(_handle, bytes, (UIntPtr)bytes.Length, width, height);
     }
 
     /// <summary>wgpu-host emits RGBA8; Avalonia's WriteableBitmap here is BGRA8 — swap R/B in place.</summary>
