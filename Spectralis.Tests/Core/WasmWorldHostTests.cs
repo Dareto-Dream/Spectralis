@@ -241,6 +241,89 @@ public sealed class WasmWorldHostTests : IDisposable
     }
 
     [Fact]
+    public void GetCameraPose_BeforeAnySetCameraPoseCall_ReturnsDefault()
+    {
+        Assert.Equal(CameraPose.Default, _host.GetCameraPose());
+    }
+
+    [Fact]
+    public void OnLoad_SetCameraPose_UpdatesGetCameraPose()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_load")
+                (call $set (f64.const 1.0) (f64.const 2.0) (f64.const 3.0) (f64.const 0.5) (f64.const -0.25))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(1.0, pose.X);
+        Assert.Equal(2.0, pose.Y);
+        Assert.Equal(3.0, pose.Z);
+        Assert.Equal(0.5, pose.Yaw);
+        Assert.Equal(-0.25, pose.Pitch);
+    }
+
+    [Fact]
+    public void OnLoad_SetCameraPose_NonFiniteValue_IsIgnored()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_load")
+                (call $set (f64.const nan) (f64.const 0.0) (f64.const 0.0) (f64.const 0.0) (f64.const 0.0))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.Equal(CameraPose.Default, _host.GetCameraPose());
+    }
+
+    [Fact]
+    public void Input_BeforeLoad_IsANoOp()
+    {
+        _host.Input(1.0, 0.0, 0.0, 0.0, false); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void Input_CallsOnInputExportWithForwardedArgs()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_input")
+                    (param $moveForward f64) (param $moveRight f64)
+                    (param $lookYaw f64) (param $lookPitch f64) (param $interact i32)
+                (call $set
+                  (local.get $moveForward) (local.get $moveRight)
+                  (local.get $lookYaw) (local.get $lookPitch)
+                  (f64.convert_i32_s (local.get $interact)))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.Input(1.5, -0.5, 0.1, -0.2, interact: true);
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(1.5, pose.X);
+        Assert.Equal(-0.5, pose.Y);
+        Assert.Equal(0.1, pose.Z);
+        Assert.Equal(-0.2, pose.Yaw);
+        Assert.Equal(1.0, pose.Pitch); // interact=true -> 1 -> converted to f64 1.0
+    }
+
+    [Fact]
+    public void Input_ModuleWithNoOnInputExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.Input(1.0, 0.0, 0.0, 0.0, false); // must not throw
+    }
+
+    [Fact]
     public void Tick_BeforeLoad_IsANoOp()
     {
         _host.Tick(1.0, true); // must not throw
