@@ -1,10 +1,12 @@
 //! Offscreen wgpu renderer for Album Worlds, exposed over a C ABI.
 //!
-//! Scope (Phase 2 test world): a spinning built-in cube plus a positional first-person camera
-//! a guest world drives by calling `set_camera_pose` every frame, proving the full pipeline —
-//! device init, depth-tested 3D geometry, a guest-driven camera, and CPU readback for
-//! compositing into Avalonia — end to end. Not a general scene graph; that is explicit
-//! follow-up work tracked in the authoring SDK, not this crate.
+//! Scope (Phase 2 test world, now with a texture atlas): a spinning built-in cube plus a
+//! positional first-person camera a guest world drives by calling `set_camera_pose` every
+//! frame, proving the full pipeline — device init, depth-tested 3D geometry, a guest-driven
+//! camera, guest-uploaded texture sampling, and CPU readback for compositing into Avalonia —
+//! end to end. Not a general scene graph; a world is still one flat vertex/index buffer plus
+//! one shared texture atlas, no per-object transforms/materials. That's explicit follow-up
+//! work tracked in the authoring SDK, not this crate.
 
 use std::ffi::c_void;
 use std::mem;
@@ -19,6 +21,7 @@ use wgpu::util::DeviceExt;
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    uv: [f32; 2],
     color: [f32; 3],
 }
 
@@ -28,19 +31,20 @@ struct CameraUniform {
     view_proj: [[f32; 4]; 4],
 }
 
+#[rustfmt::skip]
 const CUBE_VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5, -0.5], color: [0.9, 0.2, 0.2] },
-    Vertex { position: [0.5, -0.5, -0.5], color: [0.2, 0.9, 0.2] },
-    Vertex { position: [0.5, 0.5, -0.5], color: [0.2, 0.2, 0.9] },
-    Vertex { position: [-0.5, 0.5, -0.5], color: [0.9, 0.9, 0.2] },
-    Vertex { position: [-0.5, -0.5, 0.5], color: [0.9, 0.2, 0.9] },
-    Vertex { position: [0.5, -0.5, 0.5], color: [0.2, 0.9, 0.9] },
-    Vertex { position: [0.5, 0.5, 0.5], color: [0.9, 0.6, 0.2] },
-    Vertex { position: [-0.5, 0.5, 0.5], color: [0.5, 0.5, 0.9] },
+    Vertex { position: [-0.5, -0.5, -0.5], uv: [0.0, 0.0], color: [0.9, 0.2, 0.2] },
+    Vertex { position: [0.5, -0.5, -0.5],  uv: [0.0, 0.0], color: [0.2, 0.9, 0.2] },
+    Vertex { position: [0.5, 0.5, -0.5],   uv: [0.0, 0.0], color: [0.2, 0.2, 0.9] },
+    Vertex { position: [-0.5, 0.5, -0.5],  uv: [0.0, 0.0], color: [0.9, 0.9, 0.2] },
+    Vertex { position: [-0.5, -0.5, 0.5],  uv: [0.0, 0.0], color: [0.9, 0.2, 0.9] },
+    Vertex { position: [0.5, -0.5, 0.5],   uv: [0.0, 0.0], color: [0.2, 0.9, 0.9] },
+    Vertex { position: [0.5, 0.5, 0.5],    uv: [0.0, 0.0], color: [0.9, 0.6, 0.2] },
+    Vertex { position: [-0.5, 0.5, 0.5],   uv: [0.0, 0.0], color: [0.5, 0.5, 0.9] },
 ];
 
 #[rustfmt::skip]
-const CUBE_INDICES: &[u16] = &[
+const CUBE_INDICES: &[u32] = &[
     0, 1, 2, 2, 3, 0, // back
     4, 6, 5, 6, 4, 7, // front
     4, 0, 3, 3, 7, 4, // left
@@ -56,27 +60,38 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+@group(1) @binding(0)
+var atlas_texture: texture_2d<f32>;
+@group(1) @binding(1)
+var atlas_sampler: sampler;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec3<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec3<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(in.position, 1.0);
+    out.uv = in.uv;
     out.color = in.color;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color, 1.0);
+    // No guest texture submitted yet -> atlas is a 1x1 opaque white pixel, so this multiply
+    // is a no-op and the shading is identical to the old flat-vertex-color-only pipeline.
+    let sampled = textureSample(atlas_texture, atlas_sampler, in.uv);
+    return vec4<f32>(sampled.rgb * in.color, 1.0);
 }
 "#;
 
@@ -85,9 +100,14 @@ const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
 
 /// Caps on guest-submitted geometry (`wgpu_host_set_geometry`) — bounded the same way every
 /// other untrusted-wasm-content boundary in this project is (fuel limits, string length caps in
-/// WasmWorldHost, ...). Index format is u16, so MAX_VERTICES already can't usefully exceed 65536.
-const MAX_VERTICES: u32 = 65_536;
-const MAX_INDICES: u32 = 300_000;
+/// WasmWorldHost, ...). Indices are u32 now (see `wgpu_host_set_geometry` doc), so these are
+/// picked as a sane ceiling for a real room-sized mesh, not a format limitation.
+const MAX_VERTICES: u32 = 200_000;
+const MAX_INDICES: u32 = 600_000;
+
+/// Cap on a guest-submitted texture atlas (`wgpu_host_set_texture`) in either dimension — bounds
+/// GPU memory for a single RGBA8 upload (4096x4096 RGBA8 is 64MiB, already a generous atlas).
+const MAX_TEXTURE_DIM: u32 = 4096;
 
 struct WorldRenderer {
     device: wgpu::Device,
@@ -98,6 +118,12 @@ struct WorldRenderer {
     index_count: u32,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    atlas_sampler: wgpu::Sampler,
+    /// Kept alive so the `wgpu::TextureView` referenced by `texture_bind_group` stays valid —
+    /// replaced wholesale (not written into) on every `set_texture` call.
+    atlas_texture: wgpu::Texture,
+    texture_bind_group: wgpu::BindGroup,
     color_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     readback_buffer: wgpu::Buffer,
@@ -206,9 +232,76 @@ impl WorldRenderer {
             }],
         });
 
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("spectralis-world-texture-bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("spectralis-world-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // 1x1 opaque white pixel — sampling it is a no-op multiply against the vertex color, so
+        // a guest that never calls `set_texture` renders exactly like the old flat-color pipeline.
+        let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("spectralis-world-atlas-default"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[255u8, 255, 255, 255],
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
+            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
+        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("spectralis-world-texture-bg"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&atlas_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&atlas_sampler) },
+            ],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("spectralis-world-pipeline-layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
+            bind_group_layouts: &[Some(&bind_group_layout), Some(&texture_bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -218,9 +311,14 @@ impl WorldRenderer {
             attributes: &[
                 wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 },
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                     offset: mem::size_of::<[f32; 3]>() as u64,
                     shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: mem::size_of::<[f32; 3]>() as u64 + mem::size_of::<[f32; 2]>() as u64,
+                    shader_location: 2,
                 },
             ],
         };
@@ -290,6 +388,10 @@ impl WorldRenderer {
             index_count: CUBE_INDICES.len() as u32,
             uniform_buffer,
             bind_group,
+            texture_bind_group_layout,
+            atlas_sampler,
+            atlas_texture,
+            texture_bind_group,
             color_texture,
             depth_view,
             readback_buffer,
@@ -359,8 +461,9 @@ impl WorldRenderer {
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(1, &self.texture_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..self.index_count, 0, 0..1);
         }
 
@@ -410,11 +513,11 @@ impl WorldRenderer {
     }
 
     /// Replaces the current geometry with guest-submitted vertices/indices, mirroring
-    /// `Vertex { position: [f32;3], color: [f32;3] }` — the wgpu-host doesn't (yet) support
-    /// normals/UVs/textures, only the same position+flat-color shape the built-in test cube
-    /// uses. Rejects (returns false, leaves existing geometry untouched) empty or
-    /// oversized submissions rather than trying to partially apply them.
-    fn set_geometry(&mut self, vertices: &[Vertex], indices: &[u16]) -> bool {
+    /// `Vertex { position: [f32;3], uv: [f32;2], color: [f32;3] }` — a world that never calls
+    /// `set_texture` still gets flat per-vertex color (the default atlas is a 1x1 white pixel).
+    /// Rejects (returns false, leaves existing geometry untouched) empty or oversized
+    /// submissions rather than trying to partially apply them.
+    fn set_geometry(&mut self, vertices: &[Vertex], indices: &[u32]) -> bool {
         if vertices.is_empty() || indices.is_empty() {
             return false;
         }
@@ -434,6 +537,54 @@ impl WorldRenderer {
         });
         self.index_count = indices.len() as u32;
         self.is_guest_geometry = true;
+        true
+    }
+
+    /// Replaces the shared texture atlas guest geometry's UVs sample against. `rgba` must be
+    /// exactly `width * height * 4` bytes (tightly packed RGBA8, no row padding — this is a
+    /// plain upload, not `wgpu_host_pixels`' readback layout). Rejects (atlas left untouched)
+    /// zero dimensions, an oversized dimension, or a length mismatch.
+    fn set_texture(&mut self, width: u32, height: u32, rgba: &[u8]) -> bool {
+        if width == 0 || height == 0 || width > MAX_TEXTURE_DIM || height > MAX_TEXTURE_DIM {
+            return false;
+        }
+        let expected = width as usize * height as usize * 4;
+        if rgba.len() != expected {
+            return false;
+        }
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("spectralis-world-atlas-guest"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 4), rows_per_image: Some(height) },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("spectralis-world-texture-bg-guest"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.atlas_sampler) },
+            ],
+        });
+        self.atlas_texture = texture;
         true
     }
 }
@@ -497,18 +648,18 @@ pub extern "C" fn wgpu_host_pixels(handle: *mut c_void, out_ptr: *mut *const u8,
 }
 
 /// Replaces the renderer's current geometry with guest-submitted vertices/indices. Vertex
-/// layout is `[f32;3] position, [f32;3] color` interleaved (24 bytes/vertex) — `vertex_count` is
-/// a vertex count, not a float count. `indices_ptr` is u16 indices, `index_count` an index
-/// count. Returns false (geometry unchanged) if either pointer is null, either count is zero, or
-/// either count exceeds this renderer's fixed caps — callers must not treat a false return as
-/// "geometry cleared", the previous geometry (built-in test cube or an earlier valid submission)
-/// stays in place.
+/// layout is `[f32;3] position, [f32;2] uv, [f32;3] color` interleaved (32 bytes/vertex) —
+/// `vertex_count` is a vertex count, not a float count. `indices_ptr` is u32 indices,
+/// `index_count` an index count. Returns false (geometry unchanged) if either pointer is null,
+/// either count is zero, or either count exceeds this renderer's fixed caps — callers must not
+/// treat a false return as "geometry cleared", the previous geometry (built-in test cube or an
+/// earlier valid submission) stays in place.
 #[no_mangle]
 pub extern "C" fn wgpu_host_set_geometry(
     handle: *mut c_void,
     vertices_ptr: *const f32,
     vertex_count: u32,
-    indices_ptr: *const u16,
+    indices_ptr: *const u32,
     index_count: u32,
 ) -> bool {
     if handle.is_null() || vertices_ptr.is_null() || indices_ptr.is_null() {
@@ -527,6 +678,28 @@ pub extern "C" fn wgpu_host_set_geometry(
     renderer.set_geometry(vertices, indices)
 }
 
+/// Replaces the renderer's shared texture atlas. `rgba_ptr` points at `rgba_len` bytes of
+/// tightly-packed RGBA8 pixels (`width * height * 4`, row-major, no padding). Returns false
+/// (atlas unchanged) for a null pointer, a zero/oversized dimension, or a length mismatch.
+/// Guest geometry's `uv` attribute samples whatever atlas is currently bound — call this before
+/// (or in the same frame as) the `set_geometry` call whose UVs are meant to address it.
+#[no_mangle]
+pub extern "C" fn wgpu_host_set_texture(
+    handle: *mut c_void,
+    rgba_ptr: *const u8,
+    rgba_len: usize,
+    width: u32,
+    height: u32,
+) -> bool {
+    if handle.is_null() || rgba_ptr.is_null() {
+        return false;
+    }
+
+    let renderer = unsafe { &mut *(handle as *mut WorldRenderer) };
+    let rgba = unsafe { std::slice::from_raw_parts(rgba_ptr, rgba_len) };
+    renderer.set_texture(width, height, rgba)
+}
+
 #[no_mangle]
 pub extern "C" fn wgpu_host_width(handle: *mut c_void) -> u32 {
     if handle.is_null() {
@@ -542,4 +715,3 @@ pub extern "C" fn wgpu_host_height(handle: *mut c_void) -> u32 {
     }
     unsafe { (&*(handle as *mut WorldRenderer)).height }
 }
-
