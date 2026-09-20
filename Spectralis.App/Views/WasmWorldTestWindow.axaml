@@ -38,7 +38,7 @@
             Padding="10">
       <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
         <TextBlock Grid.Row="0" Grid.Column="0"
-                   Text="Drag the render surface to orbit the camera. Events fired by the sandboxed Wasm test world's on_load show up below."
+                   Text="Click the render surface to focus it, then WASD to walk and drag to look. Press E or Space to interact. Events fired by the sandboxed Wasm test world show up below."
                    Foreground="#8cffffff"
                    FontFamily="Segoe UI, Arial"
                    FontSize="11"
