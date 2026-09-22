@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Spectralis.App.Services;
 
 namespace Spectralis.App.Worlds;
 
@@ -17,6 +18,7 @@ public sealed class WgpuWorldRenderer : IDisposable
     private IntPtr _handle;
     private byte[]? _bgraScratch;
     private WriteableBitmap? _bitmap;
+    private int _consecutiveDroppedFrames;
 
     private WgpuWorldRenderer(IntPtr handle, int width, int height)
     {
@@ -58,14 +60,16 @@ public sealed class WgpuWorldRenderer : IDisposable
         {
             handle = WgpuHostNative.wgpu_host_create((uint)width, (uint)height);
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException ex)
         {
+            WasmWorldLog.Log($"WgpuWorldRenderer.Create({width}x{height}): native library not found — {ex.Message}");
             IsAvailable = false;
             return null;
         }
-        catch (BadImageFormatException)
+        catch (BadImageFormatException ex)
         {
             // Wrong architecture (e.g. a stale x64 build on an arm64 machine) — same fallback.
+            WasmWorldLog.Log($"WgpuWorldRenderer.Create({width}x{height}): wrong native library architecture — {ex.Message}");
             IsAvailable = false;
             return null;
         }
@@ -74,9 +78,11 @@ public sealed class WgpuWorldRenderer : IDisposable
         {
             // Native init succeeded but no compatible GPU adapter — not a library problem,
             // don't latch IsAvailable false (a later attempt at a different size could still work).
+            WasmWorldLog.Log($"WgpuWorldRenderer.Create({width}x{height}): native init returned null handle — no compatible GPU adapter");
             return null;
         }
 
+        WasmWorldLog.Log($"WgpuWorldRenderer.Create({width}x{height}): ok, handle=0x{handle:X}");
         return new WgpuWorldRenderer(handle, width, height);
     }
 
@@ -99,11 +105,13 @@ public sealed class WgpuWorldRenderer : IDisposable
 
         if (!WgpuHostNative.wgpu_host_render(_handle, (float)timeSeconds, eyeX, eyeY, eyeZ, yaw, pitch))
         {
+            LogDroppedFrame("wgpu_host_render returned false");
             return null;
         }
 
         if (!WgpuHostNative.wgpu_host_pixels(_handle, out var srcPtr, out var srcLenPtr))
         {
+            LogDroppedFrame("wgpu_host_pixels returned false");
             return null;
         }
 
@@ -111,13 +119,27 @@ public sealed class WgpuWorldRenderer : IDisposable
         var expected = Width * Height * 4;
         if (srcPtr == IntPtr.Zero || srcLen != expected)
         {
+            LogDroppedFrame($"pixel buffer mismatch: srcPtr=0x{srcPtr:X} srcLen={srcLen} expected={expected}");
             return null;
         }
 
+        _consecutiveDroppedFrames = 0;
         _bgraScratch ??= new byte[expected];
         Marshal.Copy(srcPtr, _bgraScratch, 0, srcLen);
         SwapRedAndBlueInPlace(_bgraScratch);
         return _bgraScratch;
+    }
+
+    /// <summary>Logs a dropped frame — every one of the first 5 in a row, then only every 120th
+    /// (~once every couple seconds at 60fps) so a renderer that's failing every single call
+    /// doesn't flood the log file, while still making "it's still failing" visible over time.</summary>
+    private void LogDroppedFrame(string reason)
+    {
+        _consecutiveDroppedFrames++;
+        if (_consecutiveDroppedFrames <= 5 || _consecutiveDroppedFrames % 120 == 0)
+        {
+            WasmWorldLog.Log($"RenderFrameBgraPixels: dropped frame #{_consecutiveDroppedFrames} in a row — {reason}");
+        }
     }
 
     /// <summary>

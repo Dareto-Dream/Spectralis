@@ -879,6 +879,17 @@ public NowPlayingView()
         // it shown gets the wgpu-backed surface instead of a WebView, entirely bypassing the
         // logic below. Every existing HTML-only capsule/album-world falls straight through
         // unchanged (EmbeddedWasmWorld is null for all of them).
+        if (_viewModel is { IsAlbumWorldActive: true } avm)
+        {
+            // Scoped to album-world sessions only — this runs on every embedded-content property
+            // change, so logging unconditionally would drown wasm-world.log in unrelated HTML
+            // capsule traffic. This is the branch decision that decides whether the listener gets
+            // the walkable wgpu room or CHASER's plain HTML track list.
+            WasmWorldLog.Log(
+                $"ApplyEmbeddedHtmlMode: ShowEmbeddedHtml={avm.ShowEmbeddedHtml} IsEmbeddedSurfaceUsingWasm={avm.IsEmbeddedSurfaceUsingWasm} " +
+                $"HasWasmBytes={avm.EmbeddedWasmWorld is not null} HasEmbeddedHtml={avm.EmbeddedHtml is not null} IsAlbumWorldShowingWorld={avm.IsAlbumWorldShowingWorld}");
+        }
+
         if (_viewModel is { ShowEmbeddedHtml: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
         {
             ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id);
@@ -1015,10 +1026,13 @@ public NowPlayingView()
         // achievements, active DSP preset) survives a runtime switch either direction.
         if (!_wgpuSurface.AttachWorld(wasmBytes, worldId))
         {
-            AppLogPaths.AppendTimestamped(_webviewPerfLog,
-                $"[WASM-WORLD] attach failed id={worldId} — falling back to HTML");
+            WasmWorldLog.Log($"ApplyWasmWorldMode: attach failed id={worldId} — falling back to HTML");
             StopWasmWorldMode();
             _viewModel?.RequestSwitchToHtml();
+        }
+        else
+        {
+            WasmWorldLog.Log($"ApplyWasmWorldMode: attach ok id={worldId}");
         }
     }
 

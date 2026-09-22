@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Spectralis.App.Services;
 using Spectralis.App.Worlds;
 using Spectralis.Core.Integrations.Web;
 using Spectralis.Core.Worlds;
@@ -70,6 +71,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private Thread? _renderThread;
     private volatile bool _running;
     private DateTime _startedUtc;
+    private long _frameCount;
 
     private bool _dragging;
     private Point _lastPointer;
@@ -89,7 +91,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         // just assigned as Content and hasn't reached the visual tree yet — re-attempt here,
         // which fires once it actually has, so WASD works without needing a click first even
         // when that race is lost.
-        AttachedToVisualTree += (_, _) => Focus();
+        AttachedToVisualTree += (_, _) =>
+        {
+            Focus();
+            WasmWorldLog.Log($"OnAttachedToVisualTree: Focus() retried, IsFocused={IsFocused}");
+        };
     }
 
     public event EventHandler<AlbumTrackPlayRequest>? PlayTrackRequested;
@@ -111,10 +117,12 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     public bool AttachWorld(byte[] wasmBytes, string storeKey, int width = 960, int height = 720)
     {
         DetachWorld();
+        WasmWorldLog.Log($"AttachWorld: storeKey={storeKey} bytes={wasmBytes.Length} size={width}x{height}");
 
         _renderer = WgpuWorldRenderer.Create(width, height);
         if (_renderer is null)
         {
+            WasmWorldLog.Log("AttachWorld: WgpuWorldRenderer.Create returned null — see the line above for why");
             return false;
         }
 
@@ -149,6 +157,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
         if (!loaded)
         {
+            WasmWorldLog.Log("AttachWorld: WasmWorldHost.Load returned false (bad module or trapping on_load)");
             DetachWorld();
             return false;
         }
@@ -161,6 +170,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             _pendingLookYawDelta = _pendingLookPitchDelta = 0;
             _pendingInteract = false;
         }
+        _frameCount = 0;
         _running = true;
         _renderThread = new Thread(RenderLoop) { IsBackground = true, Name = "WgpuWorldSurface-Render" };
         _renderThread.Start();
@@ -169,6 +179,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         // the surface first — Avalonia only routes key events to whatever's focused, and nothing
         // focuses this control just by attaching a world to it.
         Focus();
+        WasmWorldLog.Log($"AttachWorld: loaded ok, render thread started, Focus() called, IsFocused={IsFocused}");
         return true;
     }
 
@@ -183,6 +194,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
     public void DetachWorld()
     {
+        if (_renderThread is not null)
+        {
+            WasmWorldLog.Log($"DetachWorld: stopping render thread after {_frameCount} frames");
+        }
+
         _running = false;
         _renderThread?.Join(TimeSpan.FromSeconds(2));
         _renderThread = null;
@@ -240,10 +256,15 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             var dt = _lastFrameUtc == default ? 0.0 : (now - _lastFrameUtc).TotalSeconds;
             _lastFrameUtc = now;
 
+            bool moveForwardHeld, moveBackHeld, moveLeftHeld, moveRightHeld;
             double moveForward, moveRight, lookYawDelta, lookPitchDelta;
             bool interact;
             lock (_inputLock)
             {
+                moveForwardHeld = _moveForwardHeld;
+                moveBackHeld = _moveBackHeld;
+                moveLeftHeld = _moveLeftHeld;
+                moveRightHeld = _moveRightHeld;
                 moveForward = (_moveForwardHeld ? 1.0 : 0.0) - (_moveBackHeld ? 1.0 : 0.0);
                 moveRight = (_moveRightHeld ? 1.0 : 0.0) - (_moveLeftHeld ? 1.0 : 0.0);
                 lookYawDelta = _pendingLookYawDelta;
@@ -270,6 +291,21 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             {
                 var snapshot = (byte[])pixels.Clone();
                 Dispatcher.UIThread.Post(() => ApplyFrame(snapshot, renderer.Width, renderer.Height));
+            }
+
+            _frameCount++;
+            // First few frames unconditionally (startup diagnostics), then roughly once a
+            // second's worth of frames after that — enough to see whether held-key/look-delta
+            // input is actually arriving here and whether the pose is actually changing, without
+            // writing a line per frame for the life of the session.
+            if (_frameCount <= 5 || _frameCount % 60 == 0)
+            {
+                // IsFocused is UI-thread-affine — don't touch it from this background thread.
+                WasmWorldLog.Log(
+                    $"frame #{_frameCount}: keys[W={moveForwardHeld} A={moveLeftHeld} S={moveBackHeld} D={moveRightHeld}] " +
+                    $"lookDelta=({lookYawDelta:F4},{lookPitchDelta:F4}) interact={interact} " +
+                    $"pose=({pose.X:F2},{pose.Y:F2},{pose.Z:F2} yaw={pose.Yaw:F2} pitch={pose.Pitch:F2}) " +
+                    $"frameRendered={pixels is not null}");
             }
         }
     }
@@ -306,6 +342,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         // PointerMoved the instant the cursor leaves its bounds, so look would stall out mid-turn
         // instead of tracking to the edge of the screen and beyond.
         e.Pointer.Capture(this);
+        WasmWorldLog.Log($"OnPointerPressed: dragging=true captured={ReferenceEquals(e.Pointer.Captured, this)} IsFocused={IsFocused}");
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -337,6 +374,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         {
             e.Pointer.Capture(null);
         }
+        WasmWorldLog.Log("OnPointerReleased: dragging=false");
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -349,6 +387,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             {
                 _pendingInteract = true;
             }
+        }
+
+        if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.E or Key.Space)
+        {
+            WasmWorldLog.Log($"OnKeyDown: {e.Key}");
         }
     }
 
