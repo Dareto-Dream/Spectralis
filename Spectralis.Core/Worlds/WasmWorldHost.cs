@@ -66,8 +66,24 @@ public readonly record struct CameraPose(double X, double Y, double Z, double Ya
 ///                                                CameraPose. wgpu-host has no orbit/target math
 ///                                                anymore, so a world that never calls this stays
 ///                                                parked at CameraPose.Default.
+///   request_pointer_lock() -> i32 (1 = granted, 0 = denied) — asks the host to hide/recenter the
+///                                                cursor and deliver continuous look deltas without
+///                                                needing a button held. Denied (returns 0, no
+///                                                PointerLockRequested event) unless this world's
+///                                                manifest declared worlds.pointerLock — same
+///                                                silently-dropped-without-the-capability shape as
+///                                                register_dsp_preset, not a trap.
+///   release_pointer_lock()                    — gives the lock back voluntarily (e.g. the world's
+///                                                about to show its own cursor-driven UI). Always
+///                                                allowed — releasing something you were never
+///                                                granted is a no-op, not a capability violation.
 ///
 /// Guest export called from the host (beyond on_load/on_tick/on_unload):
+///   on_pointer_lock_change(locked: i32) — optional; fires whenever the *actual* lock state
+///     changes, whichever side caused it — a granted request_pointer_lock, this world's own
+///     release_pointer_lock, or the host unilaterally taking it back (the user's Ctrl+Esc panic
+///     escape does exactly that). A world that only tracked its own requests would never notice
+///     the last case.
 ///   on_input(moveForward,moveRight,lookYawDelta,lookPitchDelta: f64, interact: i32) — optional;
 ///     called once per rendered frame, ahead of on_tick, so a world can update its own position
 ///     via set_camera_pose before that frame renders. moveForward/moveRight are already
@@ -123,10 +139,19 @@ public sealed class WasmWorldHost : IDisposable
     public event EventHandler<string>? SwitchToHtmlRequested;
     public event EventHandler<WorldGeometrySubmission>? GeometrySubmitted;
     public event EventHandler<WorldTextureSubmission>? TextureSubmitted;
+    public event EventHandler? PointerLockRequested;
+    public event EventHandler? PointerLockReleased;
+
+    private readonly bool _allowPointerLock;
 
     /// <param name="storeKey">World id — must match the storeKey the HTML-mode surface for the
     /// same world uses, so both runtimes share one <see cref="CapsuleScopedStore"/> file.</param>
-    public WasmWorldHost(string storeKey)
+    /// <param name="allowPointerLock">Whether this world's manifest declared the
+    /// <c>worlds.pointerLock</c> capability — gates <c>request_pointer_lock</c> the same way a
+    /// missing <c>audio.dspPreset</c> silently drops <c>register_dsp_preset</c>. Release is
+    /// always allowed regardless (giving up a lock you were never granted is a no-op, not a
+    /// violation).</param>
+    public WasmWorldHost(string storeKey, bool allowPointerLock = false)
     {
         using var config = new Config().WithFuelConsumption(true);
         _engine = new Engine(config);
@@ -134,6 +159,7 @@ public sealed class WasmWorldHost : IDisposable
         _store.Fuel = FuelBudgetPerCall;
         _linker = new Linker(_engine);
         _scopedStore = new CapsuleScopedStore(storeKey);
+        _allowPointerLock = allowPointerLock;
         DefineHostImports();
     }
 
@@ -247,6 +273,30 @@ public sealed class WasmWorldHost : IDisposable
         try
         {
             _instance.GetAction(exportName)?.Invoke();
+        }
+        catch (WasmtimeException)
+        {
+            // Dropped call — non-fatal.
+        }
+    }
+
+    /// <summary>Calls the module's optional <c>on_pointer_lock_change(locked: i32)</c> export, if
+    /// any — tells the guest what the <em>actual</em> lock state is after every change, not just
+    /// after a request it made itself. The host is the real source of truth: a lock can be lost
+    /// without the guest calling <c>release_pointer_lock</c> at all (the panic escape hatch does
+    /// exactly that), and a world that only tracked its own requests would have no way to notice.
+    /// A trap or missing export is swallowed, same non-fatal handling as every other guest call.</summary>
+    public void NotifyPointerLockChanged(bool locked)
+    {
+        if (_instance is null)
+        {
+            return;
+        }
+
+        _store.Fuel = FuelBudgetPerCall;
+        try
+        {
+            _instance.GetAction<int>("on_pointer_lock_change")?.Invoke(locked ? 1 : 0);
         }
         catch (WasmtimeException)
         {
@@ -432,6 +482,22 @@ public sealed class WasmWorldHost : IDisposable
                     _cameraPose = new CameraPose(x, y, z, yaw, pitch);
                 }
             });
+
+        _linker.DefineFunction("spectral", "request_pointer_lock", (Caller _) =>
+        {
+            if (!_allowPointerLock)
+            {
+                return 0;
+            }
+
+            PointerLockRequested?.Invoke(this, EventArgs.Empty);
+            return 1;
+        });
+
+        _linker.DefineFunction("spectral", "release_pointer_lock", (Caller _) =>
+        {
+            PointerLockReleased?.Invoke(this, EventArgs.Empty);
+        });
 
         _linker.DefineFunction("spectral", "storage_get",
             (Caller caller, int keyPtr, int keyLen, int outPtr, int outCap) =>

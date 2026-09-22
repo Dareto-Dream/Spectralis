@@ -108,6 +108,7 @@ public static class CapsuleCapability
     public const string PresenceRichPresence = "presence.richPresence";
     public const string WorldsWasm3D = "worlds.wasm3d";
     public const string AudioDspPreset = "audio.dspPreset";
+    public const string WorldsPointerLock = "worlds.pointerLock";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>
     {
@@ -116,6 +117,7 @@ public static class CapsuleCapability
         WebViewLocalContent, WebViewNetworkAccess,
         SharedPlayHostCapsule, SharedPlayPackageUpload, TimelineAppControl,
         AlbumWorld, PresenceRichPresence, WorldsWasm3D, AudioDspPreset,
+        WorldsPointerLock,
     };
 }
 
