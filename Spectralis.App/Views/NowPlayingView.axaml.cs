@@ -693,10 +693,23 @@ public NowPlayingView()
 
     private void OnExitSurfaceMode(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is NowPlayingViewModel vm)
+        if (DataContext is not NowPlayingViewModel vm)
         {
-            vm.UseArtworkSurface();
+            return;
         }
+
+        // UseArtworkSurface() just flips ShowEmbeddedHtml off — fine once a track is actually
+        // loaded (its cover art fills in), but exiting a world map/room before ever picking a
+        // track leaves nothing behind: no title, no artist, no art. That's the "malformed unload,
+        // looks null" case — mirrors what OnEmbeddedExitRequested already does for the HTML
+        // world's own exit button, fully unloading the capsule back to real home state instead.
+        if (vm.IsAlbumWorldActive && !vm.HasTrack)
+        {
+            vm.AlbumWorldExitDelegate?.Invoke();
+            return;
+        }
+
+        vm.UseArtworkSurface();
     }
 
     private void OnOpenMiniPlayer(object? sender, RoutedEventArgs e)
