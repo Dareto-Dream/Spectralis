@@ -234,6 +234,35 @@
         <ContentControl x:Name="YouTubeVideoHost" />
       </Panel>
 
+      <!-- Ctrl+Esc panic escape: covers both rows (controls bar too) since the point is an
+           always-on-top way out, not something a world's own overlay could occlude. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              IsVisible="{Binding ShowPointerLockPanicBanner}"
+              Background="#CC0C0D0F">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                MaxWidth="420"
+                CornerRadius="10"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="#E0454C"
+                BorderThickness="1.5"
+                BoxShadow="0 8 40 4 #80000000"
+                Padding="28,24">
+          <StackPanel Spacing="14">
+            <TextBlock Text="PANIC" FontWeight="Bold" FontSize="28" LetterSpacing="4"
+                       Foreground="#E0454C" HorizontalAlignment="Center" />
+            <TextBlock Text="Pointer lock is off. The world can ask for it back, but your cursor is free right now."
+                       TextWrapping="Wrap" TextAlignment="Center"
+                       Foreground="{StaticResource Brush.Ink.Secondary}" />
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
+              <Button Content="Exit Capsule" Click="OnPanicExitCapsuleClicked"
+                      Background="#E0454C" Foreground="White" Padding="16,8" />
+              <Button Content="Exit Panic Mode" Click="OnPanicDismissClicked"
+                      Padding="16,8" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </Border>
+
       <!-- Exit button: top-right overlay, spans both rows -->
       <Button Grid.Row="0" Grid.RowSpan="2"
               Classes="ghost"

@@ -615,6 +615,15 @@ public partial class MainWindow : Window
                     e.Handled = true;
                     SelectSection(vm, vm.Settings);
                     return;
+
+                case Key.Escape:
+                    // Panic escape: force pointer lock off no matter what the active world's own
+                    // input handling does with this key. handledEventsToo: true on this handler
+                    // (see the constructor) is what makes "no matter what" true — it still runs
+                    // even if WgpuWorldSurface.OnKeyDown already marked the event handled.
+                    e.Handled = true;
+                    vm.NowPlaying.TriggerPointerLockPanic();
+                    return;
             }
         }
 

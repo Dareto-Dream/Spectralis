@@ -2932,6 +2932,43 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public Action<double, bool>? AlbumWorldTick { get; set; }
     public Action? AlbumWorldExitDelegate { get; set; }
 
+    private bool _showPointerLockPanicBanner;
+
+    /// <summary>True while the Ctrl+Esc panic banner is up — see <see cref="TriggerPointerLockPanic"/>.</summary>
+    public bool ShowPointerLockPanicBanner
+    {
+        get => _showPointerLockPanicBanner;
+        private set => this.RaiseAndSetIfChanged(ref _showPointerLockPanicBanner, value);
+    }
+
+    /// <summary>Raised by the Ctrl+Esc panic escape (<c>MainWindow.OnWindowKeyDown</c>, which
+    /// intercepts it with <c>handledEventsToo: true</c> so it fires no matter what the active
+    /// world's own key handling does with the event). The View forces the wgpu surface's pointer
+    /// lock off in response — this class doesn't hold a reference to that View-layer control.</summary>
+    public event EventHandler? PointerLockPanicTriggered;
+
+    /// <summary>Forces pointer lock off (regardless of whether the world ever calls
+    /// <c>release_pointer_lock</c> itself) and shows the panic banner. Safe to call even when no
+    /// lock is currently held — a no-op unlock, banner shown either way, since the point is
+    /// giving the listener an always-available way out, not just an unlock button.</summary>
+    public void TriggerPointerLockPanic()
+    {
+        ShowPointerLockPanicBanner = true;
+        PointerLockPanicTriggered?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>"Exit Panic Mode" — dismiss the banner and resume normally. The world can
+    /// re-request pointer lock on its own if it wants; this doesn't grant it back automatically.</summary>
+    public void DismissPointerLockPanic() => ShowPointerLockPanicBanner = false;
+
+    /// <summary>"Exit Capsule" — dismiss the banner and leave the world entirely, same path as
+    /// the world's own exit button (<see cref="AlbumWorldExitDelegate"/>).</summary>
+    public void ExitCapsuleFromPointerLockPanic()
+    {
+        ShowPointerLockPanicBanner = false;
+        AlbumWorldExitDelegate?.Invoke();
+    }
+
     /// <summary>
     /// Raised by an embedded capsule surface that declared the <c>presence.richPresence</c>
     /// capability. Non-null payload = set override, null = revert to normal track presence.
