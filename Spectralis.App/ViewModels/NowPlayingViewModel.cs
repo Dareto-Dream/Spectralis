@@ -2992,6 +2992,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         if (_pinnedAlbumWorldHtml is null)
             return;
 
+        // An HTML "world map" hands off to the normal player UI once a track is picked — that's
+        // a menu, not a place. A Wasm/wgpu world (e.g. CHASER's walkable room) is the opposite:
+        // picking a track via its own interact key shouldn't yank the room out from under the
+        // listener, since ApplyEmbeddedModules only keeps the pinned world's EmbeddedHtml alive
+        // while _albumWorldShowingWorld stays true — flipping it here would tear down the wgpu
+        // surface (and the movement/look it's mid-rendering) the instant music starts.
+        if (_embeddedSurfaceUsingWasm)
+            return;
+
         _albumWorldShowingWorld = false;
         RaiseSurfaceModeChanged();
     }

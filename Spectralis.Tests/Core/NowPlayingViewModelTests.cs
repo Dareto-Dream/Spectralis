@@ -190,6 +190,32 @@ public sealed class NowPlayingViewModelTests : IDisposable
     }
 
     [Fact]
+    public void AlbumWorldTrackPlayback_WasmRoom_StaysShowingWorld()
+    {
+        // Unlike an HTML "world map" (a menu you pick a track from and leave), a Wasm/wgpu world
+        // like CHASER's walkable room is a place — picking a track via its own interact key
+        // shouldn't tear the room out from under a listener who's still walking around in it.
+        var worldHtml = new EmbeddedHtmlContext(
+            "world",
+            "<!doctype html><html><body></body></html>"u8.ToArray(),
+            new Dictionary<string, byte[]>(),
+            null,
+            null);
+
+        _vm.AttachAlbumWorld(worldHtml, "{}", "world-dir", wasmBytes: new byte[] { 0 });
+
+        Assert.True(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.BeginAlbumWorldTrackPlayback();
+
+        Assert.True(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.DetachAlbumWorld();
+
+        Assert.False(_vm.IsAlbumWorldShowingWorld);
+    }
+
+    [Fact]
     public void AttachAlbumWorld_LocksVisualizerPicker_DetachUnlocksIt()
     {
         var worldHtml = new EmbeddedHtmlContext(
