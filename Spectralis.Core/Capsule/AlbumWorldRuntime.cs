@@ -338,7 +338,12 @@ public sealed class AlbumWorldRuntime : IDisposable
             binaryAssets,
             textAssets,
             null,
-            Path.GetDirectoryName(htmlPath) ?? _albumDir);
+            Path.GetDirectoryName(htmlPath) ?? _albumDir,
+            // Without this, Capabilities defaults to empty and every capability-gated feature
+            // (worlds.wasm3d, audio.dspPreset, presence.richPresence, worlds.pointerLock) reads
+            // as denied for every album world regardless of what its manifest actually declares
+            // — caught by pointer lock coming back denied on a manifest that plainly requested it.
+            _manifest?.Capabilities);
     }
 
     /// <summary>True when this album declares a sandboxed Wasm/wgpu world alongside (or instead
