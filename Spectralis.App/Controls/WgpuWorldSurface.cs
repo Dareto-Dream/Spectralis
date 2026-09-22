@@ -84,6 +84,12 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         // Needed to actually receive OnKeyDown/OnKeyUp for WASD — Avalonia only routes key
         // events to a focused element, and an Image isn't focusable by default.
         Focusable = true;
+
+        // AttachWorld's own Focus() call can lose the race against layout if this control was
+        // just assigned as Content and hasn't reached the visual tree yet — re-attempt here,
+        // which fires once it actually has, so WASD works without needing a click first even
+        // when that race is lost.
+        AttachedToVisualTree += (_, _) => Focus();
     }
 
     public event EventHandler<AlbumTrackPlayRequest>? PlayTrackRequested;
@@ -295,6 +301,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         Focus();
         _dragging = true;
         _lastPointer = e.GetPosition(this);
+        // Without this, a fast look-around drag that swings the cursor past this control's
+        // edge (easy to do — the surface doesn't fill the whole window) stops delivering
+        // PointerMoved the instant the cursor leaves its bounds, so look would stall out mid-turn
+        // instead of tracking to the edge of the screen and beyond.
+        e.Pointer.Capture(this);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -322,6 +333,10 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     {
         base.OnPointerReleased(e);
         _dragging = false;
+        if (ReferenceEquals(e.Pointer.Captured, this))
+        {
+            e.Pointer.Capture(null);
+        }
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
