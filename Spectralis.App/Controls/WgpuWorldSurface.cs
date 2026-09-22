@@ -95,6 +95,19 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
     private WriteableBitmap? _displayBitmap;
 
+    // Read from the render thread (the pointer-lock poll below gates on it), written from the
+    // UI thread via the top-level window's Activated/Deactivated — volatile, same reasoning as
+    // _pointerLocked. GetCursorPos is a *global* OS call with no notion of which window (if any)
+    // owns the input; without this gate, pointer lock keeps reading and consuming the real
+    // cursor's movement anywhere on screen — including while the listener is using a completely
+    // different application — the moment Spectralis isn't the active window. Confirmed: exactly
+    // this produced a large, sustained, seemingly-spontaneous camera drift that tracked with
+    // ordinary mouse use in another window, not anything touching Spectralis at all.
+    private volatile bool _windowActive = true;
+    private Window? _activationWindow;
+    private EventHandler? _windowActivatedHandler;
+    private EventHandler? _windowDeactivatedHandler;
+
     public bool IsWasmAvailable => WgpuWorldRenderer.IsAvailable;
     public bool IsAttached => _renderer is not null;
     public bool IsPointerLocked => _pointerLocked;
@@ -113,7 +126,43 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         {
             Focus();
             WasmWorldLog.Log($"OnAttachedToVisualTree: Focus() retried, IsFocused={IsFocused}");
+
+            if (_activationWindow is null && TopLevel.GetTopLevel(this) is Window window)
+            {
+                _activationWindow = window;
+                _windowActive = window.IsActive;
+                _windowActivatedHandler = (_, _) => _windowActive = true;
+                _windowDeactivatedHandler = (_, _) => _windowActive = false;
+                window.Activated += _windowActivatedHandler;
+                window.Deactivated += _windowDeactivatedHandler;
+            }
         };
+    }
+
+    /// <summary>Unhooks this instance's Activated/Deactivated subscriptions from the top-level
+    /// window. Without this, a new WgpuWorldSurface created for every world load/switch (see
+    /// NowPlayingView.ApplyWasmWorldMode) would each leave its closures subscribed on the
+    /// long-lived Window forever, pinning every past instance in memory.</summary>
+    private void DetachWindowActivationTracking()
+    {
+        if (_activationWindow is null)
+        {
+            return;
+        }
+
+        if (_windowActivatedHandler is not null)
+        {
+            _activationWindow.Activated -= _windowActivatedHandler;
+        }
+
+        if (_windowDeactivatedHandler is not null)
+        {
+            _activationWindow.Deactivated -= _windowDeactivatedHandler;
+        }
+
+        _activationWindow = null;
+        _windowActivatedHandler = null;
+        _windowDeactivatedHandler = null;
     }
 
     public event EventHandler<AlbumTrackPlayRequest>? PlayTrackRequested;
@@ -392,7 +441,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             // feedback-loop drift. _pointerLocked is volatile; the two center fields are only
             // ever written here or at Engage (before _pointerLocked goes true), so no lock is
             // needed for this read.
-            if (_pointerLocked && OperatingSystem.IsWindows() &&
+            if (_pointerLocked && _windowActive && OperatingSystem.IsWindows() &&
                 CursorNative.TryGetScreenPos(out var cursorX, out var cursorY))
             {
                 var dx = cursorX - _lockCenterScreenX;
@@ -564,5 +613,9 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         }
     }
 
-    public void Dispose() => DetachWorld();
+    public void Dispose()
+    {
+        DetachWorld();
+        DetachWindowActivationTracking();
+    }
 }
