@@ -31,6 +31,35 @@ public sealed class AlbumWorldRuntimeTests
     }
 
     [Fact]
+    public void WorldHtmlContext_CarriesManifestCapabilities()
+    {
+        // Without this, every capability-gated feature (worlds.wasm3d, audio.dspPreset,
+        // presence.richPresence, worlds.pointerLock) reads as denied for every album world
+        // regardless of what its manifest actually declares.
+        var albumDir = Path.Combine(Path.GetTempPath(), $"spectralis-album-world-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(albumDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(albumDir, "world.html"), "<html><body>world</body></html>");
+            var manifest = BuildManifest();
+            manifest.World = new AlbumWorldSection { Entry = "world.html" };
+            manifest.Capabilities = ["worlds.wasm3d", "worlds.pointerLock"];
+            var runtime = new AlbumWorldRuntime();
+            runtime.Load(manifest, albumDir, new AlbumWorldSession());
+
+            var context = runtime.BuildWorldHtmlContext();
+
+            Assert.NotNull(context);
+            Assert.Contains("worlds.wasm3d", context!.Capabilities);
+            Assert.Contains("worlds.pointerLock", context.Capabilities);
+        }
+        finally
+        {
+            try { Directory.Delete(albumDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void ReadyState_IncludesRestoredSessionFields()
     {
         var runtime = new AlbumWorldRuntime();
