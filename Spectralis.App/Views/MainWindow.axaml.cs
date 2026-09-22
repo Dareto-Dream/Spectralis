@@ -87,6 +87,21 @@ public partial class MainWindow : Window
         SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         SizeChanged += (_, _) => CaptureNormalBounds();
         PositionChanged += (_, _) => CaptureNormalBounds();
+        // Losing focus (alt-tab, clicking another app, a system dialog stealing activation, ...)
+        // while pointer-locked would otherwise strand the listener with a hidden, recentering
+        // cursor in a window they can no longer see or interact with — same panic path as a
+        // deliberate hold-Esc, just triggered by the OS instead of the listener.
+        Deactivated += (_, _) =>
+        {
+            // Gated to album worlds specifically — TriggerPointerLockPanic always shows the
+            // banner (a harmless no-op release when nothing was locked), and without this check
+            // every alt-tab away from a perfectly normal track would pop a "PANIC" banner that
+            // has nothing to release and nowhere relevant to show it.
+            if (DataContext is MainWindowViewModel { NowPlaying.IsAlbumWorldActive: true } vm)
+            {
+                vm.NowPlaying.TriggerPointerLockPanic();
+            }
+        };
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
@@ -680,6 +695,16 @@ public partial class MainWindow : Window
                 return;
 
             case Key.Escape:
+                // While an album world is up, Escape is reserved for the hold-to-panic gesture
+                // above — this quick-tap behavior (jump to Now Playing, or reset the session if
+                // already there) would otherwise fire on the very first keydown of every hold,
+                // exiting the world (and hiding the panic banner along with it) well before the
+                // hold timer ever gets a chance to matter.
+                if (vm.NowPlaying.IsAlbumWorldActive)
+                {
+                    return;
+                }
+
                 e.Handled = true;
                 if (!ReferenceEquals(vm.SelectedSection.Content, vm.NowPlaying))
                 {
