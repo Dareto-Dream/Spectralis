@@ -295,7 +295,14 @@ public NowPlayingView()
         if (e.PropertyName is nameof(NowPlayingViewModel.ShowEmbeddedHtml) or
             nameof(NowPlayingViewModel.EmbeddedHtml) or
             nameof(NowPlayingViewModel.HasEmbeddedHtml) or
-            nameof(NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm))
+            nameof(NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm) or
+            // BeginAlbumWorldTrackPlayback flips IsAlbumWorldShowingWorld false the moment a
+            // track starts playing and raises exactly this notification (RaiseSurfaceModeChanged)
+            // — without it in this filter, ApplyEmbeddedHtmlMode's now-corrected gate (see its own
+            // comment) never actually re-runs at the moment that matters, so the stale decision
+            // from while the world was still showing just sits on screen. Confirmed: audio started
+            // fine, but the room never got torn down for the track's own visualizer/audio-only view.
+            nameof(NowPlayingViewModel.IsAlbumWorldShowingWorld))
         {
             ApplyEmbeddedHtmlMode();
         }
