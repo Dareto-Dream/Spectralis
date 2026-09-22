@@ -76,10 +76,16 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private bool _dragging;
     private Point _lastPointer;
 
+    // UI-thread-only — every read/write happens from a control event handler or a
+    // Dispatcher.UIThread.Post callback, never the render thread directly.
+    private bool _pointerLocked;
+    private Cursor? _cursorBeforeLock;
+
     private WriteableBitmap? _displayBitmap;
 
     public bool IsWasmAvailable => WgpuWorldRenderer.IsAvailable;
     public bool IsAttached => _renderer is not null;
+    public bool IsPointerLocked => _pointerLocked;
 
     public WgpuWorldSurface()
     {
@@ -110,14 +116,16 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     /// Loads and starts rendering <paramref name="wasmBytes"/> under <paramref name="storeKey"/>
     /// (the world id — must match whatever storeKey the HTML-mode surface for the same world
     /// uses, so hand-off state round-trips a runtime switch via the shared
-    /// <see cref="Spectralis.Core.Capsule.CapsuleScopedStore"/>). Returns false if the native
-    /// renderer is unavailable (no GPU/library) or the module fails to load — caller should
-    /// fall back to the HTML surface in that case, same as a WebView navigation failure today.
+    /// <see cref="Spectralis.Core.Capsule.CapsuleScopedStore"/>). <paramref name="allowPointerLock"/>
+    /// mirrors the manifest's <c>worlds.pointerLock</c> capability — see
+    /// <see cref="WasmWorldHost(string, bool)"/>. Returns false if the native renderer is
+    /// unavailable (no GPU/library) or the module fails to load — caller should fall back to the
+    /// HTML surface in that case, same as a WebView navigation failure today.
     /// </summary>
-    public bool AttachWorld(byte[] wasmBytes, string storeKey, int width = 960, int height = 720)
+    public bool AttachWorld(byte[] wasmBytes, string storeKey, int width = 960, int height = 720, bool allowPointerLock = false)
     {
         DetachWorld();
-        WasmWorldLog.Log($"AttachWorld: storeKey={storeKey} bytes={wasmBytes.Length} size={width}x{height}");
+        WasmWorldLog.Log($"AttachWorld: storeKey={storeKey} bytes={wasmBytes.Length} size={width}x{height} allowPointerLock={allowPointerLock}");
 
         _renderer = WgpuWorldRenderer.Create(width, height);
         if (_renderer is null)
@@ -126,7 +134,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             return false;
         }
 
-        _wasmHost = new WasmWorldHost(storeKey);
+        _wasmHost = new WasmWorldHost(storeKey, allowPointerLock);
         _wasmHost.PlayTrackRequested += (_, e) => PlayTrackRequested?.Invoke(this, e);
         _wasmHost.AddToQueueRequested += (_, e) => AddToQueueRequested?.Invoke(this, e);
         _wasmHost.SaveBookmarkRequested += (_, e) => SaveBookmarkRequested?.Invoke(this, e);
@@ -134,6 +142,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _wasmHost.DspPresetReleaseRequested += (_, e) => DspPresetReleaseRequested?.Invoke(this, e);
         _wasmHost.AchievementUnlocked += (_, e) => AchievementUnlocked?.Invoke(this, e);
         _wasmHost.SwitchToHtmlRequested += (_, e) => SwitchToHtmlRequested?.Invoke(this, e);
+        // Requested/released from either the UI thread (on_load, during the Load() call just
+        // below) or the render thread (on_input/on_tick, under _wasmSync) — always hop to the UI
+        // thread since engaging/disengaging touches the Cursor property and native cursor calls.
+        _wasmHost.PointerLockRequested += (_, _) => Dispatcher.UIThread.Post(EngagePointerLock);
+        _wasmHost.PointerLockReleased += (_, _) => Dispatcher.UIThread.Post(DisengagePointerLock);
         _wasmHost.GeometrySubmitted += (_, e) =>
         {
             lock (_geometryLock)
@@ -203,6 +216,16 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _renderThread?.Join(TimeSpan.FromSeconds(2));
         _renderThread = null;
 
+        // Leaving pointer lock engaged past DetachWorld would strand the listener with a hidden,
+        // recentering cursor and no world left to release it — no guest to notify at this point,
+        // just restore the cursor.
+        if (_pointerLocked)
+        {
+            _pointerLocked = false;
+            Cursor = _cursorBeforeLock;
+            _cursorBeforeLock = null;
+        }
+
         lock (_wasmSync)
         {
             _wasmHost?.Dispose();
@@ -218,6 +241,82 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             _pendingGeometry = null;
             _pendingTexture = null;
         }
+    }
+
+    /// <summary>Hides the cursor and switches <see cref="OnPointerMoved"/> to always-on look
+    /// (no button hold needed), warping the cursor back to this control's center after every
+    /// move so it never runs out of screen to move across — the standard "pointer lock without a
+    /// native OS API for it" trick. UI-thread only (touches <c>Cursor</c>).</summary>
+    private void EngagePointerLock()
+    {
+        if (_pointerLocked || _wasmHost is null)
+        {
+            return;
+        }
+
+        _pointerLocked = true;
+        _cursorBeforeLock = Cursor;
+        Cursor = new Cursor(StandardCursorType.None);
+        RecenterCursor();
+
+        lock (_wasmSync)
+        {
+            _wasmHost?.NotifyPointerLockChanged(true);
+        }
+
+        WasmWorldLog.Log("EngagePointerLock: locked=true");
+    }
+
+    /// <summary>Restores the cursor and drops back to click-drag-to-look. Safe to call whether
+    /// or not a lock is currently active (a world releasing a lock it doesn't hold, or the panic
+    /// escape firing with no lock engaged, are both just no-ops here). UI-thread only.</summary>
+    private void DisengagePointerLock()
+    {
+        if (!_pointerLocked)
+        {
+            return;
+        }
+
+        _pointerLocked = false;
+        Cursor = _cursorBeforeLock;
+        _cursorBeforeLock = null;
+
+        lock (_wasmSync)
+        {
+            _wasmHost?.NotifyPointerLockChanged(false);
+        }
+
+        WasmWorldLog.Log("DisengagePointerLock: locked=false");
+    }
+
+    /// <summary>The Ctrl+Esc panic escape (see <c>MainWindow.OnWindowKeyDown</c>): force-releases
+    /// pointer lock regardless of whether the active world ever calls <c>release_pointer_lock</c>
+    /// itself. Identical to a normal release from the guest's point of view — it still gets
+    /// <c>on_pointer_lock_change(0)</c> — the only difference is who decided.</summary>
+    public void PanicReleasePointerLock() => DisengagePointerLock();
+
+    /// <summary>Warps the OS cursor to this control's center in screen coordinates (Windows
+    /// only — see <see cref="CursorNative"/>) and resets <see cref="_lastPointer"/> to match, so
+    /// the synthetic PointerMoved the warp itself generates computes a ~zero delta instead of a
+    /// spurious jump.</summary>
+    private void RecenterCursor()
+    {
+        var localCenter = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        _lastPointer = localCenter;
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var topLevelPoint = this.TranslatePoint(localCenter, topLevel) ?? localCenter;
+        var screenPoint = topLevel.PointToScreen(topLevelPoint);
+        CursorNative.RecenterTo(screenPoint.X, screenPoint.Y);
     }
 
     private void RenderLoop()
@@ -355,7 +454,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_dragging)
+        if (!_dragging && !_pointerLocked)
         {
             return;
         }
@@ -370,6 +469,15 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             // tracks a camera angle of its own.
             _pendingLookYawDelta += delta.X * 0.01;
             _pendingLookPitchDelta += -delta.Y * 0.01;
+        }
+
+        // Pointer-locked mode ignores _dragging entirely (look works without holding a button)
+        // and re-centers after every move instead of waiting for the cursor to reach an edge —
+        // with the cursor hidden, its real position is invisible anyway, so there's nothing lost
+        // by never letting it wander far from center.
+        if (_pointerLocked)
+        {
+            RecenterCursor();
         }
     }
 

@@ -76,6 +76,7 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested -= OnNotepadPopOutRequested;
+                _viewModel.PointerLockPanicTriggered -= OnPointerLockPanicTriggered;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
@@ -85,6 +86,7 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested += OnNotepadPopOutRequested;
+                _viewModel.PointerLockPanicTriggered += OnPointerLockPanicTriggered;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
                 ApplyDeadZoneLayout();
@@ -892,7 +894,9 @@ public NowPlayingView()
 
         if (_viewModel is { ShowEmbeddedHtml: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
         {
-            ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id);
+            var allowPointerLock = wasmWorldContext.Capabilities.Contains(
+                Spectralis.Core.Capsule.CapsuleCapability.WorldsPointerLock);
+            ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id, allowPointerLock);
             return;
         }
 
@@ -997,7 +1001,7 @@ public NowPlayingView()
     /// <summary>Boots (or no-ops if already showing) the wgpu-backed surface for the given
     /// world. Falls back to requesting HTML mode if the native renderer is unavailable or the
     /// module fails to load — mirrors the existing WebView navigation-failure fallback above.</summary>
-    private void ApplyWasmWorldMode(byte[] wasmBytes, string worldId)
+    private void ApplyWasmWorldMode(byte[] wasmBytes, string worldId, bool allowPointerLock)
     {
         if (_wgpuSurface is not null && string.Equals(_loadedWasmWorldId, worldId, StringComparison.Ordinal))
         {
@@ -1024,7 +1028,7 @@ public NowPlayingView()
         // storeKey = worldId so this shares the exact same CapsuleScopedStore file the HTML
         // surface's spectral.store.* would use for the same world — hand-off state (position,
         // achievements, active DSP preset) survives a runtime switch either direction.
-        if (!_wgpuSurface.AttachWorld(wasmBytes, worldId))
+        if (!_wgpuSurface.AttachWorld(wasmBytes, worldId, allowPointerLock: allowPointerLock))
         {
             WasmWorldLog.Log($"ApplyWasmWorldMode: attach failed id={worldId} — falling back to HTML");
             StopWasmWorldMode();
@@ -1168,6 +1172,24 @@ public NowPlayingView()
             _viewModel.AlbumWorldExitDelegate?.Invoke();
         else
             _viewModel?.UseArtworkSurface();
+    }
+
+    /// <summary>Ctrl+Esc panic escape (<see cref="NowPlayingViewModel.TriggerPointerLockPanic"/>)
+    /// — force the wgpu surface's pointer lock off. No-op if the Wasm surface isn't even attached
+    /// (an HTML-mode world, or no world at all) or wasn't locked in the first place.</summary>
+    private void OnPointerLockPanicTriggered(object? sender, EventArgs e)
+    {
+        _wgpuSurface?.PanicReleasePointerLock();
+    }
+
+    private void OnPanicExitCapsuleClicked(object? sender, RoutedEventArgs e)
+    {
+        _viewModel?.ExitCapsuleFromPointerLockPanic();
+    }
+
+    private void OnPanicDismissClicked(object? sender, RoutedEventArgs e)
+    {
+        _viewModel?.DismissPointerLockPanic();
     }
 
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
