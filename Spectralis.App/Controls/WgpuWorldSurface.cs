@@ -158,6 +158,11 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _running = true;
         _renderThread = new Thread(RenderLoop) { IsBackground = true, Name = "WgpuWorldSurface-Render" };
         _renderThread.Start();
+
+        // Without this, WASD/mouselook silently do nothing until the listener happens to click
+        // the surface first — Avalonia only routes key events to whatever's focused, and nothing
+        // focuses this control just by attaching a world to it.
+        Focus();
         return true;
     }
 
