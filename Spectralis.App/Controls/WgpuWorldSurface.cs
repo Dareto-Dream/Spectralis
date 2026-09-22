@@ -271,6 +271,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     /// attached (e.g. this surface belongs to an HTML-mode world instead).</summary>
     public void NotifyTrackCompleted(double playedSeconds, double durationSeconds)
     {
+        WasmWorldLog.Log($"NotifyTrackCompleted: playedSeconds={playedSeconds:F1} durationSeconds={durationSeconds:F1} hasHost={_wasmHost is not null}");
         lock (_wasmSync)
         {
             _wasmHost?.NotifyTrackCompleted(playedSeconds, durationSeconds);
