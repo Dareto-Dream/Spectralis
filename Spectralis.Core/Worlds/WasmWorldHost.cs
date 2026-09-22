@@ -81,9 +81,13 @@ public readonly record struct CameraPose(double X, double Y, double Z, double Ya
 /// Guest export called from the host (beyond on_load/on_tick/on_unload):
 ///   on_pointer_lock_change(locked: i32) — optional; fires whenever the *actual* lock state
 ///     changes, whichever side caused it — a granted request_pointer_lock, this world's own
-///     release_pointer_lock, or the host unilaterally taking it back (the user's Ctrl+Esc panic
-///     escape does exactly that). A world that only tracked its own requests would never notice
-///     the last case.
+///     release_pointer_lock, or the host unilaterally taking it back (the listener's hold-Esc
+///     panic escape does exactly that). A world that only tracked its own requests would never
+///     notice the last case.
+///   on_track_completed(playedSeconds,durationSeconds: f64) — optional; the Wasm-side counterpart
+///     of the HTML surface's onTrackCompleted, fired when a track this world started via
+///     play_track reaches its natural end. The listener is switched back to this world (not left
+///     on whatever surface the track itself used) right before this fires.
 ///   on_input(moveForward,moveRight,lookYawDelta,lookPitchDelta: f64, interact: i32) — optional;
 ///     called once per rendered frame, ahead of on_tick, so a world can update its own position
 ///     via set_camera_pose before that frame renders. moveForward/moveRight are already
@@ -297,6 +301,31 @@ public sealed class WasmWorldHost : IDisposable
         try
         {
             _instance.GetAction<int>("on_pointer_lock_change")?.Invoke(locked ? 1 : 0);
+        }
+        catch (WasmtimeException)
+        {
+            // Dropped call — non-fatal.
+        }
+    }
+
+    /// <summary>Calls the module's optional <c>on_track_completed(played_seconds, duration_seconds: f64)</c>
+    /// export, if any — the Wasm-side counterpart of the HTML surface's <c>onTrackCompleted</c>
+    /// callback, fired when a track this world started (via <c>play_track</c>) reaches its
+    /// natural end. No track id parameter: unlike a host-initiated call, this one only ever
+    /// follows a <c>play_track</c> the guest made itself, so it already knows which track just
+    /// finished — passing percentages/raw seconds back out is what it can't derive on its own.
+    /// A trap or missing export is swallowed, same non-fatal handling as every other guest call.</summary>
+    public void NotifyTrackCompleted(double playedSeconds, double durationSeconds)
+    {
+        if (_instance is null)
+        {
+            return;
+        }
+
+        _store.Fuel = FuelBudgetPerCall;
+        try
+        {
+            _instance.GetAction<double, double>("on_track_completed")?.Invoke(playedSeconds, durationSeconds);
         }
         catch (WasmtimeException)
         {
