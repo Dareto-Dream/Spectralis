@@ -234,7 +234,7 @@
         <ContentControl x:Name="YouTubeVideoHost" />
       </Panel>
 
-      <!-- Ctrl+Esc panic escape: covers both rows (controls bar too) since the point is an
+      <!-- Hold-Esc panic escape: covers both rows (controls bar too) since the point is an
            always-on-top way out, not something a world's own overlay could occlude. -->
       <Border Grid.Row="0" Grid.RowSpan="2"
               IsVisible="{Binding ShowPointerLockPanicBanner}"

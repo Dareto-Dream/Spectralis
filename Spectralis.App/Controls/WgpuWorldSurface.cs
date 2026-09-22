@@ -289,7 +289,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         WasmWorldLog.Log("DisengagePointerLock: locked=false");
     }
 
-    /// <summary>The Ctrl+Esc panic escape (see <c>MainWindow.OnWindowKeyDown</c>): force-releases
+    /// <summary>The hold-Esc panic escape (see <c>MainWindow.OnWindowKeyDown</c>): force-releases
     /// pointer lock regardless of whether the active world ever calls <c>release_pointer_lock</c>
     /// itself. Identical to a normal release from the guest's point of view — it still gets
     /// <c>on_pointer_lock_change(0)</c> — the only difference is who decided.</summary>

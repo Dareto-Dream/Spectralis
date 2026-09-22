@@ -38,6 +38,11 @@ public partial class MainWindow : Window
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
 
+    // Pointer-lock panic escape — see OnWindowKeyDown's plain-Escape branch and
+    // StartEscapeHoldTimerIfNeeded. Non-null exactly while a physical Esc hold is being timed.
+    private DispatcherTimer? _escapeHoldTimer;
+    private static readonly TimeSpan EscapeHoldPanicDuration = TimeSpan.FromMilliseconds(700);
+
     public MainWindow()
     {
         InitializeComponent();
@@ -53,6 +58,7 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnWindowKeyDown, handledEventsToo: true);
+        AddHandler(KeyUpEvent, OnWindowKeyUp, handledEventsToo: true);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)
@@ -615,16 +621,19 @@ public partial class MainWindow : Window
                     e.Handled = true;
                     SelectSection(vm, vm.Settings);
                     return;
-
-                case Key.Escape:
-                    // Panic escape: force pointer lock off no matter what the active world's own
-                    // input handling does with this key. handledEventsToo: true on this handler
-                    // (see the constructor) is what makes "no matter what" true — it still runs
-                    // even if WgpuWorldSurface.OnKeyDown already marked the event handled.
-                    e.Handled = true;
-                    vm.NowPlaying.TriggerPointerLockPanic();
-                    return;
             }
+        }
+
+        // Panic escape: hold Esc (no modifier — Ctrl+Esc is Windows' own reserved "open Start
+        // Menu" shortcut and never reaches this window at all) to force pointer lock off no
+        // matter what the active world's own input handling does with the key.
+        // handledEventsToo: true on this handler (see the constructor) is what makes "no matter
+        // what" true — it still runs even if WgpuWorldSurface.OnKeyDown already marked the event
+        // handled. A quick tap does nothing; only a sustained hold (see StartEscapeHoldTimer)
+        // trips it, so Esc's normal per-context behavior elsewhere isn't broken.
+        if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape)
+        {
+            StartEscapeHoldTimerIfNeeded(vm);
         }
 
         if (HasOnly(e.KeyModifiers, KeyModifiers.Shift))
@@ -707,6 +716,41 @@ public partial class MainWindow : Window
                 vm.NowPlaying.ToggleMute();
                 return;
         }
+    }
+
+    /// <summary>Starts the panic-hold countdown on the first physical Esc keydown, if one isn't
+    /// already running. Windows auto-repeats KeyDown every ~30-50ms while a key stays held, so
+    /// this must no-op on those repeats rather than restarting the timer each time — otherwise
+    /// holding Esc would never actually reach the threshold.</summary>
+    private void StartEscapeHoldTimerIfNeeded(MainWindowViewModel vm)
+    {
+        if (_escapeHoldTimer is not null)
+        {
+            return;
+        }
+
+        _escapeHoldTimer = new DispatcherTimer { Interval = EscapeHoldPanicDuration };
+        _escapeHoldTimer.Tick += (_, _) =>
+        {
+            _escapeHoldTimer?.Stop();
+            _escapeHoldTimer = null;
+            vm.NowPlaying.TriggerPointerLockPanic();
+        };
+        _escapeHoldTimer.Start();
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _escapeHoldTimer is null)
+        {
+            return;
+        }
+
+        // Released before the hold threshold fired — a normal tap, not a panic. Esc's existing
+        // per-context behavior (OnWindowKeyDown's plain-Escape case) already ran on the keydown
+        // that started this timer; nothing further to undo here.
+        _escapeHoldTimer.Stop();
+        _escapeHoldTimer = null;
     }
 
     private async Task OpenUrlAsync(MainWindowViewModel vm)

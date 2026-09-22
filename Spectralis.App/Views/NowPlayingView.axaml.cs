@@ -1174,7 +1174,7 @@ public NowPlayingView()
             _viewModel?.UseArtworkSurface();
     }
 
-    /// <summary>Ctrl+Esc panic escape (<see cref="NowPlayingViewModel.TriggerPointerLockPanic"/>)
+    /// <summary>Hold-Esc panic escape (<see cref="NowPlayingViewModel.TriggerPointerLockPanic"/>)
     /// — force the wgpu surface's pointer lock off. No-op if the Wasm surface isn't even attached
     /// (an HTML-mode world, or no world at all) or wasn't locked in the first place.</summary>
     private void OnPointerLockPanicTriggered(object? sender, EventArgs e)

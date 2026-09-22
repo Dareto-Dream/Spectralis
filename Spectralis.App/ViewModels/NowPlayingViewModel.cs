@@ -2934,14 +2934,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private bool _showPointerLockPanicBanner;
 
-    /// <summary>True while the Ctrl+Esc panic banner is up — see <see cref="TriggerPointerLockPanic"/>.</summary>
+    /// <summary>True while the hold-Esc panic banner is up — see <see cref="TriggerPointerLockPanic"/>.</summary>
     public bool ShowPointerLockPanicBanner
     {
         get => _showPointerLockPanicBanner;
         private set => this.RaiseAndSetIfChanged(ref _showPointerLockPanicBanner, value);
     }
 
-    /// <summary>Raised by the Ctrl+Esc panic escape (<c>MainWindow.OnWindowKeyDown</c>, which
+    /// <summary>Raised by the hold-Esc panic escape (<c>MainWindow.OnWindowKeyDown</c>, which
     /// intercepts it with <c>handledEventsToo: true</c> so it fires no matter what the active
     /// world's own key handling does with the event). The View forces the wgpu surface's pointer
     /// lock off in response — this class doesn't hold a reference to that View-layer control.</summary>
