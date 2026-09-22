@@ -448,7 +448,12 @@ public sealed class WgpuWorldSurface : Image, IDisposable
                 var dy = cursorY - _lockCenterScreenY;
                 if (dx != 0 || dy != 0)
                 {
-                    lookYawDelta += dx * 0.01;
+                    // Negated: yaw increasing turns the camera toward +X (see CameraPose's forward
+                    // formula), and chaser-room's own WASD right-vector math (right_x = -cos(yaw))
+                    // confirms +X sits to the player's *left* at yaw 0, not their right. Moving the
+                    // mouse right (dx > 0) has to *decrease* yaw to turn the camera right — the
+                    // un-negated version turned it left, i.e. properly inverted, not a red herring.
+                    lookYawDelta += -dx * 0.01;
                     lookPitchDelta += -dy * 0.01;
                     CursorNative.RecenterTo(_lockCenterScreenX, _lockCenterScreenY);
                 }
@@ -550,8 +555,9 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         {
             // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
             // accumulation (and pitch clamping) from here via on_input, this control no longer
-            // tracks a camera angle of its own.
-            _pendingLookYawDelta += delta.X * 0.01;
+            // tracks a camera angle of its own. Yaw negated — see the identical note on the
+            // pointer-lock poll in RenderLoop for why the un-negated sign was actually inverted.
+            _pendingLookYawDelta += -delta.X * 0.01;
             _pendingLookPitchDelta += -delta.Y * 0.01;
         }
     }
