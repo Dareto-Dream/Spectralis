@@ -892,7 +892,16 @@ public NowPlayingView()
                 $"HasWasmBytes={avm.EmbeddedWasmWorld is not null} HasEmbeddedHtml={avm.EmbeddedHtml is not null} IsAlbumWorldShowingWorld={avm.IsAlbumWorldShowingWorld}");
         }
 
-        if (_viewModel is { ShowEmbeddedHtml: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
+        // IsAlbumWorldShowingWorld is the piece that was missing here: EmbeddedWasmWorld/
+        // IsEmbeddedSurfaceUsingWasm are deliberately kept alive "for the lifetime of the album
+        // world" (see NowPlayingViewModel's field doc) so a mid-browse switch_to_html/
+        // switchToWasm round-trips without reloading — but that meant once a track actually
+        // started playing (_albumWorldShowingWorld flips false) and ApplyEmbeddedModules pointed
+        // EmbeddedHtml at that *track's own* embed instead, this gate still matched on the
+        // world's stale cached wasm bytes and re-attached them under the track's mismatched id,
+        // stepping on whatever the track's own HTML/Wasm visualizer was supposed to show.
+        // Confirmed: switching from the world to a track with its own embed didn't work at all.
+        if (_viewModel is { ShowEmbeddedHtml: true, IsAlbumWorldShowingWorld: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
         {
             var allowPointerLock = wasmWorldContext.Capabilities.Contains(
                 Spectralis.Core.Capsule.CapsuleCapability.WorldsPointerLock);
