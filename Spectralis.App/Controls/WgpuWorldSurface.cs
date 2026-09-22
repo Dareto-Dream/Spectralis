@@ -76,10 +76,22 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     private bool _dragging;
     private Point _lastPointer;
 
-    // UI-thread-only — every read/write happens from a control event handler or a
-    // Dispatcher.UIThread.Post callback, never the render thread directly.
-    private bool _pointerLocked;
+    // _pointerLocked is read from both the UI thread (OnPointerMoved's early-out, Dispose) and
+    // the render thread (RenderLoop's per-frame poll below) — volatile rather than _inputLock
+    // since it's a single flag checked far more often than it's written, not part of a larger
+    // atomic group. _cursorBeforeLock stays UI-thread-only (only ever touched from Engage/
+    // DisengagePointerLock, both always reached via Dispatcher.UIThread.Post).
+    private volatile bool _pointerLocked;
     private Cursor? _cursorBeforeLock;
+
+    // The screen-pixel point pointer lock recenters to every frame. Written once per Engage, on
+    // the UI thread, strictly before the volatile write to _pointerLocked below it in
+    // RecomputeLockCenterAndWarp/EngagePointerLock's call order — that ordering is what makes
+    // RenderLoop's unlocked read safe (the volatile write's release semantics cover these two
+    // plain fields too, same as any other data guarded by a "ready" flag). Never written again
+    // while locked, so no other synchronization is needed.
+    private int _lockCenterScreenX;
+    private int _lockCenterScreenY;
 
     private WriteableBitmap? _displayBitmap;
 
@@ -243,10 +255,9 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         }
     }
 
-    /// <summary>Hides the cursor and switches <see cref="OnPointerMoved"/> to always-on look
-    /// (no button hold needed), warping the cursor back to this control's center after every
-    /// move so it never runs out of screen to move across — the standard "pointer lock without a
-    /// native OS API for it" trick. UI-thread only (touches <c>Cursor</c>).</summary>
+    /// <summary>Hides the cursor and switches look input from click-drag to an always-on,
+    /// render-thread-polled raw cursor read (see RenderLoop) — no button hold needed. UI-thread
+    /// only (touches <c>Cursor</c>).</summary>
     private void EngagePointerLock()
     {
         if (_pointerLocked || _wasmHost is null)
@@ -254,10 +265,12 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             return;
         }
 
-        _pointerLocked = true;
         _cursorBeforeLock = Cursor;
         Cursor = new Cursor(StandardCursorType.None);
-        RecenterCursor();
+        RecomputeLockCenterAndWarp();
+        // Set last, after the center is already valid — RenderLoop's poll checks this flag
+        // and immediately trusts _lockCenterScreenX/Y to be current.
+        _pointerLocked = true;
 
         lock (_wasmSync)
         {
@@ -295,27 +308,24 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     /// <c>on_pointer_lock_change(0)</c> — the only difference is who decided.</summary>
     public void PanicReleasePointerLock() => DisengagePointerLock();
 
-    /// <summary>Warps the OS cursor to this control's center in screen coordinates (Windows
-    /// only — see <see cref="CursorNative"/>) and resets <see cref="_lastPointer"/> to match, so
-    /// the synthetic PointerMoved the warp itself generates computes a ~zero delta instead of a
-    /// spurious jump.</summary>
-    private void RecenterCursor()
+    /// <summary>Computes this control's center in screen-pixel coordinates, stores it as the
+    /// warp target RenderLoop's per-frame poll uses, and warps the OS cursor there immediately.
+    /// UI-thread only (TranslatePoint/PointToScreen walk the visual tree) — called once at
+    /// Engage; every subsequent frame's re-warp reuses the stored value directly from the render
+    /// thread rather than recomputing this walk every frame.</summary>
+    private void RecomputeLockCenterAndWarp()
     {
         var localCenter = new Point(Bounds.Width / 2, Bounds.Height / 2);
-        _lastPointer = localCenter;
-
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        if (TopLevel.GetTopLevel(this) is not { } topLevel)
+        if (!OperatingSystem.IsWindows() || TopLevel.GetTopLevel(this) is not { } topLevel)
         {
             return;
         }
 
         var topLevelPoint = this.TranslatePoint(localCenter, topLevel) ?? localCenter;
         var screenPoint = topLevel.PointToScreen(topLevelPoint);
+        _lockCenterScreenX = screenPoint.X;
+        _lockCenterScreenY = screenPoint.Y;
+
         CursorNative.RecenterTo(screenPoint.X, screenPoint.Y);
     }
 
@@ -375,6 +385,25 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             }
             moveForward *= dt;
             moveRight *= dt;
+
+            // Pointer-locked look: poll the raw OS cursor position directly (not an Avalonia
+            // event) and re-warp to center every frame, entirely decoupled from OnPointerMoved
+            // — see that method's doc for why driving this from the event instead caused a
+            // feedback-loop drift. _pointerLocked is volatile; the two center fields are only
+            // ever written here or at Engage (before _pointerLocked goes true), so no lock is
+            // needed for this read.
+            if (_pointerLocked && OperatingSystem.IsWindows() &&
+                CursorNative.TryGetScreenPos(out var cursorX, out var cursorY))
+            {
+                var dx = cursorX - _lockCenterScreenX;
+                var dy = cursorY - _lockCenterScreenY;
+                if (dx != 0 || dy != 0)
+                {
+                    lookYawDelta += dx * 0.01;
+                    lookPitchDelta += -dy * 0.01;
+                    CursorNative.RecenterTo(_lockCenterScreenX, _lockCenterScreenY);
+                }
+            }
 
             var t = (now - _startedUtc).TotalSeconds;
             lock (_wasmSync)
@@ -454,7 +483,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_dragging && !_pointerLocked)
+        // Pointer-locked mode doesn't use pointer-moved events at all — see RenderLoop's raw
+        // cursor poll. Driving the warp-to-center from in here instead (the first cut of this
+        // feature did exactly that) means every warp can itself deliver a new move event, which
+        // can retrigger another warp: a feedback loop, confirmed as a slow constant-rate camera
+        // drift with the physical mouse sitting completely still. Polling once per render frame,
+        // entirely outside this event, doesn't have that problem — nothing here ever re-triggers it.
+        if (!_dragging || _pointerLocked)
         {
             return;
         }
@@ -462,35 +497,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         var pos = e.GetPosition(this);
         var delta = pos - _lastPointer;
         _lastPointer = pos;
-
-        // Pointer-locked mode recenters the cursor after every move (below), so most of what
-        // arrives here is that recenter's own warp settling, not real motion — DIP<->screen-pixel
-        // rounding under anything other than 100% DPI scaling doesn't round-trip exactly, and
-        // because it's the *same* point every time, the residual is consistently biased in one
-        // direction rather than random noise. Left unfiltered, that reads as a constant-rate
-        // drift (confirmed: the camera crept upward on its own with the mouse sitting still).
-        // Real mouse motion is essentially always well above this threshold; only recenter
-        // residue sits under it.
-        var isRecenterResidue = _pointerLocked && Math.Abs(delta.X) < 2.0 && Math.Abs(delta.Y) < 2.0;
-        if (!isRecenterResidue)
+        lock (_inputLock)
         {
-            lock (_inputLock)
-            {
-                // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
-                // accumulation (and pitch clamping) from here via on_input, this control no
-                // longer tracks a camera angle of its own.
-                _pendingLookYawDelta += delta.X * 0.01;
-                _pendingLookPitchDelta += -delta.Y * 0.01;
-            }
-        }
-
-        // Pointer-locked mode ignores _dragging entirely (look works without holding a button)
-        // and re-centers after every move instead of waiting for the cursor to reach an edge —
-        // with the cursor hidden, its real position is invisible anyway, so there's nothing lost
-        // by never letting it wander far from center.
-        if (_pointerLocked)
-        {
-            RecenterCursor();
+            // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
+            // accumulation (and pitch clamping) from here via on_input, this control no longer
+            // tracks a camera angle of its own.
+            _pendingLookYawDelta += delta.X * 0.01;
+            _pendingLookPitchDelta += -delta.Y * 0.01;
         }
     }
 
