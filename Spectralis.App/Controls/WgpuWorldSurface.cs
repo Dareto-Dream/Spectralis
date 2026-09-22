@@ -462,13 +462,26 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         var pos = e.GetPosition(this);
         var delta = pos - _lastPointer;
         _lastPointer = pos;
-        lock (_inputLock)
+
+        // Pointer-locked mode recenters the cursor after every move (below), so most of what
+        // arrives here is that recenter's own warp settling, not real motion — DIP<->screen-pixel
+        // rounding under anything other than 100% DPI scaling doesn't round-trip exactly, and
+        // because it's the *same* point every time, the residual is consistently biased in one
+        // direction rather than random noise. Left unfiltered, that reads as a constant-rate
+        // drift (confirmed: the camera crept upward on its own with the mouse sitting still).
+        // Real mouse motion is essentially always well above this threshold; only recenter
+        // residue sits under it.
+        var isRecenterResidue = _pointerLocked && Math.Abs(delta.X) < 2.0 && Math.Abs(delta.Y) < 2.0;
+        if (!isRecenterResidue)
         {
-            // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
-            // accumulation (and pitch clamping) from here via on_input, this control no longer
-            // tracks a camera angle of its own.
-            _pendingLookYawDelta += delta.X * 0.01;
-            _pendingLookPitchDelta += -delta.Y * 0.01;
+            lock (_inputLock)
+            {
+                // Raw radians-per-pixel deltas since the last frame — the guest owns yaw/pitch
+                // accumulation (and pitch clamping) from here via on_input, this control no
+                // longer tracks a camera angle of its own.
+                _pendingLookYawDelta += delta.X * 0.01;
+                _pendingLookPitchDelta += -delta.Y * 0.01;
+            }
         }
 
         // Pointer-locked mode ignores _dragging entirely (look works without holding a button)
