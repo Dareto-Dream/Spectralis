@@ -807,7 +807,8 @@ public sealed class CapsulesViewModel : ViewModelBase
     public Action? AlbumWorldDetach { get; set; }
     public Action? AlbumWorldTrackPlaybackStarting { get; set; }
     public Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged { get; set; }
-    public Action<string, double>? AlbumWorldTrackCompleted { get; set; }
+    /// <summary>trackId, playedSeconds, durationSeconds.</summary>
+    public Action<string, double, double>? AlbumWorldTrackCompleted { get; set; }
 
     public ObservableCollection<CapsuleTrackViewModel> Tracks { get; } = [];
 
@@ -947,7 +948,7 @@ public sealed class CapsulesViewModel : ViewModelBase
             var playedSeconds = runtime.Session?.TrackStats.TryGetValue(trackId, out var stats) == true
                 ? stats.PlayedSeconds
                 : enginePosition;
-            AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
+            AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds, duration);
         }
 
         _lastAlbumWorldEnginePlaying = engineIsPlaying;

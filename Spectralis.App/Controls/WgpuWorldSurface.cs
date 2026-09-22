@@ -266,6 +266,17 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         }
     }
 
+    /// <summary>Forwards to <see cref="WasmWorldHost.NotifyTrackCompleted"/> — the Wasm-side
+    /// counterpart of the HTML surface's onTrackCompleted delivery. No-op if no world is
+    /// attached (e.g. this surface belongs to an HTML-mode world instead).</summary>
+    public void NotifyTrackCompleted(double playedSeconds, double durationSeconds)
+    {
+        lock (_wasmSync)
+        {
+            _wasmHost?.NotifyTrackCompleted(playedSeconds, durationSeconds);
+        }
+    }
+
     public void DetachWorld()
     {
         if (_renderThread is not null)

@@ -2982,7 +2982,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// </summary>
     public Action<Spectralis.Core.Integrations.Web.WorldDspPresetRequest?>? CapsuleDspPresetRequested { get; set; }
     public event Action<AlbumWorldTrackBridgeState>? AlbumWorldTrackChanged;
-    public event Action<string, double>? AlbumWorldTrackCompleted;
+    /// <summary>trackId, playedSeconds, durationSeconds — fires after the world has already been
+    /// switched back to showing (see NotifyAlbumWorldTrackCompleted), so a subscriber reattaching
+    /// a surface in response to <see cref="IsAlbumWorldShowingWorld"/> has already done so.</summary>
+    public event Action<string, double, double>? AlbumWorldTrackCompleted;
 
     public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir, byte[]? wasmBytes = null)
     {
@@ -3048,12 +3051,23 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         AlbumWorldTrackChanged?.Invoke(state);
     }
 
-    public void NotifyAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    public void NotifyAlbumWorldTrackCompleted(string trackId, double playedSeconds, double durationSeconds)
     {
         if (string.Equals(_albumWorldCurrentTrackId, trackId, StringComparison.OrdinalIgnoreCase))
             _albumWorldCurrentTrackId = string.Empty;
 
-        AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds);
+        // A track reaching its natural end (as opposed to the listener explicitly exiting via
+        // the panic banner's "Exit Capsule", which clears the world entirely) means there's
+        // still a world to go back to — switch back to showing it before delivering the
+        // completion data, so the surface (HTML or Wasm) receiving that data is the one that's
+        // actually about to be visible again, not whatever the finished track was using.
+        if (IsAlbumWorldActive && !_albumWorldShowingWorld)
+        {
+            _albumWorldShowingWorld = true;
+            RaiseSurfaceModeChanged();
+        }
+
+        AlbumWorldTrackCompleted?.Invoke(trackId, playedSeconds, durationSeconds);
     }
 
     public void UseYouTubeSurface()

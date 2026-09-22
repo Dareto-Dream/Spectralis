@@ -1174,12 +1174,23 @@ public NowPlayingView()
             state.DurationSeconds);
     }
 
-    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds, double durationSeconds)
     {
-        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
+        // NotifyAlbumWorldTrackCompleted already switched IsAlbumWorldShowingWorld back to true
+        // (and ApplyEmbeddedHtmlMode already ran synchronously off that property change, so
+        // whichever surface is relevant here has already been reattached) before this fires —
+        // see that method's doc for why. Both checks below are which-mode-is-active branches,
+        // not a "did the world actually come back" gate; at most one of _embeddedService/
+        // _wgpuSurface is actually attached at a time.
+        if (_viewModel?.IsAlbumWorldShowingWorld != true)
             return;
 
-        _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
+        if (_embeddedService is not null)
+        {
+            _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
+        }
+
+        _wgpuSurface?.NotifyTrackCompleted(playedSeconds, durationSeconds);
     }
 
     private void OnEmbeddedExitRequested(object? sender, EventArgs e)
