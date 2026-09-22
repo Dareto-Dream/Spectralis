@@ -386,6 +386,93 @@ public sealed class WasmWorldHostTests : IDisposable
         _host.Input(1.0, 0.0, 0.0, 0.0, false); // must not throw
     }
 
+    private static readonly string RequestPointerLockWasm = """
+        (module
+          (import "spectral" "request_pointer_lock" (func $req (result i32)))
+          (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+          (func (export "on_load")
+            (call $set (f64.convert_i32_s (call $req)) (f64.const 0) (f64.const 0) (f64.const 0) (f64.const 0))))
+        """;
+
+    [Fact]
+    public void OnLoad_RequestPointerLock_WithoutCapability_DeniedAndNoEvent()
+    {
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}"); // allowPointerLock defaults false
+        var raised = false;
+        host.PointerLockRequested += (_, _) => raised = true;
+
+        Assert.True(host.Load(Wat(RequestPointerLockWasm)));
+
+        Assert.Equal(0.0, host.GetCameraPose().X); // request_pointer_lock returned 0 (denied)
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_RequestPointerLock_WithCapability_GrantedAndRaisesEvent()
+    {
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}", allowPointerLock: true);
+        var raised = false;
+        host.PointerLockRequested += (_, _) => raised = true;
+
+        Assert.True(host.Load(Wat(RequestPointerLockWasm)));
+
+        Assert.Equal(1.0, host.GetCameraPose().X); // request_pointer_lock returned 1 (granted)
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void OnLoad_ReleasePointerLock_RaisesEventEvenWithoutCapability()
+    {
+        // Giving back a lock you were never granted is a no-op for the *permission* model, but
+        // the host still needs to hear about it -- always allowed, unlike the request side.
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}"); // allowPointerLock defaults false
+        var raised = false;
+        host.PointerLockReleased += (_, _) => raised = true;
+        var wasm = Wat("""
+            (module
+              (import "spectral" "release_pointer_lock" (func $release))
+              (func (export "on_load") (call $release)))
+            """);
+
+        Assert.True(host.Load(wasm));
+
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_CallsOnPointerLockChangeExportWithTheNewState()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_pointer_lock_change") (param $locked i32)
+                (call $set (f64.convert_i32_s (local.get $locked)) (f64.const 0) (f64.const 0) (f64.const 0) (f64.const 0))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyPointerLockChanged(true);
+        Assert.Equal(1.0, _host.GetCameraPose().X);
+
+        _host.NotifyPointerLockChanged(false);
+        Assert.Equal(0.0, _host.GetCameraPose().X);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_BeforeLoad_IsANoOp()
+    {
+        _host.NotifyPointerLockChanged(true); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_ModuleWithNoExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyPointerLockChanged(true); // must not throw
+    }
+
     [Fact]
     public void Tick_BeforeLoad_IsANoOp()
     {
