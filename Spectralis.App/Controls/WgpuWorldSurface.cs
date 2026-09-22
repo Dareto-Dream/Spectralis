@@ -328,7 +328,14 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             System.Runtime.InteropServices.Marshal.Copy(bgraPixels, 0, buffer.Address, bgraPixels.Length);
         }
 
+        // Same WriteableBitmap instance every frame (only recreated on a size change) — Avalonia's
+        // Source setter no-ops on a reference that hasn't changed, so it has no way to know the
+        // pixels inside it did. Without this, the image only actually redraws when something else
+        // (an unrelated dialog, a window resize) happens to force a repaint — confirmed: real
+        // mouse-look moved the reported camera pose frame over frame but the screen sat frozen on
+        // whatever the last incidental repaint had caught.
         Source = _displayBitmap;
+        InvalidateVisual();
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
