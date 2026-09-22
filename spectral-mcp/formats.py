@@ -38,6 +38,8 @@ CAPABILITIES: dict[str, str] = {
     "presence.richPresence": "Embedded HTML may override Discord rich presence text while the capsule plays",
     "worlds.wasm3d": "Capsule may include a sandboxed Wasm/wgpu 3D album world",
     "audio.dspPreset": "Embedded HTML/Wasm content may register a whole-rack DSP preset while active",
+    "worlds.pointerLock": "Embedded HTML/Wasm content may request OS-level pointer lock (hidden, "
+    "recentered cursor, continuous look deltas without holding a button)",
 }
 
 # NOTE: requesting a capability in a manifest only makes it *signable* locally. A real
