@@ -474,6 +474,40 @@ public sealed class WasmWorldHostTests : IDisposable
     }
 
     [Fact]
+    public void NotifyTrackCompleted_CallsOnTrackCompletedExportWithBothValues()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_track_completed") (param $played f64) (param $duration f64)
+                (call $set (local.get $played) (local.get $duration) (f64.const 0) (f64.const 0) (f64.const 0))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyTrackCompleted(92.5, 210.0);
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(92.5, pose.X);
+        Assert.Equal(210.0, pose.Y);
+    }
+
+    [Fact]
+    public void NotifyTrackCompleted_BeforeLoad_IsANoOp()
+    {
+        _host.NotifyTrackCompleted(10.0, 20.0); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void NotifyTrackCompleted_ModuleWithNoExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyTrackCompleted(10.0, 20.0); // must not throw
+    }
+
+    [Fact]
     public void Tick_BeforeLoad_IsANoOp()
     {
         _host.Tick(1.0, true); // must not throw
