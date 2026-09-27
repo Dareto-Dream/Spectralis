@@ -88,7 +88,6 @@ code {
 }
 .btn--primary:hover {
   background: var(--accent-2);
-  transform: translateY(-1px);
 }
 
 .btn--ghost {
@@ -639,6 +638,9 @@ code {
   animation: community-scroll 42s linear infinite;
 }
 .community-bar:hover .community-bar__track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .community-bar__track { animation: none; }
+}
 
 @keyframes community-scroll {
   from { transform: translateX(0); }
@@ -1006,7 +1008,6 @@ code {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  animation: blink 2s ease-in-out infinite;
   flex-shrink: 0;
 }
 
@@ -1698,11 +1699,10 @@ code {
   border-radius: 16px;
   background: var(--bg-2);
   overflow: hidden;
-  transition: border-color 0.14s, transform 0.14s;
+  transition: border-color 0.14s;
 }
 .article-card:hover {
   border-color: var(--accent-border);
-  transform: translateY(-2px);
 }
 
 .article-thumb {
@@ -1805,11 +1805,10 @@ code {
   border: 1px solid var(--border-2);
   border-radius: 14px;
   background: var(--bg-2);
-  transition: border-color 0.14s, transform 0.14s;
+  transition: border-color 0.14s;
 }
 .learn-article__pager-item:hover {
   border-color: var(--accent-border);
-  transform: translateY(-2px);
 }
 
 .learn-article__pager-label {
