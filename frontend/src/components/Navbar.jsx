@@ -43,7 +43,7 @@ export function Navbar() {
   return (
     <nav className={`navbar ${scrolled ? 'navbar--scrolled' : ''}`}>
       <Link to="/" className="navbar__logo">
-        <img src="/icon.png" alt="Spectralis" className="navbar__icon" />
+        <img src="/icon-192.png" alt="Spectralis" className="navbar__icon" />
         <span>Spectralis</span>
       </Link>
       <div className="navbar__center">

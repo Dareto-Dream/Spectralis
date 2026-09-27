@@ -14,7 +14,7 @@ function Hero() {
     <section className="hero" id="hero">
       <div className="hero__bg" aria-hidden="true" />
       <div className="hero__center">
-        <img src="/icon.png" alt="Spectralis" className="hero__logo" />
+        <img src="/icon-192.png" alt="Spectralis" className="hero__logo" />
         <h1 className="hero__title">Spectralis</h1>
         <p className="hero__sub">
           A desktop audio player that renders real-time visualizers, syncs lyrics
@@ -69,7 +69,6 @@ function DownloadsSection() {
     <section className="section" id="downloads">
       <div className="dl-split">
         <div className="dl-split__pitch">
-          <span className="dl-pitch__eyebrow">Get it</span>
           <h2 className="dl-pitch__headline">Download free.</h2>
           <p className="dl-pitch__lead">{DOWNLOAD_LEAD}</p>
           <dl className="dl-specs">
@@ -183,7 +182,7 @@ function ChangelogSection() {
 
   return (
     <section className="changelog section" id="changelog">
-      <span className="changelog-eyebrow">Changelog</span>
+      <h2 className="changelog-heading">Changelog</h2>
 
       {loadError && (
         <p className="changelog-status">
@@ -267,7 +266,7 @@ function CTASection() {
   return (
     <section className="cta section" id="download">
       <div className="cta-inner">
-        <img src="/icon.png" alt="Spectralis" className="cta-logo" />
+        <img src="/icon-192.png" alt="Spectralis" className="cta-logo" />
         <div className="cta-text">
           <h2 className="cta-title">Start listening.</h2>
           <p className="cta-sub">Windows 10/11 · macOS 11+ · Linux x86_64 · No sign-in · Free</p>
