@@ -69,7 +69,6 @@ function DownloadsSection() {
     <section className="section" id="downloads">
       <div className="dl-split">
         <div className="dl-split__pitch">
-          <span className="dl-pitch__eyebrow">Get it</span>
           <h2 className="dl-pitch__headline">Download free.</h2>
           <p className="dl-pitch__lead">{DOWNLOAD_LEAD}</p>
           <dl className="dl-specs">
@@ -183,7 +182,7 @@ function ChangelogSection() {
 
   return (
     <section className="changelog section" id="changelog">
-      <span className="changelog-eyebrow">Changelog</span>
+      <h2 className="changelog-heading">Changelog</h2>
 
       {loadError && (
         <p className="changelog-status">
