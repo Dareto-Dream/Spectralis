@@ -28,10 +28,24 @@ function ScrollToTop() {
   return null
 }
 
+const SITE_ORIGIN = 'https://spectralis.deltavdevs.com'
+
+// index.html ships the homepage canonical; without this every route would claim to be a duplicate of /
+function CanonicalUrl() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    const url = SITE_ORIGIN + pathname
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', url)
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', url)
+  }, [pathname])
+  return null
+}
+
 export default function App() {
   return (
     <>
       <ScrollToTop />
+      <CanonicalUrl />
       <AnnouncementBanner />
       <Navbar />
       <Routes>
