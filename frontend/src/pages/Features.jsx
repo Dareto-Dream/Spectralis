@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Download, Terminal, Image, AudioWaveform } from 'lucide-react'
+import { Download, Terminal, Apple, Image, AudioWaveform } from 'lucide-react'
 
 const WIDGET_PLACEHOLDERS = [
   { title: 'Easy to start listening', body: 'Open your library and press play. The interface stays out of the way between tracks.', image: '/screenshots/start-somewhere.png' },
@@ -48,7 +48,7 @@ function Visualizers() {
             <p className="viz-preview-head__desc">Real-time visualizers render every track automatically, switchable without leaving the now-playing screen.</p>
           </div>
           <span className="viz-preview-head__os">
-            <Download size={14} /> Windows &nbsp;·&nbsp; <Terminal size={14} /> Linux
+            <Download size={14} /> Windows &nbsp;·&nbsp; <Apple size={14} /> macOS &nbsp;·&nbsp; <Terminal size={14} /> Linux
           </span>
         </div>
         <div className="feat-preview">
