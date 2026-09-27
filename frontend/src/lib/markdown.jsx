@@ -101,7 +101,6 @@ export function LegalDoc({ markdown }) {
   return (
     <>
       <div className="page-head">
-        <span className="section__label">Legal</span>
         <h1 className="page-head__title">{title}</h1>
         {effectiveDate && <p className="legal-doc__effective">{effectiveDate}</p>}
       </div>

@@ -33,7 +33,6 @@ export default function Learn() {
   return (
     <>
       <div className="page-head">
-        <span className="section__label">Learn</span>
         <h1 className="page-head__title">How Spectralis<br />actually works.</h1>
       </div>
       <section className="section article-grid">
