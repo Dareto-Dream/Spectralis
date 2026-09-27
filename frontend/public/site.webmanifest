@@ -1,0 +1,13 @@
+{
+  "name": "Spectralis",
+  "short_name": "Spectralis",
+  "description": "Desktop audio player with real-time visualizers, synced lyrics, and an OBS overlay server.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#261c36",
+  "theme_color": "#261c36",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
