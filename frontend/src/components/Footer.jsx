@@ -5,7 +5,7 @@ export function Footer() {
     <footer className="footer">
       <div className="footer__inner">
         <div className="footer__brand">
-          <img src="/icon.png" alt="Spectralis" className="footer__logo" />
+          <img src="/icon-192.png" alt="Spectralis" className="footer__logo" />
           <div>
             <p className="footer__name">Spectralis</p>
             <p className="footer__sub">Audio player, visualizer, and OBS overlay server.</p>
