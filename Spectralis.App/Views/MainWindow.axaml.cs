@@ -566,6 +566,27 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The mirror's VN pager owns E/Space entirely while it's up — advance it and stop, ahead
+        // of everything else (Space would otherwise reach TogglePlayback below). The wasm guest's
+        // own on_input already no-ops during the story (see chaser_room's STORY_ACTIVE), so this
+        // isn't strictly needed to keep the guest quiet, but it keeps this key's handling in one
+        // place the same way the hold-Esc panic escape further down does for Esc.
+        if (vm.NowPlaying.ShowMirrorStory && e.KeyModifiers == KeyModifiers.None && e.Key is Key.E or Key.Space)
+        {
+            e.Handled = true;
+            vm.NowPlaying.AdvanceMirrorStory();
+            return;
+        }
+
+        // Same shape as the story above, but reversible — DismissAchievementsBoard (unlike
+        // AdvanceMirrorStory) tells the guest to resume normal input rather than ending the world.
+        if (vm.NowPlaying.ShowAchievementsBoard && e.KeyModifiers == KeyModifiers.None && e.Key is Key.E or Key.Space)
+        {
+            e.Handled = true;
+            vm.NowPlaying.DismissAchievementsBoard();
+            return;
+        }
+
         if (HasOnly(e.KeyModifiers, KeyModifiers.Control | KeyModifiers.Shift))
         {
             switch (e.Key)
