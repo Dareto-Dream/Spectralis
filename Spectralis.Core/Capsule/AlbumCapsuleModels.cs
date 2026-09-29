@@ -40,6 +40,22 @@ public sealed class AlbumWorldSection
     /// <c>switch_to_html</c> host import. Requires the <c>worlds.wasm3d</c> capability.
     /// </summary>
     [JsonPropertyName("wasmEntry")] public string WasmEntry { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Custom pause menu copy for a <c>worlds.pointerLock</c> world — only honored when the
+    /// manifest also declares <c>worlds.pauseMenu</c> (see <see cref="AlbumWorldRuntime.BuildWorldHtmlContext"/>);
+    /// otherwise ignored in favor of the app's built-in default copy. Every field is optional —
+    /// a blank field falls back to its own default independently of the others.
+    /// </summary>
+    [JsonPropertyName("pauseMenu")] public AlbumPauseMenuConfig? PauseMenu { get; set; }
+}
+
+public sealed class AlbumPauseMenuConfig
+{
+    [JsonPropertyName("title")] public string? Title { get; set; }
+    [JsonPropertyName("message")] public string? Message { get; set; }
+    [JsonPropertyName("resumeLabel")] public string? ResumeLabel { get; set; }
+    [JsonPropertyName("exitLabel")] public string? ExitLabel { get; set; }
 }
 
 public sealed class AlbumTrackEntry

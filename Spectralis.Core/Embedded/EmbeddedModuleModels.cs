@@ -113,6 +113,11 @@ public sealed class EmbeddedVisualizerContext
     }
 }
 
+/// <summary>Customized pause menu copy for a <c>worlds.pointerLock</c> world — see
+/// <see cref="EmbeddedHtmlContext.PauseMenu"/>. Every field is optional; a null field means "use
+/// the app's default for just this field," independently of the others.</summary>
+public sealed record EmbeddedPauseMenuConfig(string? Title, string? Message, string? ResumeLabel, string? ExitLabel);
+
 public sealed class EmbeddedHtmlContext
 {
     public EmbeddedHtmlContext(
@@ -122,7 +127,8 @@ public sealed class EmbeddedHtmlContext
         IReadOnlyDictionary<string, string>? textAssets,
         string? version,
         string? sourceDirectory = null,
-        IReadOnlyList<string>? capabilities = null)
+        IReadOnlyList<string>? capabilities = null,
+        EmbeddedPauseMenuConfig? pauseMenu = null)
     {
         Id = id;
         HtmlBytes = htmlBytes.ToArray();
@@ -135,6 +141,7 @@ public sealed class EmbeddedHtmlContext
         Version = version;
         SourceDirectory = sourceDirectory;
         Capabilities = capabilities is null ? Array.Empty<string>() : capabilities.ToArray();
+        PauseMenu = pauseMenu;
     }
 
     public string Id { get; }
@@ -148,11 +155,17 @@ public sealed class EmbeddedHtmlContext
     /// host surface can gate elevated bridge features (e.g. Discord rich presence).</summary>
     public IReadOnlyList<string> Capabilities { get; }
 
+    /// <summary>Custom pause menu copy, already capability-gated by whoever built this context
+    /// (see <see cref="Spectralis.Core.Capsule.AlbumWorldRuntime.BuildWorldHtmlContext"/>) — null
+    /// here means "app defaults for everything," not "capability denied" vs. "not customized"
+    /// (those collapse to the same null on this side).</summary>
+    public EmbeddedPauseMenuConfig? PauseMenu { get; }
+
     public string DisplayName => EmbeddedVisualizerContext.CreateDisplayLabel(Id, "HTML Content");
 
     /// <summary>Returns a copy of this context carrying the given capability list.</summary>
     public EmbeddedHtmlContext WithCapabilities(IReadOnlyList<string>? capabilities) =>
-        new(Id, HtmlBytes, BinaryAssets, TextAssets, Version, SourceDirectory, capabilities);
+        new(Id, HtmlBytes, BinaryAssets, TextAssets, Version, SourceDirectory, capabilities, PauseMenu);
 }
 
 public sealed class EmbeddedMarkdownContext
