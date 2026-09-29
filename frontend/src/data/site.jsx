@@ -17,6 +17,40 @@ export const FEATURES = [
   { num: '09', icon: Shield,     title: 'Creator Trust',          body: 'Unknown creator keys trigger a one-time trust prompt. Revoked keys are always rejected. Capabilities are intersection-enforced against the CDN.' },
 ]
 
+export const APP_VERSION = '6.0.0'
+
+// Also feeds the FAQPage schema on /setup, so keep answers plain text.
+export const FAQ = [
+  {
+    q: 'Is Spectralis really free?',
+    a: 'Yes, completely. Nothing is gated behind a purchase, and every release ships free, forever.',
+  },
+  {
+    q: 'Do I need to sign in or create an account?',
+    a: 'No. Spectralis runs fully offline out of the box. Signing in only matters if you connect Spotify or Discord.',
+  },
+  {
+    q: 'Will installing overwrite my existing library or settings?',
+    a: 'No. Windows installs to %LocalAppData%\\Spectralis, macOS installs Spectralis.app to /Applications, and Linux runs as a self-contained AppImage; none of them touch files outside their own location.',
+  },
+  {
+    q: 'How do updates work?',
+    a: 'Every platform uses Velopack. Spectralis checks for updates on launch and applies delta patches in place, so there is no re-installer to run on Windows, macOS, or Linux.',
+  },
+  {
+    q: 'Is macOS supported?',
+    a: 'Yes, as of v6. There are separate builds for Apple Silicon (arm64) and Intel (x64) Macs running macOS 11 or newer.',
+  },
+  {
+    q: 'macOS won\'t open the installer. What do I do?',
+    a: 'If Gatekeeper blocks it, right-click (or Control-click) the .pkg and choose Open, or allow it under System Settings → Privacy & Security, then run it again.',
+  },
+  {
+    q: 'The AppImage won\'t launch on Linux. What do I do?',
+    a: 'Most distros ship FUSE by default. If yours doesn\'t, run the AppImage with --appimage-extract-and-run as a fallback.',
+  },
+]
+
 export const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','AIFF','MP4']
 
 export const CHANGELOG_URL = 'https://cdn.deltavdevs.com/spectralis/changelog.json'
