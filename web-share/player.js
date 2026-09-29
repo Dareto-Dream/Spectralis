@@ -417,8 +417,8 @@
       src.streamUrl
     );
     var joinUrl = stringOrEmpty(src.joinUrl) || createWebShareJoinUrl(roomCode);
-    var albumArtUrl = firstUrl(src.albumArtUrl, src.artUrl, src.coverUrl) ||
-      (packageUrl ? v2Url("sessions/" + encodeURIComponent(roomCode) + "/art") : "");
+    // No server-side /art endpoint exists — only trust art the manifest actually gives us.
+    var albumArtUrl = firstUrl(src.albumArtUrl, src.artUrl, src.coverUrl);
 
     return {
       roomCode:       stringOrEmpty(src.roomCode || roomCode),

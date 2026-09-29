@@ -3388,7 +3388,12 @@ async fn get_sq_room(
         // Public view: only enabled settings + submission count + ordered queue positions
         let enabled = room.get("enabled").and_then(Value::as_bool).unwrap_or(false);
         if !enabled {
-            return Err(AppError::not_found("Streamer queue is not enabled."));
+            // The room exists, it's just paused — sq.js polls this exact shape and shows
+            // a "queue closed" state, so a 404 here reads as "invalid/expired room" instead.
+            return Ok(Json(json!({
+                "roomId": room.get("roomId"),
+                "enabled": false
+            })));
         }
         let settings = room.get("settings").cloned().unwrap_or_else(|| json!({}));
         let stripe_pk = room.get("stripePublishableKey").cloned().unwrap_or(Value::Null);
