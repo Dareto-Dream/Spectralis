@@ -44,6 +44,8 @@ public sealed class PlaylistsViewModel : ViewModelBase
     private readonly AppSettings _settings;
     private readonly Action<VisualizerRef?>? _applyDefaultVisualizer;
     private readonly Action<IReadOnlyDictionary<string, (string Title, string Artist)>>? _setQueueMetadata;
+    private readonly Func<string, Task>? _playSpotifyContext;
+    private readonly Func<IReadOnlyList<string>, Task>? _playSpotifyTrackList;
     private readonly SpotifyService _spotify = new();
     private readonly PlaylistArtResolver _artResolver = new();
     private List<Playlist> _playlists = new();
@@ -55,13 +57,17 @@ public sealed class PlaylistsViewModel : ViewModelBase
         Func<IReadOnlyList<string>, int, Task> playQueue,
         AppSettings settings,
         Action<VisualizerRef?>? applyDefaultVisualizer = null,
-        Action<IReadOnlyDictionary<string, (string Title, string Artist)>>? setQueueMetadata = null)
+        Action<IReadOnlyDictionary<string, (string Title, string Artist)>>? setQueueMetadata = null,
+        Func<string, Task>? playSpotifyContext = null,
+        Func<IReadOnlyList<string>, Task>? playSpotifyTrackList = null)
     {
         _database = database;
         _playQueue = playQueue;
         _settings = settings;
         _applyDefaultVisualizer = applyDefaultVisualizer;
         _setQueueMetadata = setQueueMetadata;
+        _playSpotifyContext = playSpotifyContext;
+        _playSpotifyTrackList = playSpotifyTrackList;
         Reload();
         _ = SyncSpotifyPlaylistsAsync();
     }
@@ -251,6 +257,46 @@ public sealed class PlaylistsViewModel : ViewModelBase
 
     public SmartPlaylist? FindSmartPlaylist(Guid id) => _smartPlaylists.FirstOrDefault(p => p.Id == id);
 
+    /// <summary>The visible browser row (pinned or not) for a playlist id, or null if it's hidden
+    /// or gone. Used by the randomizer to play / expand a playlist the wheel landed on.</summary>
+    public PlaylistRow? FindRow(Guid id) =>
+        PinnedRows.Concat(Rows).FirstOrDefault(r => r.Id == id);
+
+    /// <summary>Resolves a row to (ref, title, subtitle) triples — same refs as
+    /// <see cref="GetPathsForRow"/>, but carrying display names so the randomizer can list a
+    /// playlist's tracks as individual wheel slices.</summary>
+    public IReadOnlyList<(string Ref, string Title, string Subtitle)> GetTrackEntriesForRow(PlaylistRow row)
+    {
+        var byPath = _database.GetAllEntries()
+            .GroupBy(e => e.Track.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Track, StringComparer.OrdinalIgnoreCase);
+
+        (string, string, string) Describe(string reference, string? title, string? artist)
+        {
+            if (!string.IsNullOrWhiteSpace(title))
+                return (reference, title!, artist ?? string.Empty);
+            if (reference.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+                return (reference, "Spotify track", "Spotify");
+            if (byPath.TryGetValue(reference, out var track))
+                return (reference, track.DisplayTitle, track.Artist);
+            return (reference, System.IO.Path.GetFileNameWithoutExtension(reference), string.Empty);
+        }
+
+        if (row.IsSmart)
+        {
+            var smart = FindSmartPlaylist(row.Id);
+            IEnumerable<string> paths = smart is null
+                ? []
+                : SmartPlaylistEvaluator.Evaluate(smart, _database.GetAllEntries());
+            return paths.Select(p => Describe(p, null, null)).ToList();
+        }
+
+        var playlist = FindPlaylist(row.Id);
+        return playlist is null
+            ? []
+            : playlist.Items.Select(i => Describe(PlayableRef(i), i.Title, i.Artist)).ToList();
+    }
+
     private static string PlayableRef(PlaylistItem item) => item.SpotifyTrackUri ?? item.Path;
 
     /// <summary>Resolves a row to its playable paths/uris (static items, evaluated smart rules, or
@@ -286,15 +332,6 @@ public sealed class PlaylistsViewModel : ViewModelBase
         {
             _applyDefaultVisualizer?.Invoke(playlist.DefaultVisualizer);
 
-            // Queue rows can't derive a real title from a "spotify:track:..." uri the way a
-            // local path's filename works as a fallback — hand the actual names over so the
-            // Queue panel doesn't just show raw track ids.
-            var metadata = playlist.Items
-                .Where(i => !string.IsNullOrWhiteSpace(i.Title))
-                .GroupBy(PlayableRef)
-                .ToDictionary(g => g.Key, g => (g.First().Title!, g.First().Artist ?? string.Empty));
-            _setQueueMetadata?.Invoke(metadata);
-
             // Drives the below-the-bar sort — playing a playlist bumps it to the top of the
             // most-recently-played order. Pinned playlists ignore this (their spot is manual).
             if (!playlist.IsPinned)
@@ -303,6 +340,41 @@ public sealed class PlaylistsViewModel : ViewModelBase
                 PlaylistStore.Save(playlist);
                 Reload();
             }
+
+            // A playlist made up entirely of Spotify tracks (no local files mixed in) is handed
+            // to Spotify as a real Spotify-side queue instead of being unrolled into Spectralis's
+            // own Queue and driven one track at a time — Spotify then owns Next/Previous and its
+            // own device queue, which the Queue panel mirrors via a live query on every track
+            // change (see NowPlayingViewModel.RefreshSpotifyQueueAsync) instead of a one-time
+            // snapshot that goes stale the moment things advance or the user edits it elsewhere.
+            if (playlist.Items.Count > 0 && playlist.Items.All(i => i.SpotifyTrackUri is not null))
+            {
+                // Actually synced from/linked to a real Spotify playlist — context_uri play keeps
+                // Spotify's own "Playing from: <playlist>" context, which a bare track list can't.
+                if (_playSpotifyContext is not null && playlist.SpotifyPlaylistId is not null)
+                {
+                    await _playSpotifyContext($"spotify:playlist:{playlist.SpotifyPlaylistId}");
+                    return;
+                }
+
+                // No real Spotify playlist behind this one (e.g. Liked Songs, or one built by hand
+                // via Library search's "add to playlist") — no context_uri to point at, so hand
+                // Spotify the whole ordered track list in one play call instead.
+                if (_playSpotifyTrackList is not null)
+                {
+                    await _playSpotifyTrackList(playlist.Items.Select(i => i.SpotifyTrackUri!).ToList());
+                    return;
+                }
+            }
+
+            // Queue rows can't derive a real title from a "spotify:track:..." uri the way a
+            // local path's filename works as a fallback — hand the actual names over so the
+            // Queue panel doesn't just show raw track ids.
+            var metadata = playlist.Items
+                .Where(i => !string.IsNullOrWhiteSpace(i.Title))
+                .GroupBy(PlayableRef)
+                .ToDictionary(g => g.Key, g => (g.First().Title!, g.First().Artist ?? string.Empty));
+            _setQueueMetadata?.Invoke(metadata);
         }
 
         await _playQueue(refs, 0);

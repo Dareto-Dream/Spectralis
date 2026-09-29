@@ -110,42 +110,49 @@ public sealed class ObsOverlayCoordinator : IDisposable
             return;
         }
 
+        // Spotify playback bypasses the local engine entirely (see NowPlayingViewModel's
+        // ApplySpotifyStateAsync), so _engine.CurrentTrack/IsPlaying/GetPosition() stay blank
+        // for it. _nowPlaying already unifies both sources (RefreshFromEngine), so read from
+        // there instead of the engine directly.
         var track = _engine.CurrentTrack;
         var frame = _engine.GetVisualizerFrame();
+        var coverArt = _nowPlaying.CoverArtBytes;
 
         byte[]? artwork = null;
         var artworkChanged = false;
-        if (!ReferenceEquals(track?.CoverArt, _lastArtwork))
+        if (!ReferenceEquals(coverArt, _lastArtwork))
         {
-            _lastArtwork = track?.CoverArt;
-            artwork = track?.CoverArt;
+            _lastArtwork = coverArt;
+            artwork = coverArt;
             artworkChanged = true;
             _artworkVersion = Guid.NewGuid().ToString("N")[..8]; // cache-busting
         }
 
         var (current, next) = CurrentAndNextLyric();
+        var length = _nowPlaying.LengthSeconds;
+        var position = _nowPlaying.PositionSeconds;
 
         _server.UpdateState(new ObsOverlayState
         {
             Track = new ObsTrackState
             {
-                Title = track?.DisplayTitle ?? string.Empty,
-                Artist = track?.Artist ?? string.Empty,
-                Album = track?.Album ?? string.Empty,
-                DurationSeconds = _engine.GetLength(),
+                Title = _nowPlaying.Title,
+                Artist = _nowPlaying.Artist,
+                Album = _nowPlaying.Album,
+                DurationSeconds = length,
                 ArtworkVersion = _artworkVersion,
             },
             Playback = new ObsPlaybackState
             {
-                IsPlaying = _engine.IsPlaying,
-                PositionSeconds = _engine.GetPosition(),
+                IsPlaying = _nowPlaying.IsPlaying,
+                PositionSeconds = position,
                 Volume = _engine.Volume,
             },
             Lyrics = new ObsLyricsState
             {
                 Current = current,
                 Next = next,
-                Progress = _engine.GetLength() > 0 ? _engine.GetPosition() / _engine.GetLength() : 0,
+                Progress = length > 0 ? position / length : 0,
             },
             Visualizer = new ObsVisualizerState
             {

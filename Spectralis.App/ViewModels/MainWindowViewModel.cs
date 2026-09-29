@@ -63,22 +63,40 @@ public sealed class MainWindowViewModel : ViewModelBase
         _isSidebarCollapsed = AppSettings.SidebarCollapsed;
         Engine = new AudioEngine();
         EffectChain = new EffectChain();
-        EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
+        if (string.IsNullOrWhiteSpace(AppSettings.EffectChainJson))
+        {
+            // First run / never saved: seed the "Default" built-in chain (a blank
+            // flat EQ) instead of leaving the rack truly empty.
+            EffectChain.ReplaceAll(EffectChainPresets.Build(EffectChainPresets.DefaultName));
+        }
+        else
+        {
+            EffectChainState.Restore(EffectChain, AppSettings.EffectChainJson);
+        }
+
         Engine.SetEffectChain(EffectChain);
         EffectChain.Changed += (_, _) => Engine.RebuildEffectChain();
-        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain);
+        WorldDspPreset = new WorldDspPresetController(EffectChain);
 
         var databasePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Spectralis", "library-avalonia.db");
         LibraryDatabase = new LibraryDatabase(databasePath);
+
+        NowPlaying = new NowPlayingViewModel(Engine, AppSettings, effectChain: EffectChain, library: LibraryDatabase);
+
         Library = new LibraryViewModel(
             LibraryDatabase,
             new LibraryScanner(LibraryDatabase),
             PlayFromLibraryAsync,
             AppSettings);
         Library.InitializeWatchedFolders(AppSettings.LibraryAutoScanOnOpen);
-        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata);
+        Playlists = new PlaylistsViewModel(LibraryDatabase, PlayFromLibraryAsync, AppSettings, NowPlaying.ApplyDefaultVisualizer, NowPlaying.SetQueueTrackMetadata, NowPlaying.PlaySpotifyContextAsync, NowPlaying.PlaySpotifyTrackListAsync);
+        Podcasts = new PodcastsViewModel(
+            LibraryDatabase,
+            AppSettings,
+            PlayFromLibraryAsync,
+            () => AppSettingsStore.Save(AppSettings));
         Scrobbling = new ScrobblingService(() => new ScrobblingConfig(
             AppSettings.LastFmEnabled,
             AppSettings.LastFmApiKey,
@@ -144,9 +162,29 @@ public sealed class MainWindowViewModel : ViewModelBase
         SharedPlay.ApplySettings(AppSettings);
         SharedPlay.PlayTrackRequested = PlayStreamerQueueTrackAsync;
         SharedPlay.QueueTrackRequested = QueueStreamerRequestTrackAsync;
+        SharedPlay.TransportCommandRequested = (action, position) =>
+        {
+            switch (action)
+            {
+                case "play" when !NowPlaying.IsPlaying:
+                case "pause" when NowPlaying.IsPlaying:
+                    NowPlaying.TogglePlayback();
+                    break;
+                case "seek" when position is { } p:
+                    NowPlaying.PositionSeconds = p;
+                    break;
+                case "next":
+                    _ = NowPlaying.PlayNextAsync();
+                    break;
+                case "prev":
+                    _ = NowPlaying.PlayPreviousAsync();
+                    break;
+            }
+        };
         NowPlaying.UpcomingQueueTrackReady += SharedPlay.PrepareUpcomingTrack;
         SharedPlay.TrackReadyForEngine += track =>
             _ = NowPlaying.LoadPreparedTrackAsync(track.SourcePath, track, startPlayback: false, ownsTemporaryFile: false);
+        SharedPlay.NowPlayingIsPlayingProbe = () => NowPlaying.IsPlaying;
         SharedPlay.SeekRequestedForEngine += seconds => NowPlaying.PositionSeconds = seconds;
         SharedPlay.PlayRequestedForEngine += () => { if (!NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
         SharedPlay.PauseRequestedForEngine += () => { if (NowPlaying.IsPlaying) NowPlaying.TogglePlayback(); };
@@ -157,7 +195,20 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return true;
             },
             TimeSpan.FromMilliseconds(250));
-        RandomizerTools = new RandomizerToolsViewModel();
+        RandomizerTools = new RandomizerToolsViewModel(
+            LibraryDatabase,
+            Playlists,
+            AppSettings,
+            currentQueueProvider: () => NowPlaying.QueueItems
+                .Where(q => !string.IsNullOrWhiteSpace(q.Path))
+                .Select(q => new MusicPickCandidate(
+                    WheelEntryKind.Song,
+                    q.Path,
+                    string.IsNullOrWhiteSpace(q.Title) ? q.Path : q.Title,
+                    q.Subtitle ?? string.Empty))
+                .ToList(),
+            playSongs: PlayFromLibraryAsync,
+            setQueueMetadata: NowPlaying.SetQueueTrackMetadata);
         StreamerQueue = new StreamerQueueViewModel();
         StreamerQueue.ApplySettings(AppSettings);
         StreamerQueue.PlayTrackRequested = PlayStreamerQueueTrackAsync;
@@ -181,7 +232,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 track,
                 startPlayback,
                 ownsTemporaryFile: true));
-        Capsules.AlbumWorldAttach  = (html, readyJson, dir) => NowPlaying.AttachAlbumWorld(html, readyJson, dir);
+        Capsules.AlbumWorldAttach  = (html, readyJson, dir, wasmBytes) => NowPlaying.AttachAlbumWorld(html, readyJson, dir, wasmBytes);
         Capsules.AlbumWorldNavigate = () => SelectSection(NowPlaying);
         Capsules.AlbumWorldDetach  = () => NowPlaying.DetachAlbumWorld();
         Capsules.AlbumWorldTrackPlaybackStarting = NowPlaying.BeginAlbumWorldTrackPlayback;
@@ -189,14 +240,30 @@ public sealed class MainWindowViewModel : ViewModelBase
         Capsules.AlbumWorldTrackCompleted = NowPlaying.NotifyAlbumWorldTrackCompleted;
         NowPlaying.AlbumPlayTrackDelegate = (trackId, positionSeconds) => _ = Capsules.LoadAlbumTrackAsync(trackId, positionSeconds);
         NowPlaying.AlbumWorldTick = (pos, playing) => Capsules.TickAlbumWorld(pos, playing);
+        NowPlaying.GetAlbumAchievements = Capsules.BuildAchievementsSnapshot;
         NowPlaying.AlbumWorldExitDelegate = Capsules.Clear;
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine, AppSettings);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
+        Satellite = new SatelliteCoordinator(Engine);
         DiscordPresence = new DiscordPresenceCoordinator(Engine, () => IdleActivity);
         DiscordPresence.SetEnabled(AppSettings.EnableDiscordRichPresence);
+        NowPlaying.CapsulePresenceRequested = req => DiscordPresence.SetCapsulePresenceOverride(req);
+        NowPlaying.SessionReset += (_, _) => DiscordPresence.SetCapsulePresenceOverride(null);
+        NowPlaying.CapsuleDspPresetRequested = req =>
+        {
+            if (req is null)
+            {
+                WorldDspPreset.RevertToUser();
+            }
+            else
+            {
+                WorldDspPreset.ApplyWorldPreset(req.PresetChainJson);
+            }
+        };
+        NowPlaying.SessionReset += (_, _) => WorldDspPreset.RevertToUser();
         ObsEditor = new ObsEditorViewModel(
             AppSettings,
             enabled =>
@@ -231,6 +298,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Now Playing", IconData.NowPlaying, NowPlaying),
             new("Library", IconData.Library, Library),
             new("Playlists", IconData.Playlists, Playlists),
+            new("Podcasts", IconData.Podcast, Podcasts),
             new("Capsules", IconData.Capsules, Capsules),
             new("Randomizer", IconData.Randomizer, RandomizerTools),
             NavSection.Separator("CREATE & STREAM"),
@@ -347,6 +415,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public DiscordPresenceCoordinator DiscordPresence { get; }
 
+    public SatelliteCoordinator Satellite { get; }
+
+    public WorldDspPresetController WorldDspPreset { get; }
+
     public AudioEngine Engine { get; }
 
     public ScrobblingService Scrobbling { get; }
@@ -366,6 +438,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public NowPlayingViewModel NowPlaying { get; }
     public LibraryViewModel Library { get; }
     public PlaylistsViewModel Playlists { get; }
+    public PodcastsViewModel Podcasts { get; }
     public SharedPlayViewModel SharedPlay { get; }
     public StreamerQueueViewModel StreamerQueue { get; }
     public SongWarsViewModel SongWars { get; }

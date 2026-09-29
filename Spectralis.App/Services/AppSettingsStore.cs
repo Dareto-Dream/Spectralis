@@ -91,6 +91,15 @@ public sealed class AppSettings
     public string SharedPlayLiveChannelId { get; set; } = string.Empty;
     public string SharedPlayLiveChannelOwnerToken { get; set; } = string.Empty;
     public string SharedPlayLiveChannelDisplayName { get; set; } = string.Empty;
+    /// <summary>Name the host appears under in a collaborative room's roster.</summary>
+    public string SharedPlayHostName { get; set; } = string.Empty;
+    // Default collaborative-room capabilities for a freshly hosted room.
+    public bool SharedPlayListenersCanQueue { get; set; } = true;
+    public bool SharedPlayListenersCanReorder { get; set; }
+    public bool SharedPlayListenersCanRemove { get; set; }
+    public bool SharedPlayListenersCanControlPlayback { get; set; }
+    public bool SharedPlayVoteSkipEnabled { get; set; } = true;
+    public int SharedPlaySkipVotesRequired { get; set; } = 3;
     public bool SidebarCollapsed { get; set; } = true;
 
     public string SqCdnBaseUrl { get; set; } = string.Empty;
@@ -105,6 +114,24 @@ public sealed class AppSettings
 
     /// <summary>Streamer dead zones — areas hidden by camera or UI overlays. Widgets avoid these when applied.</summary>
     public List<DeadZone> DeadZones { get; set; } = [];
+
+    /// <summary>Folders scanned as podcasts/audiobooks (separate from the music library).</summary>
+    public List<string> PodcastFolders { get; set; } = [];
+
+    /// <summary>Last-used pitch-preserving playback speed for podcast content (1.0 = normal).</summary>
+    public double PodcastPlaybackRate { get; set; } = 1.0;
+
+    /// <summary>Skip-back button amount in Podcast Mode, seconds.</summary>
+    public int PodcastSkipBackSeconds { get; set; } = 15;
+
+    /// <summary>Skip-forward button amount in Podcast Mode, seconds.</summary>
+    public int PodcastSkipForwardSeconds { get; set; } = 30;
+
+    /// <summary>Default sleep-timer duration, minutes.</summary>
+    public int SleepTimerDefaultMinutes { get; set; } = 30;
+
+    /// <summary>Forces the Podcast Mode overlay on regardless of detection (File ▸ Podcast Mode).</summary>
+    public bool PodcastModeManual { get; set; }
 
     public AppSettings Clone() =>
         new()
@@ -169,6 +196,13 @@ public sealed class AppSettings
             SharedPlayLiveChannelId = SharedPlayLiveChannelId,
             SharedPlayLiveChannelOwnerToken = SharedPlayLiveChannelOwnerToken,
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
+            SharedPlayHostName = SharedPlayHostName,
+            SharedPlayListenersCanQueue = SharedPlayListenersCanQueue,
+            SharedPlayListenersCanReorder = SharedPlayListenersCanReorder,
+            SharedPlayListenersCanRemove = SharedPlayListenersCanRemove,
+            SharedPlayListenersCanControlPlayback = SharedPlayListenersCanControlPlayback,
+            SharedPlayVoteSkipEnabled = SharedPlayVoteSkipEnabled,
+            SharedPlaySkipVotesRequired = SharedPlaySkipVotesRequired,
             SidebarCollapsed = SidebarCollapsed,
             HasSeenUiReveal = HasSeenUiReveal,
             DismissedWarningIds = DismissedWarningIds.ToList(),
@@ -176,6 +210,12 @@ public sealed class AppSettings
             SqRoomId = SqRoomId,
             SqOwnerToken = SqOwnerToken,
             DeadZones = DeadZones.Select(z => z.Clone()).ToList(),
+            PodcastFolders = PodcastFolders.ToList(),
+            PodcastPlaybackRate = PodcastPlaybackRate,
+            PodcastSkipBackSeconds = PodcastSkipBackSeconds,
+            PodcastSkipForwardSeconds = PodcastSkipForwardSeconds,
+            SleepTimerDefaultMinutes = SleepTimerDefaultMinutes,
+            PodcastModeManual = PodcastModeManual,
         };
 }
 
@@ -245,6 +285,7 @@ public static class AppSettingsStore
             ? settings.PreferredSampleRate
             : 0;
         settings.MidiInstrument = MidiPlaybackInstrumentCatalog.Normalize(settings.MidiInstrument);
+        settings.SharedPlaySkipVotesRequired = Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20);
         settings.DefaultVolume = Math.Clamp(settings.DefaultVolume, 0, 100);
         settings.ObsOverlayPort = settings.ObsOverlayPort <= 0
             ? 5128
@@ -266,6 +307,16 @@ public static class AppSettingsStore
             .Select(folder => folder.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        settings.PodcastFolders = (settings.PodcastFolders ?? [])
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Select(folder => folder.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        settings.PodcastPlaybackRate = Math.Clamp(
+            settings.PodcastPlaybackRate <= 0 ? 1.0 : settings.PodcastPlaybackRate, 0.5, 3.5);
+        settings.PodcastSkipBackSeconds = Math.Clamp(settings.PodcastSkipBackSeconds, 5, 120);
+        settings.PodcastSkipForwardSeconds = Math.Clamp(settings.PodcastSkipForwardSeconds, 5, 120);
+        settings.SleepTimerDefaultMinutes = Math.Clamp(settings.SleepTimerDefaultMinutes, 1, 240);
         settings.DeadZones = (settings.DeadZones ?? [])
             .Where(z => z.W > 0 && z.H > 0)
             .ToList();

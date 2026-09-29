@@ -8,6 +8,9 @@ public static class SharedPlayDefaults
     public const string CdnBaseUrl = "https://audioplayer-production-5b83.up.railway.app";
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
     public const string ProtocolVersion = "shared-play-v2";
+    /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
+    public const int SocketEnvelopeVersion = 1;
+    public const string SocketPath = "/shared-play/v2/sessions/{0}/socket";
     public const string ClientName = "Spectralis";
     public const string RichPackageContentType = "application/vnd.spectralis.shared-play+zip";
     public const string WebSharePlayerPath = "/spectralis/web-share/";
@@ -30,6 +33,23 @@ public static class SharedPlayDefaults
     {
         var normalizedPath = relativePath.TrimStart('/');
         return new Uri(cdnBaseUri, normalizedPath);
+    }
+
+    /// <summary>Builds the room WebSocket URI, mapping https→wss / http→ws.
+    /// Plain ws:// is only allowed for loopback hosts (dev).</summary>
+    public static Uri BuildSocketUri(Uri cdnBaseUri, string roomCode)
+    {
+        var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
+        var httpUri = BuildEndpoint(cdnBaseUri, string.Format(SocketPath, Uri.EscapeDataString(code)));
+        var builder = new UriBuilder(httpUri)
+        {
+            Scheme = string.Equals(httpUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                     && (httpUri.IsLoopback || httpUri.Host is "localhost")
+                ? "ws"
+                : "wss",
+        };
+        if (builder.Scheme == "wss") builder.Port = httpUri.IsDefaultPort ? -1 : httpUri.Port;
+        return builder.Uri;
     }
 
     public static Uri BuildWebShareJoinUrl(Uri cdnBaseUri, string roomCode)

@@ -1,0 +1,249 @@
+using Spectralis.App.Worlds;
+using Xunit;
+
+namespace Spectralis.Tests.App;
+
+/// <summary>
+/// Exercises <see cref="WgpuWorldRenderer"/> — the managed P/Invoke wrapper — against the real
+/// native wgpu-host library on whatever GPU this machine has, same spirit as wgpu-host's own
+/// Rust smoke tests (tests/smoke.rs) but proving the .NET marshaling boundary specifically.
+/// Uses <see cref="WgpuWorldRenderer.RenderFrameBgraPixels"/> rather than <c>RenderFrame</c> —
+/// the latter constructs an Avalonia <c>WriteableBitmap</c>, which needs full platform/app
+/// init this plain xUnit host doesn't have (confirmed: throws
+/// "Unable to locate 'Avalonia.Platform.IPlatformRenderInterface'" otherwise). Skips (doesn't
+/// fail) when the native library or a compatible GPU isn't available, since both are legitimate
+/// environment limitations (e.g. a CI box with no GPU), not code defects.
+/// </summary>
+public sealed class WgpuWorldRendererTests
+{
+    [Fact]
+    public void RenderFrameBgraPixels_ProducesTheRightSizedBufferWithAVisibleCube()
+    {
+        using var renderer = WgpuWorldRenderer.Create(64, 48);
+        if (renderer is null)
+        {
+            return; // no native lib / no GPU adapter on this machine — not a code defect
+        }
+
+        var pixels = renderer.RenderFrameBgraPixels(0.6, 0.0f, 0.0f, 3.0f, MathF.PI, 0.3f);
+
+        Assert.NotNull(pixels);
+        Assert.Equal(64 * 48 * 4, pixels!.Length);
+
+        // Mirrors wgpu-host's own Rust smoke test: the clear color is a fixed dark
+        // blue-gray, so if the cube actually rendered, plenty of pixels must differ from
+        // it and from each other (BGRA order here, vs RGBA on the Rust side).
+        var clear = new byte[] { (byte)(0.08f * 255), (byte)(0.05f * 255), (byte)(0.05f * 255) };
+        var nonClearPixels = 0;
+        var distinctColors = new HashSet<(byte, byte, byte)>();
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            var bgr = (pixels[i], pixels[i + 1], pixels[i + 2]);
+            if (bgr != (clear[0], clear[1], clear[2]))
+            {
+                nonClearPixels++;
+            }
+            distinctColors.Add(bgr);
+            Assert.Equal(255, pixels[i + 3]); // alpha fully opaque
+        }
+
+        Assert.True(nonClearPixels > 100, $"expected a visible cube, got {nonClearPixels} non-background pixels");
+        Assert.True(distinctColors.Count > 3, $"expected multiple distinct colors, got {distinctColors.Count}");
+    }
+
+    [Fact]
+    public void RenderFrameBgraPixels_TwiceInARow_ReusesTheSameArrayInstance()
+    {
+        using var renderer = WgpuWorldRenderer.Create(32, 32);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        var first = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f);
+        var second = renderer.RenderFrameBgraPixels(1.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.2f);
+
+        Assert.NotNull(first);
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void Dispose_ThenRenderFrameBgraPixels_ReturnsNullInsteadOfCrashing()
+    {
+        var renderer = WgpuWorldRenderer.Create(16, 16);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        renderer.Dispose();
+
+        Assert.Null(renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f));
+    }
+
+    [Fact]
+    public void Create_ZeroDimensions_ClampsToOne()
+    {
+        using var renderer = WgpuWorldRenderer.Create(0, 0);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        Assert.Equal(1, renderer.Width);
+        Assert.Equal(1, renderer.Height);
+    }
+
+    [Fact]
+    public void SubmitGeometry_ThenRender_ReplacesTheDefaultCube()
+    {
+        using var renderer = WgpuWorldRenderer.Create(64, 48);
+        if (renderer is null)
+        {
+            return; // no native lib / no GPU adapter on this machine — not a code defect
+        }
+
+        // A single flat-colored yellow triangle facing the camera — same shape as wgpu-host's
+        // own Rust smoke test (set_geometry_replaces_the_default_cube_and_renders), but proving
+        // the .NET marshaling path (managed float[]/uint[] -> pinned native pointers) actually
+        // carries the data through correctly, not just that the native side works in isolation.
+        float[] vertices =
+        [
+            0.0f, 0.8f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, // top, yellow
+            -0.8f, -0.8f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, // bottom-left
+            0.8f, -0.8f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, // bottom-right
+        ];
+        uint[] indices = [0, 1, 2];
+
+        var accepted = renderer.SubmitGeometry(vertices, indices);
+        Assert.True(accepted);
+
+        var pixels = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f);
+        Assert.NotNull(pixels);
+
+        // BGRA order here: yellow is high B-channel... no, yellow = high R+G, low B (RGB), so
+        // in BGRA bytes that's low B, high G, high R.
+        var yellowPixels = 0;
+        for (var i = 0; i < pixels!.Length; i += 4)
+        {
+            var b = pixels[i];
+            var g = pixels[i + 1];
+            var r = pixels[i + 2];
+            if (r > 200 && g > 200 && b < 60)
+            {
+                yellowPixels++;
+            }
+        }
+
+        Assert.True(yellowPixels > 50, $"expected the submitted yellow triangle to be visible, got {yellowPixels} matching pixels");
+    }
+
+    [Fact]
+    public void SubmitGeometry_EmptyInput_RejectedWithoutDisturbingExistingScene()
+    {
+        using var renderer = WgpuWorldRenderer.Create(32, 32);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        Assert.False(renderer.SubmitGeometry(ReadOnlySpan<float>.Empty, [1, 2, 3]));
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 0f, 0f, 1f, 1f, 1f], ReadOnlySpan<uint>.Empty));
+
+        // Not a multiple of 8 floats/vertex.
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 0f, 0f, 1f, 1f], [0]));
+
+        // Renderer must still work after rejected submissions (default cube untouched).
+        var pixels = renderer.RenderFrameBgraPixels(0.5, 0.0f, 0.0f, 3.0f, MathF.PI, 0.2f);
+        Assert.NotNull(pixels);
+    }
+
+    [Fact]
+    public void SubmitGeometry_OnDisposedRenderer_ReturnsFalseInsteadOfCrashing()
+    {
+        var renderer = WgpuWorldRenderer.Create(16, 16);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        renderer.Dispose();
+
+        Assert.False(renderer.SubmitGeometry([0f, 0f, 0f, 0f, 0f, 1f, 1f, 1f], [0, 0, 0]));
+    }
+
+    [Fact]
+    public void SetTexture_ThenSubmitGeometry_ShowsTheGuestAtlasThroughTheTriangle()
+    {
+        using var renderer = WgpuWorldRenderer.Create(64, 48);
+        if (renderer is null)
+        {
+            return; // no native lib / no GPU adapter on this machine — not a code defect
+        }
+
+        // 2x2 solid-magenta atlas.
+        byte[] rgba =
+        [
+            255, 0, 255, 255, 255, 0, 255, 255,
+            255, 0, 255, 255, 255, 0, 255, 255,
+        ];
+        Assert.True(renderer.SetTexture(rgba, 2, 2));
+
+        // White vertex color so the sampled texture color passes through unmodified.
+        float[] vertices =
+        [
+            0.0f, 0.8f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.0f,
+            -0.8f, -0.8f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.0f,
+            0.8f, -0.8f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.0f,
+        ];
+        uint[] indices = [0, 1, 2];
+        Assert.True(renderer.SubmitGeometry(vertices, indices));
+
+        var pixels = renderer.RenderFrameBgraPixels(0.0, 0.0f, 0.0f, 3.0f, MathF.PI, 0.0f);
+        Assert.NotNull(pixels);
+
+        var magentaPixels = 0;
+        for (var i = 0; i < pixels!.Length; i += 4)
+        {
+            var b = pixels[i];
+            var g = pixels[i + 1];
+            var r = pixels[i + 2];
+            if (r > 200 && g < 60 && b > 200)
+            {
+                magentaPixels++;
+            }
+        }
+
+        Assert.True(magentaPixels > 50, $"expected the guest texture's magenta to show through the triangle, got {magentaPixels} matching pixels");
+    }
+
+    [Fact]
+    public void SetTexture_LengthDoesNotMatchDimensions_RejectedWithoutDisturbingExistingScene()
+    {
+        using var renderer = WgpuWorldRenderer.Create(32, 32);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        Assert.False(renderer.SetTexture(new byte[] { 1, 2, 3, 4 }, 2, 2));
+        Assert.False(renderer.SetTexture(ReadOnlySpan<byte>.Empty, 1, 1));
+
+        var pixels = renderer.RenderFrameBgraPixels(0.5, 0.0f, 0.0f, 3.0f, MathF.PI, 0.2f);
+        Assert.NotNull(pixels);
+    }
+
+    [Fact]
+    public void SetTexture_OnDisposedRenderer_ReturnsFalseInsteadOfCrashing()
+    {
+        var renderer = WgpuWorldRenderer.Create(16, 16);
+        if (renderer is null)
+        {
+            return;
+        }
+
+        renderer.Dispose();
+
+        Assert.False(renderer.SetTexture(new byte[] { 1, 2, 3, 4 }, 1, 1));
+    }
+}

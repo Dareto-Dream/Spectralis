@@ -119,6 +119,84 @@ public sealed class DiscordRichPresenceService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Pushes a capsule-supplied presence override. The capsule audio is still playing
+    /// through the engine, so timing comes from <paramref name="position"/>/<paramref name="length"/>;
+    /// only the presence text is creator-controlled. Text is already clamped by the bridge.
+    /// </summary>
+    public void UpdateCapsule(
+        string details,
+        string state,
+        bool isPlaying,
+        TimeSpan position,
+        TimeSpan length,
+        string? largeImageText = null,
+        string? smallImageText = null,
+        string? sharedPlayJoinUrl = null)
+    {
+        if (disposed || !enabled || !EnsureClient())
+        {
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        var normalizedPosition = NormalizePosition(position, length);
+        var normalizedSharedPlayJoinUrl = NormalizeButtonUrl(sharedPlayJoinUrl);
+        var signature = string.Join(
+            "|",
+            "capsule",
+            details,
+            state,
+            isPlaying,
+            (int)Math.Round(length.TotalSeconds),
+            isPlaying ? "" : $"paused:{(int)normalizedPosition.TotalSeconds}",
+            largeImageText ?? "",
+            smallImageText ?? "",
+            normalizedSharedPlayJoinUrl ?? "");
+
+        if (signature == lastPresenceSignature && !NeedsPositionResync(isPlaying, normalizedPosition, nowUtc))
+        {
+            return;
+        }
+
+        var presence = new RichPresence
+        {
+            Type = ActivityType.Listening,
+            StatusDisplay = StatusDisplayType.Details,
+            Details = ClampPresenceText(details, "Playing a capsule"),
+            State = ClampPresenceText(state, "Spectralis capsule"),
+            Buttons = BuildButtons(normalizedSharedPlayJoinUrl),
+            Party = BuildParty(normalizedSharedPlayJoinUrl),
+        };
+
+        if (isPlaying)
+        {
+            presence.Timestamps = BuildTimestamps(normalizedPosition, length, nowUtc);
+        }
+
+        if (!string.IsNullOrWhiteSpace(largeImageText) || !string.IsNullOrWhiteSpace(smallImageText))
+        {
+            presence.Assets = new Assets
+            {
+                LargeImageText = string.IsNullOrWhiteSpace(largeImageText) ? null : largeImageText,
+                SmallImageText = string.IsNullOrWhiteSpace(smallImageText) ? null : smallImageText,
+            };
+        }
+
+        try
+        {
+            client?.SetPresence(presence);
+            lastPresenceSignature = signature;
+            lastSentPositionSeconds = normalizedPosition.TotalSeconds;
+            lastSentAtUtc = nowUtc;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Discord rich presence capsule update failed: {ex}");
+            ResetClient();
+        }
+    }
+
     private void UpdateIdleActivity(ListeningActivitySnapshot? activity)
     {
         if (!EnsureClient())

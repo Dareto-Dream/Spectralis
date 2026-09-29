@@ -73,6 +73,9 @@ Thumbs.db
 *.tmp.png
 
 
+# Rust
+target/
+
 # Python
 __pycache__/
 *.pyc
@@ -80,6 +83,10 @@ __pycache__/
 venv/
 backend/data/
 .env
+
+# Local Satellite test speaker state
+testing/.satellite-speaker-device-id
+testing/.satellite-speaker-last.wav
 
 # Else
 *.ignore

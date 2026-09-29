@@ -13,8 +13,11 @@ public static class SavedWheelStore
         ReadCommentHandling = JsonCommentHandling.Skip,
     };
 
+    /// <summary>Test seam — when set, reads/writes go here instead of the per-user store.</summary>
+    public static string? PathOverride { get; set; }
+
     private static string StorePath =>
-        Path.Combine(
+        PathOverride ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Spectralis",
             "wheels.json");
@@ -34,15 +37,20 @@ public static class SavedWheelStore
     }
 
     /// <summary>Saves (or overwrites, by case-insensitive name match) a named wheel.</summary>
-    public static void Save(string name, IEnumerable<WheelEntry> entries)
+    public static void Save(string name, string mode, IEnumerable<WheelEntry> entries)
     {
         var all = LoadAll();
         var snapshot = entries.Select(e => e.Clone()).ToList();
         var existing = all.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
+        {
+            existing.Mode = mode;
             existing.Entries = snapshot;
+        }
         else
-            all.Add(new SavedWheel { Name = name, Entries = snapshot });
+        {
+            all.Add(new SavedWheel { Name = name, Mode = mode, Entries = snapshot });
+        }
 
         Persist(all);
     }

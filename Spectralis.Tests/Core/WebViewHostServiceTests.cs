@@ -99,6 +99,42 @@ public sealed class WebViewHostServiceTests : IDisposable
         Assert.Equal(256, bookmark.Label.Length);
     }
 
+    [Fact]
+    public void UnlockAchievement_DispatchesInAlbumWorldMode()
+    {
+        string? achievementId = null;
+        _service.AchievementUnlockRequested += (_, e) => achievementId = e;
+
+        _host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":"entered-the-world"}""");
+
+        Assert.Equal("entered-the-world", achievementId);
+    }
+
+    [Fact]
+    public void UnlockAchievement_DroppedOutsideAlbumWorldMode()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host); // isAlbumWorld: false (default)
+
+        var fired = 0;
+        service.AchievementUnlockRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":"entered-the-world"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void UnlockAchievement_EmptyIdDropped()
+    {
+        var fired = 0;
+        _service.AchievementUnlockRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.unlockAchievement","achievementId":""}""");
+
+        Assert.Equal(0, fired);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json")]
@@ -154,6 +190,140 @@ public sealed class WebViewHostServiceTests : IDisposable
         {
             Assert.Contains(callback, script);
         }
+    }
+
+    [Fact]
+    public void Presence_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.PresenceUpdateRequested += (_, _) => fired++;
+        _service.PresenceClearRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.presence.set","details":"Chapter 3","state":"exploring"}""");
+        _host.SimulateMessage("""{"type":"spectral.presence.clear"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void Presence_SetAndClearDispatchWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowPresence: true);
+
+        CapsulePresenceRequest? update = null;
+        var cleared = 0;
+        service.PresenceUpdateRequested += (_, e) => update = e;
+        service.PresenceClearRequested += (_, _) => cleared++;
+
+        var longText = new string('x', 500);
+        host.SimulateMessage($$"""{"type":"spectral.presence.set","details":"{{longText}}","state":"exploring the ruins"}""");
+        host.SimulateMessage("""{"type":"spectral.presence.clear"}""");
+
+        Assert.NotNull(update);
+        Assert.Equal(128, update!.Details.Length);
+        Assert.Equal("exploring the ruins", update.State);
+        Assert.Equal(1, cleared);
+    }
+
+    [Fact]
+    public void Presence_EmptyPayloadDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowPresence: true);
+
+        var fired = 0;
+        service.PresenceUpdateRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.presence.set","details":"","state":"   "}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void DspPreset_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.DspPresetRegisterRequested += (_, _) => fired++;
+        _service.DspPresetReleaseRequested += (_, _) => fired++;
+
+        _service.DispatchMessage("""{"type":"spectral.registerDspPreset","preset":{"Enabled":true,"Effects":[]}}""");
+        _service.DispatchMessage("""{"type":"spectral.releaseDspPreset"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void DspPreset_RegisterAndReleaseDispatchWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowDspPreset: true);
+
+        WorldDspPresetRequest? request = null;
+        var released = 0;
+        service.DspPresetRegisterRequested += (_, e) => request = e;
+        service.DspPresetReleaseRequested += (_, _) => released++;
+
+        host.SimulateMessage("""{"type":"spectral.registerDspPreset","preset":{"Enabled":true,"Effects":[{"Name":"Compressor","Enabled":true,"Params":{"threshold":-12}}]}}""");
+        host.SimulateMessage("""{"type":"spectral.releaseDspPreset"}""");
+
+        Assert.NotNull(request);
+        Assert.Contains("\"Compressor\"", request!.PresetChainJson);
+        Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public void DspPreset_NonObjectPresetDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowDspPreset: true);
+
+        var fired = 0;
+        service.DspPresetRegisterRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.registerDspPreset","preset":"not-an-object"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void SwitchToWasm_DroppedWithoutCapability()
+    {
+        var fired = 0;
+        _service.SwitchToWasmRequested += (_, _) => fired++;
+
+        _host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":"bonus-room"}""");
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void SwitchToWasm_DispatchesWhenAllowed()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowWasm3D: true);
+
+        SwitchToWasmRequest? request = null;
+        service.SwitchToWasmRequested += (_, e) => request = e;
+
+        host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":"bonus-room"}""");
+
+        Assert.NotNull(request);
+        Assert.Equal("bonus-room", request!.WorldId);
+    }
+
+    [Fact]
+    public void SwitchToWasm_EmptyWorldIdDropped()
+    {
+        using var host = new FakeWebViewHost();
+        using var service = new WebViewHostService(host, allowWasm3D: true);
+
+        var fired = 0;
+        service.SwitchToWasmRequested += (_, _) => fired++;
+
+        host.SimulateMessage("""{"type":"spectral.worlds.switchToWasm","worldId":""}""");
+
+        Assert.Equal(0, fired);
     }
 }
 

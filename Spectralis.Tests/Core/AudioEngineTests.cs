@@ -190,4 +190,82 @@ public sealed class AudioEngineTests : IDisposable
         Assert.NotNull(frame);
         Assert.NotNull(frame.Spectrum);
     }
+
+    [Fact]
+    public void SetPlaybackRate_ClampsToRange()
+    {
+        _engine.SetPlaybackRate(9.0);
+        Assert.Equal(3.5, _engine.PlaybackRate);
+
+        _engine.SetPlaybackRate(0.1);
+        Assert.Equal(0.5, _engine.PlaybackRate);
+    }
+
+    [Fact]
+    public void SetPlaybackRate_KeepsPositionAndFormat()
+    {
+        _engine.Load(CreateWav(seconds: 1.0, sampleRate: 44100));
+        _engine.Play();
+        _engine.Seek(0.4f);
+
+        _engine.SetPlaybackRate(1.5);
+
+        Assert.Equal(1.5, _engine.PlaybackRate);
+        Assert.InRange(_engine.GetPosition(), 0.3f, 0.6f);
+        Assert.Equal(44100, _engine.EffectiveSampleRate);
+        Assert.True(_engine.IsLoaded);
+    }
+
+    [Fact]
+    public void RawAudioBlockCaptured_FiresWithRealPostChainSamples()
+    {
+        var capturedBlocks = new List<(int SamplesRead, int Channels)>();
+        var sawNonSilence = false;
+        _engine.RawAudioBlockCaptured = (buffer, offset, samplesRead, channels) =>
+        {
+            capturedBlocks.Add((samplesRead, channels));
+            for (var i = 0; i < samplesRead; i++)
+            {
+                if (buffer[offset + i] != 0f)
+                {
+                    sawNonSilence = true;
+                }
+            }
+        };
+
+        _engine.Load(CreateWav(seconds: 0.5, sampleRate: 44100, channels: 2));
+        _engine.Play();
+        _devices.Current!.DrainSource(); // pulls the whole chain to its end synchronously
+
+        Assert.NotEmpty(capturedBlocks);
+        Assert.All(capturedBlocks, b => Assert.Equal(2, b.Channels));
+        Assert.True(sawNonSilence, "expected real sine-wave samples, not silence");
+    }
+
+    [Fact]
+    public void RawAudioBlockCaptured_SurvivesEffectChainRebuild()
+    {
+        var fireCountBeforeRebuild = 0;
+        var firedAfterRebuild = false;
+        _engine.RawAudioBlockCaptured = (_, _, samplesRead, _) =>
+        {
+            if (samplesRead > 0)
+            {
+                fireCountBeforeRebuild++;
+            }
+        };
+
+        _engine.Load(CreateWav(seconds: 0.5));
+        _engine.Play();
+
+        // RebuildEffectChain tears down and recreates the device/visualizer chain — the tap
+        // must be re-wired onto the new VisualizerSampleProvider instance automatically.
+        // OR-accumulate rather than overwrite: DrainSource's final call (stream exhausted)
+        // reports samplesRead == 0, which would otherwise clobber an earlier true back to false.
+        _engine.RawAudioBlockCaptured = (_, _, samplesRead, _) => firedAfterRebuild |= samplesRead > 0;
+        _engine.RebuildEffectChain();
+        _devices.Current!.DrainSource();
+
+        Assert.True(firedAfterRebuild, "tap should still fire after a device/effect-chain rebuild");
+    }
 }

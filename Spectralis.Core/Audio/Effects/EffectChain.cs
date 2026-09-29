@@ -14,6 +14,13 @@ public sealed class EffectChain : IEffectChainBuilder
 
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// True while a capsule/world-registered DSP preset (<see cref="Spectralis.App.Services.WorldDspPresetController"/>)
+    /// owns the rack. Persistence subscribers should skip writing to <c>AppSettings.EffectChainJson</c>
+    /// while this is set, so a world's preset never clobbers the user's own saved chain.
+    /// </summary>
+    public bool IsWorldManaged { get; set; }
+
     public event EventHandler? Changed;
 
     public void Add(IAudioEffect effect)
@@ -52,6 +59,14 @@ public sealed class EffectChain : IEffectChainBuilder
 
     public void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Clears the rack and adds <paramref name="effects"/> instead, raising <see cref="Changed"/> once.</summary>
+    public void ReplaceAll(IEnumerable<IAudioEffect> effects)
+    {
+        _effects.Clear();
+        _effects.AddRange(effects);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public ISampleProvider BuildChain(ISampleProvider source)
     {
         if (!Enabled)
@@ -76,10 +91,33 @@ public sealed class EffectChain : IEffectChainBuilder
         "10-Band EQ" => new ParametricEqEffect(),  // legacy persisted name
         "Compressor" => new CompressorEffect(),
         "Reverb" => new ReverbEffect(),
+        // Not in AvailableEffects (so it no longer shows in the "add effect" picker),
+        // but kept creatable so Karaoke Mode's own VocalBlendEffect usage and any
+        // previously persisted rack containing it keep working.
         "Vocal Remover" => new VocalBlendEffect(),
+        "Saturation" => new SaturationEffect(),
+        "Distortion" => new DistortionEffect(),
+        "Chorus" => new ChorusEffect(),
+        "Flanger" => new FlangerEffect(),
+        "Phaser" => new PhaserEffect(),
+        "Stereo Widener" => new StereoWidenerEffect(),
+        "Limiter" => new LimiterEffect(),
+        "Noise Gate" => new NoiseGateEffect(),
+        "De-esser" => new DeEsserEffect(),
+        "Multiband Compressor" => new MultibandCompressorEffect(),
+        "Transient Shaper" => new TransientShaperEffect(),
+        "Convolution Reverb" => new ConvolutionReverbEffect(),
+        "Delay" => new DelayEffect(),
+        "Stereo Panner" => new StereoPannerEffect(),
+        "Room Ambience" => new RoomAmbienceEffect(),
         _ => throw new ArgumentException($"Unknown effect: {displayName}"),
     };
 
     public static string[] AvailableEffects { get; } =
-        ["Parametric EQ", "Compressor", "Reverb", "Vocal Remover"];
+    [
+        "Parametric EQ", "Compressor", "Reverb",
+        "Saturation", "Distortion", "Chorus", "Flanger", "Phaser", "Stereo Widener",
+        "Limiter", "Noise Gate", "De-esser", "Multiband Compressor", "Transient Shaper",
+        "Convolution Reverb", "Delay", "Stereo Panner", "Room Ambience",
+    ];
 }

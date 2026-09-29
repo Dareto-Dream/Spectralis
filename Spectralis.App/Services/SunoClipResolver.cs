@@ -19,6 +19,14 @@ internal sealed record SunoClipInfo(
 
 internal static class SunoClipResolver
 {
+    // Suno's studio API now returns audio through a flat, unauthenticated CloudFront
+    // path derived from the clip id alone: https://<host>/1/clip/{id}.m4a (m4a-opus).
+    // The old cdn1.suno.ai/{id}.mp3 path is gone.
+    private const string AudioCdnHost = "d2lwuy8qc234o3.cloudfront.net";
+
+    private static string BuildCdnAudioUrl(string clipId) =>
+        $"https://{AudioCdnHost}/1/clip/{clipId}.m4a";
+
     private static readonly Regex ClipIdRegex = new(
         @"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -104,7 +112,7 @@ internal static class SunoClipResolver
             $"Suno {clipId[..8]}",
             "Suno",
             null,
-            $"https://cdn1.suno.ai/{clipId}.mp3",
+            BuildCdnAudioUrl(clipId),
             $"https://cdn2.suno.ai/image_{clipId}.jpeg",
             $"https://cdn2.suno.ai/image_large_{clipId}.jpeg",
             null,
@@ -120,7 +128,7 @@ internal static class SunoClipResolver
 
         var textReferences = ExtractTextReferences(chunks);
         var flightText = string.Concat(chunks);
-        var clipJson = TryExtractClipJson(flightText);
+        var clipJson = TryExtractClipJson(flightText, requestedClipId);
         if (clipJson is null)
         {
             return null;
@@ -150,7 +158,7 @@ internal static class SunoClipResolver
         var prompt = ResolveTextReference(clip.Metadata?.Prompt, textReferences);
         var title = FirstNonEmpty(clip.Title, $"Suno {id[..8]}")!;
         var artist = FirstNonEmpty(clip.DisplayName, clip.Handle, "Suno");
-        var audioUrl = FirstNonEmpty(clip.AudioUrl, $"https://cdn1.suno.ai/{id}.mp3")!;
+        var audioUrl = ResolveAudioUrl(clip, id);
 
         return new SunoClipInfo(
             id,
@@ -205,16 +213,125 @@ internal static class SunoClipResolver
         return references;
     }
 
-    private static string? TryExtractClipJson(string flightText)
+    private static string? TryExtractClipJson(string flightText, string requestedClipId)
     {
+        // Legacy shape: the page embedded a bare {"clip": { ... }} node.
         var keyIndex = flightText.IndexOf("\"clip\":", StringComparison.Ordinal);
-        if (keyIndex < 0)
+        if (keyIndex >= 0)
         {
-            return null;
+            var objectStart = flightText.IndexOf('{', keyIndex);
+            if (objectStart >= 0 &&
+                TryExtractBalancedJsonObject(flightText, objectStart) is { } legacy &&
+                legacy.Contains(requestedClipId, StringComparison.OrdinalIgnoreCase))
+            {
+                return legacy;
+            }
         }
 
-        var objectStart = flightText.IndexOf('{', keyIndex);
-        return objectStart < 0 ? null : TryExtractBalancedJsonObject(flightText, objectStart);
+        // Current shape: the song lives inside a content_item tree as a
+        // {"id":"<uuid>", "entity_type":"song_schema", ...} object. Anchor on the
+        // clip id and pull out the innermost JSON object that encloses it.
+        foreach (var idNeedle in new[] { $"\"id\":\"{requestedClipId}\"", $"\"id\": \"{requestedClipId}\"" })
+        {
+            var idIndex = flightText.IndexOf(idNeedle, StringComparison.OrdinalIgnoreCase);
+            while (idIndex >= 0)
+            {
+                var enclosing = TryExtractEnclosingJsonObject(flightText, idIndex);
+                if (enclosing is not null && LooksLikeSongObject(enclosing))
+                {
+                    return enclosing;
+                }
+
+                idIndex = flightText.IndexOf(idNeedle, idIndex + idNeedle.Length, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool LooksLikeSongObject(string json) =>
+        json.Contains("\"entity_type\"", StringComparison.Ordinal) ||
+        json.Contains("\"media_urls\"", StringComparison.Ordinal) ||
+        json.Contains("\"metadata\"", StringComparison.Ordinal);
+
+    // Forward, string-aware pass that returns the innermost balanced { } object
+    // whose span contains needleIndex.
+    private static string? TryExtractEnclosingJsonObject(string text, int needleIndex)
+    {
+        var starts = new Stack<int>();
+        var inString = false;
+        var escaped = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (ch == '\\') escaped = true;
+                else if (ch == '"') inString = false;
+                continue;
+            }
+
+            switch (ch)
+            {
+                case '"':
+                    inString = true;
+                    break;
+                case '{':
+                    starts.Push(i);
+                    break;
+                case '}' when starts.Count > 0:
+                    var start = starts.Pop();
+                    if (start <= needleIndex && needleIndex <= i)
+                    {
+                        // Inner objects close before their parents, so the first
+                        // closing brace past the needle is its innermost enclosure.
+                        return text[start..(i + 1)];
+                    }
+
+                    break;
+            }
+        }
+
+        return null;
+    }
+
+    private static string ResolveAudioUrl(SunoClipJson clip, string clipId)
+    {
+        var fromMedia = clip.MediaUrls?
+            .Select(static m => m.Url)
+            .FirstOrDefault(IsUsableAudioUrl);
+        if (fromMedia is not null)
+        {
+            return fromMedia.Trim();
+        }
+
+        // audio_url is now a decoy field that always resolves to /api/forbidden on
+        // the studio API host. Only trust it when it points at a real CDN.
+        return IsUsableAudioUrl(clip.AudioUrl)
+            ? clip.AudioUrl!.Trim()
+            : BuildCdnAudioUrl(clipId);
+    }
+
+    private static bool IsUsableAudioUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        if (uri.AbsolutePath.Contains("forbidden", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // studio-api-prod.suno.com / studio-api.prod.suno.com only gate discovery,
+        // never delivery — an audio URL on that host is the decoy.
+        return !uri.Host.Contains("studio-api", StringComparison.OrdinalIgnoreCase) &&
+               !uri.Host.Contains("api.prod.suno", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryExtractBalancedJsonObject(string text, int objectStart)
@@ -348,8 +465,15 @@ internal static class SunoClipResolver
         [JsonPropertyName("handle")]
         public string? Handle { get; set; }
 
+        // Decoy field: always resolves to /api/forbidden on the studio API host.
+        // Kept only so IsUsableAudioUrl can reject it explicitly.
         [JsonPropertyName("audio_url")]
         public string? AudioUrl { get; set; }
+
+        // Real playback source(s). media_urls[0].url is a flat, unauthenticated
+        // CloudFront path (content_type "m4a-opus", progressive delivery).
+        [JsonPropertyName("media_urls")]
+        public List<SunoMediaUrlJson>? MediaUrls { get; set; }
 
         [JsonPropertyName("image_url")]
         public string? ImageUrl { get; set; }
@@ -359,6 +483,15 @@ internal static class SunoClipResolver
 
         [JsonPropertyName("metadata")]
         public SunoClipMetadataJson? Metadata { get; set; }
+    }
+
+    private sealed class SunoMediaUrlJson
+    {
+        [JsonPropertyName("url")]
+        public string? Url { get; set; }
+
+        [JsonPropertyName("content_type")]
+        public string? ContentType { get; set; }
     }
 
     private sealed class SunoClipMetadataJson

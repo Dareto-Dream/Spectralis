@@ -40,6 +40,12 @@ public partial class NowPlayingView : Grid
     private DispatcherTimer? _embeddedFramePushTimer;
     private DispatcherTimer? _resizeSettleTimer;
     private string _loadedEmbeddedHtmlId = string.Empty;
+    // Phase 2 dual-runtime rework: the Wasm/wgpu sibling of the WebView-based embedded surface
+    // above. Only ever non-null while a world's manifest declares a Wasm payload AND the
+    // ViewModel currently wants it shown (NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm) —
+    // every existing HTML-only capsule/album-world path is untouched by this.
+    private WgpuWorldSurface? _wgpuSurface;
+    private string? _loadedWasmWorldId;
     private double _lastPushedTime = double.MinValue;
     private bool _lastPushedActive;
     private volatile bool _embeddedExecPending;
@@ -61,6 +67,7 @@ public partial class NowPlayingView : Grid
 public NowPlayingView()
     {
         InitializeComponent();
+        WireSpeedRepeatButtons();
         DataContextChanged += (_, _) =>
         {
             if (_viewModel is not null)
@@ -69,6 +76,8 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackChanged -= OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested -= OnNotepadPopOutRequested;
+                _viewModel.PointerLockPanicTriggered -= OnPointerLockPanicTriggered;
+                _viewModel.AchievementsBoardDismissed -= OnAchievementsBoardDismissed;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
@@ -78,6 +87,8 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackChanged += OnAlbumWorldTrackChanged;
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested += OnNotepadPopOutRequested;
+                _viewModel.PointerLockPanicTriggered += OnPointerLockPanicTriggered;
+                _viewModel.AchievementsBoardDismissed += OnAchievementsBoardDismissed;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
                 ApplyDeadZoneLayout();
@@ -285,7 +296,15 @@ public NowPlayingView()
 
         if (e.PropertyName is nameof(NowPlayingViewModel.ShowEmbeddedHtml) or
             nameof(NowPlayingViewModel.EmbeddedHtml) or
-            nameof(NowPlayingViewModel.HasEmbeddedHtml))
+            nameof(NowPlayingViewModel.HasEmbeddedHtml) or
+            nameof(NowPlayingViewModel.IsEmbeddedSurfaceUsingWasm) or
+            // BeginAlbumWorldTrackPlayback flips IsAlbumWorldShowingWorld false the moment a
+            // track starts playing and raises exactly this notification (RaiseSurfaceModeChanged)
+            // — without it in this filter, ApplyEmbeddedHtmlMode's now-corrected gate (see its own
+            // comment) never actually re-runs at the moment that matters, so the stale decision
+            // from while the world was still showing just sits on screen. Confirmed: audio started
+            // fine, but the room never got torn down for the track's own visualizer/audio-only view.
+            nameof(NowPlayingViewModel.IsAlbumWorldShowingWorld))
         {
             ApplyEmbeddedHtmlMode();
         }
@@ -415,6 +434,112 @@ public NowPlayingView()
     private void OnToggleTimeDisplay(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
         (DataContext as NowPlayingViewModel)?.ToggleTimeDisplay();
+    }
+
+    private void OnToggleChaptersPanel(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm)
+        {
+            vm.ShowChaptersPanel = !vm.ShowChaptersPanel;
+        }
+    }
+
+    // ── Podcast speed: hold-to-repeat on the −/+ buttons, click-to-type on the number ──
+
+    private DispatcherTimer? _speedRepeatTimer;
+    private int _speedRepeatDirection;
+
+    /// <summary>
+    /// Wires press-and-hold repeat onto the speed −/+ buttons. Registered with
+    /// <c>handledEventsToo</c> because <see cref="Button"/> marks <c>PointerPressed</c> handled
+    /// before instance handlers run, so a plain XAML <c>PointerPressed=</c> attribute never fires.
+    /// </summary>
+    private void WireSpeedRepeatButtons()
+    {
+        Hook(SpeedDownButton, -1);
+        Hook(SpeedUpButton, 1);
+
+        void Hook(Button button, int direction)
+        {
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerPressedEvent,
+                (_, _) => StartSpeedRepeat(direction),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerReleasedEvent,
+                (_, _) => StopSpeedRepeat(),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            button.AddHandler(
+                Avalonia.Input.InputElement.PointerCaptureLostEvent,
+                (_, _) => StopSpeedRepeat(),
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        }
+    }
+
+    private void StartSpeedRepeat(int direction)
+    {
+        if (DataContext is not NowPlayingViewModel vm)
+        {
+            return;
+        }
+
+        _speedRepeatDirection = direction;
+        vm.StepSpeed(direction);
+
+        _speedRepeatTimer?.Stop();
+        _speedRepeatTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _speedRepeatTimer.Tick += (_, _) =>
+        {
+            _speedRepeatTimer!.Interval = TimeSpan.FromMilliseconds(90);
+            if (DataContext is NowPlayingViewModel v)
+            {
+                v.StepSpeed(_speedRepeatDirection);
+            }
+        };
+        _speedRepeatTimer.Start();
+    }
+
+    private void StopSpeedRepeat()
+    {
+        _speedRepeatTimer?.Stop();
+        _speedRepeatTimer = null;
+    }
+
+    private void OnSpeedInputGotFocus(object? sender, Avalonia.Input.GotFocusEventArgs e)
+    {
+        (sender as TextBox)?.SelectAll();
+    }
+
+    private void OnSpeedInputKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (sender is not TextBox box || DataContext is not NowPlayingViewModel vm)
+        {
+            return;
+        }
+
+        if (e.Key == Avalonia.Input.Key.Enter)
+        {
+            vm.SpeedInput = box.Text ?? string.Empty;
+            e.Handled = true;
+            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+        }
+        else if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            box.Text = vm.SpeedInput;
+            e.Handled = true;
+            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+        }
+    }
+
+    private void OnChapterActivated(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (DataContext is NowPlayingViewModel vm && ChaptersList.SelectedItem is ChapterRowViewModel row)
+        {
+            vm.SeekToChapter(row);
+        }
     }
 
     private QueueItemViewModel? SelectedQueueItem => QueueList.SelectedItem as QueueItemViewModel;
@@ -579,10 +704,23 @@ public NowPlayingView()
 
     private void OnExitSurfaceMode(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is NowPlayingViewModel vm)
+        if (DataContext is not NowPlayingViewModel vm)
         {
-            vm.UseArtworkSurface();
+            return;
         }
+
+        // UseArtworkSurface() just flips ShowEmbeddedHtml off — fine once a track is actually
+        // loaded (its cover art fills in), but exiting a world map/room before ever picking a
+        // track leaves nothing behind: no title, no artist, no art. That's the "malformed unload,
+        // looks null" case — mirrors what OnEmbeddedExitRequested already does for the HTML
+        // world's own exit button, fully unloading the capsule back to real home state instead.
+        if (vm.IsAlbumWorldActive && !vm.HasTrack)
+        {
+            vm.AlbumWorldExitDelegate?.Invoke();
+            return;
+        }
+
+        vm.UseArtworkSurface();
     }
 
     private void OnOpenMiniPlayer(object? sender, RoutedEventArgs e)
@@ -748,6 +886,44 @@ public NowPlayingView()
 
     private void ApplyEmbeddedHtmlMode()
     {
+        // Phase 2 dual-runtime rework: a world that declared a Wasm payload and currently wants
+        // it shown gets the wgpu-backed surface instead of a WebView, entirely bypassing the
+        // logic below. Every existing HTML-only capsule/album-world falls straight through
+        // unchanged (EmbeddedWasmWorld is null for all of them).
+        if (_viewModel is { IsAlbumWorldActive: true } avm)
+        {
+            // Scoped to album-world sessions only — this runs on every embedded-content property
+            // change, so logging unconditionally would drown wasm-world.log in unrelated HTML
+            // capsule traffic. This is the branch decision that decides whether the listener gets
+            // the walkable wgpu room or CHASER's plain HTML track list.
+            WasmWorldLog.Log(
+                $"ApplyEmbeddedHtmlMode: ShowEmbeddedHtml={avm.ShowEmbeddedHtml} IsEmbeddedSurfaceUsingWasm={avm.IsEmbeddedSurfaceUsingWasm} " +
+                $"HasWasmBytes={avm.EmbeddedWasmWorld is not null} HasEmbeddedHtml={avm.EmbeddedHtml is not null} IsAlbumWorldShowingWorld={avm.IsAlbumWorldShowingWorld}");
+        }
+
+        // IsAlbumWorldShowingWorld is the piece that was missing here: EmbeddedWasmWorld/
+        // IsEmbeddedSurfaceUsingWasm are deliberately kept alive "for the lifetime of the album
+        // world" (see NowPlayingViewModel's field doc) so a mid-browse switch_to_html/
+        // switchToWasm round-trips without reloading — but that meant once a track actually
+        // started playing (_albumWorldShowingWorld flips false) and ApplyEmbeddedModules pointed
+        // EmbeddedHtml at that *track's own* embed instead, this gate still matched on the
+        // world's stale cached wasm bytes and re-attached them under the track's mismatched id,
+        // stepping on whatever the track's own HTML/Wasm visualizer was supposed to show.
+        // Confirmed: switching from the world to a track with its own embed didn't work at all.
+        if (_viewModel is { ShowEmbeddedHtml: true, IsAlbumWorldShowingWorld: true, IsEmbeddedSurfaceUsingWasm: true, EmbeddedWasmWorld: { } wasmBytes, EmbeddedHtml: { } wasmWorldContext })
+        {
+            var allowPointerLock = wasmWorldContext.Capabilities.Contains(
+                Spectralis.Core.Capsule.CapsuleCapability.WorldsPointerLock);
+            // Null (no worlds.pauseMenu, or no pauseMenu block at all) just resets every field to
+            // its built-in default — see NowPlayingViewModel.ApplyPauseMenuConfig.
+            _viewModel.ApplyPauseMenuConfig(wasmWorldContext.PauseMenu);
+            ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id, allowPointerLock);
+            return;
+        }
+
+        _viewModel?.ApplyPauseMenuConfig(null);
+        StopWasmWorldMode();
+
         if (_viewModel is not { ShowEmbeddedHtml: true, EmbeddedHtml: { } context })
         {
             StopEmbeddedHtmlMode();
@@ -799,13 +975,31 @@ public NowPlayingView()
         _embeddedHost.NavigationCompleted += OnEmbeddedNavigationCompleted;
         _embeddedHost.NavigationFailed += OnEmbeddedNavigationFailed;
         var isAlbumWorld = _viewModel?.IsAlbumWorldShowingWorld ?? false;
-        _embeddedService = new WebViewHostService(_embeddedHost, storeKey: isAlbumWorld ? null : context.Id, isAlbumWorld: isAlbumWorld);
+        var allowPresence = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.PresenceRichPresence);
+        var allowDspPreset = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.AudioDspPreset);
+        var allowWasm3D = context.Capabilities.Contains(
+            Spectralis.Core.Capsule.CapsuleCapability.WorldsWasm3D);
+        _embeddedService = new WebViewHostService(
+            _embeddedHost,
+            storeKey: isAlbumWorld ? null : context.Id,
+            isAlbumWorld: isAlbumWorld,
+            allowPresence: allowPresence,
+            allowDspPreset: allowDspPreset,
+            allowWasm3D: allowWasm3D);
         _embeddedService.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
         _embeddedService.PauseRequested += OnEmbeddedPauseRequested;
         _embeddedService.ResumeRequested += OnEmbeddedResumeRequested;
         _embeddedService.SeekRequested += OnEmbeddedSeekRequested;
         _embeddedService.ExitWorldRequested += OnEmbeddedExitRequested;
         _embeddedService.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
+        _embeddedService.PresenceUpdateRequested += OnEmbeddedPresenceUpdate;
+        _embeddedService.PresenceClearRequested += OnEmbeddedPresenceClear;
+        _embeddedService.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
+        _embeddedService.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
+        _embeddedService.SwitchToWasmRequested += OnEmbeddedSwitchToWasm;
+        _embeddedService.AchievementUnlockRequested += OnEmbeddedAchievementUnlocked;
         EmbeddedHtmlHost.Content = _embeddedControl;
 
         try
@@ -824,6 +1018,75 @@ public NowPlayingView()
             if (_viewModel is not null)
                 _viewModel.ShowEmbeddedHtml = false;
         }
+    }
+
+    /// <summary>Boots (or no-ops if already showing) the wgpu-backed surface for the given
+    /// world. Falls back to requesting HTML mode if the native renderer is unavailable or the
+    /// module fails to load — mirrors the existing WebView navigation-failure fallback above.</summary>
+    private void ApplyWasmWorldMode(byte[] wasmBytes, string worldId, bool allowPointerLock)
+    {
+        if (_wgpuSurface is not null && string.Equals(_loadedWasmWorldId, worldId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        StopEmbeddedHtmlMode();
+        StopWasmWorldMode();
+
+        _loadedWasmWorldId = worldId;
+        _wgpuSurface = new WgpuWorldSurface
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        _wgpuSurface.PlayTrackRequested += OnEmbeddedPlayTrackRequested;
+        _wgpuSurface.SaveBookmarkRequested += OnEmbeddedSaveBookmark;
+        _wgpuSurface.DspPresetRegisterRequested += OnEmbeddedDspPresetRegister;
+        _wgpuSurface.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
+        _wgpuSurface.AchievementUnlocked += OnEmbeddedAchievementUnlocked;
+        _wgpuSurface.SwitchToHtmlRequested += (_, _) => _viewModel?.RequestSwitchToHtml();
+        _wgpuSurface.InteractTargetChanged += (_, e) => _viewModel?.ApplyInteractTarget(e.Id, e.Prompt);
+        _wgpuSurface.StoryRequested += (_, e) => _viewModel?.BeginMirrorStory(e.TrackId, e.Pages);
+        _wgpuSurface.AchievementsRequested += (_, _) =>
+        {
+            _viewModel?.BeginAchievementsBoard();
+            // A recentering, hidden cursor behind a menu you're meant to read is just bad —
+            // release it for the board the same way the panic escape does, and hand it back on
+            // close (OnAchievementsBoardDismissed) the same way the pause menu's Resume does.
+            _wgpuSurface?.PanicReleasePointerLock();
+        };
+        EmbeddedHtmlHost.Content = _wgpuSurface;
+
+        // storeKey = worldId so this shares the exact same CapsuleScopedStore file the HTML
+        // surface's spectral.store.* would use for the same world — hand-off state (position,
+        // achievements, active DSP preset) survives a runtime switch either direction.
+        if (!_wgpuSurface.AttachWorld(wasmBytes, worldId, allowPointerLock: allowPointerLock))
+        {
+            WasmWorldLog.Log($"ApplyWasmWorldMode: attach failed id={worldId} — falling back to HTML");
+            StopWasmWorldMode();
+            _viewModel?.RequestSwitchToHtml();
+        }
+        else
+        {
+            WasmWorldLog.Log($"ApplyWasmWorldMode: attach ok id={worldId}");
+        }
+    }
+
+    private void StopWasmWorldMode()
+    {
+        if (_wgpuSurface is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(EmbeddedHtmlHost.Content, _wgpuSurface))
+        {
+            EmbeddedHtmlHost.Content = null;
+        }
+
+        _wgpuSurface.Dispose();
+        _wgpuSurface = null;
+        _loadedWasmWorldId = null;
     }
 
     private void NavigateEmbeddedHtmlDocument(EmbeddedHtmlContext context, string document, bool isAlbumWorld)
@@ -888,6 +1151,33 @@ public NowPlayingView()
         _viewModel?.AlbumPlayTrackDelegate?.Invoke(req.TrackId, req.PositionSeconds);
     }
 
+    private void OnEmbeddedPresenceUpdate(object? sender, Spectralis.Core.Integrations.Web.CapsulePresenceRequest req)
+    {
+        _viewModel?.CapsulePresenceRequested?.Invoke(req);
+    }
+
+    private void OnEmbeddedPresenceClear(object? sender, EventArgs e)
+    {
+        _viewModel?.CapsulePresenceRequested?.Invoke(null);
+    }
+
+    private void OnEmbeddedDspPresetRegister(object? sender, Spectralis.Core.Integrations.Web.WorldDspPresetRequest req)
+    {
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(req);
+    }
+
+    private void OnEmbeddedDspPresetRelease(object? sender, EventArgs e)
+    {
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(null);
+    }
+
+    private void OnEmbeddedSwitchToWasm(object? sender, Spectralis.Core.Integrations.Web.SwitchToWasmRequest req)
+    {
+        // The active world's Wasm bytes are already held by the ViewModel (attached alongside
+        // the HTML payload) — this just flips which runtime the surface renders with.
+        _viewModel?.RequestSwitchToWasm();
+    }
+
     private void OnAlbumWorldTrackChanged(AlbumWorldTrackBridgeState state)
     {
         if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
@@ -900,12 +1190,23 @@ public NowPlayingView()
             state.DurationSeconds);
     }
 
-    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds)
+    private void OnAlbumWorldTrackCompleted(string trackId, double playedSeconds, double durationSeconds)
     {
-        if (_viewModel?.IsAlbumWorldShowingWorld != true || _embeddedService is null)
+        // NotifyAlbumWorldTrackCompleted already switched IsAlbumWorldShowingWorld back to true
+        // (and ApplyEmbeddedHtmlMode already ran synchronously off that property change, so
+        // whichever surface is relevant here has already been reattached) before this fires —
+        // see that method's doc for why. Both checks below are which-mode-is-active branches,
+        // not a "did the world actually come back" gate; at most one of _embeddedService/
+        // _wgpuSurface is actually attached at a time.
+        if (_viewModel?.IsAlbumWorldShowingWorld != true)
             return;
 
-        _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
+        if (_embeddedService is not null)
+        {
+            _ = _embeddedService.SendTrackCompletedAsync(trackId, playedSeconds);
+        }
+
+        _wgpuSurface?.NotifyTrackCompleted(playedSeconds, durationSeconds);
     }
 
     private void OnEmbeddedExitRequested(object? sender, EventArgs e)
@@ -916,11 +1217,53 @@ public NowPlayingView()
             _viewModel?.UseArtworkSurface();
     }
 
+    /// <summary>Hold-Esc panic escape (<see cref="NowPlayingViewModel.TriggerPointerLockPanic"/>)
+    /// — force the wgpu surface's pointer lock off. No-op if the Wasm surface isn't even attached
+    /// (an HTML-mode world, or no world at all) or wasn't locked in the first place.</summary>
+    private void OnPointerLockPanicTriggered(object? sender, EventArgs e)
+    {
+        _wgpuSurface?.PanicReleasePointerLock();
+    }
+
+    /// <summary>Achievements board dismissed (<see cref="NowPlayingViewModel.DismissAchievementsBoard"/>)
+    /// — tells the guest to resume normal input. No-op if the wasm surface isn't attached (the
+    /// board can't be up without it, but matches every other nullable-surface guard here).</summary>
+    private void OnAchievementsBoardDismissed(object? sender, EventArgs e)
+    {
+        _wgpuSurface?.TriggerExport("on_achievements_closed");
+        _wgpuSurface?.ForceEngagePointerLock();
+    }
+
+    private void OnPanicExitCapsuleClicked(object? sender, RoutedEventArgs e)
+    {
+        _viewModel?.ExitCapsuleFromPointerLockPanic();
+    }
+
+    private void OnPanicDismissClicked(object? sender, RoutedEventArgs e)
+    {
+        _viewModel?.DismissPointerLockPanic();
+        // The click itself is the trusted user gesture pointer lock needs — re-engage right here
+        // rather than leaving it to the guest to call request_pointer_lock again (see
+        // WgpuWorldSurface.ForceEngagePointerLock's doc for why that alone left the listener
+        // stuck on click-and-drag look after any panic/pause).
+        _wgpuSurface?.ForceEngagePointerLock();
+    }
+
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
     {
         var worldDir = _viewModel?.AlbumWorldDir;
         if (worldDir is null) return;
         Spectralis.Core.Capsule.AlbumWorldSessionStore.SaveBookmark(worldDir, req.TrackId, req.Label);
+    }
+
+    /// <summary>Shared by both runtimes: WebViewHostService.AchievementUnlockRequested (HTML,
+    /// spectral.unlockAchievement) and WgpuWorldSurface.AchievementUnlocked (Wasm,
+    /// unlock_achievement host import) — same string payload, same persistence.</summary>
+    private void OnEmbeddedAchievementUnlocked(object? sender, string achievementId)
+    {
+        var worldDir = _viewModel?.AlbumWorldDir;
+        if (worldDir is null) return;
+        Spectralis.Core.Capsule.AlbumWorldSessionStore.UnlockAchievement(worldDir, achievementId);
     }
 
     private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
@@ -1067,6 +1410,8 @@ public NowPlayingView()
 
     private void StopEmbeddedHtmlMode()
     {
+        StopWasmWorldMode();
+
         if (_embeddedFramePushTimer is not null)
         {
             _embeddedFramePushTimer.Stop();
@@ -1086,9 +1431,19 @@ public NowPlayingView()
             _embeddedService.SeekRequested -= OnEmbeddedSeekRequested;
             _embeddedService.ExitWorldRequested -= OnEmbeddedExitRequested;
             _embeddedService.SaveBookmarkRequested -= OnEmbeddedSaveBookmark;
+            _embeddedService.PresenceUpdateRequested -= OnEmbeddedPresenceUpdate;
+            _embeddedService.PresenceClearRequested -= OnEmbeddedPresenceClear;
+            _embeddedService.DspPresetRegisterRequested -= OnEmbeddedDspPresetRegister;
+            _embeddedService.DspPresetReleaseRequested -= OnEmbeddedDspPresetRelease;
+            _embeddedService.SwitchToWasmRequested -= OnEmbeddedSwitchToWasm;
+            _embeddedService.AchievementUnlockRequested -= OnEmbeddedAchievementUnlocked;
             _embeddedService.Dispose();
             _embeddedService = null;
         }
+
+        // A capsule's presence override / DSP preset never outlives its surface.
+        _viewModel?.CapsulePresenceRequested?.Invoke(null);
+        _viewModel?.CapsuleDspPresetRequested?.Invoke(null);
 
         if (_embeddedHost is not null)
         {

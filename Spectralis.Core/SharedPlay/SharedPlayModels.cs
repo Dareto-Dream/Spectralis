@@ -1,4 +1,80 @@
+using System.Text.Json;
+
 namespace Spectralis.Core.SharedPlay;
+
+// ─── Collaborative rooms (WebSocket) ───────────────────────────────────────────
+
+/// <summary>A participant's authority in a collaborative room.</summary>
+public enum SharedPlayRole
+{
+    Follower,
+    CoDj,
+    Host,
+}
+
+public static class SharedPlayRoleExtensions
+{
+    public static string ToWire(this SharedPlayRole role) => role switch
+    {
+        SharedPlayRole.Host => "host",
+        SharedPlayRole.CoDj => "codj",
+        _ => "follower",
+    };
+
+    public static SharedPlayRole ParseRole(string? wire) => wire switch
+    {
+        "host" => SharedPlayRole.Host,
+        "codj" => SharedPlayRole.CoDj,
+        _ => SharedPlayRole.Follower,
+    };
+}
+
+/// <summary>Room-wide capability toggles. Each *_Cap value is a minimum role
+/// name ("everyone" | "codj" | "host").</summary>
+public sealed record SharedPlayCapabilities(
+    string QueueAdd,
+    string QueueRemove,
+    string QueueReorder,
+    string Transport,
+    bool VoteSkip,
+    int SkipVotesRequired)
+{
+    public static readonly SharedPlayCapabilities Default =
+        new("everyone", "host", "host", "host", true, 3);
+
+    public static SharedPlayCapabilities FromJson(JsonElement el)
+    {
+        string Cap(string name, string fallback) =>
+            el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString() ?? fallback
+                : fallback;
+        var d = Default;
+        return new SharedPlayCapabilities(
+            Cap("queueAdd", d.QueueAdd),
+            Cap("queueRemove", d.QueueRemove),
+            Cap("queueReorder", d.QueueReorder),
+            Cap("transport", d.Transport),
+            el.TryGetProperty("voteSkip", out var vs) && vs.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? vs.GetBoolean() : d.VoteSkip,
+            el.TryGetProperty("skipVotesRequired", out var sv) && sv.TryGetInt32(out var n)
+                ? Math.Clamp(n, 1, 20) : d.SkipVotesRequired);
+    }
+}
+
+public sealed record SharedPlayMember(
+    string ClientId,
+    string Name,
+    SharedPlayRole Role,
+    bool IsHost);
+
+public sealed record SharedPlaySkipProgress(int Votes, int Required);
+
+/// <summary>A permitted listener command relayed to the host to apply to the engine.</summary>
+public sealed record SharedPlayIncomingCommand(
+    string Cmd,
+    string ByName,
+    string ByClientId,
+    JsonElement Payload);
 
 public sealed record SharedPlayTrackDescriptor(
     string DisplayName,

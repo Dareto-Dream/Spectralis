@@ -13,6 +13,24 @@
       <Setter Property="Fill" Value="{StaticResource Brush.Ink.Muted}" />
       <Setter Property="Opacity" Value="0.42" />
     </Style>
+
+    <!-- Speed number reads as plain text until focused, then becomes an obvious input. -->
+    <Style Selector="TextBox.speed-entry">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="TextBox.speed-entry:pointerover">
+      <Setter Property="Background" Value="{StaticResource Brush.Bg.Overlay}" />
+    </Style>
+    <Style Selector="TextBox.speed-entry:focus">
+      <Setter Property="Background" Value="{StaticResource Brush.Bg.Base}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Brush.Signal.Dim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Ibeam" />
+    </Style>
     <Style Selector="Ellipse.surface-dot.active">
       <Setter Property="Fill" Value="{StaticResource Brush.Signal}" />
       <Setter Property="Opacity" Value="1" />
@@ -96,10 +114,24 @@
 
       <!-- Drop hint -->
       <TextBlock Classes="muted"
-                 Text="Drop audio files or a .spectralis capsule here"
+                 Text="Drop audio files or a .spectralis capsule here — or paste a link"
                  TextAlignment="Center"
                  FontSize="{StaticResource FontSize.UI.Small}"
                  TextWrapping="Wrap"
+                 Margin="0,0,0,10" />
+
+      <!-- Supported link sources — telemetry-style readout, same type language as the
+           wordmark above. Clicking opens the same dialog as the Open URL button. -->
+      <TextBlock Text="SPOTIFY · SOUNDCLOUD · BANDLAB · YOUTUBE · SUNO · UNTITLED"
+                 Classes="data"
+                 Foreground="{StaticResource Brush.Ink.Muted}"
+                 FontSize="10"
+                 LetterSpacing="2"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 Cursor="Hand"
+                 PointerPressed="OnOpenUrlClick"
+                 ToolTip.Tip="Paste a track or playlist link from any of these"
                  Margin="0,0,0,24" />
 
       <!-- CTAs -->
@@ -136,7 +168,7 @@
   </Panel>
 
   <!-- ============ Playing state (track or album world) ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
     <Grid Grid.Column="0" RowDefinitions="*,Auto">
@@ -201,6 +233,136 @@
       <Panel Grid.Row="0" IsVisible="{Binding ShowYouTubeVideo}" Background="Black">
         <ContentControl x:Name="YouTubeVideoHost" />
       </Panel>
+
+      <!-- Wasm-world reticle: default dot, swaps to an accent ring + prompt label when the guest
+           reports an interact target within reach (chaser_room's set_interact_target, via
+           NowPlayingViewModel.ApplyInteractTarget). Hidden entirely once the story panel below
+           takes over — the guest stopped reporting a target the moment it called start_story. -->
+      <Panel Grid.Row="0" IsVisible="{Binding ShowWasmReticle}" IsHitTestVisible="False">
+        <Ellipse Width="5" Height="5" Fill="{StaticResource Brush.Ink.Secondary}"
+                 Opacity="0.55" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 IsVisible="{Binding !HasInteractTarget}" />
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                    IsVisible="{Binding HasInteractTarget}">
+          <Ellipse Width="14" Height="14" Stroke="#E0454C" StrokeThickness="1.5"
+                    HorizontalAlignment="Center" />
+          <Border Background="{StaticResource Brush.Bg.Overlay}" CornerRadius="5"
+                  Padding="8,3" HorizontalAlignment="Center">
+            <TextBlock Text="{Binding InteractPromptText}" FontSize="11" FontWeight="600"
+                       Foreground="#E0454C" LetterSpacing="0.5" />
+          </Border>
+        </StackPanel>
+      </Panel>
+
+      <!-- Mirror's VN pager: bottom-third overlay over the still-visible (but frozen — see
+           chaser_room's STORY_ACTIVE) room. E/Space advances a page, or on the last page exits
+           into the gated track — MainWindow.OnWindowKeyDown intercepts both while this is up. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              VerticalAlignment="Bottom"
+              Height="220"
+              IsVisible="{Binding ShowMirrorStory}"
+              Background="#E60C0D0F"
+              BorderBrush="#2b2830" BorderThickness="0,1,0,0">
+        <Grid Margin="32,22" RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                     Text="{Binding StoryPageText}"
+                     TextWrapping="Wrap" FontSize="16" LineHeight="24"
+                     Foreground="{StaticResource Brush.Ink.Primary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Grid.Row="1" Grid.Column="0"
+                     Text="Press E to continue"
+                     FontSize="11" LetterSpacing="0.5"
+                     Foreground="{StaticResource Brush.Ink.Secondary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Grid.Row="1" Grid.Column="1"
+                     Text="{Binding StoryPageIndicator}"
+                     FontSize="11" Foreground="{StaticResource Brush.Ink.Secondary}"
+                     VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <!-- CRT TV's achievements board: a centered card, not bottom-third like the story — this
+           is a menu, not a scene overlay. Reversible (see chaser_room's BOARD_ACTIVE/
+           on_achievements_closed): E closes it and the player keeps walking around afterward. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              IsVisible="{Binding ShowAchievementsBoard}"
+              Background="#CC0C0D0F">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                MaxWidth="560" MaxHeight="480"
+                CornerRadius="10"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="#2b2830"
+                BorderThickness="1.5"
+                BoxShadow="0 8 40 4 #80000000"
+                Padding="24,20">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="ACHIEVEMENTS" FontWeight="Bold" FontSize="18"
+                       LetterSpacing="3" Foreground="{StaticResource Brush.Ink.Primary}"
+                       Margin="0,0,0,14" />
+            <TextBlock DockPanel.Dock="Bottom" Text="Press E to close" FontSize="11"
+                       LetterSpacing="0.5" Foreground="{StaticResource Brush.Ink.Secondary}"
+                       Margin="0,14,0,0" />
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding AchievementEntries}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Width="240" Margin="0,0,10,10" Padding="14,12" CornerRadius="8"
+                            BorderThickness="1" BorderBrush="#2b2830" Background="#14FFFFFF"
+                            Opacity="{Binding Unlocked, Converter={x:Static conv:BoolToWidthConverter.Instance}, ConverterParameter=1|0.45}">
+                      <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Ellipse Width="7" Height="7" Fill="#E0454C" VerticalAlignment="Center"
+                                    IsVisible="{Binding Unlocked}" />
+                          <TextBlock Text="{Binding Converter={x:Static conv:AchievementTitleConverter.Instance}}"
+                                     FontWeight="600" FontSize="13"
+                                     Foreground="{StaticResource Brush.Ink.Primary}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Converter={x:Static conv:AchievementDescriptionConverter.Instance}}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource Brush.Ink.Secondary}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Border>
+
+      <!-- Hold-Esc panic escape: covers both rows (controls bar too) since the point is an
+           always-on-top way out, not something a world's own overlay could occlude. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              IsVisible="{Binding ShowPointerLockPanicBanner}"
+              Background="#CC0C0D0F">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                MaxWidth="420"
+                CornerRadius="10"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="#E0454C"
+                BorderThickness="1.5"
+                BoxShadow="0 8 40 4 #80000000"
+                Padding="28,24">
+          <StackPanel Spacing="14">
+            <TextBlock Text="{Binding PauseMenuTitle}" FontWeight="Bold" FontSize="28" LetterSpacing="4"
+                       Foreground="#E0454C" HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding PauseMenuMessage}"
+                       TextWrapping="Wrap" TextAlignment="Center"
+                       Foreground="{StaticResource Brush.Ink.Secondary}" />
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
+              <Button Content="{Binding PauseMenuExitLabel}" Click="OnPanicExitCapsuleClicked"
+                      Background="#E0454C" Foreground="White" Padding="16,8" />
+              <Button Content="{Binding PauseMenuResumeLabel}" Click="OnPanicDismissClicked"
+                      Padding="16,8" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </Border>
 
       <!-- Exit button: top-right overlay, spans both rows -->
       <Button Grid.Row="0" Grid.RowSpan="2"
@@ -291,11 +453,91 @@
                                       DurationSeconds="{Binding LengthSeconds}"
                                       TickBrush="{StaticResource Brush.Signal.Dim}"
                                       IsVisible="{Binding HasBeatGrid}" />
+            <controls:ChapterMarkersOverlay Height="6"
+                                            BoundarySeconds="{Binding ChapterStartSeconds}"
+                                            DurationSeconds="{Binding LengthSeconds}"
+                                            ActiveIndex="{Binding ActiveChapterIndex}"
+                                            TickBrush="{StaticResource Brush.Signal}"
+                                            IsVisible="{Binding HasChapters}" />
           </StackPanel>
           <TextBlock Grid.Column="2" Classes="data" Text="{Binding LengthText}"
                      MinWidth="48" TextAlignment="Right" VerticalAlignment="Center"
                      Margin="10,0,0,0" />
         </Grid>
+
+        <!-- Podcast Mode controls -->
+        <Border Margin="16,4,16,2" Padding="10,6"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="{StaticResource Brush.Signal.Dim}" BorderThickness="1"
+                CornerRadius="4"
+                IsVisible="{Binding IsPodcastMode}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+
+            <!-- Skip + speed (local engine only) -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                        IsVisible="{Binding IsPodcastEngineMode}">
+              <Button Classes="ghost" Command="{Binding SkipBackCommand}"
+                      ToolTip.Tip="Skip back">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <PathIcon Data="{x:Static design:IconData.Previous}" Width="12" Height="12" />
+                  <TextBlock Text="{Binding SkipBackText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="ghost" Command="{Binding SkipForwardCommand}"
+                      ToolTip.Tip="Skip forward">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <TextBlock Text="{Binding SkipForwardText}" FontSize="{StaticResource FontSize.UI.Small}" />
+                  <PathIcon Data="{x:Static design:IconData.Next}" Width="12" Height="12" />
+                </StackPanel>
+              </Button>
+              <Rectangle Width="1" Height="16" Fill="{StaticResource Brush.Border}" Margin="4,0" />
+              <Button Classes="ghost" Content="−" Width="26" x:Name="SpeedDownButton"
+                      ToolTip.Tip="Slower (hold to repeat)" />
+              <TextBox Classes="speed-entry" Text="{Binding SpeedInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                       Width="46" TextAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold"
+                       GotFocus="OnSpeedInputGotFocus" KeyDown="OnSpeedInputKeyDown"
+                       ToolTip.Tip="Playback speed — click to type a value" />
+              <Button Classes="ghost" Content="+" Width="26" x:Name="SpeedUpButton"
+                      ToolTip.Tip="Faster (hold to repeat)" />
+            </StackPanel>
+
+            <TextBlock Grid.Column="0" Classes="muted" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Speed and chapters aren't available for Spotify episodes"
+                       IsVisible="{Binding IsPodcastSpotifyMode}" />
+
+            <!-- Current chapter -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" IsVisible="{Binding HasChapters}">
+              <Button Classes="ghost" Content="‹" Command="{Binding PreviousChapterCommand}"
+                      ToolTip.Tip="Previous chapter" />
+              <TextBlock Text="{Binding CurrentChapterTitle}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" MaxWidth="220"
+                         Cursor="Hand" PointerPressed="OnToggleChaptersPanel"
+                         ToolTip.Tip="Open chapters" />
+              <Button Classes="ghost" Content="›" Command="{Binding NextChapterCommand}"
+                      ToolTip.Tip="Next chapter" />
+            </StackPanel>
+
+            <!-- Sleep timer -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{Binding SleepTimerStatusText}" Classes="muted"
+                         FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center"
+                         IsVisible="{Binding SleepTimerActive}" />
+              <ComboBox ItemsSource="{Binding SleepTimerOptions}"
+                        SelectedItem="{Binding SelectedSleepTimerChoice}"
+                        MinWidth="130"
+                        ToolTip.Tip="Sleep timer">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SleepTimerChoice">
+                    <TextBlock Text="{Binding Label}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+
+          </Grid>
+        </Border>
 
         <!-- Transport bar -->
         <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,8">
@@ -380,6 +622,11 @@
                                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                   IsChecked="{Binding ShowQueue}"
                                   ToolTip.Tip="Toggle queue (Ctrl+Q)" />
+                    <ToggleButton Classes="ghost" Content="Chapters"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                  IsChecked="{Binding ShowChaptersPanel}"
+                                  IsVisible="{Binding HasChapters}"
+                                  ToolTip.Tip="Toggle chapters panel" />
                     <ToggleButton Classes="ghost" Content="Notes"
                                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                   IsChecked="{Binding ShowNotepadPanel}"
@@ -827,6 +1074,52 @@
         <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Effects Chain" Margin="14,12,10,0" />
         <views:EffectsChainControl DockPanel.Dock="Top" DataContext="{Binding EffectsChain}" />
       </DockPanel>
+    </Border>
+
+    <!-- ─── Chapters docked sidebar ───────────────────────────────── -->
+    <Border x:Name="ChaptersSidebarBorder" Grid.Column="7" Width="300"
+            Background="{StaticResource Brush.Bg.Raised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowChaptersPanel}">
+      <Grid RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" Margin="16,14,16,8" Spacing="2">
+          <TextBlock Classes="heading" Text="Chapters" />
+          <TextBlock Classes="muted" Text="{Binding CurrentChapterTitle}"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <ListBox Grid.Row="1"
+                 x:Name="ChaptersList"
+                 ItemsSource="{Binding Chapters}"
+                 DoubleTapped="OnChapterActivated"
+                 Background="Transparent">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="12,7" />
+            </Style>
+            <Style Selector="TextBlock.current">
+              <Setter Property="Foreground" Value="{StaticResource Brush.Signal}" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ChapterRowViewModel">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Classes="data"
+                           Classes.current="{Binding IsCurrent}"
+                           Text="{Binding Number}"
+                           MinWidth="22" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Title}"
+                           Classes.current="{Binding IsCurrent}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Classes="muted" Text="{Binding StartText}"
+                           FontSize="{StaticResource FontSize.UI.Small}" VerticalAlignment="Center" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
     </Border>
 
   </Grid>

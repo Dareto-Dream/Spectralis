@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using ReactiveUI;
+using Spectralis.App.Services;
 using Spectralis.Core.Audio.Effects;
 
 namespace Spectralis.App.ViewModels;
@@ -76,6 +77,11 @@ public sealed class EffectItemViewModel : ViewModelBase
         }
         else
         {
+            if (effect is StereoPannerEffect panner)
+            {
+                PanEditor = new PanEditorViewModel(panner, () => onStateChanged?.Invoke());
+            }
+
             Sliders = new ObservableCollection<EffectParamViewModel>(BuildSliders(effect, () =>
             {
                 onChanged();
@@ -90,6 +96,11 @@ public sealed class EffectItemViewModel : ViewModelBase
     public EqEditorViewModel? EqEditor { get; }
 
     public bool HasEqEditor => EqEditor is not null;
+
+    /// <summary>Non-null only for the stereo panner; drives the auto-pan loop editor UI.</summary>
+    public PanEditorViewModel? PanEditor { get; }
+
+    public bool HasPanEditor => PanEditor is not null;
 
     public string Name => _effect.Name;
 
@@ -132,6 +143,10 @@ public sealed class EffectItemViewModel : ViewModelBase
             case VocalBlendEffect:
                 yield return new EffectParamViewModel("Vocal Remove", "blend", 0, 1, effect.Parameters, onChanged);
                 break;
+
+            case StereoPannerEffect:
+                yield return new EffectParamViewModel("Pan", "pan", -1, 1, effect.Parameters, onChanged);
+                break;
         }
     }
 }
@@ -142,19 +157,30 @@ public sealed class EffectsChainViewModel : ViewModelBase
     private readonly Action? _onStateChanged;
     private EffectItemViewModel? _selectedEffect;
     private string _selectedNewEffect;
+    private string _selectedChainPresetName;
+    private string _newChainPresetName = string.Empty;
 
     public EffectsChainViewModel(EffectChain chain, Action? onStateChanged = null)
     {
         _chain = chain;
         _onStateChanged = onStateChanged;
         _selectedNewEffect = EffectChain.AvailableEffects[0];
+        _selectedChainPresetName = EffectChainPresets.DefaultName;
+        ReloadChainPresetNames();
         Reload();
     }
 
     /// <summary>True when the selected rack slot is the parametric EQ (widens the sidebar for the curve editor).</summary>
     public bool IsEqSelected => _selectedEffect?.HasEqEditor == true;
 
+    /// <summary>True when the selected rack slot is the stereo panner (widens the sidebar for the pan curve editor).</summary>
+    public bool IsPanSelected => _selectedEffect?.HasPanEditor == true;
+
+    public bool IsWideEditorSelected => IsEqSelected || IsPanSelected;
+
     public ObservableCollection<EffectItemViewModel> EffectItems { get; } = new();
+
+    public ObservableCollection<string> ChainPresetNames { get; } = new();
 
     public IReadOnlyList<string> AvailableEffects => EffectChain.AvailableEffects;
 
@@ -171,8 +197,25 @@ public sealed class EffectsChainViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _selectedEffect, value);
             this.RaisePropertyChanged(nameof(IsEqSelected));
+            this.RaisePropertyChanged(nameof(IsPanSelected));
+            this.RaisePropertyChanged(nameof(IsWideEditorSelected));
         }
     }
+
+    public string SelectedChainPresetName
+    {
+        get => _selectedChainPresetName;
+        set => this.RaiseAndSetIfChanged(ref _selectedChainPresetName, value);
+    }
+
+    public string NewChainPresetName
+    {
+        get => _newChainPresetName;
+        set => this.RaiseAndSetIfChanged(ref _newChainPresetName, value);
+    }
+
+    public bool CanDeleteSelectedChainPreset =>
+        !EffectChainPresets.BuiltInNames.Contains(_selectedChainPresetName, StringComparer.OrdinalIgnoreCase);
 
     public bool ChainEnabled
     {
@@ -244,6 +287,79 @@ public sealed class EffectsChainViewModel : ViewModelBase
         _onStateChanged?.Invoke();
     }
 
+    public void LoadSelectedChainPreset()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedChainPresetName))
+        {
+            return;
+        }
+
+        if (EffectChainPresets.BuiltInNames.Contains(SelectedChainPresetName, StringComparer.OrdinalIgnoreCase))
+        {
+            _chain.ReplaceAll(EffectChainPresets.Build(SelectedChainPresetName));
+        }
+        else
+        {
+            var preset = EffectChainPresetStore.Load()
+                .FirstOrDefault(p => string.Equals(p.Name, SelectedChainPresetName, StringComparison.OrdinalIgnoreCase));
+            if (preset is null)
+            {
+                return;
+            }
+
+            preset.ApplyTo(_chain);
+        }
+
+        Reload();
+        SelectedEffect = EffectItems.FirstOrDefault();
+        _onStateChanged?.Invoke();
+    }
+
+    public void SaveCurrentChainAsPreset(string name)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        if (EffectChainPresets.BuiltInNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        EffectChainPresetStore.AddOrReplace(EffectChainPreset.FromChain(_chain, name));
+        ReloadChainPresetNames();
+        SelectedChainPresetName = name;
+        NewChainPresetName = string.Empty;
+    }
+
+    public void DeleteSelectedChainPreset()
+    {
+        if (!CanDeleteSelectedChainPreset)
+        {
+            return;
+        }
+
+        EffectChainPresetStore.Delete(SelectedChainPresetName);
+        ReloadChainPresetNames();
+        SelectedChainPresetName = EffectChainPresets.DefaultName;
+    }
+
+    private void ReloadChainPresetNames()
+    {
+        ChainPresetNames.Clear();
+        foreach (var name in EffectChainPresets.BuiltInNames)
+        {
+            ChainPresetNames.Add(name);
+        }
+
+        foreach (var preset in EffectChainPresetStore.Load())
+        {
+            ChainPresetNames.Add(preset.Name);
+        }
+    }
+
     private int IndexOfSelected()
     {
         for (var index = 0; index < EffectItems.Count; index++)
@@ -266,5 +382,7 @@ public sealed class EffectsChainViewModel : ViewModelBase
         }
 
         this.RaisePropertyChanged(nameof(IsEqSelected));
+        this.RaisePropertyChanged(nameof(IsPanSelected));
+        this.RaisePropertyChanged(nameof(IsWideEditorSelected));
     }
 }

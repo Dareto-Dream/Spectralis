@@ -38,6 +38,11 @@ public partial class MainWindow : Window
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
 
+    // Pointer-lock panic escape — see OnWindowKeyDown's plain-Escape branch and
+    // StartEscapeHoldTimerIfNeeded. Non-null exactly while a physical Esc hold is being timed.
+    private DispatcherTimer? _escapeHoldTimer;
+    private static readonly TimeSpan EscapeHoldPanicDuration = TimeSpan.FromMilliseconds(700);
+
     public MainWindow()
     {
         InitializeComponent();
@@ -53,6 +58,7 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnWindowKeyDown, handledEventsToo: true);
+        AddHandler(KeyUpEvent, OnWindowKeyUp, handledEventsToo: true);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)
@@ -81,6 +87,21 @@ public partial class MainWindow : Window
         SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         SizeChanged += (_, _) => CaptureNormalBounds();
         PositionChanged += (_, _) => CaptureNormalBounds();
+        // Losing focus (alt-tab, clicking another app, a system dialog stealing activation, ...)
+        // while pointer-locked would otherwise strand the listener with a hidden, recentering
+        // cursor in a window they can no longer see or interact with — same panic path as a
+        // deliberate hold-Esc, just triggered by the OS instead of the listener.
+        Deactivated += (_, _) =>
+        {
+            // Gated to album worlds specifically — TriggerPointerLockPanic always shows the
+            // banner (a harmless no-op release when nothing was locked), and without this check
+            // every alt-tab away from a perfectly normal track would pop a "PANIC" banner that
+            // has nothing to release and nowhere relevant to show it.
+            if (DataContext is MainWindowViewModel { NowPlaying.IsAlbumWorldActive: true } vm)
+            {
+                vm.NowPlaying.TriggerPointerLockPanic();
+            }
+        };
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
@@ -545,6 +566,27 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The mirror's VN pager owns E/Space entirely while it's up — advance it and stop, ahead
+        // of everything else (Space would otherwise reach TogglePlayback below). The wasm guest's
+        // own on_input already no-ops during the story (see chaser_room's STORY_ACTIVE), so this
+        // isn't strictly needed to keep the guest quiet, but it keeps this key's handling in one
+        // place the same way the hold-Esc panic escape further down does for Esc.
+        if (vm.NowPlaying.ShowMirrorStory && e.KeyModifiers == KeyModifiers.None && e.Key is Key.E or Key.Space)
+        {
+            e.Handled = true;
+            vm.NowPlaying.AdvanceMirrorStory();
+            return;
+        }
+
+        // Same shape as the story above, but reversible — DismissAchievementsBoard (unlike
+        // AdvanceMirrorStory) tells the guest to resume normal input rather than ending the world.
+        if (vm.NowPlaying.ShowAchievementsBoard && e.KeyModifiers == KeyModifiers.None && e.Key is Key.E or Key.Space)
+        {
+            e.Handled = true;
+            vm.NowPlaying.DismissAchievementsBoard();
+            return;
+        }
+
         if (HasOnly(e.KeyModifiers, KeyModifiers.Control | KeyModifiers.Shift))
         {
             switch (e.Key)
@@ -618,6 +660,18 @@ public partial class MainWindow : Window
             }
         }
 
+        // Panic escape: hold Esc (no modifier — Ctrl+Esc is Windows' own reserved "open Start
+        // Menu" shortcut and never reaches this window at all) to force pointer lock off no
+        // matter what the active world's own input handling does with the key.
+        // handledEventsToo: true on this handler (see the constructor) is what makes "no matter
+        // what" true — it still runs even if WgpuWorldSurface.OnKeyDown already marked the event
+        // handled. A quick tap does nothing; only a sustained hold (see StartEscapeHoldTimer)
+        // trips it, so Esc's normal per-context behavior elsewhere isn't broken.
+        if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape)
+        {
+            StartEscapeHoldTimerIfNeeded(vm);
+        }
+
         if (HasOnly(e.KeyModifiers, KeyModifiers.Shift))
         {
             switch (e.Key)
@@ -662,6 +716,16 @@ public partial class MainWindow : Window
                 return;
 
             case Key.Escape:
+                // While an album world is up, Escape is reserved for the hold-to-panic gesture
+                // above — this quick-tap behavior (jump to Now Playing, or reset the session if
+                // already there) would otherwise fire on the very first keydown of every hold,
+                // exiting the world (and hiding the panic banner along with it) well before the
+                // hold timer ever gets a chance to matter.
+                if (vm.NowPlaying.IsAlbumWorldActive)
+                {
+                    return;
+                }
+
                 e.Handled = true;
                 if (!ReferenceEquals(vm.SelectedSection.Content, vm.NowPlaying))
                 {
@@ -698,6 +762,41 @@ public partial class MainWindow : Window
                 vm.NowPlaying.ToggleMute();
                 return;
         }
+    }
+
+    /// <summary>Starts the panic-hold countdown on the first physical Esc keydown, if one isn't
+    /// already running. Windows auto-repeats KeyDown every ~30-50ms while a key stays held, so
+    /// this must no-op on those repeats rather than restarting the timer each time — otherwise
+    /// holding Esc would never actually reach the threshold.</summary>
+    private void StartEscapeHoldTimerIfNeeded(MainWindowViewModel vm)
+    {
+        if (_escapeHoldTimer is not null)
+        {
+            return;
+        }
+
+        _escapeHoldTimer = new DispatcherTimer { Interval = EscapeHoldPanicDuration };
+        _escapeHoldTimer.Tick += (_, _) =>
+        {
+            _escapeHoldTimer?.Stop();
+            _escapeHoldTimer = null;
+            vm.NowPlaying.TriggerPointerLockPanic();
+        };
+        _escapeHoldTimer.Start();
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _escapeHoldTimer is null)
+        {
+            return;
+        }
+
+        // Released before the hold threshold fired — a normal tap, not a panic. Esc's existing
+        // per-context behavior (OnWindowKeyDown's plain-Escape case) already ran on the keydown
+        // that started this timer; nothing further to undo here.
+        _escapeHoldTimer.Stop();
+        _escapeHoldTimer = null;
     }
 
     private async Task OpenUrlAsync(MainWindowViewModel vm)
@@ -911,6 +1010,37 @@ public partial class MainWindow : Window
         {
             vm.Playlists.CreatePlaylist(name, vm.NowPlaying.Queue.Items);
         }
+    }
+
+    private SatelliteSourceWindow? _satelliteWindow;
+
+    private void OnMenuSatellite(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        if (_satelliteWindow is { IsVisible: true })
+        {
+            _satelliteWindow.Activate();
+            return;
+        }
+
+        _satelliteWindow = new SatelliteSourceWindow(vm.Satellite);
+        _satelliteWindow.Closed += (_, _) => _satelliteWindow = null;
+        _satelliteWindow.Show(this);
+    }
+
+    private WasmWorldTestWindow? _wasmWorldTestWindow;
+
+    private void OnMenuWasmWorldTestRig(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_wasmWorldTestWindow is { IsVisible: true })
+        {
+            _wasmWorldTestWindow.Activate();
+            return;
+        }
+
+        _wasmWorldTestWindow = new WasmWorldTestWindow();
+        _wasmWorldTestWindow.Closed += (_, _) => _wasmWorldTestWindow = null;
+        _wasmWorldTestWindow.Show(this);
     }
 
     private ScriptedVisualizerManagerWindow? _scriptedVizWindow;

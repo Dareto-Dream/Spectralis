@@ -120,6 +120,11 @@ intersects the capsule's requested capabilities with this list. Any requested ca
 | `sharedPlay.hostCapsule` | Capsule can be hosted via Shared Play |
 | `sharedPlay.packageUpload` | Capsule assets may be uploaded for Shared Play |
 | `timeline.appControl` | Capsule's reactive timeline may issue app control events |
+| `presence.richPresence` | Capsule's embedded HTML may override Discord rich presence text while playing |
+| `worlds.wasm3d` | Capsule may include a sandboxed Wasm/wgpu 3D album world |
+| `audio.dspPreset` | Capsule's embedded HTML/Wasm content may register a whole-rack DSP preset while active |
+| `worlds.pointerLock` | Capsule's embedded HTML/Wasm content may request OS-level pointer lock (hidden, recentered cursor, continuous look deltas without holding a button) |
+| `worlds.pauseMenu` | Capsule may customize the pause menu's title/message/button copy. Any `worlds.pointerLock` world gets a pause menu regardless (the app's default) as its escape hatch — this capability only governs whether the manifest's own copy is honored instead of that default |
 
 ### Caching Policy
 

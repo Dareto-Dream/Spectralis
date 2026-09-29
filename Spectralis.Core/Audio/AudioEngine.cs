@@ -35,6 +35,7 @@ public sealed class AudioEngine : IDisposable
     private string? _preferredDeviceId;
     private MidiPlaybackInstrument _midiInstrument = MidiPlaybackInstrument.AcousticGrandPiano;
     private float _volume = 0.85f;
+    private double _playbackRate = 1.0;
     private IEffectChainBuilder? _effectChain;
     private bool _suppressStopEvents;
 
@@ -190,13 +191,11 @@ public sealed class AudioEngine : IDisposable
             _playbackStream = nextStream;
             CurrentTrack = BuildTrackInfo(nextPath, nextStream, string.Empty, providedInfo);
 
-            // Re-wire the visualizer and effect chain onto the new stream.
-            ISampleProvider src = nextStream.ToSampleProvider();
-            if (_preferredSampleRate > 0 && src.WaveFormat.SampleRate != _preferredSampleRate)
-                src = new WdlResamplingSampleProvider(src, _preferredSampleRate);
-            if (_effectChain is not null)
-                src = _effectChain.BuildChain(src);
-            _visualizer = new VisualizerSampleProvider(src);
+            // Re-wire the speed/resample/effect chain and visualizer onto the new stream.
+            _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(nextStream))
+            {
+                RawBlockCaptured = RawAudioBlockCaptured,
+            };
             _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
 
             _device.Init(new SampleProviderSource(_fade));
@@ -336,6 +335,16 @@ public sealed class AudioEngine : IDisposable
     /// Used by Spotify loopback so the visualizer shows Spotify audio while the engine is idle.</summary>
     public VisualizerSampleProvider? ExternalVisualizerSource { get; set; }
 
+    /// <summary>
+    /// Optional tap for the raw post-EffectChain interleaved samples of every audio block —
+    /// wired onto <see cref="VisualizerSampleProvider.RawBlockCaptured"/> every time the
+    /// visualizer/fade chain is (re)built, so it survives track changes, effect-chain rebuilds,
+    /// and seamless-advance transitions without callers needing to re-set it. Used by Satellite
+    /// to stream what the listener is actually hearing (DSP already applied) to paired
+    /// receivers. Set once; null by default, so nothing changes for callers that never use it.
+    /// </summary>
+    public Action<float[], int, int, int>? RawAudioBlockCaptured { get; set; }
+
     public VisualizerFrame GetVisualizerFrame(bool includeSpectrogram = false, bool includeRawFft = false)
     {
         var frame = (ExternalVisualizerSource ?? _visualizer)?.GetFrame(includeSpectrogram, includeRawFft) ?? VisualizerFrame.Empty;
@@ -381,6 +390,47 @@ public sealed class AudioEngine : IDisposable
         }
 
         CreateOutputChain(_playbackStream.CurrentTime, _device.IsPlaying);
+    }
+
+    /// <summary>The current pitch-preserving playback speed (1.0 = normal). Podcast Mode uses this.</summary>
+    public double PlaybackRate => _playbackRate;
+
+    /// <summary>
+    /// Sets a pitch-preserving playback speed. Clamped to [0.5, 3.5]; a no-op for MIDI
+    /// (offline-rendered through the SoundFont). Rebuilds the output chain at the current
+    /// position — same pattern as <see cref="SetPreferredSampleRate"/>.
+    /// </summary>
+    public void SetPlaybackRate(double rate)
+    {
+        var normalized = Math.Clamp(rate, 0.5, 3.5);
+        if (Math.Abs(_playbackRate - normalized) < 1e-4)
+        {
+            return;
+        }
+
+        _playbackRate = normalized;
+        if (!IsLoaded || _playbackStream is null || _device is null || _playbackStream is MidiPlaybackStream)
+        {
+            return;
+        }
+
+        CreateOutputChain(_playbackStream.CurrentTime, _device.IsPlaying);
+    }
+
+    /// <summary>
+    /// Ramps the output to silence over <paramref name="ms"/> then pauses — the click-free
+    /// stop used by the sleep timer. A subsequent <see cref="Play"/> fades back in normally.
+    /// </summary>
+    public async Task FadeOutAndPause(int ms)
+    {
+        if (!IsLoaded || _device is null)
+        {
+            return;
+        }
+
+        _fade?.BeginFadeOut(Math.Max(1, ms));
+        await Task.Delay(Math.Max(1, ms) + 20).ConfigureAwait(false);
+        Pause();
     }
 
     public void SetOutputDevice(string? deviceId)
@@ -453,6 +503,33 @@ public sealed class AudioEngine : IDisposable
         DisposePlayback();
     }
 
+    /// <summary>
+    /// Builds the sample pipeline shared by <see cref="CreateOutputChain"/> and
+    /// <see cref="TrySeamlessAdvance"/>: speed control → preferred-rate resample → effect chain.
+    /// The visualizer tap and fade wrap the result.
+    /// </summary>
+    private ISampleProvider BuildProcessedProvider(WaveStream stream)
+    {
+        ISampleProvider provider = stream.ToSampleProvider();
+
+        if (_playbackRate != 1.0 && stream is not MidiPlaybackStream)
+        {
+            provider = new VariableSpeedSampleProvider(provider, _playbackRate);
+        }
+
+        if (_preferredSampleRate > 0 && provider.WaveFormat.SampleRate != _preferredSampleRate)
+        {
+            provider = new WdlResamplingSampleProvider(provider, _preferredSampleRate);
+        }
+
+        if (_effectChain is not null)
+        {
+            provider = _effectChain.BuildChain(provider);
+        }
+
+        return provider;
+    }
+
     private void CreateOutputChain(TimeSpan currentPosition, bool resumePlayback)
     {
         if (_playbackStream is null)
@@ -465,18 +542,10 @@ public sealed class AudioEngine : IDisposable
 
         _playbackStream.CurrentTime = currentPosition;
 
-        ISampleProvider sampleProvider = _playbackStream.ToSampleProvider();
-        if (_preferredSampleRate > 0 && sampleProvider.WaveFormat.SampleRate != _preferredSampleRate)
+        _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(_playbackStream))
         {
-            sampleProvider = new WdlResamplingSampleProvider(sampleProvider, _preferredSampleRate);
-        }
-
-        if (_effectChain is not null)
-        {
-            sampleProvider = _effectChain.BuildChain(sampleProvider);
-        }
-
-        _visualizer = new VisualizerSampleProvider(sampleProvider);
+            RawBlockCaptured = RawAudioBlockCaptured,
+        };
         _fade = new FadeInOutSampleProvider(_visualizer, initiallySilent: true);
         _device = _deviceEnumerator.CreateDevice(_preferredDeviceId, _latencyMs);
         _device.Volume = _volume;

@@ -190,6 +190,32 @@ public sealed class NowPlayingViewModelTests : IDisposable
     }
 
     [Fact]
+    public void AlbumWorldTrackPlayback_WasmRoom_StaysShowingWorld()
+    {
+        // Unlike an HTML "world map" (a menu you pick a track from and leave), a Wasm/wgpu world
+        // like CHASER's walkable room is a place — picking a track via its own interact key
+        // shouldn't tear the room out from under a listener who's still walking around in it.
+        var worldHtml = new EmbeddedHtmlContext(
+            "world",
+            "<!doctype html><html><body></body></html>"u8.ToArray(),
+            new Dictionary<string, byte[]>(),
+            null,
+            null);
+
+        _vm.AttachAlbumWorld(worldHtml, "{}", "world-dir", wasmBytes: new byte[] { 0 });
+
+        Assert.True(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.BeginAlbumWorldTrackPlayback();
+
+        Assert.True(_vm.IsAlbumWorldShowingWorld);
+
+        _vm.DetachAlbumWorld();
+
+        Assert.False(_vm.IsAlbumWorldShowingWorld);
+    }
+
+    [Fact]
     public void AttachAlbumWorld_LocksVisualizerPicker_DetachUnlocksIt()
     {
         var worldHtml = new EmbeddedHtmlContext(
@@ -315,5 +341,46 @@ public sealed class NowPlayingViewModelTests : IDisposable
         _vm.ToggleTimeDisplay();
 
         Assert.Equal("0:00", _vm.PositionText);
+    }
+
+    [Fact]
+    public void StepSpeed_NudgesByTenthAndClamps()
+    {
+        Assert.Equal(1.0, _vm.PlaybackSpeed);
+
+        _vm.StepSpeed(1);
+        _vm.StepSpeed(1);
+        Assert.Equal(1.2, _vm.PlaybackSpeed, 3);
+
+        for (var i = 0; i < 40; i++) _vm.StepSpeed(1);
+        Assert.Equal(3.5, _vm.PlaybackSpeed, 3);
+
+        for (var i = 0; i < 40; i++) _vm.StepSpeed(-1);
+        Assert.Equal(0.5, _vm.PlaybackSpeed, 3);
+    }
+
+    [Theory]
+    [InlineData("1.5", 1.5)]
+    [InlineData("2.0x", 2.0)]
+    [InlineData("1,25", 1.25)]
+    [InlineData("  0.8 ", 0.8)]
+    [InlineData("9", 3.5)]   // clamped
+    public void SpeedInput_ParsesAndClamps(string typed, double expected)
+    {
+        _vm.SpeedInput = typed;
+
+        Assert.Equal(expected, _vm.PlaybackSpeed, 3);
+        Assert.Equal(expected.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), _vm.SpeedInput);
+    }
+
+    [Fact]
+    public void SpeedInput_RejectsGarbageAndKeepsCurrentValue()
+    {
+        _vm.PlaybackSpeed = 1.5;
+
+        _vm.SpeedInput = "not a number";
+
+        Assert.Equal(1.5, _vm.PlaybackSpeed, 3);
+        Assert.Equal("1.5", _vm.SpeedInput);
     }
 }

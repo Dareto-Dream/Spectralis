@@ -13,6 +13,11 @@ public sealed class AlbumTrackPlayRequest
     public double PositionSeconds { get; init; }
 }
 
+/// <summary>One achievement board entry — see <see cref="AlbumWorldRuntime.BuildAchievementsSnapshot"/>.
+/// <see cref="Hidden"/> entries should render as an unrevealed "???" card until <see cref="Unlocked"/>;
+/// non-hidden ones (one per track) always show their real title/description regardless of lock state.</summary>
+public sealed record AlbumAchievementEntry(string Id, string Title, string Description, bool Unlocked, bool Hidden);
+
 /// <summary>
 /// Runtime coordinator for an open .spectral album capsule.
 /// Tracks session state, routes playback events from the app to the world JS bridge,
@@ -338,7 +343,50 @@ public sealed class AlbumWorldRuntime : IDisposable
             binaryAssets,
             textAssets,
             null,
-            Path.GetDirectoryName(htmlPath) ?? _albumDir);
+            Path.GetDirectoryName(htmlPath) ?? _albumDir,
+            // Without this, Capabilities defaults to empty and every capability-gated feature
+            // (worlds.wasm3d, audio.dspPreset, presence.richPresence, worlds.pointerLock) reads
+            // as denied for every album world regardless of what its manifest actually declares
+            // — caught by pointer lock coming back denied on a manifest that plainly requested it.
+            _manifest?.Capabilities,
+            ResolvePauseMenuConfig());
+    }
+
+    /// <summary>Maps the manifest's own <c>world.pauseMenu</c> block to the capability-agnostic
+    /// <see cref="EmbeddedPauseMenuConfig"/> the host surface reads — but only when the manifest
+    /// also declares <c>worlds.pauseMenu</c>; a capsule that never requested that capability gets
+    /// null here regardless of what's sitting in its manifest, same "declared but not granted is
+    /// silently ignored" shape as every other capability gate in this class.</summary>
+    private EmbeddedPauseMenuConfig? ResolvePauseMenuConfig()
+    {
+        if (_manifest is null || _manifest.World?.PauseMenu is not { } cfg)
+        {
+            return null;
+        }
+
+        if (!_manifest.Capabilities.Contains(CapsuleCapability.WorldsPauseMenu, StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return new EmbeddedPauseMenuConfig(cfg.Title, cfg.Message, cfg.ResumeLabel, cfg.ExitLabel);
+    }
+
+    /// <summary>True when this album declares a sandboxed Wasm/wgpu world alongside (or instead
+    /// of) the HTML one — see <see cref="AlbumWorldSection.WasmEntry"/>.</summary>
+    public bool HasWasmWorld => !string.IsNullOrWhiteSpace(_manifest?.World?.WasmEntry);
+
+    /// <summary>
+    /// Reads the Wasm module's raw bytes for <see cref="WasmWorldHost.Load"/>, or null if this
+    /// album declares no Wasm world (<see cref="HasWasmWorld"/> false) or the file is missing.
+    /// </summary>
+    public byte[]? ReadWasmWorldBytes()
+    {
+        if (_manifest?.World?.WasmEntry is not { Length: > 0 } entry || _albumDir is null)
+            return null;
+
+        var path = SafePath(_albumDir, entry);
+        return path is not null && File.Exists(path) ? File.ReadAllBytes(path) : null;
     }
 
     /// <summary>Builds the story EmbeddedHtmlContext from the album manifest, if applicable.</summary>
@@ -410,6 +458,52 @@ public sealed class AlbumWorldRuntime : IDisposable
         };
 
         return JsonSerializer.Serialize(state, _jsonOpts);
+    }
+
+    /// <summary>
+    /// Builds the achievements board's entries: one per track (unlocked once that track's been
+    /// played at least once — reuses <see cref="AlbumTrackStats.PlayCount"/>, already tracked by
+    /// every <see cref="NotifyTrackStarted"/> call, no separate bookkeeping needed) plus a
+    /// handful of hidden ones. Two of the hidden entries are real persisted achievement ids
+    /// (<c>walked-into-chaser</c>, <c>found-the-mirror</c> — see chaser_room's <c>lib.rs</c>); the
+    /// third (<c>heard-them-all</c>) is derived here from track stats rather than stored, since
+    /// "every track has been played" is fully computable from state the session already has.
+    /// </summary>
+    public IReadOnlyList<AlbumAchievementEntry> BuildAchievementsSnapshot()
+    {
+        if (_manifest is null || _session is null)
+        {
+            return [];
+        }
+
+        var entries = new List<AlbumAchievementEntry>();
+
+        foreach (var track in _manifest.Tracks)
+        {
+            var played = _session.TrackStats.TryGetValue(track.Id, out var stats) && stats.PlayCount > 0;
+            entries.Add(new AlbumAchievementEntry(
+                $"played-{track.Id}",
+                track.Title,
+                $"Play \"{track.Title}\"",
+                played,
+                Hidden: false));
+        }
+
+        var unlocked = _session.UnlockedAchievements;
+        entries.Add(new AlbumAchievementEntry(
+            "walked-into-chaser", "Threshold", "Set foot in the room.",
+            unlocked.Contains("walked-into-chaser"), Hidden: true));
+        entries.Add(new AlbumAchievementEntry(
+            "found-the-mirror", "Cracked", "Found what's left of the mirror.",
+            unlocked.Contains("found-the-mirror"), Hidden: true));
+
+        var heardThemAll = _manifest.Tracks.Count > 0 && _manifest.Tracks.All(track =>
+            _session.TrackStats.TryGetValue(track.Id, out var stats) && stats.PlayCount > 0);
+        entries.Add(new AlbumAchievementEntry(
+            "heard-them-all", "Full Playthrough", "Play every track in the room.",
+            heardThemAll, Hidden: true));
+
+        return entries;
     }
 
     private EmbeddedHtmlContext? TryBuildTrackHtmlContext(AlbumTrackEntry track)

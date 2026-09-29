@@ -1,0 +1,590 @@
+using Spectralis.Core.Worlds;
+using Wasmtime;
+using Xunit;
+
+namespace Spectralis.Tests.Core;
+
+/// <summary>
+/// Exercises <see cref="WasmWorldHost"/> against real, hand-written WAT modules compiled via
+/// <see cref="Module.ConvertText"/> — the same "define host imports, call into a real wasm
+/// module, verify the trip" shape proven manually before this class existed.
+/// </summary>
+public sealed class WasmWorldHostTests : IDisposable
+{
+    private readonly string _storeKey = $"test-world-{Guid.NewGuid():N}";
+    private readonly WasmWorldHost _host;
+
+    public WasmWorldHostTests() => _host = new WasmWorldHost(_storeKey);
+
+    public void Dispose()
+    {
+        _host.Dispose();
+        var path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Spectralis", "capsule-store", _storeKey + ".json");
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static byte[] Wat(string source) => Module.ConvertText(source);
+
+    [Fact]
+    public void Load_InvalidBytes_ReturnsFalseAndStaysUnloaded()
+    {
+        var ok = _host.Load([0x00, 0x01, 0x02]);
+
+        Assert.False(ok);
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void Load_ModuleWithNoExports_SucceedsAsNoOp()
+    {
+        var wasm = Wat("(module)");
+
+        var ok = _host.Load(wasm);
+
+        Assert.True(ok);
+        Assert.True(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void OnLoad_PlayTrackAndUnlockAchievement_RaiseEvents()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "play_track" (func $play_track (param i32 i32 f64)))
+              (import "spectral" "unlock_achievement" (func $unlock_achievement (param i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "song-1")
+              (data (i32.const 16) "first-boot")
+              (func (export "on_load")
+                (call $play_track (i32.const 0) (i32.const 6) (f64.const 12.5))
+                (call $unlock_achievement (i32.const 16) (i32.const 10))))
+            """);
+
+        Spectralis.Core.Integrations.Web.AlbumTrackPlayRequest? playRequest = null;
+        string? achievement = null;
+        _host.PlayTrackRequested += (_, e) => playRequest = e;
+        _host.AchievementUnlocked += (_, e) => achievement = e;
+
+        var ok = _host.Load(wasm);
+
+        Assert.True(ok);
+        Assert.NotNull(playRequest);
+        Assert.Equal("song-1", playRequest!.TrackId);
+        Assert.Equal(12.5, playRequest.PositionSeconds);
+        Assert.Equal("first-boot", achievement);
+    }
+
+    [Fact]
+    public void OnLoad_SaveBookmark_RaisesEventWithClampedLabel()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "save_bookmark" (func $save_bookmark (param i32 i32 f64 i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "track-9")
+              (data (i32.const 16) "chapter 2")
+              (func (export "on_load")
+                (call $save_bookmark (i32.const 0) (i32.const 7) (f64.const 3.0) (i32.const 16) (i32.const 9))))
+            """);
+
+        Spectralis.Core.Integrations.Web.AlbumBookmarkRequest? request = null;
+        _host.SaveBookmarkRequested += (_, e) => request = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.NotNull(request);
+        Assert.Equal("track-9", request!.TrackId);
+        Assert.Equal(3.0, request.PositionSeconds);
+        Assert.Equal("chapter 2", request.Label);
+    }
+
+    [Fact]
+    public void OnLoad_RegisterThenReleaseDspPreset_RaisesBothEvents()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "register_dsp_preset" (func $register (param i32 i32)))
+              (import "spectral" "release_dsp_preset" (func $release))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "{\22Enabled\22:true,\22Effects\22:[]}")
+              (func (export "on_load")
+                (call $register (i32.const 0) (i32.const 29))
+                (call $release)))
+            """);
+
+        string? presetJson = null;
+        var released = 0;
+        _host.DspPresetRegisterRequested += (_, e) => presetJson = e.PresetChainJson;
+        _host.DspPresetReleaseRequested += (_, _) => released++;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.Equal("""{"Enabled":true,"Effects":[]}""", presetJson);
+        Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public void OnLoad_SwitchToHtml_RaisesEventWithEntryPoint()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "switch_to_html" (func $switch (param i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "bonus.html")
+              (func (export "on_load")
+                (call $switch (i32.const 0) (i32.const 10))))
+            """);
+
+        string? entry = null;
+        _host.SwitchToHtmlRequested += (_, e) => entry = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.Equal("bonus.html", entry);
+    }
+
+    [Fact]
+    public void StorageSetThenGet_RoundTripsThroughTheSharedFile()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "storage_set" (func $set (param i32 i32 i32 i32)))
+              (import "spectral" "storage_get" (func $get (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "pos")
+              (data (i32.const 16) "\2242\22")
+              (func (export "on_load")
+                (call $set (i32.const 0) (i32.const 3) (i32.const 16) (i32.const 4))
+                (drop (call $get (i32.const 0) (i32.const 3) (i32.const 64) (i32.const 16)))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        // The scoped store persists across host instances keyed by the same storeKey — this is
+        // exactly what lets a runtime switch (Wasm <-> HTML) carry hand-off state.
+        var independentStore = new Spectralis.Core.Capsule.CapsuleScopedStore(_storeKey);
+        var stored = independentStore.Get("pos");
+        Assert.NotNull(stored);
+        Assert.Equal("42", stored!.GetValue<string>());
+    }
+
+    [Fact]
+    public void OnLoad_SubmitGeometry_RaisesEventWithDecodedVerticesAndIndices()
+    {
+        // One vertex: position (1.0, 2.0, 3.0), uv (0.0, 0.0), color (0.0, 0.0, 0.0) — 8 f32s,
+        // little-endian (wasm linear memory is always little-endian): 1.0=3F800000,
+        // 2.0=40000000, 3.0=40400000. One index: 0 (u32, 4 bytes).
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\00\00\80\3f\00\00\00\40\00\00\40\40\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+              (data (i32.const 32) "\00\00\00\00")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 32) (i32.const 32) (i32.const 4)))))
+            """);
+
+        WorldGeometrySubmission? submission = null;
+        _host.GeometrySubmitted += (_, e) => submission = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.NotNull(submission);
+        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, submission!.InterleavedVertices);
+        Assert.Equal(new uint[] { 0 }, submission.Indices);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitGeometry_NotAWholeNumberOfVertices_DoesNotRaiseEvent()
+    {
+        // 28 bytes is not a multiple of 32 (bytes per vertex) — must be rejected before ever
+        // reading guest memory into a float array, not truncated/misaligned.
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 32) "\00\00\00\00")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 28) (i32.const 32) (i32.const 4)))))
+            """);
+
+        var raised = false;
+        _host.GeometrySubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitGeometry_ZeroLengths_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_geometry" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0)))))
+            """);
+
+        var raised = false;
+        _host.GeometrySubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_RaisesEventWithDecodedPixelsAndDimensions()
+    {
+        // A 1x2 RGBA8 atlas: red pixel, then green pixel.
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\ff\00\00\ff\00\ff\00\ff")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 8) (i32.const 1) (i32.const 2)))))
+            """);
+
+        WorldTextureSubmission? submission = null;
+        _host.TextureSubmitted += (_, e) => submission = e;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.NotNull(submission);
+        Assert.Equal(1u, submission!.Width);
+        Assert.Equal(2u, submission.Height);
+        Assert.Equal(new byte[] { 0xff, 0x00, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff }, submission.Rgba);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_ByteLengthDoesNotMatchDimensions_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\ff\00\00\ff")
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 4) (i32.const 2) (i32.const 2)))))
+            """);
+
+        var raised = false;
+        _host.TextureSubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_SubmitTexture_NonPositiveDimensions_DoesNotRaiseEvent()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "submit_texture" (func $submit (param i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (func (export "on_load")
+                (drop (call $submit (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 1)))))
+            """);
+
+        var raised = false;
+        _host.TextureSubmitted += (_, _) => raised = true;
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void GetCameraPose_BeforeAnySetCameraPoseCall_ReturnsDefault()
+    {
+        Assert.Equal(CameraPose.Default, _host.GetCameraPose());
+    }
+
+    [Fact]
+    public void OnLoad_SetCameraPose_UpdatesGetCameraPose()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_load")
+                (call $set (f64.const 1.0) (f64.const 2.0) (f64.const 3.0) (f64.const 0.5) (f64.const -0.25))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(1.0, pose.X);
+        Assert.Equal(2.0, pose.Y);
+        Assert.Equal(3.0, pose.Z);
+        Assert.Equal(0.5, pose.Yaw);
+        Assert.Equal(-0.25, pose.Pitch);
+    }
+
+    [Fact]
+    public void OnLoad_SetCameraPose_NonFiniteValue_IsIgnored()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_load")
+                (call $set (f64.const nan) (f64.const 0.0) (f64.const 0.0) (f64.const 0.0) (f64.const 0.0))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        Assert.Equal(CameraPose.Default, _host.GetCameraPose());
+    }
+
+    [Fact]
+    public void Input_BeforeLoad_IsANoOp()
+    {
+        _host.Input(1.0, 0.0, 0.0, 0.0, false); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void Input_CallsOnInputExportWithForwardedArgs()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_input")
+                    (param $moveForward f64) (param $moveRight f64)
+                    (param $lookYaw f64) (param $lookPitch f64) (param $interact i32)
+                (call $set
+                  (local.get $moveForward) (local.get $moveRight)
+                  (local.get $lookYaw) (local.get $lookPitch)
+                  (f64.convert_i32_s (local.get $interact)))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.Input(1.5, -0.5, 0.1, -0.2, interact: true);
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(1.5, pose.X);
+        Assert.Equal(-0.5, pose.Y);
+        Assert.Equal(0.1, pose.Z);
+        Assert.Equal(-0.2, pose.Yaw);
+        Assert.Equal(1.0, pose.Pitch); // interact=true -> 1 -> converted to f64 1.0
+    }
+
+    [Fact]
+    public void Input_ModuleWithNoOnInputExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.Input(1.0, 0.0, 0.0, 0.0, false); // must not throw
+    }
+
+    private static readonly string RequestPointerLockWasm = """
+        (module
+          (import "spectral" "request_pointer_lock" (func $req (result i32)))
+          (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+          (func (export "on_load")
+            (call $set (f64.convert_i32_s (call $req)) (f64.const 0) (f64.const 0) (f64.const 0) (f64.const 0))))
+        """;
+
+    [Fact]
+    public void OnLoad_RequestPointerLock_WithoutCapability_DeniedAndNoEvent()
+    {
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}"); // allowPointerLock defaults false
+        var raised = false;
+        host.PointerLockRequested += (_, _) => raised = true;
+
+        Assert.True(host.Load(Wat(RequestPointerLockWasm)));
+
+        Assert.Equal(0.0, host.GetCameraPose().X); // request_pointer_lock returned 0 (denied)
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void OnLoad_RequestPointerLock_WithCapability_GrantedAndRaisesEvent()
+    {
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}", allowPointerLock: true);
+        var raised = false;
+        host.PointerLockRequested += (_, _) => raised = true;
+
+        Assert.True(host.Load(Wat(RequestPointerLockWasm)));
+
+        Assert.Equal(1.0, host.GetCameraPose().X); // request_pointer_lock returned 1 (granted)
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void OnLoad_ReleasePointerLock_RaisesEventEvenWithoutCapability()
+    {
+        // Giving back a lock you were never granted is a no-op for the *permission* model, but
+        // the host still needs to hear about it -- always allowed, unlike the request side.
+        using var host = new WasmWorldHost($"test-world-{Guid.NewGuid():N}"); // allowPointerLock defaults false
+        var raised = false;
+        host.PointerLockReleased += (_, _) => raised = true;
+        var wasm = Wat("""
+            (module
+              (import "spectral" "release_pointer_lock" (func $release))
+              (func (export "on_load") (call $release)))
+            """);
+
+        Assert.True(host.Load(wasm));
+
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_CallsOnPointerLockChangeExportWithTheNewState()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_pointer_lock_change") (param $locked i32)
+                (call $set (f64.convert_i32_s (local.get $locked)) (f64.const 0) (f64.const 0) (f64.const 0) (f64.const 0))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyPointerLockChanged(true);
+        Assert.Equal(1.0, _host.GetCameraPose().X);
+
+        _host.NotifyPointerLockChanged(false);
+        Assert.Equal(0.0, _host.GetCameraPose().X);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_BeforeLoad_IsANoOp()
+    {
+        _host.NotifyPointerLockChanged(true); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void NotifyPointerLockChanged_ModuleWithNoExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyPointerLockChanged(true); // must not throw
+    }
+
+    [Fact]
+    public void NotifyTrackCompleted_CallsOnTrackCompletedExportWithBothValues()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "set_camera_pose" (func $set (param f64 f64 f64 f64 f64)))
+              (func (export "on_track_completed") (param $played f64) (param $duration f64)
+                (call $set (local.get $played) (local.get $duration) (f64.const 0) (f64.const 0) (f64.const 0))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyTrackCompleted(92.5, 210.0);
+
+        var pose = _host.GetCameraPose();
+        Assert.Equal(92.5, pose.X);
+        Assert.Equal(210.0, pose.Y);
+    }
+
+    [Fact]
+    public void NotifyTrackCompleted_BeforeLoad_IsANoOp()
+    {
+        _host.NotifyTrackCompleted(10.0, 20.0); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void NotifyTrackCompleted_ModuleWithNoExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.NotifyTrackCompleted(10.0, 20.0); // must not throw
+    }
+
+    [Fact]
+    public void Tick_BeforeLoad_IsANoOp()
+    {
+        _host.Tick(1.0, true); // must not throw
+        Assert.False(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void Tick_RunawayLoop_TrapsWithoutCrashingTheHost()
+    {
+        var wasm = Wat("""
+            (module
+              (func (export "on_tick") (param f64 i32)
+                (local $i i32)
+                (local.set $i (i32.const 0))
+                (block $exit
+                  (loop $loop
+                    (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                    (br_if $exit (i32.ge_u (local.get $i) (i32.const 2000000000)))
+                    (br $loop)))))
+            """);
+
+        Assert.True(_host.Load(wasm));
+
+        // Must not throw — a trap during Tick is swallowed (dropped frame), not fatal.
+        _host.Tick(5.0, true);
+        Assert.True(_host.IsLoaded);
+    }
+
+    [Fact]
+    public void TriggerExport_CallsTheNamedExport()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "switch_to_html" (func $switch (param i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "bonus.html")
+              (func (export "go_to_bonus")
+                (call $switch (i32.const 0) (i32.const 10))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        string? entry = null;
+        _host.SwitchToHtmlRequested += (_, e) => entry = e;
+
+        _host.TriggerExport("go_to_bonus");
+
+        Assert.Equal("bonus.html", entry);
+    }
+
+    [Fact]
+    public void TriggerExport_UnknownExport_IsANoOp()
+    {
+        var wasm = Wat("(module)");
+        Assert.True(_host.Load(wasm));
+
+        _host.TriggerExport("does_not_exist"); // must not throw
+    }
+
+    [Fact]
+    public void Unload_CallsOnUnloadThenDetaches()
+    {
+        var wasm = Wat("""
+            (module
+              (import "spectral" "unlock_achievement" (func $unlock (param i32 i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "goodbye")
+              (func (export "on_unload")
+                (call $unlock (i32.const 0) (i32.const 7))))
+            """);
+        Assert.True(_host.Load(wasm));
+
+        string? achievement = null;
+        _host.AchievementUnlocked += (_, e) => achievement = e;
+
+        _host.Unload();
+
+        Assert.Equal("goodbye", achievement);
+        Assert.False(_host.IsLoaded);
+    }
+}

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Spectralis.Core.Capsule;
 using Spectralis.Core.Platform;
 using Spectralis.Core.Visualizers;
 
@@ -19,6 +20,43 @@ public sealed class AlbumBookmarkRequest
 }
 
 /// <summary>
+/// A capsule-supplied Discord rich presence override, sent from page JS via
+/// <c>window.spectral.presence.set()</c>. Only honoured when the capsule declared the
+/// <c>presence.richPresence</c> capability. All fields are clamped host-side before use.
+/// </summary>
+public sealed class CapsulePresenceRequest
+{
+    public string Details { get; init; } = "";
+    public string State { get; init; } = "";
+    public string LargeImageText { get; init; } = "";
+    public string SmallImageText { get; init; } = "";
+}
+
+/// <summary>
+/// A capsule-registered DSP preset, sent from page JS via <c>window.spectral.dsp.register()</c>.
+/// <see cref="PresetChainJson"/> is the raw JSON object the page passed — same shape
+/// <c>EffectChainState.Serialize</c> produces (<c>{"Enabled":bool,"Effects":[{"Name","Enabled","Params"}]}</c>) —
+/// handed unmodified to <c>EffectChainState.Restore</c>, so a preset can only ever be built
+/// from the app's existing effect factory. Only honoured when the capsule declared the
+/// <c>audio.dspPreset</c> capability.
+/// </summary>
+public sealed class WorldDspPresetRequest
+{
+    public string PresetChainJson { get; init; } = "";
+}
+
+/// <summary>
+/// Raised when HTML-mode content asks to hand off into a sandboxed Wasm/wgpu 3D world (the
+/// symmetric counterpart to <c>Spectralis.Core.Worlds.WasmWorldHost.SwitchToHtmlRequested</c> —
+/// a Wasm world calls its <c>switch_to_html</c> host import the same way). Only honoured when
+/// the capsule declared the <c>worlds.wasm3d</c> capability.
+/// </summary>
+public sealed class SwitchToWasmRequest
+{
+    public string WorldId { get; init; } = "";
+}
+
+/// <summary>
 /// Drives an <see cref="IWebViewHost"/> for capsule/album-world content: the
 /// spectral.* JS bridge, window.spectral v5 bootstrap, audio frame push, CSP
 /// injection, and per-capsule persistent store. All page input is untrusted:
@@ -27,19 +65,20 @@ public sealed class AlbumBookmarkRequest
 public sealed class WebViewHostService : IDisposable
 {
     private const int MaxMessageBytes = 64 * 1024;
-    private const int MaxStoreEntries = 1000;
-    private const int MaxStoreKeyBytes = 256;
-    private const int MaxStoreValueBytes = 65536;
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private const int MaxPresenceTextLength = 128;
+
     private readonly IWebViewHost _host;
-    private readonly string? _storeFilePath;
+    private readonly CapsuleScopedStore? _scopedStore;
     private readonly bool _isAlbumWorld;
-    private Dictionary<string, JsonNode?>? _store;
+    private readonly bool _allowPresence;
+    private readonly bool _allowDspPreset;
+    private readonly bool _allowWasm3D;
 
     /// <param name="storeKey">
     /// Capsule identifier used for per-capsule persistent storage.
@@ -49,19 +88,39 @@ public sealed class WebViewHostService : IDisposable
     /// True when hosting a .spectral album world map. Enables world-specific bridge
     /// messages (playTrack, addToQueue) and the corresponding JS callbacks.
     /// </param>
-    public WebViewHostService(IWebViewHost host, string? storeKey = null, bool isAlbumWorld = false)
+    /// <param name="allowPresence">
+    /// True when the hosted capsule declared the <c>presence.richPresence</c> capability.
+    /// Gates the <c>spectral.presence.*</c> bridge messages; page JS can always call the
+    /// stub, but the host drops the messages unless this is set.
+    /// </param>
+    /// <param name="allowDspPreset">
+    /// True when the hosted capsule declared the <c>audio.dspPreset</c> capability.
+    /// Gates the <c>spectral.dsp.*</c> bridge messages the same way <paramref name="allowPresence"/>
+    /// gates presence.
+    /// </param>
+    /// <param name="allowWasm3D">
+    /// True when the hosted capsule declared the <c>worlds.wasm3d</c> capability. Gates
+    /// <c>spectral.worlds.switchToWasm()</c> — the HTML-mode half of the symmetric Wasm/HTML
+    /// hand-off hook.
+    /// </param>
+    public WebViewHostService(
+        IWebViewHost host,
+        string? storeKey = null,
+        bool isAlbumWorld = false,
+        bool allowPresence = false,
+        bool allowDspPreset = false,
+        bool allowWasm3D = false)
     {
         _host = host;
         _host.MessageReceived += OnMessageReceived;
         _isAlbumWorld = isAlbumWorld;
+        _allowPresence = allowPresence;
+        _allowDspPreset = allowDspPreset;
+        _allowWasm3D = allowWasm3D;
 
         if (!string.IsNullOrWhiteSpace(storeKey))
         {
-            var safe = SanitizeFileName(storeKey);
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Spectralis", "capsule-store");
-            _storeFilePath = Path.Combine(dir, safe + ".json");
+            _scopedStore = new CapsuleScopedStore(storeKey);
         }
     }
 
@@ -72,6 +131,12 @@ public sealed class WebViewHostService : IDisposable
     public event EventHandler<double>? SeekRequested;
     public event EventHandler<AlbumBookmarkRequest>? SaveBookmarkRequested;
     public event EventHandler? ExitWorldRequested;
+    public event EventHandler<string>? AchievementUnlockRequested;
+    public event EventHandler<CapsulePresenceRequest>? PresenceUpdateRequested;
+    public event EventHandler? PresenceClearRequested;
+    public event EventHandler<WorldDspPresetRequest>? DspPresetRegisterRequested;
+    public event EventHandler? DspPresetReleaseRequested;
+    public event EventHandler<SwitchToWasmRequest>? SwitchToWasmRequested;
 
     private void OnMessageReceived(object? sender, string messageJson) => DispatchMessage(messageJson);
 
@@ -161,6 +226,80 @@ public sealed class WebViewHostService : IDisposable
                     ExitWorldRequested?.Invoke(this, EventArgs.Empty);
                     break;
 
+                case "spectral.unlockAchievement":
+                    // Album world only, same as playTrack/addToQueue — persisted via
+                    // AlbumWorldSessionStore.UnlockAchievement, the symmetric HTML-side
+                    // counterpart to WasmWorldHost's unlock_achievement host import.
+                    if (_isAlbumWorld &&
+                        root.TryGetProperty("achievementId", out var achievementIdProp) &&
+                        achievementIdProp.ValueKind == JsonValueKind.String)
+                    {
+                        var achievementId = achievementIdProp.GetString() ?? string.Empty;
+                        if (achievementId.Length > 0 && achievementId.Length <= 256)
+                        {
+                            AchievementUnlockRequested?.Invoke(this, achievementId);
+                        }
+                    }
+                    break;
+
+                case "spectral.presence.set":
+                {
+                    // Gated on the presence.richPresence capability — dropped otherwise.
+                    if (!_allowPresence) break;
+
+                    var details = ClampPresenceText(ReadString(root, "details"));
+                    var state = ClampPresenceText(ReadString(root, "state"));
+                    if (details.Length == 0 && state.Length == 0) break;
+
+                    PresenceUpdateRequested?.Invoke(this, new CapsulePresenceRequest
+                    {
+                        Details = details,
+                        State = state,
+                        LargeImageText = ClampPresenceText(ReadString(root, "largeImageText")),
+                        SmallImageText = ClampPresenceText(ReadString(root, "smallImageText")),
+                    });
+                    break;
+                }
+
+                case "spectral.presence.clear":
+                    if (_allowPresence)
+                        PresenceClearRequested?.Invoke(this, EventArgs.Empty);
+                    break;
+
+                case "spectral.registerDspPreset":
+                {
+                    // Gated on the audio.dspPreset capability — dropped otherwise.
+                    if (!_allowDspPreset) break;
+                    if (!root.TryGetProperty("preset", out var presetProp) ||
+                        presetProp.ValueKind != JsonValueKind.Object)
+                        break;
+
+                    var presetJson = presetProp.GetRawText();
+                    if (presetJson.Length > MaxMessageBytes) break;
+
+                    DspPresetRegisterRequested?.Invoke(this, new WorldDspPresetRequest
+                    {
+                        PresetChainJson = presetJson,
+                    });
+                    break;
+                }
+
+                case "spectral.releaseDspPreset":
+                    if (_allowDspPreset)
+                        DspPresetReleaseRequested?.Invoke(this, EventArgs.Empty);
+                    break;
+
+                case "spectral.worlds.switchToWasm":
+                {
+                    // Gated on the worlds.wasm3d capability — dropped otherwise.
+                    if (!_allowWasm3D) break;
+                    var worldId = ReadString(root, "worldId");
+                    if (worldId.Length == 0 || worldId.Length > 256) break;
+
+                    SwitchToWasmRequested?.Invoke(this, new SwitchToWasmRequest { WorldId = worldId });
+                    break;
+                }
+
                 // Per-capsule persistent store
                 case "spectral.store.get":
                     HandleStoreGet(root);
@@ -246,6 +385,9 @@ public sealed class WebViewHostService : IDisposable
     ///   spectral.resume()
     ///   spectral.seek(sec)
     ///   spectral.exit()
+    ///   spectral.presence.*    — Discord rich presence override (presence.richPresence capability)
+    ///   spectral.dsp.*         — register/release a whole-rack DSP preset (audio.dspPreset capability)
+    ///   spectral.worlds.*      — request a hand-off into the Wasm/wgpu world runtime (worlds.wasm3d capability)
     ///
     ///   CSS custom properties on <html>:
     ///     --audio-time, --audio-peak, --audio-rms  (set by embedded frame bridge, not here)
@@ -315,6 +457,57 @@ public sealed class WebViewHostService : IDisposable
               };
               window.spectral.exit = function() {
                 spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.exitWorld' }));
+              };
+
+              // ── Discord rich presence ────────────────────────────────────────
+              // Needs the presence.richPresence capability; calls are dropped host-side otherwise.
+              // presence.set({ details, state, largeImageText, smallImageText }) — all optional strings.
+              // presence.clear() reverts to the normal track presence.
+              window.spectral.presence = {
+                set: function(p) {
+                  p = p || {};
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.presence.set',
+                    details: String(p.details || ''),
+                    state: String(p.state || ''),
+                    largeImageText: String(p.largeImageText || ''),
+                    smallImageText: String(p.smallImageText || '')
+                  }));
+                },
+                clear: function() {
+                  spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.presence.clear' }));
+                }
+              };
+
+              // ── DSP preset control ───────────────────────────────────────────
+              // Needs the audio.dspPreset capability; calls are dropped host-side otherwise.
+              // register(preset) — preset is {Enabled, Effects:[{Name, Enabled, Params}]},
+              // the same shape the app's own saved chain presets use. Only effect names the
+              // app already knows how to build are honoured; anything else is skipped.
+              // Auto-reverts to the user's own chain on release() or when the surface unloads.
+              window.spectral.dsp = {
+                register: function(preset) {
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.registerDspPreset',
+                    preset: preset || {}
+                  }));
+                },
+                release: function() {
+                  spectralisBridge.postMessage(JSON.stringify({ type: 'spectral.releaseDspPreset' }));
+                }
+              };
+
+              // ── Dual-runtime hand-off (worlds.wasm3d capability) ─────────────
+              // Requests a sequential/exclusive hand-off into the sandboxed Wasm/wgpu world
+              // runtime — the symmetric counterpart to a Wasm world's switch_to_html import.
+              // Dropped host-side unless the capability was declared.
+              window.spectral.worlds = {
+                switchToWasm: function(worldId) {
+                  spectralisBridge.postMessage(JSON.stringify({
+                    type: 'spectral.worlds.switchToWasm',
+                    worldId: String(worldId || '')
+                  }));
+                }
               };
 
               // ── Persistent store ──────────────────────────────────────────────
@@ -420,16 +613,15 @@ public sealed class WebViewHostService : IDisposable
 
     private void HandleStoreGet(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
         if (!root.TryGetProperty("requestId", out var idProp) || idProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
         var requestId = idProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes || requestId.Length > 128) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes || requestId.Length > 128) return;
 
-        EnsureStoreLoaded();
-        var value = _store!.TryGetValue(key, out var node) ? node : null;
+        var value = _scopedStore.Get(key);
         var valueJson = value is null ? "null" : value.ToJsonString();
         var safeId = JsonSerializer.Serialize(requestId);
 
@@ -438,86 +630,38 @@ public sealed class WebViewHostService : IDisposable
 
     private void HandleStoreSet(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes) return;
-
-        EnsureStoreLoaded();
-        if (_store!.Count >= MaxStoreEntries && !_store.ContainsKey(key)) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes) return;
 
         if (root.TryGetProperty("value", out var valueProp))
         {
             var valueJson = valueProp.GetRawText();
-            if (valueJson.Length > MaxStoreValueBytes) return;
-            _store[key] = JsonNode.Parse(valueJson);
+            if (valueJson.Length > CapsuleScopedStore.MaxValueBytes) return;
+            _scopedStore.Set(key, JsonNode.Parse(valueJson));
         }
         else
         {
-            _store[key] = null;
+            _scopedStore.Set(key, null);
         }
-
-        SaveStore();
     }
 
     private void HandleStoreRemove(JsonElement root)
     {
-        if (_storeFilePath is null) return;
+        if (_scopedStore is null) return;
         if (!root.TryGetProperty("key", out var keyProp) || keyProp.ValueKind != JsonValueKind.String) return;
 
         var key = keyProp.GetString() ?? string.Empty;
-        if (key.Length > MaxStoreKeyBytes) return;
+        if (key.Length > CapsuleScopedStore.MaxKeyBytes) return;
 
-        EnsureStoreLoaded();
-        if (_store!.Remove(key))
-            SaveStore();
+        _scopedStore.Remove(key);
     }
 
     private void HandleStoreClear()
     {
-        if (_storeFilePath is null) return;
-        EnsureStoreLoaded();
-        _store!.Clear();
-        SaveStore();
-    }
-
-    private void EnsureStoreLoaded()
-    {
-        if (_store is not null) return;
-        _store = [];
-
-        if (_storeFilePath is null || !File.Exists(_storeFilePath)) return;
-
-        try
-        {
-            var json = File.ReadAllText(_storeFilePath);
-            var obj = JsonNode.Parse(json) as JsonObject;
-            if (obj is null) return;
-            foreach (var kv in obj)
-                _store[kv.Key] = kv.Value;
-        }
-        catch
-        {
-            _store = [];
-        }
-    }
-
-    private void SaveStore()
-    {
-        if (_storeFilePath is null || _store is null) return;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_storeFilePath)!);
-            var obj = new JsonObject();
-            foreach (var kv in _store)
-                obj[kv.Key] = kv.Value is null ? null : JsonNode.Parse(kv.Value.ToJsonString());
-            File.WriteAllText(_storeFilePath, obj.ToJsonString());
-        }
-        catch
-        {
-            // Store write failure is non-fatal.
-        }
+        _scopedStore?.Clear();
     }
 
     // ===== helpers =====
@@ -538,11 +682,15 @@ public sealed class WebViewHostService : IDisposable
         return result;
     }
 
-    private static string SanitizeFileName(string key)
+    private static string ReadString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
+            ? prop.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static string ClampPresenceText(string? value)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var safe = new string(key.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return safe.Length > 64 ? safe[..64] : safe;
+        var text = (value ?? string.Empty).Trim();
+        return text.Length > MaxPresenceTextLength ? text[..MaxPresenceTextLength] : text;
     }
 
     public void Dispose() => _host.MessageReceived -= OnMessageReceived;

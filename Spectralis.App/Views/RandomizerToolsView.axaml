@@ -11,7 +11,7 @@
     <Border Grid.Row="0" Background="{StaticResource Brush.Bg.Raised}" Padding="24,14">
       <StackPanel Spacing="2">
         <TextBlock Classes="heading" Text="Randomizer Tools" />
-        <TextBlock Classes="secondary" Text="Stream tools: coin flip, spin wheel, and more" />
+        <TextBlock Classes="secondary" Text="Stream tools: coin flip, and a wheel of text, songs, or playlists" />
       </StackPanel>
     </Border>
 
@@ -27,13 +27,18 @@
                      HorizontalAlignment="Center"
                      FontSize="18" FontWeight="SemiBold"
                      IsVisible="{Binding HasWheelResult}" />
-          <Button Content="Spin!" Command="{Binding SpinCommand}"
-                  Classes="primary" HorizontalAlignment="Center" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+            <Button Content="{Binding SpinButtonText}" Command="{Binding SpinCommand}"
+                    Classes="primary" />
+            <Button Content="{Binding PlayResultText}" Command="{Binding PlayResultCommand}"
+                    IsVisible="{Binding CanPlayResult}"
+                    ToolTip.Tip="Send what the wheel landed on to Now Playing" />
+          </StackPanel>
         </StackPanel>
       </Grid>
 
       <!-- Sidebar: coin toss + entries -->
-      <Border Grid.Column="1" Width="280"
+      <Border Grid.Column="1" Width="300"
               Background="{StaticResource Brush.Bg.Raised}"
               BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
               Padding="16">
@@ -62,28 +67,114 @@
           <ScrollViewer Grid.Row="3">
             <StackPanel Spacing="10">
 
-              <!-- Entries notepad -->
-              <TextBlock Classes="secondary" Text="WHEEL ENTRIES" FontWeight="SemiBold" />
-              <TextBlock Classes="secondary" FontStyle="Italic" FontSize="11"
-                         Text="One entry per line." TextWrapping="Wrap" />
-              <TextBox Text="{Binding NotepadText, Mode=TwoWay}"
-                       AcceptsReturn="True"
-                       TextWrapping="Wrap"
-                       Height="120"
-                       VerticalContentAlignment="Top"
-                       Watermark="Option 1&#10;Option 2&#10;Option 3" />
+              <!-- Wheel mode -->
+              <TextBlock Classes="secondary" Text="WHEEL CONTENTS" FontWeight="SemiBold" />
+              <ComboBox ItemsSource="{Binding Modes}"
+                        SelectedItem="{Binding SelectedModeOption}"
+                        HorizontalAlignment="Stretch">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RandomizerModeOption">
+                    <TextBlock Text="{Binding Label}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
 
-              <!-- Parsed entries: color/font/weight settings live behind the gear flyout -->
+              <!-- ===== Text mode: free-text notepad ===== -->
+              <StackPanel Spacing="10" IsVisible="{Binding IsTextMode}">
+                <TextBlock Classes="secondary" FontStyle="Italic" FontSize="11"
+                           Text="One entry per line." TextWrapping="Wrap" />
+                <TextBox Text="{Binding NotepadText, Mode=TwoWay}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         Height="120"
+                         VerticalContentAlignment="Top"
+                         Watermark="Option 1&#10;Option 2&#10;Option 3" />
+              </StackPanel>
+
+              <!-- ===== Song mode: library / Spotify picker ===== -->
+              <StackPanel Spacing="8" IsVisible="{Binding IsSongMode}">
+                <TextBox Text="{Binding MusicSearchText, Mode=TwoWay}"
+                         Watermark="Search your library or Spotify..." />
+                <Button Content="Add everything in the queue"
+                        Command="{Binding AddCurrentQueueCommand}"
+                        Classes="ghost" HorizontalAlignment="Stretch" />
+
+                <TextBlock Classes="secondary" Text="LOAD A PLAYLIST'S SONGS" FontWeight="SemiBold" FontSize="11" />
+                <ItemsControl ItemsSource="{Binding PlaylistCandidates}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MusicPickCandidate">
+                      <Button Classes="ghost" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Padding="6,3" Margin="0,1"
+                              Click="OnLoadPlaylistSongsClick"
+                              ToolTip.Tip="Add every track in this playlist as its own slice">
+                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Classes="secondary" Text="SEARCH RESULTS" FontWeight="SemiBold" FontSize="11" />
+                <ItemsControl ItemsSource="{Binding MusicResults}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MusicPickCandidate">
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding Subtitle}" Classes="secondary" FontSize="11"
+                                     TextTrimming="CharacterEllipsis"
+                                     IsVisible="{Binding HasSubtitle}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Add" Classes="ghost"
+                                Padding="8,2" Click="OnAddCandidateClick" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <!-- ===== Playlist mode: pick whole playlists ===== -->
+              <StackPanel Spacing="8" IsVisible="{Binding IsPlaylistMode}">
+                <TextBlock Classes="secondary" FontStyle="Italic" FontSize="11"
+                           Text="Add playlists as slices — the spin picks one to play." TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding PlaylistCandidates}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MusicPickCandidate">
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding Subtitle}" Classes="secondary" FontSize="11"
+                                     IsVisible="{Binding HasSubtitle}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Add" Classes="ghost"
+                                Padding="8,2" Click="OnAddCandidateClick" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <Separator Margin="0,4" />
+
+              <!-- Entries currently on the wheel -->
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Classes="secondary" Text="{Binding EntriesHeader}" FontWeight="SemiBold" />
+                <Button Grid.Column="1" Content="Clear" Classes="ghost" Padding="6,1" FontSize="11"
+                        Click="OnClearEntriesClick" />
+              </Grid>
               <ItemsControl ItemsSource="{Binding WheelEntries}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:WheelEntry">
-                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3,0,3">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,3">
                       <Border Grid.Column="0" Width="10" Height="10" CornerRadius="5"
                               Background="{Binding ColorHex, Converter={x:Static conv:HexColorToBrushConverter.Instance}}"
                               VerticalAlignment="Center" Margin="0,0,8,0" />
-                      <TextBlock Grid.Column="1" Text="{Binding Text}"
-                                 VerticalAlignment="Center"
-                                 TextTrimming="CharacterEllipsis" />
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="secondary" FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding HasSubtitle}" />
+                      </StackPanel>
                       <Button Grid.Column="2" Content="⚙" Classes="ghost"
                               Padding="6,2" FontSize="12"
                               ToolTip.Tip="Entry settings (color, font, weight)">
@@ -102,12 +193,16 @@
                           </Flyout>
                         </Button.Flyout>
                       </Button>
+                      <Button Grid.Column="3" Content="×" Classes="ghost"
+                              Padding="6,2" FontSize="12"
+                              Click="OnRemoveEntryClick"
+                              ToolTip.Tip="Remove from wheel" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <Separator Margin="0,4,0,4" />
+              <Separator Margin="0,4" />
 
               <!-- Saved wheels -->
               <TextBlock Classes="secondary" Text="SAVED WHEELS" FontWeight="SemiBold" />
@@ -120,7 +215,7 @@
               <ItemsControl ItemsSource="{Binding SavedWheels}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:SavedWheel">
-                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,2">
+                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
                       <TextBlock Grid.Column="0" Text="{Binding Name}"
                                  VerticalAlignment="Center"
                                  TextTrimming="CharacterEllipsis" />

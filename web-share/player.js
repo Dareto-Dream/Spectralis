@@ -68,7 +68,14 @@
     reactionButtons:      Array.prototype.slice.call(document.querySelectorAll("[data-reaction]")),
     reactionLayer:        document.getElementById("reactionLayer"),
     roomBadge:            document.getElementById("roomBadge"),
+    rosterList:           document.getElementById("rosterList"),
     seekFill:             document.getElementById("seekFill"),
+    seekTrack:            document.getElementById("seekTrack"),
+    transportPrev:        document.getElementById("transportPrev"),
+    transportPlay:        document.getElementById("transportPlay"),
+    transportNext:        document.getElementById("transportNext"),
+    transportHint:        document.getElementById("transportHint"),
+    voteSkipButton:       document.getElementById("voteSkipButton"),
     statusDot:            document.getElementById("statusDot"),
     statusLine:           document.getElementById("statusLine"),
     trackArtist:          document.getElementById("trackArtist"),
@@ -89,6 +96,16 @@
     lastPlayback:          null,
     activeRoomCode:        "",
     activeTrackId:         "",
+    socket:               null,
+    socketWantOpen:       false,
+    socketReconnectAt:    0,
+    socketAttempt:        0,
+    socketPingTimer:      0,
+    socketFallbackTimer:  0,
+    role:                 "follower",
+    caps:                 null,
+    roster:               [],
+    skipProgress:         null,
     lyrics:                [],
     lyricIndex:            -1,
     lastNetworkStatusAt:   0,
@@ -182,6 +199,20 @@
 
     el.volumeSlider.addEventListener("input", function () {
       el.audio.volume = Number(el.volumeSlider.value) / 100;
+    });
+
+    if (el.transportPlay) el.transportPlay.addEventListener("click", function () {
+      sendTransport(runtime.lastPlayback && runtime.lastPlayback.isPlaying ? "pause" : "play");
+    });
+    if (el.transportNext) el.transportNext.addEventListener("click", function () { sendTransport("next"); });
+    if (el.transportPrev) el.transportPrev.addEventListener("click", function () { sendTransport("prev"); });
+    if (el.voteSkipButton) el.voteSkipButton.addEventListener("click", voteSkip);
+    if (el.seekTrack) el.seekTrack.addEventListener("click", function (e) {
+      if (!canControlTransport()) return;
+      var rect = el.seekTrack.getBoundingClientRect();
+      var frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      var duration = (runtime.lastPlayback && runtime.lastPlayback.durationSeconds) || el.audio.duration || 0;
+      if (duration > 0) sendTransport("seek", frac * duration);
     });
 
     el.audio.addEventListener("loadedmetadata", function () {
@@ -289,10 +320,15 @@
     }
 
     stopSessionLoops();
+    closeRoomSocket();
     resetAudio();
     clearPreloadedPackages();
     runtime.session = null;
     runtime.queue = null;
+    runtime.role = "follower";
+    runtime.caps = null;
+    runtime.roster = [];
+    runtime.skipProgress = null;
     if (!options.fromChannel) leaveChannelMode();
 
     runtime.activeRoomCode = roomCode;
@@ -315,7 +351,7 @@
       await prepareAudio(runtime.session);
       await refreshQueueState();
       await refreshPlaybackState();
-      startSessionLoops();
+      connectRoomSocket();
       setDotState("live");
       setStatus(runtime.hostStateAvailable ? "Synced." : "Waiting for host to start…");
       updateReactionButtons();
@@ -658,6 +694,282 @@
     return runtime.networkMode === "optimized" ? config.optimizedSync : config.qualitySync;
   }
 
+  // ─── Room WebSocket ───────────────────────────────────────────────────────
+  //
+  // The realtime path. When connected it replaces the state/queue/presence/
+  // reaction polling; startSessionLoops() stays as a fallback for proxies that
+  // block WebSockets or when the socket can't hold a connection.
+
+  var ENVELOPE_V = 1;
+
+  function roomSocketUrl(roomCode) {
+    var base = new URL(config.cdnBaseUrl);
+    var scheme = base.protocol === "http:" ? "ws:" : "wss:";
+    var u = new URL("/shared-play/v2/sessions/" + encodeURIComponent(roomCode) + "/socket", base);
+    u.protocol = scheme;
+    u.searchParams.set("clientId", runtime.clientId);
+    u.searchParams.set("name", roomDisplayName());
+    return u.toString();
+  }
+
+  function roomDisplayName() {
+    try {
+      var stored = window.localStorage.getItem("spectralisSharedPlayName");
+      if (stored && stored.trim()) return stored.trim().slice(0, 32);
+    } catch (e) { /* ignore */ }
+    return "Listener";
+  }
+
+  function connectRoomSocket() {
+    if (!runtime.activeRoomCode) return;
+    runtime.socketWantOpen = true;
+    closeRoomSocket(true);
+
+    var ws;
+    try {
+      ws = new WebSocket(roomSocketUrl(runtime.activeRoomCode));
+    } catch (e) {
+      scheduleSocketFallback();
+      return;
+    }
+    runtime.socket = ws;
+
+    ws.addEventListener("open", function () {
+      runtime.socketAttempt = 0;
+      cancelSocketFallback();
+      socketSend({ t: "hello", role: "listener", clientId: runtime.clientId, name: roomDisplayName() });
+      window.clearInterval(runtime.socketPingTimer);
+      runtime.socketPingTimer = window.setInterval(function () { socketSend({ t: "ping" }); }, 20000);
+      // The realtime feed supersedes network polling.
+      stopSessionLoops();
+      setDotState("live");
+    });
+
+    ws.addEventListener("message", function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      handleSocketMessage(msg);
+    });
+
+    ws.addEventListener("close", function () {
+      window.clearInterval(runtime.socketPingTimer);
+      runtime.socketPingTimer = 0;
+      if (runtime.socket === ws) runtime.socket = null;
+      if (!runtime.socketWantOpen) return;
+      runtime.socketAttempt++;
+      // Fall back to polling immediately so playback never stalls, and keep
+      // trying the socket in the background.
+      if (!runtime.sessionLoopsActive && runtime.session) startSessionLoops();
+      var delay = Math.min(15000, 500 * Math.pow(2, Math.min(runtime.socketAttempt, 5)));
+      window.setTimeout(function () {
+        if (runtime.socketWantOpen) connectRoomSocket();
+      }, delay);
+    });
+
+    ws.addEventListener("error", function () { /* close handler drives reconnect */ });
+
+    scheduleSocketFallback();
+  }
+
+  function closeRoomSocket(keepWantOpen) {
+    if (!keepWantOpen) runtime.socketWantOpen = false;
+    window.clearInterval(runtime.socketPingTimer);
+    runtime.socketPingTimer = 0;
+    var ws = runtime.socket;
+    runtime.socket = null;
+    if (ws) {
+      try { ws.onclose = null; ws.close(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function scheduleSocketFallback() {
+    cancelSocketFallback();
+    runtime.socketFallbackTimer = window.setTimeout(function () {
+      if (!isSocketOpen() && !runtime.sessionLoopsActive && runtime.session) startSessionLoops();
+    }, 3500);
+  }
+
+  function cancelSocketFallback() {
+    if (runtime.socketFallbackTimer) {
+      window.clearTimeout(runtime.socketFallbackTimer);
+      runtime.socketFallbackTimer = 0;
+    }
+  }
+
+  function isSocketOpen() {
+    return runtime.socket && runtime.socket.readyState === 1;
+  }
+
+  function socketSend(obj) {
+    if (!isSocketOpen()) return false;
+    try {
+      obj.v = ENVELOPE_V;
+      runtime.socket.send(JSON.stringify(obj));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function handleSocketMessage(msg) {
+    switch (msg && msg.t) {
+      case "welcome":
+        if (msg.you && msg.you.role) runtime.role = msg.you.role;
+        if (msg.caps) applyCaps(msg.caps);
+        if (Array.isArray(msg.roster)) applyRoster(msg.roster);
+        if (msg.state && typeof msg.state === "object") applyRealtimeState(msg.state);
+        if (msg.queue && typeof msg.queue === "object") applyRealtimeQueue(msg.queue);
+        break;
+      case "state":
+        if (msg.playback) applyRealtimeState(msg.playback);
+        break;
+      case "queue":
+        if (msg.queue) applyRealtimeQueue(msg.queue);
+        break;
+      case "roster":
+        if (Array.isArray(msg.members)) applyRoster(msg.members);
+        break;
+      case "caps":
+        if (msg.caps) applyCaps(msg.caps);
+        break;
+      case "reaction":
+        showReactionBurst(emojiForReaction(stringOrEmpty(msg.kind)), stringOrEmpty(msg.kind));
+        break;
+      case "skip":
+        runtime.skipProgress = { votes: finiteNumber(msg.votes), required: finiteNumber(msg.required) };
+        renderSkipProgress();
+        break;
+      case "error":
+        setStatus(stringOrEmpty(msg.message) || "That action was not allowed.");
+        break;
+      case "kicked":
+        runtime.socketWantOpen = false;
+        closeRoomSocket();
+        setDotState("error");
+        setStatus("The host removed you from this room.");
+        resetAudio();
+        break;
+    }
+  }
+
+  function applyRealtimeState(playbackPayload) {
+    var newTrackId = extractTrackId(playbackPayload) || extractTrackId({ playback: playbackPayload });
+    if (newTrackId && runtime.activeTrackId && newTrackId !== runtime.activeTrackId) {
+      switchActiveTrack(newTrackId, { playback: playbackPayload }).catch(function () {});
+      return;
+    }
+    if (newTrackId && !runtime.activeTrackId) {
+      runtime.activeTrackId = newTrackId;
+      if (runtime.session) runtime.session.trackId = newTrackId;
+    }
+    var playback = findPlaybackPayload({ playback: playbackPayload }) || playbackPayload;
+    if (!hasPlaybackFields(playback)) {
+      runtime.hostStateAvailable = false;
+      runtime.lastPlayback = null;
+      setStatus(runtime.userActivated ? "Playing locally — waiting for host…" : "Waiting for host to start…");
+      return;
+    }
+    runtime.hostStateAvailable = true;
+    runtime.lastPlayback = normalizePlayback(playback, newTrackId);
+    applyPlaybackSync(false);
+    setStatus("Synced.");
+  }
+
+  function applyRealtimeQueue(queuePayload) {
+    runtime.queue = normalizeQueue(queuePayload);
+    renderQueue(runtime.queue);
+    preloadUpcomingQueueTracks();
+  }
+
+  // ─── Capabilities / roster / transport ────────────────────────────────────
+
+  function capAllows(cap) {
+    var rank = { follower: 0, codj: 1, host: 2 };
+    var need = { everyone: 0, codj: 1, host: 2 };
+    var mine = rank[runtime.role] || 0;
+    return mine >= (need[cap] === undefined ? 2 : need[cap]);
+  }
+
+  function canControlTransport() {
+    return Boolean(runtime.caps) && capAllows(runtime.caps.transport);
+  }
+
+  function applyCaps(caps) {
+    runtime.caps = {
+      queueAdd: caps.queueAdd || "everyone",
+      queueRemove: caps.queueRemove || "host",
+      queueReorder: caps.queueReorder || "host",
+      transport: caps.transport || "host",
+      voteSkip: caps.voteSkip !== false,
+      skipVotesRequired: finiteNumber(caps.skipVotesRequired) || 3
+    };
+    updateTransportControls();
+    renderSkipProgress();
+    renderQueue(runtime.queue);
+  }
+
+  function applyRoster(members) {
+    runtime.roster = members.map(function (m) {
+      return {
+        clientId: stringOrEmpty(m.clientId),
+        name: stringOrEmpty(m.name) || "Listener",
+        role: stringOrEmpty(m.role) || "follower",
+        isHost: Boolean(m.isHost)
+      };
+    });
+    var me = runtime.roster.filter(function (m) { return m.clientId === runtime.clientId; })[0];
+    if (me) runtime.role = me.role;
+    updateListenerCount(runtime.roster.length);
+    renderRoster();
+    updateTransportControls();
+  }
+
+  function renderRoster() {
+    if (!el.rosterList) return;
+    el.rosterList.replaceChildren();
+    runtime.roster.forEach(function (m) {
+      var chip = document.createElement("span");
+      chip.className = "roster-chip" + (m.isHost ? " is-host" : m.role === "codj" ? " is-codj" : "");
+      chip.textContent = m.name + (m.isHost ? " · host" : m.role === "codj" ? " · co-DJ" : "");
+      el.rosterList.appendChild(chip);
+    });
+  }
+
+  function updateTransportControls() {
+    var can = canControlTransport();
+    [el.transportPrev, el.transportPlay, el.transportNext].forEach(function (b) {
+      if (b) b.hidden = !can;
+    });
+    if (el.transportHint) {
+      el.transportHint.hidden = can;
+    }
+    if (el.seekTrack) el.seekTrack.classList.toggle("interactive", can);
+    if (el.voteSkipButton) {
+      var showVote = Boolean(runtime.caps && runtime.caps.voteSkip) && !can;
+      el.voteSkipButton.hidden = !showVote;
+    }
+  }
+
+  function renderSkipProgress() {
+    if (!el.voteSkipButton) return;
+    var p = runtime.skipProgress;
+    var required = (runtime.caps && runtime.caps.skipVotesRequired) || (p && p.required) || 3;
+    if (p && p.votes > 0) {
+      el.voteSkipButton.textContent = "Vote skip · " + p.votes + "/" + required;
+    } else {
+      el.voteSkipButton.textContent = "Vote skip";
+    }
+  }
+
+  function sendTransport(action, position) {
+    if (!canControlTransport()) return;
+    var payload = { t: "transport", action: action };
+    if (typeof position === "number") payload.position = position;
+    socketSend(payload);
+  }
+
+  function voteSkip() {
+    if (!socketSend({ t: "skip.vote" })) setStatus("Reconnecting…");
+  }
+
   // ─── Session loops ────────────────────────────────────────────────────────
 
   function startSessionLoops() {
@@ -716,6 +1028,11 @@
   // ─── Reactions ────────────────────────────────────────────────────────────
 
   async function sendReaction(type) {
+    if (socketSend({ t: "reaction", kind: type || "spark" })) {
+      // Optimistic local burst; the room echoes it back to everyone.
+      showReactionBurst(emojiForReaction(type), type);
+      return;
+    }
     if (!runtime.session || !runtime.session.reactionsUrl) throw new Error("Load a room before sending reactions.");
     var payload = await postJson(runtime.session.reactionsUrl, { clientId: runtime.clientId, type: type || "spark", label: emojiForReaction(type) });
     renderReactions(payload, true);
@@ -824,17 +1141,24 @@
   }
 
   async function addQueueLink() {
-    if (!runtime.session || !runtime.session.queueUrl) throw new Error("Load a room first.");
     var value = stringOrEmpty(el.queueUrlInput.value).trim();
     if (!value) return;
 
+    var item = buildQueueLinkItem(value);
+    if (socketSend({ t: "queue.add", item: { url: item.url, title: item.title, sourceKind: item.sourceKind } })) {
+      el.queueUrlInput.value = "";
+      setStatus("Request sent to room queue.");
+      return;
+    }
+
+    if (!runtime.session || !runtime.session.queueUrl) throw new Error("Load a room first.");
     var itemsUrl = runtime.session.queueUrl.replace(/\/queue(?:\?.*)?$/, "/queue/items");
     var response = await fetch(itemsUrl, {
       method: "POST",
       cache: "no-store",
       credentials: "omit",
       headers: { "accept": "application/json", "content-type": "application/json" },
-      body: JSON.stringify({ item: buildQueueLinkItem(value) })
+      body: JSON.stringify({ item: item })
     });
 
     if (!response.ok) throw new Error("Queue update failed with HTTP " + response.status + ".");
@@ -1221,6 +1545,11 @@
     if (el.seekFill) {
       var pct = duration > 0 ? (position / duration * 100).toFixed(2) : "0";
       el.seekFill.style.width = pct + "%";
+    }
+    if (el.transportPlay) {
+      var playing = Boolean(runtime.lastPlayback && runtime.lastPlayback.isPlaying);
+      el.transportPlay.textContent = playing ? "⏸" : "▶";
+      el.transportPlay.setAttribute("aria-label", playing ? "Pause" : "Play");
     }
     renderLyricsForPosition(position);
   }

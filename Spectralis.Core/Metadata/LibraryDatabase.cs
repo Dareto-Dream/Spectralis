@@ -10,6 +10,19 @@ public sealed record LibraryEntry(
     DateTime DateAdded,
     DateTime? LastPlayed);
 
+/// <summary>Podcast-mode state for one track: whether it's a podcast and where playback left off.</summary>
+public sealed record PodcastPlaybackState(bool IsPodcast, long ResumePositionMs, bool Finished)
+{
+    public static readonly PodcastPlaybackState None = new(false, 0, false);
+}
+
+/// <summary>A podcast/audiobook episode row for the Podcasts browser.</summary>
+public sealed record PodcastEpisodeEntry(
+    TrackInfo Track,
+    long ResumePositionMs,
+    bool Finished,
+    DateTime? LastPlayed);
+
 /// <summary>
 /// SQLite-backed track index. One row per file; cover art is read on demand
 /// from the file, never stored. Safe for concurrent readers, single writer.
@@ -63,6 +76,14 @@ public sealed class LibraryDatabase : IDisposable
         TryAddColumn("play_count INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("date_added INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("last_played INTEGER NULL");
+
+        // Podcast Mode: auto-detected podcast flag, a nullable manual override that wins over it,
+        // and resume-from-position state (podcast content only).
+        TryAddColumn("is_podcast INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("podcast_override INTEGER NULL");
+        TryAddColumn("resume_position_ms INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("resume_updated_ticks INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("is_finished INTEGER NOT NULL DEFAULT 0");
     }
 
     private void TryAddColumn(string columnDefinition)
@@ -77,7 +98,14 @@ public sealed class LibraryDatabase : IDisposable
         }
     }
 
-    public void Upsert(TrackInfo track, long mtimeTicks)
+    public void Upsert(TrackInfo track, long mtimeTicks) => Upsert(track, mtimeTicks, isPodcast: false);
+
+    /// <summary>
+    /// Inserts or refreshes a track row. <paramref name="isPodcast"/> is the auto-detected
+    /// podcast flag; the nullable manual override (<see cref="SetPodcastOverride"/>) is never
+    /// touched here, so a re-scan can't undo the user's choice.
+    /// </summary>
+    public void Upsert(TrackInfo track, long mtimeTicks, bool isPodcast)
     {
         lock (_writeLock)
         {
@@ -87,11 +115,11 @@ public sealed class LibraryDatabase : IDisposable
                 INSERT INTO tracks (
                     path, title, artist, album, album_artist, genre, track_no, disc_no, year,
                     duration_ms, bitrate_kbps, sample_rate_hz, channels, file_size, format,
-                    bpm, musical_key, mtime_ticks, missing, date_added)
+                    bpm, musical_key, mtime_ticks, missing, date_added, is_podcast)
                 VALUES (
                     $path, $title, $artist, $album, $albumArtist, $genre, $trackNo, $discNo, $year,
                     $durationMs, $bitrate, $sampleRate, $channels, $fileSize, $format,
-                    $bpm, $key, $mtime, 0, $dateAdded)
+                    $bpm, $key, $mtime, 0, $dateAdded, $isPodcast)
                 ON CONFLICT(path) DO UPDATE SET
                     title = excluded.title, artist = excluded.artist, album = excluded.album,
                     album_artist = excluded.album_artist, genre = excluded.genre,
@@ -100,8 +128,10 @@ public sealed class LibraryDatabase : IDisposable
                     sample_rate_hz = excluded.sample_rate_hz, channels = excluded.channels,
                     file_size = excluded.file_size, format = excluded.format,
                     bpm = excluded.bpm, musical_key = excluded.musical_key,
-                    mtime_ticks = excluded.mtime_ticks, missing = 0
+                    mtime_ticks = excluded.mtime_ticks, missing = 0,
+                    is_podcast = excluded.is_podcast
                 """;
+            command.Parameters.AddWithValue("$isPodcast", isPodcast ? 1 : 0);
             command.Parameters.AddWithValue("$path", track.SourcePath);
             command.Parameters.AddWithValue("$title", track.Title);
             command.Parameters.AddWithValue("$artist", track.Artist);
@@ -152,6 +182,82 @@ public sealed class LibraryDatabase : IDisposable
             command.Parameters.AddWithValue("$now", DateTime.UtcNow.Ticks);
             command.ExecuteNonQuery();
         }
+    }
+
+    // ── Podcast Mode ────────────────────────────────────────────────────────
+
+    /// <summary>Podcast flag (manual override wins) + resume state for one track.</summary>
+    public PodcastPlaybackState GetPodcastState(string path)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "SELECT COALESCE(podcast_override, is_podcast), resume_position_ms, is_finished " +
+            "FROM tracks WHERE path = $path";
+        command.Parameters.AddWithValue("$path", path);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return PodcastPlaybackState.None;
+        }
+
+        return new PodcastPlaybackState(
+            IsPodcast: reader.GetInt64(0) != 0,
+            ResumePositionMs: reader.GetInt64(1),
+            Finished: reader.GetInt64(2) != 0);
+    }
+
+    /// <summary>Persists where playback left off (podcast content only). Position 0 + finished = fully played.</summary>
+    public void SaveResume(string path, long positionMs, bool finished)
+    {
+        lock (_writeLock)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText =
+                "UPDATE tracks SET resume_position_ms = $pos, is_finished = $fin, " +
+                "resume_updated_ticks = $now WHERE path = $path";
+            command.Parameters.AddWithValue("$pos", Math.Max(0, positionMs));
+            command.Parameters.AddWithValue("$fin", finished ? 1 : 0);
+            command.Parameters.AddWithValue("$now", DateTime.UtcNow.Ticks);
+            command.Parameters.AddWithValue("$path", path);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Sets (or with null, clears) the manual "this is / isn't a podcast" override.</summary>
+    public void SetPodcastOverride(string path, bool? isPodcast)
+    {
+        lock (_writeLock)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "UPDATE tracks SET podcast_override = $val WHERE path = $path";
+            command.Parameters.AddWithValue("$val", isPodcast is null ? DBNull.Value : isPodcast.Value ? 1 : 0);
+            command.Parameters.AddWithValue("$path", path);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Every podcast/audiobook episode (auto-detected or manually flagged), for the Podcasts browser.</summary>
+    public IReadOnlyList<PodcastEpisodeEntry> GetPodcastEpisodes()
+    {
+        var entries = new List<PodcastEpisodeEntry>();
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "SELECT path, title, artist, album, album_artist, genre, track_no, disc_no, year, " +
+            "duration_ms, bitrate_kbps, sample_rate_hz, channels, file_size, format, bpm, musical_key, " +
+            "resume_position_ms, is_finished, last_played " +
+            "FROM tracks WHERE missing = 0 AND COALESCE(podcast_override, is_podcast) = 1 " +
+            "ORDER BY album, disc_no, track_no, year, title";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            entries.Add(new PodcastEpisodeEntry(
+                ReadTrack(reader),
+                ResumePositionMs: reader.GetInt64(17),
+                Finished: reader.GetInt64(18) != 0,
+                LastPlayed: reader.IsDBNull(19) ? null : new DateTime(reader.GetInt64(19), DateTimeKind.Utc)));
+        }
+
+        return entries;
     }
 
     /// <summary>Tracks plus their library stats, for browsing and smart playlist evaluation.</summary>
