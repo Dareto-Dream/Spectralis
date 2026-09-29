@@ -31,6 +31,13 @@ public sealed class WorldTextureSubmission
 /// — world-space eye position plus yaw/pitch (radians) look direction. There's no orbit target
 /// and no fixed distance; the guest walks this around on its own (e.g. accumulating movement in
 /// <see cref="WasmWorldHost.Input"/>) and pushes the result here every frame.</summary>
+/// <summary>One <c>set_interact_target</c> call's payload — see <see cref="WasmWorldHost.InteractTargetChanged"/>.
+/// Null <see cref="Id"/> means the guest cleared its target (nothing in reach/reticle).</summary>
+public sealed record InteractTarget(string? Id, string? Prompt);
+
+/// <summary>One <c>start_story</c> call's payload — see <see cref="WasmWorldHost.StoryRequested"/>.</summary>
+public sealed record StoryRequest(string TrackId, IReadOnlyList<string> Pages);
+
 public readonly record struct CameraPose(double X, double Y, double Z, double Yaw, double Pitch)
 {
     /// <summary>Eye a few units back on +Z looking toward the origin (yaw = pi), matching where
@@ -77,6 +84,25 @@ public readonly record struct CameraPose(double X, double Y, double Z, double Ya
 ///                                                about to show its own cursor-driven UI). Always
 ///                                                allowed — releasing something you were never
 ///                                                granted is a no-op, not a capability violation.
+///   set_interact_target(idPtr,idLen,promptPtr,promptLen) — reports what the guest's own reticle
+///                                                hit-test is currently looking at (0-length id =
+///                                                clear/nothing); see InteractTargetChanged. The
+///                                                host renders the reticle/prompt, the guest owns
+///                                                deciding what's interactable and from how far.
+///   start_story(trackIdPtr,trackIdLen,pagesPtr,pagesLen) — hands a bottom-third VN pager over to
+///                                                the host; pagesPtr is UTF-8 pages joined by a
+///                                                single NUL byte (no JSON — see chaser_room's own
+///                                                doc comment on why). The host owns pagination
+///                                                entirely; once the listener pages through to the
+///                                                end it starts trackId directly, the same call a
+///                                                guest-initiated play_track would have made. A
+///                                                world that calls this should stop reacting to
+///                                                on_input afterward — see StoryRequested.
+///   show_achievements()                       — opens the host's achievements board (no
+///                                                payload; the host already owns the session data
+///                                                it needs). Unlike start_story this is
+///                                                reversible — see AchievementsRequested and the
+///                                                on_achievements_closed export below.
 ///
 /// Guest export called from the host (beyond on_load/on_tick/on_unload):
 ///   on_pointer_lock_change(locked: i32) — optional; fires whenever the *actual* lock state
@@ -96,6 +122,10 @@ public readonly record struct CameraPose(double X, double Y, double Z, double Ya
 ///     drag deltas in radians since the last frame, un-clamped (a world should clamp its own
 ///     accumulated pitch to avoid flipping over). interact is 1 on the frame an interact
 ///     key/click was pressed, 0 otherwise (edge-triggered, not held).
+///   on_achievements_closed() — optional; called via <see cref="TriggerExport"/> (the same
+///     generic UI-triggered-action mechanism every other zero-arg export uses) once the listener
+///     dismisses the achievements board a show_achievements call opened. A world that never calls
+///     show_achievements has no reason to export this.
 ///
 /// storage_get/storage_set share the exact same <see cref="CapsuleScopedStore"/> file the HTML
 /// bridge's spectral.store.* uses for the same world id — this is what lets hand-off state
@@ -145,8 +175,16 @@ public sealed class WasmWorldHost : IDisposable
     public event EventHandler<WorldTextureSubmission>? TextureSubmitted;
     public event EventHandler? PointerLockRequested;
     public event EventHandler? PointerLockReleased;
+    public event EventHandler<InteractTarget>? InteractTargetChanged;
+    public event EventHandler<StoryRequest>? StoryRequested;
+    public event EventHandler? AchievementsRequested;
 
     private readonly bool _allowPointerLock;
+
+    /// <summary>Whether this world's manifest declared <c>worlds.pointerLock</c> — lets the host
+    /// surface gate a direct re-engage (e.g. the pause menu's Resume button) the same way it gates
+    /// the guest's own <c>request_pointer_lock</c> import call.</summary>
+    public bool AllowPointerLock => _allowPointerLock;
 
     /// <param name="storeKey">World id — must match the storeKey the HTML-mode surface for the
     /// same world uses, so both runtimes share one <see cref="CapsuleScopedStore"/> file.</param>
@@ -526,6 +564,38 @@ public sealed class WasmWorldHost : IDisposable
         _linker.DefineFunction("spectral", "release_pointer_lock", (Caller _) =>
         {
             PointerLockReleased?.Invoke(this, EventArgs.Empty);
+        });
+
+        _linker.DefineFunction("spectral", "set_interact_target",
+            (Caller caller, int idPtr, int idLen, int promptPtr, int promptLen) =>
+            {
+                var id = idLen > 0 ? ReadString(caller, idPtr, idLen) : null;
+                var prompt = promptLen > 0 ? ReadString(caller, promptPtr, promptLen) : null;
+                InteractTargetChanged?.Invoke(this, new InteractTarget(id, prompt));
+            });
+
+        _linker.DefineFunction("spectral", "start_story",
+            (Caller caller, int trackIdPtr, int trackIdLen, int pagesPtr, int pagesLen) =>
+            {
+                var trackId = ReadString(caller, trackIdPtr, trackIdLen);
+                var pagesRaw = ReadString(caller, pagesPtr, pagesLen);
+                if (trackId is null || pagesRaw is null)
+                {
+                    return;
+                }
+
+                var pages = pagesRaw.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                if (pages.Length == 0)
+                {
+                    return;
+                }
+
+                StoryRequested?.Invoke(this, new StoryRequest(trackId, pages));
+            });
+
+        _linker.DefineFunction("spectral", "show_achievements", (Caller _) =>
+        {
+            AchievementsRequested?.Invoke(this, EventArgs.Empty);
         });
 
         _linker.DefineFunction("spectral", "storage_get",
