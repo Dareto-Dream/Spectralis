@@ -51,6 +51,7 @@ struct AppState {
     stripe_webhook_secret: Option<Arc<String>>,
     stripe_connect_client_id: Option<Arc<String>>,
     stripe_publishable_key: Option<Arc<String>>,
+    ward_issuer: Arc<String>,
 }
 
 /// TTL applied to every Redis session key, refreshed on activity.
@@ -100,6 +101,7 @@ async fn main() -> Result<()> {
     let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").ok().map(Arc::new);
     let stripe_connect_client_id = env::var("STRIPE_CONNECT_CLIENT_ID").ok().map(Arc::new);
     let stripe_publishable_key = env::var("STRIPE_PUBLISHABLE_KEY").ok().map(Arc::new);
+    let ward_issuer = Arc::new(env::var("WARD_ISSUER").unwrap_or_else(|_| "https://ward.deltavdevs.com".to_string()).trim_end_matches('/').to_string());
 
     let store = Arc::new(store::Store::from_env().await?);
 
@@ -112,6 +114,7 @@ async fn main() -> Result<()> {
         stripe_webhook_secret,
         stripe_connect_client_id,
         stripe_publishable_key,
+        ward_issuer,
     };
 
     collab::spawn_replica_fanout(state.clone());
@@ -125,6 +128,10 @@ async fn main() -> Result<()> {
         .route("/spectralis/web-share/", get(index))
         .route("/spectralis/web-share/index.html", get(index))
         .route("/spectralis/web-share/*path", get(web_share_static))
+        .route("/player/v1/rooms", get(list_public_rooms))
+        .route("/player/v1/rooms/:id", get(get_public_room))
+        .route("/player/v1/rooms", post(create_public_room))
+        .route("/player/v1/rooms/:id/profile", put(update_public_room_profile))
         .route("/shared-play/v2/sessions", post(create_session))
         .route("/shared-play/v2/sessions/:code/package", put(upload_package))
         .route("/shared-play/v2/sessions/:code/tracks", post(register_track))
@@ -998,6 +1005,15 @@ async fn put_channel(
     channel["trackId"] = payload.get("trackId").cloned().unwrap_or(Value::Null);
     channel["track"] = payload.get("track").cloned().unwrap_or(Value::Null);
     channel["playback"] = payload.get("playback").cloned().unwrap_or(Value::Null);
+    // Discovery is opt-in and only the desktop host holding ownerToken can set it.
+    // Link-only Shared Play sessions never enter the public directory.
+    channel["isPublic"] = json!(payload.get("isPublic").and_then(Value::as_bool).unwrap_or(false));
+    channel["roomKind"] = json!(match payload.get("roomKind").and_then(Value::as_str) { Some("streamer_queue") => "streamer_queue", _ => "channel" });
+    channel["accessPolicy"] = json!(match payload.get("accessPolicy").and_then(Value::as_str) { Some("ward") => "ward", Some("approval") => "approval", _ => "anyone" });
+    channel["publicName"] = json!(clean_short_text(payload.get("publicName").and_then(Value::as_str).unwrap_or(""), 60).unwrap_or_else(|| display_name.clone()));
+    channel["publicDescription"] = json!(clean_short_text(payload.get("publicDescription").and_then(Value::as_str).unwrap_or(""), 280));
+    channel["hostName"] = json!(clean_short_text(payload.get("hostName").and_then(Value::as_str).unwrap_or(""), 60).unwrap_or_else(|| display_name.clone()));
+    channel["tags"] = json!(payload.get("tags").and_then(Value::as_array).map(|tags| tags.iter().filter_map(Value::as_str).filter_map(|tag| clean_short_text(tag, 24)).take(3).collect::<Vec<_>>()).unwrap_or_default());
     channel["listenerCount"] = json!(listener_count);
     channel["updatedAtUtc"] = json!(now.to_rfc3339());
     channel["channelUrl"] = json!(format!(
@@ -1043,6 +1059,146 @@ fn public_channel_payload(mut channel: Value) -> Value {
         obj.remove("ownerToken");
     }
     channel
+}
+
+async fn list_public_rooms(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let keys = state.store.scan_keys("sp:chan:*").await.map_err(AppError::internal)?;
+    let mut rooms = Vec::new();
+    for key in keys {
+        let Some(channel) = read_json_opt(&state, &key).await else { continue };
+        if !channel.get("isPublic").and_then(Value::as_bool).unwrap_or(false) { continue }
+        let channel_id = channel.get("channelId").and_then(Value::as_str).unwrap_or_default();
+        if channel_id.is_empty() { continue }
+        let tags = channel.get("tags").and_then(Value::as_array).map(|values| values.iter()
+            .filter_map(Value::as_str).map(ToOwned::to_owned).take(3).collect::<Vec<_>>()).unwrap_or_default();
+        let track = channel.get("track").cloned().unwrap_or(Value::Null);
+        rooms.push(json!({
+            "id": channel_id,
+            "name": channel.get("publicName").or_else(|| channel.get("displayName")).cloned().unwrap_or(json!("Spectralis channel")),
+            "description": channel.get("publicDescription").cloned().unwrap_or(Value::Null),
+            "kind": channel.get("roomKind").cloned().unwrap_or(json!("channel")),
+            "tags": tags,
+            "security": channel.get("accessPolicy").cloned().unwrap_or(json!("anyone")),
+            "listeners": channel.get("listenerCount").cloned().unwrap_or(json!(0)),
+            "host": channel.get("hostName").or_else(|| channel.get("displayName")).cloned().unwrap_or(json!("Spectralis host")),
+            "joinUrl": channel.get("channelUrl").cloned().unwrap_or(json!("")),
+            "isLive": channel.get("isLive").cloned().unwrap_or(json!(false)),
+            "nowPlaying": {
+                "title": track.get("title").or_else(|| track.get("name")).cloned().unwrap_or(Value::Null),
+                "artist": track.get("artist").or_else(|| track.get("albumArtist")).cloned().unwrap_or(Value::Null),
+                "artwork": track.get("artworkUrl").or_else(|| track.get("artwork")).cloned().unwrap_or(Value::Null)
+            }
+        }));
+    }
+    rooms.sort_by(|a, b| b.get("isLive").and_then(Value::as_bool).cmp(&a.get("isLive").and_then(Value::as_bool)));
+    Ok(Json(json!({ "rooms": rooms })))
+}
+
+async fn get_public_room(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let id = clean_channel_id(&id)?;
+    let channel = read_json(&state, &channel_key_checked(&id)?).await?;
+    if !channel.get("isPublic").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(AppError::not_found("This room is not public."));
+    }
+    let track = channel.get("track").cloned().unwrap_or(Value::Null);
+    Ok(Json(json!({
+        "id": id,
+        "name": channel.get("publicName").or_else(|| channel.get("displayName")).cloned().unwrap_or(json!("Spectralis channel")),
+        "description": channel.get("publicDescription").cloned().unwrap_or(Value::Null),
+        "kind": channel.get("roomKind").cloned().unwrap_or(json!("channel")),
+        "tags": channel.get("tags").cloned().unwrap_or_else(|| json!([])),
+        "security": channel.get("accessPolicy").cloned().unwrap_or(json!("anyone")),
+        "listeners": channel.get("listenerCount").cloned().unwrap_or(json!(0)),
+        "host": channel.get("hostName").or_else(|| channel.get("displayName")).cloned().unwrap_or(json!("Spectralis host")),
+        "bannerUrl": channel.get("bannerUrl").cloned().unwrap_or(Value::Null),
+        "iconUrl": channel.get("iconUrl").cloned().unwrap_or(Value::Null),
+        "ogImageUrl": channel.get("ogImageUrl").cloned().unwrap_or(Value::Null),
+        "seoTitle": channel.get("seoTitle").cloned().unwrap_or(Value::Null),
+        "seoDescription": channel.get("seoDescription").cloned().unwrap_or(Value::Null),
+        "nowPlaying": {
+            "title": track.get("title").or_else(|| track.get("name")).cloned().unwrap_or(Value::Null),
+            "artist": track.get("artist").or_else(|| track.get("albumArtist")).cloned().unwrap_or(Value::Null),
+            "artwork": track.get("artworkUrl").or_else(|| track.get("artwork")).cloned().unwrap_or(Value::Null)
+        }
+    })))
+}
+
+async fn ward_subject(state: &AppState, headers: &HeaderMap) -> Result<String, AppError> {
+    let token = headers.get(header::AUTHORIZATION).and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer ")).map(str::trim).filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::unauthorized("Sign in with Ward to do that."))?;
+    let response = reqwest::Client::new().get(format!("{}/oauth/userinfo", state.ward_issuer))
+        .bearer_auth(token).send().await.map_err(AppError::internal)?;
+    if !response.status().is_success() { return Err(AppError::unauthorized("Ward sign-in expired. Please sign in again.")); }
+    let user: Value = response.json().await.map_err(AppError::internal)?;
+    user.get("sub").and_then(Value::as_str).filter(|value| !value.is_empty()).map(ToOwned::to_owned)
+        .ok_or_else(|| AppError::unauthorized("Ward did not identify this account."))
+}
+
+fn public_room_fields(payload: &Value) -> Result<(String, String, Vec<String>), AppError> {
+    let access = match payload.get("security").and_then(Value::as_str) { Some("ward") => "ward", Some("approval") => "approval", _ => "anyone" }.to_string();
+    let kind = match payload.get("kind").and_then(Value::as_str) { Some("streamer_queue") => "streamer_queue", _ => "channel" }.to_string();
+    let tags = payload.get("tags").and_then(Value::as_array).map(|tags| tags.iter().filter_map(Value::as_str)
+        .filter_map(|tag| clean_short_text(tag, 24)).take(3).collect()).unwrap_or_default();
+    Ok((access, kind, tags))
+}
+
+async fn create_public_room(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<impl IntoResponse, AppError> {
+    let ward_owner_id = ward_subject(&state, &headers).await?;
+    let name = clean_short_text(payload.get("name").and_then(Value::as_str).unwrap_or(""), 60)
+        .ok_or_else(|| AppError::bad_request("A room name is required."))?;
+    let (access_policy, room_kind, tags) = public_room_fields(&payload)?;
+    let room_id = format!("room-{}", uuid::Uuid::new_v4().simple());
+    let owner_token = bytes_to_hex(&rand::thread_rng().gen::<[u8; 32]>());
+    let now = Utc::now().to_rfc3339();
+    let room = json!({
+        "protocolVersion": PROTOCOL_VERSION, "channelId": &room_id, "ownerToken": owner_token,
+        "wardOwnerId": ward_owner_id, "displayName": &name, "hostName": &name,
+        "publicName": &name, "publicDescription": clean_short_text(payload.get("description").and_then(Value::as_str).unwrap_or(""), 280),
+        "isPublic": true, "roomKind": room_kind, "accessPolicy": access_policy, "tags": tags,
+        "isLive": false, "listenerCount": 0, "createdAtUtc": &now, "updatedAtUtc": &now,
+        "stats": empty_channel_stats()
+    });
+    write_json(&state, &channel_key_checked(&room_id)?, &room).await?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": room_id, "name": name, "tags": room["tags"], "security": room["accessPolicy"] }))))
+}
+
+async fn update_public_room_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let subject = ward_subject(&state, &headers).await?;
+    let id = clean_channel_id(&id)?;
+    let key = channel_key_checked(&id)?;
+    let mut room = read_json(&state, &key).await?;
+    if room.get("wardOwnerId").and_then(Value::as_str) != Some(subject.as_str()) {
+        return Err(AppError::forbidden("Only this room's Ward host can update its web profile."));
+    }
+    for (source, target, limit) in [("name", "publicName", 60), ("description", "publicDescription", 280), ("seoTitle", "seoTitle", 70), ("seoDescription", "seoDescription", 160)] {
+        if payload.get(source).is_some() { room[target] = json!(clean_short_text(payload.get(source).and_then(Value::as_str).unwrap_or(""), limit)); }
+    }
+    for field in ["bannerUrl", "iconUrl", "ogImageUrl"] {
+        if let Some(value) = payload.get(field).and_then(Value::as_str) {
+            if !(value.is_empty() || value.starts_with("https://")) { return Err(AppError::bad_request("Room image URLs must use HTTPS.")); }
+            room[field] = json!(if value.is_empty() { None::<String> } else { Some(value.to_string()) });
+        }
+    }
+    let (access, kind, tags) = public_room_fields(&payload)?;
+    if payload.get("security").is_some() { room["accessPolicy"] = json!(access); }
+    if payload.get("kind").is_some() { room["roomKind"] = json!(kind); }
+    if payload.get("tags").is_some() { room["tags"] = json!(tags); }
+    room["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(&state, &key, &room).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 fn update_channel_stats(
@@ -1787,6 +1943,9 @@ struct AppError {
 }
 
 impl AppError {
+    fn unauthorized(message: &str) -> Self {
+        Self { status: StatusCode::UNAUTHORIZED, message: message.to_string() }
+    }
     fn bad_request(message: &str) -> Self {
         Self { status: StatusCode::BAD_REQUEST, message: message.to_string() }
     }
@@ -3352,6 +3511,15 @@ fn sq_build_response(room: Value) -> Value {
     }).collect::<Vec<_>>());
     public["nowPlayingId"] = json!(now_playing_id);
     public["nowPlayingTier"] = json!(now_playing_tier);
+    // Bot/owner responses used to omit these fields, making Discord fall back to
+    // "Untitled" even when the active submission already had real metadata.
+    let now_playing = public.get("nowPlayingId").and_then(Value::as_str).and_then(|id| public
+        .get("submissions").and_then(Value::as_array)
+        .and_then(|subs| subs.iter().find(|sub| sub.get("id").and_then(Value::as_str) == Some(id))));
+    let now_playing_title = now_playing.and_then(|sub| sub.get("title")).cloned().unwrap_or(Value::Null);
+    let now_playing_artist = now_playing.and_then(|sub| sub.get("artist")).cloned().unwrap_or(Value::Null);
+    public["nowPlayingTitle"] = now_playing_title;
+    public["nowPlayingArtist"] = now_playing_artist;
     public
 }
 

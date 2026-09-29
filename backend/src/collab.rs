@@ -949,6 +949,7 @@ mod collab_tests {
             stripe_webhook_secret: None,
             stripe_connect_client_id: None,
             stripe_publishable_key: None,
+            ward_issuer: Arc::new("http://ward.test".to_string()),
         }
     }
 }
