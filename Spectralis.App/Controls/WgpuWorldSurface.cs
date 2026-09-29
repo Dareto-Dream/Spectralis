@@ -112,6 +112,10 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     public bool IsAttached => _renderer is not null;
     public bool IsPointerLocked => _pointerLocked;
 
+    /// <summary>Whether the attached world declared <c>worlds.pointerLock</c> — see
+    /// <see cref="ForceEngagePointerLock"/>.</summary>
+    public bool AllowPointerLock => _wasmHost?.AllowPointerLock ?? false;
+
     public WgpuWorldSurface()
     {
         // Needed to actually receive OnKeyDown/OnKeyUp for WASD — Avalonia only routes key
@@ -172,6 +176,9 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     public event EventHandler? DspPresetReleaseRequested;
     public event EventHandler<string>? AchievementUnlocked;
     public event EventHandler<string>? SwitchToHtmlRequested;
+    public event EventHandler<InteractTarget>? InteractTargetChanged;
+    public event EventHandler<StoryRequest>? StoryRequested;
+    public event EventHandler? AchievementsRequested;
 
     /// <summary>
     /// Loads and starts rendering <paramref name="wasmBytes"/> under <paramref name="storeKey"/>
@@ -215,6 +222,9 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         _wasmHost.SwitchToHtmlRequested += (_, e) => Dispatcher.UIThread.Post(() => SwitchToHtmlRequested?.Invoke(this, e));
         _wasmHost.PointerLockRequested += (_, _) => Dispatcher.UIThread.Post(EngagePointerLock);
         _wasmHost.PointerLockReleased += (_, _) => Dispatcher.UIThread.Post(DisengagePointerLock);
+        _wasmHost.InteractTargetChanged += (_, e) => Dispatcher.UIThread.Post(() => InteractTargetChanged?.Invoke(this, e));
+        _wasmHost.StoryRequested += (_, e) => Dispatcher.UIThread.Post(() => StoryRequested?.Invoke(this, e));
+        _wasmHost.AchievementsRequested += (_, _) => Dispatcher.UIThread.Post(() => AchievementsRequested?.Invoke(this, EventArgs.Empty));
         _wasmHost.GeometrySubmitted += (_, e) =>
         {
             lock (_geometryLock)
@@ -375,6 +385,21 @@ public sealed class WgpuWorldSurface : Image, IDisposable
     /// itself. Identical to a normal release from the guest's point of view — it still gets
     /// <c>on_pointer_lock_change(0)</c> — the only difference is who decided.</summary>
     public void PanicReleasePointerLock() => DisengagePointerLock();
+
+    /// <summary>Re-engages pointer lock directly from a host-side user gesture (the pause menu's
+    /// Resume button) instead of waiting on the guest to call <c>request_pointer_lock</c> again —
+    /// most worlds only ever call it once, from <c>on_load</c>, so without this the listener would
+    /// be stuck on click-and-drag look for the rest of the session after any panic/pause. No-op if
+    /// this world never declared <c>worlds.pointerLock</c>, same capability gate as the guest's own
+    /// request. UI-thread only, same as <see cref="EngagePointerLock"/> — safe to call directly
+    /// from a button Click handler (already on the UI thread), no Dispatcher hop needed.</summary>
+    public void ForceEngagePointerLock()
+    {
+        if (AllowPointerLock)
+        {
+            EngagePointerLock();
+        }
+    }
 
     /// <summary>Computes this control's center in screen-pixel coordinates, stores it as the
     /// warp target RenderLoop's per-frame poll uses, and warps the OS cursor there immediately.
