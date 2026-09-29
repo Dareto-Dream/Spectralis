@@ -10,6 +10,8 @@ import LearnArticle from './pages/LearnArticle.jsx'
 import Setup from './pages/Setup.jsx'
 import Terms from './pages/Terms.jsx'
 import Privacy from './pages/Privacy.jsx'
+import NotFound from './pages/NotFound.jsx'
+import { Seo } from './components/Seo.jsx'
 import './App.css'
 
 function ScrollToTop() {
@@ -31,6 +33,7 @@ function ScrollToTop() {
 export default function App() {
   return (
     <>
+      <Seo />
       <ScrollToTop />
       <AnnouncementBanner />
       <Navbar />
@@ -43,6 +46,7 @@ export default function App() {
         <Route path="/downloads" element={<Navigate to="/setup" replace />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       <Footer />
     </>
