@@ -77,6 +77,7 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackCompleted -= OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested -= OnNotepadPopOutRequested;
                 _viewModel.PointerLockPanicTriggered -= OnPointerLockPanicTriggered;
+                _viewModel.AchievementsBoardDismissed -= OnAchievementsBoardDismissed;
             }
 
             _viewModel = DataContext as NowPlayingViewModel;
@@ -87,6 +88,7 @@ public NowPlayingView()
                 _viewModel.AlbumWorldTrackCompleted += OnAlbumWorldTrackCompleted;
                 _viewModel.Notepads.PopOutRequested += OnNotepadPopOutRequested;
                 _viewModel.PointerLockPanicTriggered += OnPointerLockPanicTriggered;
+                _viewModel.AchievementsBoardDismissed += OnAchievementsBoardDismissed;
                 ApplyYouTubeVideoMode();
                 ApplyEmbeddedHtmlMode();
                 ApplyDeadZoneLayout();
@@ -912,10 +914,14 @@ public NowPlayingView()
         {
             var allowPointerLock = wasmWorldContext.Capabilities.Contains(
                 Spectralis.Core.Capsule.CapsuleCapability.WorldsPointerLock);
+            // Null (no worlds.pauseMenu, or no pauseMenu block at all) just resets every field to
+            // its built-in default — see NowPlayingViewModel.ApplyPauseMenuConfig.
+            _viewModel.ApplyPauseMenuConfig(wasmWorldContext.PauseMenu);
             ApplyWasmWorldMode(wasmBytes, wasmWorldContext.Id, allowPointerLock);
             return;
         }
 
+        _viewModel?.ApplyPauseMenuConfig(null);
         StopWasmWorldMode();
 
         if (_viewModel is not { ShowEmbeddedHtml: true, EmbeddedHtml: { } context })
@@ -1039,6 +1045,16 @@ public NowPlayingView()
         _wgpuSurface.DspPresetReleaseRequested += OnEmbeddedDspPresetRelease;
         _wgpuSurface.AchievementUnlocked += OnEmbeddedAchievementUnlocked;
         _wgpuSurface.SwitchToHtmlRequested += (_, _) => _viewModel?.RequestSwitchToHtml();
+        _wgpuSurface.InteractTargetChanged += (_, e) => _viewModel?.ApplyInteractTarget(e.Id, e.Prompt);
+        _wgpuSurface.StoryRequested += (_, e) => _viewModel?.BeginMirrorStory(e.TrackId, e.Pages);
+        _wgpuSurface.AchievementsRequested += (_, _) =>
+        {
+            _viewModel?.BeginAchievementsBoard();
+            // A recentering, hidden cursor behind a menu you're meant to read is just bad —
+            // release it for the board the same way the panic escape does, and hand it back on
+            // close (OnAchievementsBoardDismissed) the same way the pause menu's Resume does.
+            _wgpuSurface?.PanicReleasePointerLock();
+        };
         EmbeddedHtmlHost.Content = _wgpuSurface;
 
         // storeKey = worldId so this shares the exact same CapsuleScopedStore file the HTML
@@ -1209,6 +1225,15 @@ public NowPlayingView()
         _wgpuSurface?.PanicReleasePointerLock();
     }
 
+    /// <summary>Achievements board dismissed (<see cref="NowPlayingViewModel.DismissAchievementsBoard"/>)
+    /// — tells the guest to resume normal input. No-op if the wasm surface isn't attached (the
+    /// board can't be up without it, but matches every other nullable-surface guard here).</summary>
+    private void OnAchievementsBoardDismissed(object? sender, EventArgs e)
+    {
+        _wgpuSurface?.TriggerExport("on_achievements_closed");
+        _wgpuSurface?.ForceEngagePointerLock();
+    }
+
     private void OnPanicExitCapsuleClicked(object? sender, RoutedEventArgs e)
     {
         _viewModel?.ExitCapsuleFromPointerLockPanic();
@@ -1217,6 +1242,11 @@ public NowPlayingView()
     private void OnPanicDismissClicked(object? sender, RoutedEventArgs e)
     {
         _viewModel?.DismissPointerLockPanic();
+        // The click itself is the trusted user gesture pointer lock needs — re-engage right here
+        // rather than leaving it to the guest to call request_pointer_lock again (see
+        // WgpuWorldSurface.ForceEngagePointerLock's doc for why that alone left the listener
+        // stuck on click-and-drag look after any panic/pause).
+        _wgpuSurface?.ForceEngagePointerLock();
     }
 
     private void OnEmbeddedSaveBookmark(object? sender, Spectralis.Core.Integrations.Web.AlbumBookmarkRequest req)
