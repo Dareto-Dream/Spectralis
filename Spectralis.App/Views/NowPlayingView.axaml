@@ -234,6 +234,107 @@
         <ContentControl x:Name="YouTubeVideoHost" />
       </Panel>
 
+      <!-- Wasm-world reticle: default dot, swaps to an accent ring + prompt label when the guest
+           reports an interact target within reach (chaser_room's set_interact_target, via
+           NowPlayingViewModel.ApplyInteractTarget). Hidden entirely once the story panel below
+           takes over — the guest stopped reporting a target the moment it called start_story. -->
+      <Panel Grid.Row="0" IsVisible="{Binding ShowWasmReticle}" IsHitTestVisible="False">
+        <Ellipse Width="5" Height="5" Fill="{StaticResource Brush.Ink.Secondary}"
+                 Opacity="0.55" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 IsVisible="{Binding !HasInteractTarget}" />
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                    IsVisible="{Binding HasInteractTarget}">
+          <Ellipse Width="14" Height="14" Stroke="#E0454C" StrokeThickness="1.5"
+                    HorizontalAlignment="Center" />
+          <Border Background="{StaticResource Brush.Bg.Overlay}" CornerRadius="5"
+                  Padding="8,3" HorizontalAlignment="Center">
+            <TextBlock Text="{Binding InteractPromptText}" FontSize="11" FontWeight="600"
+                       Foreground="#E0454C" LetterSpacing="0.5" />
+          </Border>
+        </StackPanel>
+      </Panel>
+
+      <!-- Mirror's VN pager: bottom-third overlay over the still-visible (but frozen — see
+           chaser_room's STORY_ACTIVE) room. E/Space advances a page, or on the last page exits
+           into the gated track — MainWindow.OnWindowKeyDown intercepts both while this is up. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              VerticalAlignment="Bottom"
+              Height="220"
+              IsVisible="{Binding ShowMirrorStory}"
+              Background="#E60C0D0F"
+              BorderBrush="#2b2830" BorderThickness="0,1,0,0">
+        <Grid Margin="32,22" RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                     Text="{Binding StoryPageText}"
+                     TextWrapping="Wrap" FontSize="16" LineHeight="24"
+                     Foreground="{StaticResource Brush.Ink.Primary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Grid.Row="1" Grid.Column="0"
+                     Text="Press E to continue"
+                     FontSize="11" LetterSpacing="0.5"
+                     Foreground="{StaticResource Brush.Ink.Secondary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Grid.Row="1" Grid.Column="1"
+                     Text="{Binding StoryPageIndicator}"
+                     FontSize="11" Foreground="{StaticResource Brush.Ink.Secondary}"
+                     VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <!-- CRT TV's achievements board: a centered card, not bottom-third like the story — this
+           is a menu, not a scene overlay. Reversible (see chaser_room's BOARD_ACTIVE/
+           on_achievements_closed): E closes it and the player keeps walking around afterward. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              IsVisible="{Binding ShowAchievementsBoard}"
+              Background="#CC0C0D0F">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                MaxWidth="560" MaxHeight="480"
+                CornerRadius="10"
+                Background="{StaticResource Brush.Bg.Overlay}"
+                BorderBrush="#2b2830"
+                BorderThickness="1.5"
+                BoxShadow="0 8 40 4 #80000000"
+                Padding="24,20">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="ACHIEVEMENTS" FontWeight="Bold" FontSize="18"
+                       LetterSpacing="3" Foreground="{StaticResource Brush.Ink.Primary}"
+                       Margin="0,0,0,14" />
+            <TextBlock DockPanel.Dock="Bottom" Text="Press E to close" FontSize="11"
+                       LetterSpacing="0.5" Foreground="{StaticResource Brush.Ink.Secondary}"
+                       Margin="0,14,0,0" />
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding AchievementEntries}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Width="240" Margin="0,0,10,10" Padding="14,12" CornerRadius="8"
+                            BorderThickness="1" BorderBrush="#2b2830" Background="#14FFFFFF"
+                            Opacity="{Binding Unlocked, Converter={x:Static conv:BoolToWidthConverter.Instance}, ConverterParameter=1|0.45}">
+                      <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Ellipse Width="7" Height="7" Fill="#E0454C" VerticalAlignment="Center"
+                                    IsVisible="{Binding Unlocked}" />
+                          <TextBlock Text="{Binding Converter={x:Static conv:AchievementTitleConverter.Instance}}"
+                                     FontWeight="600" FontSize="13"
+                                     Foreground="{StaticResource Brush.Ink.Primary}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Converter={x:Static conv:AchievementDescriptionConverter.Instance}}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource Brush.Ink.Secondary}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Border>
+
       <!-- Hold-Esc panic escape: covers both rows (controls bar too) since the point is an
            always-on-top way out, not something a world's own overlay could occlude. -->
       <Border Grid.Row="0" Grid.RowSpan="2"
@@ -248,15 +349,15 @@
                 BoxShadow="0 8 40 4 #80000000"
                 Padding="28,24">
           <StackPanel Spacing="14">
-            <TextBlock Text="PANIC" FontWeight="Bold" FontSize="28" LetterSpacing="4"
+            <TextBlock Text="{Binding PauseMenuTitle}" FontWeight="Bold" FontSize="28" LetterSpacing="4"
                        Foreground="#E0454C" HorizontalAlignment="Center" />
-            <TextBlock Text="Pointer lock is off. The world can ask for it back, but your cursor is free right now."
+            <TextBlock Text="{Binding PauseMenuMessage}"
                        TextWrapping="Wrap" TextAlignment="Center"
                        Foreground="{StaticResource Brush.Ink.Secondary}" />
             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
-              <Button Content="Exit Capsule" Click="OnPanicExitCapsuleClicked"
+              <Button Content="{Binding PauseMenuExitLabel}" Click="OnPanicExitCapsuleClicked"
                       Background="#E0454C" Foreground="White" Padding="16,8" />
-              <Button Content="Exit Panic Mode" Click="OnPanicDismissClicked"
+              <Button Content="{Binding PauseMenuResumeLabel}" Click="OnPanicDismissClicked"
                       Padding="16,8" />
             </StackPanel>
           </StackPanel>
