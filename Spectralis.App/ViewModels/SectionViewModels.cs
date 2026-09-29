@@ -954,6 +954,12 @@ public sealed class CapsulesViewModel : ViewModelBase
         _lastAlbumWorldEnginePlaying = engineIsPlaying;
     }
 
+    /// <summary>Pulled by <c>NowPlayingViewModel.GetAlbumAchievements</c> (via
+    /// <see cref="MainWindowViewModel"/>'s wiring) when the CRT TV's board opens — thin wrapper
+    /// since <see cref="AlbumWorldRuntime"/> already owns the manifest/session this needs.</summary>
+    public IReadOnlyList<AlbumAchievementEntry> BuildAchievementsSnapshot() =>
+        _activeRuntime?.BuildAchievementsSnapshot() ?? [];
+
     public async Task OpenFilesAsync(IReadOnlyList<string> paths, bool startPlayback)
     {
         foreach (var path in paths)
