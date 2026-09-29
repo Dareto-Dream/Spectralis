@@ -3032,15 +3032,15 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         if (_pinnedAlbumWorldHtml is null)
             return;
 
-        // An HTML "world map" hands off to the normal player UI once a track is picked — that's
-        // a menu, not a place. A Wasm/wgpu world (e.g. CHASER's walkable room) is the opposite:
-        // picking a track via its own interact key shouldn't yank the room out from under the
-        // listener, since ApplyEmbeddedModules only keeps the pinned world's EmbeddedHtml alive
-        // while _albumWorldShowingWorld stays true — flipping it here would tear down the wgpu
-        // surface (and the movement/look it's mid-rendering) the instant music starts.
-        if (_embeddedSurfaceUsingWasm)
-            return;
-
+        // Same hand-off for both runtimes: picking a track — HTML world map or a Wasm/wgpu
+        // room's own interact key — exits the world for the normal player UI (or the track's own
+        // embed, if it has one) and hands back when the track ends (see
+        // NotifyAlbumWorldTrackCompleted). A Wasm world used to be a carve-out here that kept the
+        // room up through playback instead (c73d180) — reversed: the room now tears down via the
+        // same ApplyEmbeddedHtmlMode gate the HTML path always used (see NowPlayingView.axaml.cs's
+        // IsAlbumWorldShowingWorld property-changed handler), and NotifyAlbumWorldTrackCompleted's
+        // "switch back to showing the world" branch — built assuming this flip already
+        // happened — finally has something to do for CHASER instead of being a no-op.
         _albumWorldShowingWorld = false;
         RaiseSurfaceModeChanged();
     }
@@ -3064,6 +3064,23 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         if (IsAlbumWorldActive && !_albumWorldShowingWorld)
         {
             _albumWorldShowingWorld = true;
+
+            // BeginAlbumWorldTrackPlayback's exit let ApplyEmbeddedModules point EmbeddedHtml at
+            // the finished track's own embed (null, for a track like ACT RIGHT with none) — flipping
+            // _albumWorldShowingWorld back alone doesn't undo that. Without restoring the pinned
+            // world's content here, ApplyEmbeddedHtmlMode's wasm-reattach gate (which needs
+            // EmbeddedHtml non-null) never matches: the transport bar hides (IsAlbumWorldShowingWorld
+            // is true) but nothing reattaches behind it — confirmed, this is why the room never came
+            // back and just sat frozen on whatever surface was left showing.
+            if (_pinnedAlbumWorldHtml is { } worldHtml)
+            {
+                EmbeddedHtml = worldHtml;
+                if (_settings.EnableEmbeddedContent)
+                {
+                    UseEmbeddedHtmlSurface();
+                }
+            }
+
             RaiseSurfaceModeChanged();
         }
 
