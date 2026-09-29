@@ -40,6 +40,9 @@ CAPABILITIES: dict[str, str] = {
     "audio.dspPreset": "Embedded HTML/Wasm content may register a whole-rack DSP preset while active",
     "worlds.pointerLock": "Embedded HTML/Wasm content may request OS-level pointer lock (hidden, "
     "recentered cursor, continuous look deltas without holding a button)",
+    "worlds.pauseMenu": "Capsule may customize the pause menu shown whenever a worlds.pointerLock "
+    "world's lock drops — every such world gets one regardless (the app's default); this "
+    "capability only lets the manifest's own title/message/button copy override it",
 }
 
 # NOTE: requesting a capability in a manifest only makes it *signable* locally. A real
