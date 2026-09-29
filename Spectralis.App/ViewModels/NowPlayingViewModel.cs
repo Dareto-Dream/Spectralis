@@ -1661,6 +1661,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         this.RaisePropertyChanged(nameof(IsAlbumWorldActive));
         this.RaisePropertyChanged(nameof(IsAlbumWorldShowingWorld));
+        this.RaisePropertyChanged(nameof(ShowWasmReticle));
         this.RaisePropertyChanged(nameof(IsNilState));
         this.RaisePropertyChanged(nameof(HasTrackOrAlbumWorld));
         this.RaisePropertyChanged(nameof(IsSurfaceVisualizer));
@@ -2884,6 +2885,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
     public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
 
+    /// <summary>Whether the reticle overlay belongs on screen right now — only while an actual
+    /// wgpu-rendered world (not an HTML world map) is the visible surface. The interact
+    /// prompt/story panel ride the same guest-driven state regardless, but the crosshair itself
+    /// would be meaningless over an HTML surface.</summary>
+    public bool ShowWasmReticle => IsAlbumWorldShowingWorld && IsEmbeddedSurfaceUsingWasm;
+
     /// <summary>The active world's sandboxed Wasm/wgpu payload, if it declared one — see
     /// <see cref="Spectralis.Core.Capsule.AlbumWorldSection.WasmEntry"/>. Null means this world
     /// is HTML-only (the common case today); the View never even considers Wasm rendering then.</summary>
@@ -2939,6 +2946,201 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         get => _showPointerLockPanicBanner;
         private set => this.RaiseAndSetIfChanged(ref _showPointerLockPanicBanner, value);
+    }
+
+    private const string DefaultPauseMenuTitle = "PAUSED";
+    private const string DefaultPauseMenuMessage =
+        "Pointer lock is off. Resume grabs it back — or hold Esc anytime to get here.";
+    private const string DefaultPauseMenuResumeLabel = "Resume";
+    private const string DefaultPauseMenuExitLabel = "Exit Capsule";
+
+    private string _pauseMenuTitle = DefaultPauseMenuTitle;
+    private string _pauseMenuMessage = DefaultPauseMenuMessage;
+    private string _pauseMenuResumeLabel = DefaultPauseMenuResumeLabel;
+    private string _pauseMenuExitLabel = DefaultPauseMenuExitLabel;
+
+    /// <summary>Pause menu copy the banner binds to — defaults unless the active world declared
+    /// <c>worlds.pauseMenu</c> and overrode a field (see <see cref="ApplyPauseMenuConfig"/>).</summary>
+    public string PauseMenuTitle
+    {
+        get => _pauseMenuTitle;
+        private set => this.RaiseAndSetIfChanged(ref _pauseMenuTitle, value);
+    }
+
+    public string PauseMenuMessage
+    {
+        get => _pauseMenuMessage;
+        private set => this.RaiseAndSetIfChanged(ref _pauseMenuMessage, value);
+    }
+
+    public string PauseMenuResumeLabel
+    {
+        get => _pauseMenuResumeLabel;
+        private set => this.RaiseAndSetIfChanged(ref _pauseMenuResumeLabel, value);
+    }
+
+    public string PauseMenuExitLabel
+    {
+        get => _pauseMenuExitLabel;
+        private set => this.RaiseAndSetIfChanged(ref _pauseMenuExitLabel, value);
+    }
+
+    /// <summary>Applies a world's custom pause menu copy (already capability-gated by whoever
+    /// resolved it — see <see cref="Spectralis.Core.Capsule.AlbumWorldRuntime.BuildWorldHtmlContext"/>),
+    /// falling back field-by-field to the built-in defaults. Call with null to reset every field
+    /// to defaults (e.g. when a non-customized or non-pointer-lock world loads).</summary>
+    public void ApplyPauseMenuConfig(Spectralis.Core.Embedded.EmbeddedPauseMenuConfig? config)
+    {
+        PauseMenuTitle = config?.Title is { Length: > 0 } title ? title : DefaultPauseMenuTitle;
+        PauseMenuMessage = config?.Message is { Length: > 0 } message ? message : DefaultPauseMenuMessage;
+        PauseMenuResumeLabel = config?.ResumeLabel is { Length: > 0 } resumeLabel ? resumeLabel : DefaultPauseMenuResumeLabel;
+        PauseMenuExitLabel = config?.ExitLabel is { Length: > 0 } exitLabel ? exitLabel : DefaultPauseMenuExitLabel;
+    }
+
+    private bool _hasInteractTarget;
+    private string _interactPromptText = "";
+
+    /// <summary>True while the wasm world's reticle hit-test is over an interactable (e.g. the
+    /// mirror) within reach — driven by <c>set_interact_target</c> via
+    /// <c>WgpuWorldSurface.InteractTargetChanged</c>.</summary>
+    public bool HasInteractTarget
+    {
+        get => _hasInteractTarget;
+        private set => this.RaiseAndSetIfChanged(ref _hasInteractTarget, value);
+    }
+
+    /// <summary>The current interactable's prompt text (e.g. "Press E") — meaningless while
+    /// <see cref="HasInteractTarget"/> is false.</summary>
+    public string InteractPromptText
+    {
+        get => _interactPromptText;
+        private set => this.RaiseAndSetIfChanged(ref _interactPromptText, value);
+    }
+
+    /// <summary>Applies (or clears) the wasm world's current interact target — see
+    /// <see cref="Spectralis.Core.Worlds.InteractTarget"/>. Null/empty id clears it.</summary>
+    public void ApplyInteractTarget(string? id, string? prompt)
+    {
+        HasInteractTarget = !string.IsNullOrEmpty(id);
+        InteractPromptText = HasInteractTarget ? prompt ?? "" : "";
+    }
+
+    private bool _showMirrorStory;
+    private string _storyTrackId = "";
+    private IReadOnlyList<string> _storyPages = [];
+    private int _storyPageIndex;
+
+    /// <summary>True while the bottom-third VN pager (triggered by <c>start_story</c>) is up.
+    /// The reticle/interact prompt has nothing to show while this is true — the guest stopped
+    /// reporting a target the moment it called start_story (see chaser_room's STORY_ACTIVE).</summary>
+    public bool ShowMirrorStory
+    {
+        get => _showMirrorStory;
+        private set => this.RaiseAndSetIfChanged(ref _showMirrorStory, value);
+    }
+
+    public string StoryPageText
+    {
+        get => _storyPageIndex < _storyPages.Count ? _storyPages[_storyPageIndex] : "";
+    }
+
+    public string StoryPageIndicator => _storyPages.Count > 0 ? $"{_storyPageIndex + 1} / {_storyPages.Count}" : "";
+
+    /// <summary>Raised by a wasm world's <c>start_story</c> host import — see
+    /// <see cref="Spectralis.Core.Worlds.StoryRequest"/>. Shows the first page and clears any
+    /// interact prompt, since the world that called this has already stopped reporting one.</summary>
+    public void BeginMirrorStory(string trackId, IReadOnlyList<string> pages)
+    {
+        if (pages.Count == 0)
+        {
+            return;
+        }
+
+        _storyTrackId = trackId;
+        _storyPages = pages;
+        _storyPageIndex = 0;
+        ApplyInteractTarget(null, null);
+        ShowMirrorStory = true;
+        this.RaisePropertyChanged(nameof(StoryPageText));
+        this.RaisePropertyChanged(nameof(StoryPageIndicator));
+    }
+
+    /// <summary>Advances to the next story page, or — from the last page — hides the pager and
+    /// starts the track it was gating, via the same <see cref="AlbumPlayTrackDelegate"/> call a
+    /// guest-initiated <c>play_track</c> would have made (<c>OnEmbeddedPlayTrackRequested</c>),
+    /// so it rides the existing exit-world-into-playback path unchanged.</summary>
+    public void AdvanceMirrorStory()
+    {
+        if (!ShowMirrorStory)
+        {
+            return;
+        }
+
+        if (_storyPageIndex < _storyPages.Count - 1)
+        {
+            _storyPageIndex++;
+            this.RaisePropertyChanged(nameof(StoryPageText));
+            this.RaisePropertyChanged(nameof(StoryPageIndicator));
+            return;
+        }
+
+        ShowMirrorStory = false;
+        var trackId = _storyTrackId;
+        _storyPages = [];
+        _storyTrackId = "";
+        AlbumPlayTrackDelegate?.Invoke(trackId, 0);
+    }
+
+    private bool _showAchievementsBoard;
+    private IReadOnlyList<Spectralis.Core.Capsule.AlbumAchievementEntry> _achievementEntries = [];
+
+    /// <summary>Pull delegate to the active album world's achievement snapshot — set from
+    /// <c>MainWindowViewModel</c> to <c>CapsulesViewModel.BuildAchievementsSnapshot()</c>, same
+    /// shape as <see cref="AlbumPlayTrackDelegate"/>. Pulled fresh every time the board opens
+    /// (<see cref="BeginAchievementsBoard"/>) rather than kept live, since it only needs to be
+    /// current at the moment the listener looks at it.</summary>
+    public Func<IReadOnlyList<Spectralis.Core.Capsule.AlbumAchievementEntry>>? GetAlbumAchievements { get; set; }
+
+    /// <summary>True while the CRT TV's achievements board is up.</summary>
+    public bool ShowAchievementsBoard
+    {
+        get => _showAchievementsBoard;
+        private set => this.RaiseAndSetIfChanged(ref _showAchievementsBoard, value);
+    }
+
+    public IReadOnlyList<Spectralis.Core.Capsule.AlbumAchievementEntry> AchievementEntries
+    {
+        get => _achievementEntries;
+        private set => this.RaiseAndSetIfChanged(ref _achievementEntries, value);
+    }
+
+    /// <summary>Raised by a wasm world's <c>show_achievements</c> host import. Clears the
+    /// interact prompt/reticle-hover state the same way <see cref="BeginMirrorStory"/> does —
+    /// the guest's BOARD_ACTIVE freeze stops it from clearing its own target on the way in.</summary>
+    public void BeginAchievementsBoard()
+    {
+        ApplyInteractTarget(null, null);
+        AchievementEntries = GetAlbumAchievements?.Invoke() ?? [];
+        ShowAchievementsBoard = true;
+    }
+
+    /// <summary>Raised by <see cref="DismissAchievementsBoard"/> — the View reacts by calling
+    /// <c>WgpuWorldSurface.TriggerExport("on_achievements_closed")</c> so the guest resumes
+    /// normal input. Same "ViewModel raises, View acts on the surface it owns" shape as
+    /// <see cref="PointerLockPanicTriggered"/> below.</summary>
+    public event EventHandler? AchievementsBoardDismissed;
+
+    /// <summary>"Press E to close" on the achievements board — hides it and raises
+    /// <see cref="AchievementsBoardDismissed"/> to tell the guest to resume normal input.</summary>
+    public void DismissAchievementsBoard()
+    {
+        if (!ShowAchievementsBoard)
+        {
+            return;
+        }
+
+        ShowAchievementsBoard = false;
+        AchievementsBoardDismissed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Raised by the hold-Esc panic escape (<c>MainWindow.OnWindowKeyDown</c>, which
