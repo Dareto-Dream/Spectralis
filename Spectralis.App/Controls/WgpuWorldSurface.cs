@@ -196,16 +196,23 @@ public sealed class WgpuWorldSurface : Image, IDisposable
         }
 
         _wasmHost = new WasmWorldHost(storeKey, allowPointerLock);
-        _wasmHost.PlayTrackRequested += (_, e) => PlayTrackRequested?.Invoke(this, e);
-        _wasmHost.AddToQueueRequested += (_, e) => AddToQueueRequested?.Invoke(this, e);
-        _wasmHost.SaveBookmarkRequested += (_, e) => SaveBookmarkRequested?.Invoke(this, e);
-        _wasmHost.DspPresetRegisterRequested += (_, e) => DspPresetRegisterRequested?.Invoke(this, e);
-        _wasmHost.DspPresetReleaseRequested += (_, e) => DspPresetReleaseRequested?.Invoke(this, e);
-        _wasmHost.AchievementUnlocked += (_, e) => AchievementUnlocked?.Invoke(this, e);
-        _wasmHost.SwitchToHtmlRequested += (_, e) => SwitchToHtmlRequested?.Invoke(this, e);
-        // Requested/released from either the UI thread (on_load, during the Load() call just
-        // below) or the render thread (on_input/on_tick, under _wasmSync) — always hop to the UI
-        // thread since engaging/disengaging touches the Cursor property and native cursor calls.
+        // Every one of these can fire from either the UI thread (on_load, during the Load() call
+        // just below) or the render thread (on_input/on_tick, under _wasmSync — e.g. chaser_room's
+        // own interact-key play_track call) — always hop to the UI thread before re-raising, same
+        // as PointerLockRequested/Released always did below. Without this, a guest call from the
+        // render thread bubbles PlayTrackRequested straight up through
+        // NowPlayingViewModel.BeginAlbumWorldTrackPlayback's RaiseSurfaceModeChanged into
+        // Avalonia control access off-thread — confirmed: exactly this crashed with
+        // InvalidOperationException("Call from invalid thread") out of StopWasmWorldMode, as an
+        // unobserved exception on the fire-and-forget LoadAlbumTrackAsync task, silently eating
+        // the whole track-start (and world hand-off) before it ever ran.
+        _wasmHost.PlayTrackRequested += (_, e) => Dispatcher.UIThread.Post(() => PlayTrackRequested?.Invoke(this, e));
+        _wasmHost.AddToQueueRequested += (_, e) => Dispatcher.UIThread.Post(() => AddToQueueRequested?.Invoke(this, e));
+        _wasmHost.SaveBookmarkRequested += (_, e) => Dispatcher.UIThread.Post(() => SaveBookmarkRequested?.Invoke(this, e));
+        _wasmHost.DspPresetRegisterRequested += (_, e) => Dispatcher.UIThread.Post(() => DspPresetRegisterRequested?.Invoke(this, e));
+        _wasmHost.DspPresetReleaseRequested += (_, e) => Dispatcher.UIThread.Post(() => DspPresetReleaseRequested?.Invoke(this, e));
+        _wasmHost.AchievementUnlocked += (_, e) => Dispatcher.UIThread.Post(() => AchievementUnlocked?.Invoke(this, e));
+        _wasmHost.SwitchToHtmlRequested += (_, e) => Dispatcher.UIThread.Post(() => SwitchToHtmlRequested?.Invoke(this, e));
         _wasmHost.PointerLockRequested += (_, _) => Dispatcher.UIThread.Post(EngagePointerLock);
         _wasmHost.PointerLockReleased += (_, _) => Dispatcher.UIThread.Post(DisengagePointerLock);
         _wasmHost.GeometrySubmitted += (_, e) =>
