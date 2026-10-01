@@ -149,6 +149,27 @@ Format name: `spectralis-album`, version: `1`.
 | `dataAssets` | No | Named data assets (JSON configs, manifests) |
 | `wasmEntry` | No | Path within ZIP to a sandboxed Wasm/wgpu 3D world module (dual-runtime rework). Requires the `worlds.wasm3d` capability. Empty/absent means this world is HTML-only — the common case. |
 
+### Content warning (`world.contentWarning`)
+
+A world can put a disclosure screen in front of itself. It shows before any surface loads, so a
+Wasm room never boots (no pointer lock, no geometry, no achievements) until the listener accepts.
+It is **not capability-gated**: warning your listeners shouldn't need the CDN key's permission.
+
+```json
+"contentWarning": {
+  "title": "Before you go in",
+  "intro": "Free text above the list.",
+  "items": [{ "heading": "SELF-HARM", "detail": "What, and how it's treated." }],
+  "outro": "Free text under the list (help lines, how to leave).",
+  "acceptLabel": "I understand. Enter",
+  "declineLabel": "Not now"
+}
+```
+
+Every field is optional except that a block with no title, intro or items is ignored. Accepting is
+remembered in `%LocalAppData%\Spectralis\content-warnings.json`, keyed by a hash of the whole
+wording, so editing the text asks again. Declining isn't remembered and leaves the world.
+
 **`world` is optional.** If absent or if `entry` does not resolve to an existing file in the
 extracted album directory, the player shows the fallback tracklist UI instead of loading WebView2.
 
