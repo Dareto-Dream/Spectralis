@@ -283,7 +283,12 @@ public static class EmbeddedHtmlDocument
             return bars;
           }
 
-          function applyFrame(frame, now) {
+          // replay = this exact frame object was already applied on an earlier rAF (WebView2 only gets
+          // a new object per push, ~60/s, so most rAFs after a push are replays). A replay must NOT
+          // re-anchor the extrapolation to "now" — that pinned the clock to the last push time and made
+          // time step with push jitter instead of advancing smoothly. Callbacks get an extrapolated
+          // time on a replay so time-driven capsules advance every rAF.
+          function applyFrame(frame, now, replay) {
             const barNodes = getBars();
             const lvls = frame.levels || [];
             for (let i = 0; i < barNodes.length; i++) {
@@ -302,14 +307,21 @@ public static class EmbeddedHtmlDocument
             document.documentElement.style.setProperty('--spectral-progress', String(dur > 0 ? Math.min(1, t / dur) : 0));
             document.documentElement.classList.toggle('audio-active', Boolean(frame.active));
 
-            interpBaseTime = t;
-            interpBaseWall = now;
-            interpActive = Boolean(frame.active);
-            lastAppliedTime = t;
+            if (!replay) {
+              interpBaseTime = t;
+              interpBaseWall = now;
+              interpActive = Boolean(frame.active);
+              lastAppliedTime = t;
+            }
 
-            if (typeof window.spectral?.onPlaybackFrame === 'function') window.spectral.onPlaybackFrame(frame);
-            if (typeof window.onSpectralisFrame === 'function') window.onSpectralisFrame(frame);
-            if (typeof window.onAudioTime === 'function') window.onAudioTime(frame.time);
+            // Cap the lookahead so a stalled push never lets the clock run away from the audio.
+            const out = replay && interpActive
+              ? Object.assign({}, frame, { time: interpBaseTime + Math.min(0.12, (now - interpBaseWall) / 1000) })
+              : frame;
+
+            if (typeof window.spectral?.onPlaybackFrame === 'function') window.spectral.onPlaybackFrame(out);
+            if (typeof window.onSpectralisFrame === 'function') window.onSpectralisFrame(out);
+            if (typeof window.onAudioTime === 'function') window.onAudioTime(out.time);
           }
 
           // Apply spectral.meta once it's ready (injected at document-build time).
@@ -327,6 +339,7 @@ public static class EmbeddedHtmlDocument
             applyMetaOnce();
           }
 
+          let lastFrame = null;
           let rafFrames = 0;
           let rafWindowStart = performance.now();
 
@@ -355,7 +368,10 @@ public static class EmbeddedHtmlDocument
             if (!frame) frame = pushedFrame;
 
             if (frame) {
-              applyFrame(frame, now);
+              // CefGlue parses a fresh object every call so it never replays; WebView2 hands back
+              // the same pushedFrame until the next push lands.
+              applyFrame(frame, now, frame === lastFrame);
+              lastFrame = frame;
             }
 
             // Extrapolate --audio-time between frames for smooth CSS animations.
