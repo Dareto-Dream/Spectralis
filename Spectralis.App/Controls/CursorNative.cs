@@ -34,6 +34,25 @@ internal static class CursorNative
 
     internal static void RecenterTo(int screenX, int screenY) => SetCursorPos(screenX, screenY);
 
+    [DllImport("winmm.dll")]
+    private static extern uint timeBeginPeriod(uint milliseconds);
+
+    [DllImport("winmm.dll")]
+    private static extern uint timeEndPeriod(uint milliseconds);
+
+    /// <summary>Asks Windows for ~1ms timer granularity while the render loop is paced. At the
+    /// default ~15.6ms a Sleep(16) can land on 31ms, which would quietly turn a 60fps cap into 30.
+    /// Always pair with <see cref="EndFineTimer"/>.</summary>
+    internal static void BeginFineTimer()
+    {
+        try { timeBeginPeriod(1); } catch { /* winmm missing: just coarser pacing */ }
+    }
+
+    internal static void EndFineTimer()
+    {
+        try { timeEndPeriod(1); } catch { }
+    }
+
     /// <summary>Raw OS cursor position in screen pixels. Returns false (out params zeroed) on
     /// the rare native failure — callers should treat that as "no movement this frame", not throw.</summary>
     internal static bool TryGetScreenPos(out int screenX, out int screenY)

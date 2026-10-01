@@ -95,6 +95,13 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
     private WriteableBitmap? _displayBitmap;
 
+    // The render thread never has more than one frame waiting on the UI thread: it only renders
+    // again once ApplyFrame has taken the last one. Before this the loop ran flat out and posted
+    // a fresh 2.7MB snapshot per iteration, so the dispatcher queue (and the GC) fell behind
+    // whenever the GPU out-ran the UI.
+    private int _frameInFlight;
+    private const double TargetFrameSeconds = 1.0 / 60.0;
+
     // Read from the render thread (the pointer-lock poll below gates on it), written from the
     // UI thread via the top-level window's Activated/Deactivated — volatile, same reasoning as
     // _pointerLocked. GetCursorPos is a *global* OS call with no notion of which window (if any)
@@ -262,6 +269,7 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             _pendingInteract = false;
         }
         _frameCount = 0;
+        Volatile.Write(ref _frameInFlight, 0);
         _running = true;
         _renderThread = new Thread(RenderLoop) { IsBackground = true, Name = "WgpuWorldSurface-Render" };
         _renderThread.Start();
@@ -424,8 +432,47 @@ public sealed class WgpuWorldSurface : Image, IDisposable
 
     private void RenderLoop()
     {
+        var fineTimer = OperatingSystem.IsWindows();
+        if (fineTimer)
+        {
+            CursorNative.BeginFineTimer();
+        }
+
+        try
+        {
+            RenderLoopCore();
+        }
+        finally
+        {
+            if (fineTimer)
+            {
+                CursorNative.EndFineTimer();
+            }
+        }
+    }
+
+    private void RenderLoopCore()
+    {
+        var pace = System.Diagnostics.Stopwatch.StartNew();
+        var nextFrameAt = 0.0;
+        // What was last drawn: a frame is only re-rendered (GPU submit + readback + 2.7MB copy +
+        // UI hop) when the pose moved, new geometry/texture arrived, or the scene is still the
+        // host's placeholder (which animates). A listener standing still costs ~nothing now.
+        var dirty = true;
+        var guestGeometry = false;
+        var haveLastPose = false;
+        var lastPose = CameraPose.Default;
+
         while (_running)
         {
+            var wait = nextFrameAt - pace.Elapsed.TotalSeconds;
+            if (wait > 0)
+            {
+                Thread.Sleep(Math.Max(1, (int)(wait * 1000)));
+            }
+
+            nextFrameAt = Math.Max(nextFrameAt + TargetFrameSeconds, pace.Elapsed.TotalSeconds);
+
             var renderer = _renderer;
             if (renderer is null)
             {
@@ -452,7 +499,10 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             if (geometry is not null)
             {
                 renderer.SubmitGeometry(geometry.InterleavedVertices, geometry.Indices);
+                guestGeometry = true;
             }
+
+            dirty |= geometry is not null || texture is not null;
 
             var now = DateTime.UtcNow;
             var dt = _lastFrameUtc == default ? 0.0 : (now - _lastFrameUtc).TotalSeconds;
@@ -511,12 +561,27 @@ public sealed class WgpuWorldSurface : Image, IDisposable
             }
 
             var pose = _wasmHost?.GetCameraPose() ?? CameraPose.Default;
-            var pixels = renderer.RenderFrameBgraPixels(
-                t, (float)pose.X, (float)pose.Y, (float)pose.Z, (float)pose.Yaw, (float)pose.Pitch);
-            if (pixels is not null)
+            if (!haveLastPose || pose != lastPose)
             {
-                var snapshot = (byte[])pixels.Clone();
-                Dispatcher.UIThread.Post(() => ApplyFrame(snapshot, renderer.Width, renderer.Height));
+                dirty = true;
+            }
+
+            byte[]? pixels = null;
+            var rendered = false;
+            if ((dirty || !guestGeometry) && Volatile.Read(ref _frameInFlight) == 0)
+            {
+                rendered = true;
+                pixels = renderer.RenderFrameBgraPixels(
+                    t, (float)pose.X, (float)pose.Y, (float)pose.Z, (float)pose.Yaw, (float)pose.Pitch);
+                if (pixels is not null)
+                {
+                    dirty = false;
+                    haveLastPose = true;
+                    lastPose = pose;
+                    var snapshot = (byte[])pixels.Clone();
+                    Volatile.Write(ref _frameInFlight, 1);
+                    Dispatcher.UIThread.Post(() => ApplyFrame(snapshot, renderer.Width, renderer.Height));
+                }
             }
 
             _frameCount++;
@@ -531,12 +596,25 @@ public sealed class WgpuWorldSurface : Image, IDisposable
                     $"frame #{_frameCount}: keys[W={moveForwardHeld} A={moveLeftHeld} S={moveBackHeld} D={moveRightHeld}] " +
                     $"lookDelta=({lookYawDelta:F4},{lookPitchDelta:F4}) interact={interact} " +
                     $"pose=({pose.X:F2},{pose.Y:F2},{pose.Z:F2} yaw={pose.Yaw:F2} pitch={pose.Pitch:F2}) " +
-                    $"frameRendered={pixels is not null}");
+                    $"frameRendered={pixels is not null} skipped={!rendered}");
             }
         }
     }
 
     private void ApplyFrame(byte[] bgraPixels, int width, int height)
+    {
+        // Free the render thread for the next frame no matter how this exits.
+        try
+        {
+            ApplyFrameCore(bgraPixels, width, height);
+        }
+        finally
+        {
+            Volatile.Write(ref _frameInFlight, 0);
+        }
+    }
+
+    private void ApplyFrameCore(byte[] bgraPixels, int width, int height)
     {
         if (!_running)
         {
