@@ -182,6 +182,81 @@ public sealed class AlbumWorldRuntimeTests
         Assert.Equal(1, session.TrackStats["t1"].PlayCount);
     }
 
+    [Fact]
+    public void WorldHtmlContext_CarriesContentWarning_WithoutAnyCapability()
+    {
+        // a creator warning their listeners shouldn't need the CDN key's permission to do it
+        var albumDir = Path.Combine(Path.GetTempPath(), $"spectralis-album-world-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(albumDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(albumDir, "world.html"), "<html><body>world</body></html>");
+            AlbumManifest Make(string detail)
+            {
+                var m = BuildManifest();
+                m.Capabilities = [];
+                m.World = new AlbumWorldSection
+                {
+                    Entry = "world.html",
+                    ContentWarning = new AlbumContentWarning
+                    {
+                        Title = "Heads up",
+                        Items = [new AlbumContentWarningItem { Heading = "Self-harm", Detail = detail }],
+                    },
+                };
+                return m;
+            }
+
+            var a = new AlbumWorldRuntime();
+            a.Load(Make("one"), albumDir, new AlbumWorldSession());
+            var warning = a.BuildWorldHtmlContext()!.ContentWarning;
+            Assert.NotNull(warning);
+            Assert.Equal("Heads up", warning!.Title);
+            Assert.Equal("I understand, continue", warning.AcceptLabel);
+            Assert.Single(warning.Items);
+
+            // same wording -> same key; any edit -> a different key, so listeners get asked again
+            var same = new AlbumWorldRuntime();
+            same.Load(Make("one"), albumDir, new AlbumWorldSession());
+            Assert.Equal(warning.Key, same.BuildWorldHtmlContext()!.ContentWarning!.Key);
+            var edited = new AlbumWorldRuntime();
+            edited.Load(Make("two"), albumDir, new AlbumWorldSession());
+            Assert.NotEqual(warning.Key, edited.BuildWorldHtmlContext()!.ContentWarning!.Key);
+
+            // and a world with no block has no gate
+            var plain = BuildManifest();
+            plain.World = new AlbumWorldSection { Entry = "world.html" };
+            var none = new AlbumWorldRuntime();
+            none.Load(plain, albumDir, new AlbumWorldSession());
+            Assert.Null(none.BuildWorldHtmlContext()!.ContentWarning);
+        }
+        finally
+        {
+            try { Directory.Delete(albumDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void ContentWarningStore_RemembersAcceptance_AndSurvivesABrokenFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"spectralis-cw-{Guid.NewGuid():N}", "content-warnings.json");
+        try
+        {
+            var store = new ContentWarningStore(path);
+            Assert.False(store.IsAccepted("abc"));
+            store.Accept("abc");
+            Assert.True(new ContentWarningStore(path).IsAccepted("abc"));
+            Assert.False(new ContentWarningStore(path).IsAccepted("other"));
+
+            File.WriteAllText(path, "{not json");
+            Assert.False(new ContentWarningStore(path).IsAccepted("abc")); // broken file = ask again
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(path)!, recursive: true); } catch { }
+        }
+    }
+
     private static AlbumManifest BuildManifest() => new()
     {
         Id = "album-1",

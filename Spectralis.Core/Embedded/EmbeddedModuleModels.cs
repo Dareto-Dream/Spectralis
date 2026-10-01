@@ -118,6 +118,20 @@ public sealed class EmbeddedVisualizerContext
 /// the app's default for just this field," independently of the others.</summary>
 public sealed record EmbeddedPauseMenuConfig(string? Title, string? Message, string? ResumeLabel, string? ExitLabel);
 
+/// <summary>A world's pre-entry content disclosure, resolved from <c>world.contentWarning</c>.
+/// <see cref="Key"/> is a hash of the wording, so an acknowledgement only counts for the text the
+/// listener actually saw.</summary>
+public sealed record EmbeddedContentWarning(
+    string Title,
+    string? Intro,
+    IReadOnlyList<EmbeddedContentWarningItem> Items,
+    string? Outro,
+    string AcceptLabel,
+    string DeclineLabel,
+    string Key);
+
+public sealed record EmbeddedContentWarningItem(string Heading, string Detail);
+
 public sealed class EmbeddedHtmlContext
 {
     public EmbeddedHtmlContext(
@@ -128,7 +142,8 @@ public sealed class EmbeddedHtmlContext
         string? version,
         string? sourceDirectory = null,
         IReadOnlyList<string>? capabilities = null,
-        EmbeddedPauseMenuConfig? pauseMenu = null)
+        EmbeddedPauseMenuConfig? pauseMenu = null,
+        EmbeddedContentWarning? contentWarning = null)
     {
         Id = id;
         HtmlBytes = htmlBytes.ToArray();
@@ -142,6 +157,7 @@ public sealed class EmbeddedHtmlContext
         SourceDirectory = sourceDirectory;
         Capabilities = capabilities is null ? Array.Empty<string>() : capabilities.ToArray();
         PauseMenu = pauseMenu;
+        ContentWarning = contentWarning;
     }
 
     public string Id { get; }
@@ -161,11 +177,15 @@ public sealed class EmbeddedHtmlContext
     /// (those collapse to the same null on this side).</summary>
     public EmbeddedPauseMenuConfig? PauseMenu { get; }
 
+    /// <summary>Disclosure to show before this world loads; null when the world declared none.
+    /// Not capability-gated (see <see cref="Spectralis.Core.Capsule.AlbumWorldSection.ContentWarning"/>).</summary>
+    public EmbeddedContentWarning? ContentWarning { get; }
+
     public string DisplayName => EmbeddedVisualizerContext.CreateDisplayLabel(Id, "HTML Content");
 
     /// <summary>Returns a copy of this context carrying the given capability list.</summary>
     public EmbeddedHtmlContext WithCapabilities(IReadOnlyList<string>? capabilities) =>
-        new(Id, HtmlBytes, BinaryAssets, TextAssets, Version, SourceDirectory, capabilities, PauseMenu);
+        new(Id, HtmlBytes, BinaryAssets, TextAssets, Version, SourceDirectory, capabilities, PauseMenu, ContentWarning);
 }
 
 public sealed class EmbeddedMarkdownContext

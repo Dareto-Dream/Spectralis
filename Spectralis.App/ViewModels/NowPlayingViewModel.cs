@@ -3025,6 +3025,63 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         InteractPromptText = HasInteractTarget ? prompt ?? "" : "";
     }
 
+    private readonly Spectralis.Core.Capsule.ContentWarningStore _contentWarnings = new();
+    private Spectralis.Core.Embedded.EmbeddedContentWarning? _contentWarning;
+
+    /// <summary>The disclosure currently gating the world, or null. While this is non-null the
+    /// view keeps the world (and its Wasm instance) unloaded — nothing in it runs, and no pointer
+    /// lock is requested, until <see cref="AcceptContentWarning"/>.</summary>
+    public Spectralis.Core.Embedded.EmbeddedContentWarning? ContentWarning => _contentWarning;
+
+    public bool ShowContentWarning => _contentWarning is not null;
+
+    /// <summary>Re-derives the gate from the pinned world: up only while the world itself is the
+    /// visible surface, it declared a warning, and the listener hasn't accepted that exact
+    /// wording before. Returns true when the gate is up.</summary>
+    public bool EvaluateContentWarning()
+    {
+        // embedded content switched off in settings means no world surface at all, so nothing to gate
+        var worldVisible = IsAlbumWorldShowingWorld && (ShowEmbeddedHtml || _contentWarning is not null);
+        var warning = worldVisible ? _pinnedAlbumWorldHtml?.ContentWarning : null;
+        if (warning is not null && _contentWarnings.IsAccepted(warning.Key))
+        {
+            warning = null;
+        }
+
+        if (!Equals(warning, _contentWarning))
+        {
+            _contentWarning = warning;
+            this.RaisePropertyChanged(nameof(ContentWarning));
+            this.RaisePropertyChanged(nameof(ShowContentWarning));
+        }
+
+        return warning is not null;
+    }
+
+    /// <summary>Remembers the acceptance and drops the gate; the caller re-runs surface
+    /// selection so the world actually loads.</summary>
+    public void AcceptContentWarning()
+    {
+        if (_contentWarning is not { } warning)
+        {
+            return;
+        }
+
+        _contentWarnings.Accept(warning.Key);
+        _contentWarning = null;
+        this.RaisePropertyChanged(nameof(ContentWarning));
+        this.RaisePropertyChanged(nameof(ShowContentWarning));
+    }
+
+    /// <summary>Declining is not remembered: leave the world the same way its own exit does.</summary>
+    public void DeclineContentWarning()
+    {
+        _contentWarning = null;
+        this.RaisePropertyChanged(nameof(ContentWarning));
+        this.RaisePropertyChanged(nameof(ShowContentWarning));
+        AlbumWorldExitDelegate?.Invoke();
+    }
+
     private bool _showMirrorStory;
     private string _storyTrackId = "";
     private IReadOnlyList<string> _storyPages = [];

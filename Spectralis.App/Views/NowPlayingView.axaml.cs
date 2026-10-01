@@ -886,6 +886,16 @@ public NowPlayingView()
 
     private void ApplyEmbeddedHtmlMode()
     {
+        // The world's content warning comes first, ahead of everything below: while it's up no
+        // surface is attached at all, so the Wasm room never boots (no pointer lock, no achievement,
+        // no geometry upload) until the listener has said yes. See NowPlayingViewModel.EvaluateContentWarning.
+        if (_viewModel is { } gateVm && gateVm.EvaluateContentWarning())
+        {
+            StopWasmWorldMode();
+            StopEmbeddedHtmlMode();
+            return;
+        }
+
         // Phase 2 dual-runtime rework: a world that declared a Wasm payload and currently wants
         // it shown gets the wgpu-backed surface instead of a WebView, entirely bypassing the
         // logic below. Every existing HTML-only capsule/album-world falls straight through
@@ -1071,6 +1081,20 @@ public NowPlayingView()
             WasmWorldLog.Log($"ApplyWasmWorldMode: attach ok id={worldId}");
         }
     }
+
+    private void OnContentWarningAccept(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        _viewModel.AcceptContentWarning();
+        ApplyEmbeddedHtmlMode();
+    }
+
+    private void OnContentWarningDecline(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        _viewModel?.DeclineContentWarning();
 
     private void StopWasmWorldMode()
     {

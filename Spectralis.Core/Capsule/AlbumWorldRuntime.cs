@@ -349,7 +349,37 @@ public sealed class AlbumWorldRuntime : IDisposable
             // as denied for every album world regardless of what its manifest actually declares
             // — caught by pointer lock coming back denied on a manifest that plainly requested it.
             _manifest?.Capabilities,
-            ResolvePauseMenuConfig());
+            ResolvePauseMenuConfig(),
+            ResolveContentWarning());
+    }
+
+    /// <summary>Maps <c>world.contentWarning</c> to the host-facing record. Unlike the pause menu
+    /// this is not capability-gated. A block with no title and no items is treated as absent, and
+    /// the key hashes every word of it so editing the text re-prompts listeners.</summary>
+    private EmbeddedContentWarning? ResolveContentWarning()
+    {
+        if (_manifest?.World?.ContentWarning is not { } cfg)
+        {
+            return null;
+        }
+
+        var items = cfg.Items
+            .Where(i => !string.IsNullOrWhiteSpace(i.Heading) || !string.IsNullOrWhiteSpace(i.Detail))
+            .Select(i => new EmbeddedContentWarningItem(i.Heading.Trim(), i.Detail.Trim()))
+            .ToList();
+        if (items.Count == 0 && string.IsNullOrWhiteSpace(cfg.Title) && string.IsNullOrWhiteSpace(cfg.Intro))
+        {
+            return null;
+        }
+
+        var title = string.IsNullOrWhiteSpace(cfg.Title) ? "Content warning" : cfg.Title.Trim();
+        var accept = string.IsNullOrWhiteSpace(cfg.AcceptLabel) ? "I understand, continue" : cfg.AcceptLabel.Trim();
+        var decline = string.IsNullOrWhiteSpace(cfg.DeclineLabel) ? "Go back" : cfg.DeclineLabel.Trim();
+        var text = string.Join('\n', new[] { _manifest.Id, title, cfg.Intro, cfg.Outro }
+            .Concat(items.SelectMany(i => new[] { i.Heading, i.Detail })));
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
+        return new EmbeddedContentWarning(title, cfg.Intro?.Trim(), items, cfg.Outro?.Trim(), accept, decline, key);
     }
 
     /// <summary>Maps the manifest's own <c>world.pauseMenu</c> block to the capability-agnostic
