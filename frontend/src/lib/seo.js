@@ -58,6 +58,14 @@ const NOT_FOUND = {
   noindex: true,
 }
 
+// Tools behind a login-ish token: they get a proper title but are never indexed, prerendered or put in the sitemap.
+const PRIVATE_ROUTES = {
+  '/queue': {
+    title: 'Streamer Queue dashboard — Spectralis',
+    description: 'Moderate and monitor your Spectralis Streamer Queue.',
+  },
+}
+
 export const STATIC_PATHS = Object.keys(STATIC_ROUTES)
 
 const compact = (obj) =>
@@ -175,6 +183,11 @@ export function routeMeta(pathname, data) {
         publisherNodes,
       ),
     }
+  }
+
+  const privateRoute = PRIVATE_ROUTES[path]
+  if (privateRoute) {
+    return { ...privateRoute, canonical: `${SITE_URL}${path}`, type: 'website', image: SOCIAL_IMAGE, noindex: true, jsonld: null }
   }
 
   const route = STATIC_ROUTES[path]

@@ -143,6 +143,8 @@ public class VizMathTests
     }
 }
 
+// Reads VisualizerCatalog.All, which depends on the process-wide GPU source other tests set.
+[Collection("GpuVisualizerSource")]
 public class VisualizerRendererTests
 {
     public static TheoryData<VisualizerMode> AllModes()
@@ -221,7 +223,10 @@ public class VisualizerRendererTests
     [Fact]
     public void Catalog_RegistersAllImplementedVisualizers()
     {
+        // Without a GPU source only the 16 CPU visualizers are selectable; the 3 GPU ones are registered
+        // (so a saved GPU mode still resolves and renders via its CPU fallback) but hidden.
         Assert.Equal(16, VisualizerCatalog.All.Count);
+        Assert.Equal(19, VisualizerCatalog.AllRegistered.Count);
 
         // Legacy stub modes intentionally ship without renderers, mirroring WinForms.
         VisualizerMode[] stubs =
@@ -234,10 +239,10 @@ public class VisualizerRendererTests
         ];
         Assert.All(
             Enum.GetValues<VisualizerMode>().Except(stubs),
-            mode => Assert.Contains(VisualizerCatalog.All, definition => definition.Mode == mode));
+            mode => Assert.Contains(VisualizerCatalog.AllRegistered, definition => definition.Mode == mode));
         Assert.All(
             stubs,
-            mode => Assert.DoesNotContain(VisualizerCatalog.All, definition => definition.Mode == mode));
+            mode => Assert.DoesNotContain(VisualizerCatalog.AllRegistered, definition => definition.Mode == mode));
     }
 
     [Fact]

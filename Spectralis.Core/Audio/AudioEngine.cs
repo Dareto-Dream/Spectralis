@@ -43,11 +43,24 @@ public sealed class AudioEngine : IDisposable
     private WaveStream? _preparedStream;
     private string? _preparedPath;
 
+    // In-chain transitions (true gapless / crossfade): the head of the sample chain swaps to the
+    // prepared track on its own, so the output device never stops between tracks.
+    private TransitionSampleProvider? _transition;
+    private WaveStream? _outgoingStream;
+    private string? _transitionedPath;
+    private long _transitionedAtTick;
+    private bool _gaplessEnabled = true;
+    private double _crossfadeSeconds;
+    private const long TransitionClaimWindowMs = 5000;
+
     public AudioEngine(IAudioDeviceEnumerator? deviceEnumerator = null, int latencyMs = 70)
     {
         _deviceEnumerator = deviceEnumerator ?? AudioDeviceEnumeratorFactory.Create();
         _latencyMs = latencyMs;
     }
+
+    /// <summary>The platform backend used to list and open output devices.</summary>
+    public IAudioDeviceEnumerator DeviceEnumerator => _deviceEnumerator;
 
     public PlaybackStateMachine StateMachine { get; } = new();
 
@@ -65,8 +78,42 @@ public sealed class AudioEngine : IDisposable
     /// <summary>Raised when the loaded track plays to its natural end.</summary>
     public event EventHandler? TrackEnded;
 
+    /// <summary>
+    /// Raised (audio thread) when playback moved to the prepared next track inside the sample
+    /// chain — at the splice for gapless, at the start of the overlap for a crossfade. The argument
+    /// is the new track's path; <see cref="CurrentTrack"/> already points at it.
+    /// </summary>
+    public event EventHandler<string>? TrackTransitioned;
+
     /// <summary>Raised when the output device failed and could not be recovered.</summary>
     public event EventHandler? DeviceRecoveryFailed;
+
+    /// <summary>Join tracks with no gap when the next one is prepared. On by default.</summary>
+    public bool GaplessEnabled
+    {
+        get => _gaplessEnabled;
+        set
+        {
+            if (_gaplessEnabled == value)
+                return;
+            _gaplessEnabled = value;
+            ReapplyTransitionSettings();
+        }
+    }
+
+    /// <summary>Crossfade length in seconds; 0 turns crossfade off (clamped to 0–12).</summary>
+    public double CrossfadeSeconds
+    {
+        get => _crossfadeSeconds;
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 12);
+            if (Math.Abs(_crossfadeSeconds - clamped) < 1e-6)
+                return;
+            _crossfadeSeconds = clamped;
+            ReapplyTransitionSettings();
+        }
+    }
 
     public float Volume
     {
@@ -128,7 +175,8 @@ public sealed class AudioEngine : IDisposable
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return;
 
-        // Drop stale prepared stream first.
+        // Drop stale prepared stream first (and make sure the chain isn't still pointing at it).
+        _transition?.Disarm();
         var old = Interlocked.Exchange(ref _preparedStream, null);
         _preparedPath = null;
         old?.Dispose();
@@ -138,6 +186,7 @@ public sealed class AudioEngine : IDisposable
             var stream = await Task.Run(() => OpenPlaybackStream(path, out _));
             _preparedStream = stream;
             _preparedPath = path;
+            TryArmTransition();
         }
         catch
         {
@@ -155,6 +204,15 @@ public sealed class AudioEngine : IDisposable
         if (_device is null || _playbackStream is null || !IsLoaded)
             return false;
 
+        // The chain already moved to this track by itself (gapless/crossfade): nothing to swap,
+        // just reconcile the metadata the caller resolved for it.
+        if (ClaimTransitionedTrack(nextPath))
+        {
+            CurrentTrack = BuildTrackInfo(nextPath, _playbackStream, string.Empty, providedInfo ?? CurrentTrack);
+            return true;
+        }
+
+        _transition?.Disarm();
         WaveStream? nextStream = null;
 
         // Prefer the prepared stream if it matches.
@@ -188,11 +246,12 @@ public sealed class AudioEngine : IDisposable
             _suppressStopEvents = false;
 
             _playbackStream.Dispose();
+            Interlocked.Exchange(ref _outgoingStream, null)?.Dispose();
             _playbackStream = nextStream;
             CurrentTrack = BuildTrackInfo(nextPath, nextStream, string.Empty, providedInfo);
 
             // Re-wire the speed/resample/effect chain and visualizer onto the new stream.
-            _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(nextStream))
+            _visualizer = new VisualizerSampleProvider(BuildTransitionHead(nextStream))
             {
                 RawBlockCaptured = RawAudioBlockCaptured,
             };
@@ -542,7 +601,7 @@ public sealed class AudioEngine : IDisposable
 
         _playbackStream.CurrentTime = currentPosition;
 
-        _visualizer = new VisualizerSampleProvider(BuildProcessedProvider(_playbackStream))
+        _visualizer = new VisualizerSampleProvider(BuildTransitionHead(_playbackStream))
         {
             RawBlockCaptured = RawAudioBlockCaptured,
         };
@@ -561,6 +620,124 @@ public sealed class AudioEngine : IDisposable
             _device.Play();
             StateMachine.TryTransitionTo(PlaybackState.Playing);
         }
+
+        // A rebuilt chain (rate/effects/device change) lost any armed transition; re-arm it.
+        TryArmTransition();
+    }
+
+    // ── In-chain transitions ──────────────────────────────────────────────────
+
+    /// <summary>Wraps the processed provider for <paramref name="stream"/> in a fresh transition head.</summary>
+    private ISampleProvider BuildTransitionHead(WaveStream stream)
+    {
+        if (_transition is not null)
+        {
+            _transition.Transitioning -= OnChainTransitioning;
+            _transition.OutgoingFinished -= OnChainOutgoingFinished;
+        }
+
+        _transition = new TransitionSampleProvider(BuildProcessedProvider(stream));
+        _transition.Transitioning += OnChainTransitioning;
+        _transition.OutgoingFinished += OnChainOutgoingFinished;
+        return _transition;
+    }
+
+    private void ReapplyTransitionSettings()
+    {
+        _transition?.Disarm();
+        TryArmTransition();
+    }
+
+    /// <summary>
+    /// Queues the prepared next track into the chain when gapless or crossfade is on. Skipped for
+    /// MIDI (offline-rendered, different timing) and when the next track's channel layout can't be
+    /// matched to the running chain — those fall back to the normal advance.
+    /// </summary>
+    private void TryArmTransition()
+    {
+        var transition = _transition;
+        var current = _playbackStream;
+        var next = _preparedStream;
+        if (transition is null || current is null || next is null || transition.IsArmed)
+            return;
+        if (!_gaplessEnabled && _crossfadeSeconds <= 0)
+            return;
+        if (current is MidiPlaybackStream || next is MidiPlaybackStream)
+            return;
+
+        var matched = MatchFormat(BuildProcessedProvider(next), transition.WaveFormat);
+        if (matched is null)
+            return;
+
+        var rate = Math.Max(0.1, _playbackRate);
+        var overlap = 0.0;
+        if (_crossfadeSeconds > 0)
+        {
+            // Never overlap more than half of either track.
+            overlap = Math.Min(_crossfadeSeconds, Math.Min(current.TotalTime.TotalSeconds, next.TotalTime.TotalSeconds) / 2);
+            if (overlap < 0.25)
+                overlap = 0;
+        }
+
+        if (overlap <= 0 && !_gaplessEnabled)
+            return;
+
+        transition.QueueNext(matched, overlap, () => (current.TotalTime - current.CurrentTime).TotalSeconds / rate);
+    }
+
+    private static ISampleProvider? MatchFormat(ISampleProvider provider, WaveFormat target)
+    {
+        if (provider.WaveFormat.SampleRate != target.SampleRate)
+            provider = new WdlResamplingSampleProvider(provider, target.SampleRate);
+
+        var channels = provider.WaveFormat.Channels;
+        if (channels == target.Channels)
+            return provider;
+        if (channels == 1 && target.Channels == 2)
+            return new MonoToStereoSampleProvider(provider);
+        if (channels == 2 && target.Channels == 1)
+            return new StereoToMonoSampleProvider(provider);
+        return null;
+    }
+
+    // Audio thread: the chain just started playing the prepared track.
+    private void OnChainTransitioning()
+    {
+        var next = Interlocked.Exchange(ref _preparedStream, null);
+        var path = _preparedPath;
+        _preparedPath = null;
+        if (next is null || path is null)
+            return;
+
+        _outgoingStream = _playbackStream;
+        _playbackStream = next;
+        CurrentTrack = BuildTrackInfo(path, next, GetContainerLabel(Path.GetExtension(path).ToLowerInvariant(), "audio"), null);
+        _transitionedPath = path;
+        _transitionedAtTick = Environment.TickCount64;
+        TrackTransitioned?.Invoke(this, path);
+    }
+
+    // Audio thread: the old track has been fully mixed out; free its decoder off the audio thread.
+    private void OnChainOutgoingFinished()
+    {
+        var old = Interlocked.Exchange(ref _outgoingStream, null);
+        if (old is not null)
+            ThreadPool.QueueUserWorkItem(_ => { try { old.Dispose(); } catch { } });
+    }
+
+    /// <summary>True once, shortly after the chain transitioned into <paramref name="path"/> by itself.</summary>
+    private bool ClaimTransitionedTrack(string path)
+    {
+        var claimed = _transitionedPath;
+        if (claimed is null ||
+            !string.Equals(claimed, path, StringComparison.OrdinalIgnoreCase) ||
+            Environment.TickCount64 - _transitionedAtTick > TransitionClaimWindowMs)
+        {
+            return false;
+        }
+
+        _transitionedPath = null;
+        return true;
     }
 
     private void OnDevicePlaybackStopped(object? sender, AudioDeviceStoppedEventArgs e)
@@ -765,6 +942,14 @@ public sealed class AudioEngine : IDisposable
         }
 
         _playbackStream?.Dispose();
+        Interlocked.Exchange(ref _outgoingStream, null)?.Dispose();
+        if (_transition is not null)
+        {
+            _transition.Transitioning -= OnChainTransitioning;
+            _transition.OutgoingFinished -= OnChainOutgoingFinished;
+            _transition = null;
+        }
+        _transitionedPath = null;
         _device = null;
         _playbackStream = null;
         _visualizer = null;

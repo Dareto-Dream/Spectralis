@@ -72,6 +72,7 @@ public static class ObsOverlayHtml
         <body>
         <script>
         const BASE="{BASE}";
+        const PROTOCOL=2; // must equal ObsOverlayProtocol.Version (tested)
         const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
         const ART_PH='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>');
 
@@ -1057,7 +1058,30 @@ public static class ObsOverlayHtml
         // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // SSE + POLLING
         // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // A page OBS kept cached from an older app version may not understand today's state. Say so, and
+        // reload once (a second attempt within a minute means the source needs a manual refresh).
+        function protocolMismatch(s){
+          if(typeof s.protocol!=="number"||s.protocol===PROTOCOL) return false;
+          let banner=document.getElementById("protocol-banner");
+          if(!banner){
+            banner=document.createElement("div");
+            banner.id="protocol-banner";
+            banner.style.cssText="position:absolute;left:0;right:0;top:0;padding:10px 14px;background:#7a1f1f;color:#fff;font:600 14px 'Segoe UI',sans-serif;text-align:center;z-index:9999";
+            banner.textContent="This overlay is out of date. Right-click the browser source in OBS and choose Refresh.";
+            document.body.appendChild(banner);
+          }
+          try{
+            const last=Number(sessionStorage.getItem("spectralis-protocol-reload")||0);
+            if(Date.now()-last>60000){
+              sessionStorage.setItem("spectralis-protocol-reload",String(Date.now()));
+              location.reload();
+            }
+          }catch(e){}
+          return true;
+        }
+
         function applyData(s){
+          if(protocolMismatch(s)) return;
           state=s;
           applyState();
 

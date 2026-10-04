@@ -14,6 +14,9 @@ public partial class SettingsView : UserControl
         InitializeComponent();
     }
 
+    private void OnRefreshOutputDevices(object? sender, RoutedEventArgs e) =>
+        (DataContext as SettingsViewModel)?.RefreshOutputDevices();
+
     private async void OnLibraryAddFolder(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SettingsViewModel { Library: { } library } ||

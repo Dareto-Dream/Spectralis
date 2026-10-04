@@ -15,6 +15,8 @@ This directory is where all the real documentation lives (as oppposed to whateve
 | [creator-tools.md](creator-tools.md) | Built-in creator workflows — Lyrics Timing Studio, Content Warnings |
 | [cdn-contract.md](cdn-contract.md) | CDN endpoint shapes the app expects from `cdn.deltavdevs.com` |
 | [api-contract.md](api-contract.md) | Service routing contract — CDN vs API split, all routes |
+| [realtime-protocol.md](realtime-protocol.md) | Realtime protocol v2 — one websocket protocol for Shared Play and the Streamer Queue, version negotiation, update-required |
+| [streamer-queue-webhooks.md](streamer-queue-webhooks.md) | Chat-platform-agnostic webhook API for the Streamer Queue (keys, submit, status) |
 | [song-wars-implementation-plan.md](song-wars-implementation-plan.md) | Song Wars tournament mode implementation plan |
 | [mobile-implementation-plan.md](mobile-implementation-plan.md) | Android/iOS heads — Core split, seams, phases, open questions |
 | [mobile-feature-list.md](mobile-feature-list.md) | Flat in/out feature list for mobile v1, with effort ratings |
@@ -33,6 +35,7 @@ This directory is where all the real documentation lives (as oppposed to whateve
 | Document | What it covers |
 |---|---|
 | [../backend/README.md](../backend/README.md) | Rust Shared Play backend (Railway) |
+| [../chat-bridge/README.md](../chat-bridge/README.md) | Twitch and YouTube chat bridge for the Streamer Queue |
 | [../extension/README.md](../extension/README.md) | Chromium browser extension |
 | [../metadata/STANDARDS.md](../metadata/STANDARDS.md) | Metadata packing standard and tool spec |
 | [../metadata/typography/README.md](../metadata/typography/README.md) | Kinetic typography generator tool |

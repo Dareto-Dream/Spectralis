@@ -36,7 +36,7 @@ $tmpWin    = Join-Path $env:TEMP "spectralis-build-velopack.sh"
 [System.IO.File]::WriteAllText(
     $tmpWin,
     [System.IO.File]::ReadAllText($scriptWin).Replace("`r`n", "`n").Replace("`r", "`n"),
-    [System.Text.Encoding]::UTF8)
+    (New-Object System.Text.UTF8Encoding($false)))
 $tmpWsl = "/mnt/" + $tmpWin[0].ToString().ToLower() + ($tmpWin.Substring(2).Replace('\', '/'))
 
 # Locate vpk.dll from the Windows NuGet cache and pass it to WSL via DrvFS so the

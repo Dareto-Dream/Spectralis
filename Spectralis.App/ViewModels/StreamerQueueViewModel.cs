@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
+using Avalonia.Threading;
 using ReactiveUI;
 using Spectralis.App.Services;
 using Spectralis.Core.Metadata;
@@ -283,6 +284,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _pollCts.Cancel();
+        StopRealtime();
         _controller.Dispose();
     }
 
@@ -823,6 +825,34 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         _pollCts.Cancel();
         _pollCts = new CancellationTokenSource();
         _ = PollLoopAsync(_pollCts.Token);
+        StartRealtime();
+    }
+
+    // The realtime socket only says "something changed"; the poll below does the actual fetching as the
+    // owner. So the 10s poll loop stays exactly as it was (the safety net) and this just makes it instant.
+    private StreamerQueueRealtimeClient? _realtime;
+
+    private void StartRealtime()
+    {
+        StopRealtime();
+        if (string.IsNullOrWhiteSpace(RoomId)) return;
+
+        Uri socketUri;
+        try { socketUri = StreamerQueueRealtimeClient.BuildSocketUri(_cdnBaseUri, RoomId); }
+        catch { return; }
+
+        var client = new StreamerQueueRealtimeClient(socketUri);
+        client.Changed += () => Dispatcher.UIThread.Post(() => _ = PollOnceAsync());
+        client.UpdateRequiredReceived += message => Dispatcher.UIThread.Post(() => LastError = message);
+        _realtime = client;
+        client.Start();
+    }
+
+    private void StopRealtime()
+    {
+        var client = _realtime;
+        _realtime = null;
+        client?.Dispose();
     }
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);

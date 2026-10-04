@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -17,6 +18,9 @@ public partial class VideoExportWindow : Window
     private readonly Action<bool>? _setIsExporting;
     private readonly List<VizRow> _rows = [];
     private CancellationTokenSource? _cts;
+    private VideoExportPreset? _preset;
+    private bool _applyingPreset;
+    private readonly Action _queueChanged;
 
     private static readonly (string Label, int Width, int Height)[] Resolutions =
     [
@@ -24,9 +28,12 @@ public partial class VideoExportWindow : Window
         ("1280 × 720  (HD)", 1280, 720),
         ("854 × 480  (SD)", 854, 480),
         ("2560 × 1440  (QHD)", 2560, 1440),
+        ("3840 × 2160  (4K)", 3840, 2160),
+        ("1080 × 1920  (Vertical 9:16)", 1080, 1920),
     ];
 
     private static readonly int[] FrameRates = [30, 60, 24];
+    private const string CustomPresetLabel = "Custom";
     private static readonly int[] CycleSecondOptions = [4, 6, 8, 12, 16, 20, 30];
 
     /// <summary>Row shown in the visualizer list — a selectable export source plus its enabled state.</summary>
@@ -50,6 +57,11 @@ public partial class VideoExportWindow : Window
 
         InitializeComponent();
 
+        _queueChanged = () => Dispatcher.UIThread.Post(RefreshQueueList);
+        VideoExportQueue.Shared.Changed += _queueChanged;
+        Closed += (_, _) => VideoExportQueue.Shared.Changed -= _queueChanged;
+        RefreshQueueList();
+
         TrackLabel.Text = BuildTrackLabel(request.Title, request.Artist);
 
         ResolutionBox.ItemsSource = Resolutions.Select(r => r.Label).ToArray();
@@ -57,6 +69,10 @@ public partial class VideoExportWindow : Window
 
         FpsBox.ItemsSource = FrameRates.Select(f => $"{f} fps").ToArray();
         FpsBox.SelectedIndex = 0;
+
+        PresetBox.ItemsSource = new[] { CustomPresetLabel }
+            .Concat(VideoExportPreset.All.Select(p => p.Label)).ToArray();
+        PresetBox.SelectedIndex = 0;
 
         CycleSecondsBox.ItemsSource = CycleSecondOptions.Select(s => $"{s}s").ToArray();
         CycleSecondsBox.SelectedIndex = Array.IndexOf(CycleSecondOptions, 12);
@@ -176,6 +192,39 @@ public partial class VideoExportWindow : Window
         return title ?? artist ?? "No track loaded";
     }
 
+    private void OnPresetChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_applyingPreset || PresetBox is null || ResolutionBox is null || FpsBox is null || QualitySlider is null)
+            return;
+
+        var index = PresetBox.SelectedIndex;
+        _preset = index > 0 && index <= VideoExportPreset.All.Count ? VideoExportPreset.All[index - 1] : null;
+        if (_preset is null)
+            return;
+
+        _applyingPreset = true;
+        try
+        {
+            ResolutionBox.SelectedIndex = Math.Max(0,
+                Array.FindIndex(Resolutions, r => r.Width == _preset.Width && r.Height == _preset.Height));
+            FpsBox.SelectedIndex = Math.Max(0, Array.IndexOf(FrameRates, _preset.FrameRate));
+            QualitySlider.Value = _preset.Quality;
+        }
+        finally { _applyingPreset = false; }
+    }
+
+    // Touching resolution/fps by hand means we're no longer on the preset (and its length cap).
+    private void OnFormatEdited(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_applyingPreset || PresetBox is null || _preset is null)
+            return;
+
+        _preset = null;
+        _applyingPreset = true;
+        try { PresetBox.SelectedIndex = 0; }
+        finally { _applyingPreset = false; }
+    }
+
     private void OnAutoCycleChanged(object? sender, RoutedEventArgs e)
     {
         if (CyclePanel is null || VisualizerList is null || AutoCycleCheck is null)
@@ -223,13 +272,14 @@ public partial class VideoExportWindow : Window
             : [];
     }
 
-    private async void OnExport(object? sender, RoutedEventArgs e)
+    /// <summary>Reads the form into options, or reports the problem and returns null.</summary>
+    private VideoExportOptions? BuildOptions()
     {
         var outputPath = OutputPathBox.Text?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(outputPath))
         {
             SetStatus("Choose an output file path first.", isError: true);
-            return;
+            return null;
         }
 
         var autoCycle = AutoCycleCheck.IsChecked == true;
@@ -239,7 +289,7 @@ public partial class VideoExportWindow : Window
             SetStatus(autoCycle
                 ? "Select at least one built-in or scripted visualizer to cycle."
                 : "Select a visualizer.", isError: true);
-            return;
+            return null;
         }
 
         var res = Resolutions[Math.Max(0, ResolutionBox.SelectedIndex)];
@@ -261,7 +311,17 @@ public partial class VideoExportWindow : Window
             ShowAlbumArt = ShowAlbumArtCheck.IsChecked == true,
             ShowProgressBar = ShowProgressBarCheck.IsChecked == true,
             OutputPath = outputPath,
+            MaxDurationSeconds = _preset?.MaxDurationSeconds,
         };
+
+        return options;
+    }
+
+    private async void OnExport(object? sender, RoutedEventArgs e)
+    {
+        var options = BuildOptions();
+        if (options is null)
+            return;
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
@@ -306,6 +366,84 @@ public partial class VideoExportWindow : Window
             CloseButton.Click -= OnCancel;
             CloseButton.Click += OnClose;
         }
+    }
+
+    private void OnQueueAdd(object? sender, RoutedEventArgs e)
+    {
+        var options = BuildOptions();
+        if (options is null)
+            return;
+
+        try
+        {
+            var job = VideoExportQueue.Shared.Enqueue(_request, options);
+            SetStatus($"Queued → {System.IO.Path.GetFileName(job.Options.OutputPath)}", isError: false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private async void OnQueueRun(object? sender, RoutedEventArgs e)
+    {
+        var queue = VideoExportQueue.Shared;
+        if (queue.IsRunning || queue.Jobs.All(j => j.Status != VideoExportJobStatus.Pending))
+        {
+            SetStatus("Nothing pending in the queue.", isError: false);
+            return;
+        }
+
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+
+        QueueRunButton.IsEnabled = false;
+        QueueAddButton.IsEnabled = false;
+        ExportButton.IsEnabled = false;
+        CloseButton.Content = "Cancel";
+        CloseButton.Click -= OnClose;
+        CloseButton.Click += OnCancel;
+        _setIsExporting?.Invoke(true);
+
+        try
+        {
+            await queue.RunAsync(ct);
+            var failed = queue.Jobs.Count(j => j.Status == VideoExportJobStatus.Failed);
+            SetStatus(failed == 0 ? "Queue finished." : $"Queue finished, {failed} failed.", isError: failed > 0);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _setIsExporting?.Invoke(false);
+            QueueRunButton.IsEnabled = true;
+            QueueAddButton.IsEnabled = true;
+            ExportButton.IsEnabled = true;
+            CloseButton.Content = "Close";
+            CloseButton.Click -= OnCancel;
+            CloseButton.Click += OnClose;
+        }
+    }
+
+    private void OnQueueClear(object? sender, RoutedEventArgs e) => VideoExportQueue.Shared.ClearFinished();
+
+    private void RefreshQueueList()
+    {
+        var jobs = VideoExportQueue.Shared.Jobs;
+        QueueList.ItemsSource = jobs
+            .Select(j => j.Status switch
+            {
+                VideoExportJobStatus.Running => $"▶ {j.Label}  {j.Progress * 100:0}%",
+                VideoExportJobStatus.Done => $"✓ {j.Label}",
+                VideoExportJobStatus.Failed => $"✗ {j.Label}  {j.Error}",
+                VideoExportJobStatus.Cancelled => $"– {j.Label}  (cancelled)",
+                _ => $"· {j.Label}",
+            })
+            .ToList();
+        QueueHeader.Text = jobs.Count == 0 ? "Batch queue" : $"Batch queue ({jobs.Count})";
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => _cts?.Cancel();

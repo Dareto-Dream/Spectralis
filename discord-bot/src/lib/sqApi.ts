@@ -51,6 +51,9 @@ async function request<T>(path: string, init?: RequestInit, options?: { retry?: 
  * on, same as the browser cookie sq.js sets. See build_fingerprint in main.rs. */
 function fingerprintFor(discordUserId: string) {
   return {
+    // fpId is an authenticated identity (the bot knows who the Discord user is). Backends that
+    // understand it use it alone; older ones ignore it and fall back to the fuzzy fields below.
+    fpId: `discord:${discordUserId}`,
     fpCookie: `discord:${discordUserId}`,
     fpUa: 'discord-bot',
     fpScreen: '',

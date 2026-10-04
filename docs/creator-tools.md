@@ -20,6 +20,26 @@ The studio can:
 When the current track is a local file, export defaults to a matching sidecar path such as
 `track-name.lrc`. For streamed sources, Spectralis just asks you where to put it.
 
+## Timeline Editor
+
+Open **Tools → Creator → Timeline Editor** or press `Ctrl+Shift+T`. It edits the playing track's
+[reactive timeline](formats/reactive-timeline.md) (`<track>.spectralis-reactive.json`, next to the audio
+file) so you no longer hand-write the JSON.
+
+- **Lanes and sections.** One lane per event target, sections along the top band. Events with a length
+  are blocks (drag the right edge to resize); instant events are diamonds.
+- **Editing.** Click to select, drag to move, double-click an empty lane to add an event, `+ Event` /
+  `+ Section` / `Split` act at the playhead. The inspector edits target, action, time, length, easing and
+  params (`key=value` per line; numbers and `true`/`false` are stored as such).
+- **Snapping.** Snap to a grid (1/16 s to 1 s) and, if the track has a beat grid set in Now Playing, to
+  beats too. Sections can't overlap: dragging one stops against its neighbours.
+- **Undo.** `Ctrl+Z` / `Ctrl+Y`; a whole drag is one step.
+- **Playback.** Click the ruler to seek; the playhead follows playback and the view scrolls with it.
+  `Ctrl+wheel` zooms, `Fit` fits the whole track.
+- **Saving.** `Ctrl+S` writes the sidecar (a temp file, then a move, so a crash can't leave a half-written
+  file) and refuses a timeline the loader would reject. Switching tracks while you have unsaved edits keeps
+  your edits until you save or reload.
+
 ## Lyric Explanations
 
 Add contextual annotations to synced lyrics — basically Genius-style annotations, but yours.

@@ -93,14 +93,77 @@ public sealed class WaveOutAudioDevice : IAudioDevice
     }
 }
 
+/// <summary>
+/// Stable device ids for WaveOut. winmm only gives a device <em>number</em>, and numbers shift when
+/// hardware is plugged or unplugged — so a saved choice is the device <em>name</em> (duplicates get
+/// a "#2", "#3" suffix) and the number is looked up again every time a device is created.
+/// </summary>
+public static class WaveOutDeviceNaming
+{
+    public const string DefaultId = "-1";
+
+    public static IReadOnlyList<AudioDeviceInfo> Build(IReadOnlyList<string> productNames)
+    {
+        var devices = new List<AudioDeviceInfo> { new(DefaultId, "System default", IsDefault: true) };
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in productNames)
+        {
+            var clean = string.IsNullOrWhiteSpace(name) ? "Audio device" : name.Trim();
+            seen[clean] = seen.GetValueOrDefault(clean) + 1;
+            var id = seen[clean] == 1 ? clean : $"{clean} #{seen[clean]}";
+            devices.Add(new AudioDeviceInfo(id, id, IsDefault: false));
+        }
+        return devices;
+    }
+
+    /// <summary>Maps a saved id to the current winmm device number; unknown or default ids give -1.</summary>
+    public static int ResolveNumber(string? id, IReadOnlyList<string> productNames)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id == DefaultId)
+            return -1;
+
+        var devices = Build(productNames);
+        for (var i = 1; i < devices.Count; i++)
+        {
+            if (string.Equals(devices[i].Id, id, StringComparison.OrdinalIgnoreCase))
+                return i - 1;
+        }
+        return -1;
+    }
+}
+
 public sealed class WaveOutDeviceEnumerator : IAudioDeviceEnumerator
 {
     public IReadOnlyList<AudioDeviceInfo> GetOutputDevices() =>
-        // The winmm enumeration API isn't exposed on the netstandard NAudio surface;
-        // the legacy app always played to the default device. Per-device selection
-        // arrives with the WASAPI backend in the Settings audio page.
-        new[] { new AudioDeviceInfo("-1", "System default", IsDefault: true) };
+        WaveOutDeviceNaming.Build(ReadProductNames());
 
-    public IAudioDevice CreateDevice(string? deviceId, int latencyMs) =>
-        new WaveOutAudioDevice(deviceId, latencyMs);
+    public IAudioDevice CreateDevice(string? deviceId, int latencyMs)
+    {
+        // A device that's gone since it was chosen quietly plays through the default instead.
+        var number = WaveOutDeviceNaming.ResolveNumber(deviceId, ReadProductNames());
+        return new WaveOutAudioDevice(number.ToString(System.Globalization.CultureInfo.InvariantCulture), latencyMs);
+    }
+
+    private static IReadOnlyList<string> ReadProductNames()
+    {
+        var names = new List<string>();
+        if (!OperatingSystem.IsWindows())
+            return names;
+
+        try
+        {
+            var count = WaveInterop.waveOutGetNumDevs();
+            for (var i = 0; i < count; i++)
+            {
+                var result = WaveInterop.waveOutGetDevCaps((IntPtr)i, out var caps,
+                    System.Runtime.InteropServices.Marshal.SizeOf<WaveOutCapabilities>());
+                names.Add((int)result == 0 ? caps.ProductName : string.Empty);
+            }
+        }
+        catch
+        {
+            // winmm unavailable: behave as "default only".
+        }
+        return names;
+    }
 }

@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:ctl="using:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Views.TimelineEditorView"
+             x:DataType="vm:TimelineEditorViewModel">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="16" RowSpacing="10">
+
+    <!-- Toolbar -->
+    <StackPanel Grid.Row="0" Spacing="8">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Classes="heading" Text="Timeline" />
+          <TextBlock Classes="secondary" Text="{Binding TrackTitle}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" MaxWidth="360" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{Binding PositionText}"
+                     FontFamily="{StaticResource Font.Data}"
+                     FontSize="{StaticResource FontSize.Data}"
+                     Foreground="{StaticResource Brush.Signal}"
+                     VerticalAlignment="Center" />
+          <TextBlock Classes="muted" Text="{Binding DurationText, StringFormat='/ {0}'}" VerticalAlignment="Center" />
+          <Button Content="▶ / ‖" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / Pause (Space)" />
+        </StackPanel>
+      </Grid>
+
+      <WrapPanel>
+        <Button Content="+ Event" Command="{Binding AddEventCommand}" IsEnabled="{Binding HasTrack}"
+                ToolTip.Tip="Add an event at the playhead" Margin="0,0,6,6" />
+        <Button Content="+ Section" Command="{Binding AddSectionCommand}" IsEnabled="{Binding HasTrack}"
+                ToolTip.Tip="Add a section at the playhead" Margin="0,0,6,6" />
+        <Button Content="Split" Command="{Binding SplitSectionCommand}" IsEnabled="{Binding HasTrack}"
+                ToolTip.Tip="Split the section under the playhead" Margin="0,0,6,6" />
+        <Button Content="Duplicate" Command="{Binding DuplicateCommand}" IsEnabled="{Binding HasEventSelection}"
+                ToolTip.Tip="Duplicate the selected event (Ctrl+D)" Margin="0,0,6,6" />
+        <Button Content="Delete" Command="{Binding DeleteCommand}" IsEnabled="{Binding HasSelection}"
+                ToolTip.Tip="Delete the selection (Del)" Margin="0,0,18,6" />
+
+        <Button Content="Undo" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" Margin="0,0,6,6" />
+        <Button Content="Redo" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" Margin="0,0,18,6" />
+
+        <CheckBox Content="Snap" IsChecked="{Binding SnapEnabled}" Margin="0,0,6,6" VerticalAlignment="Center" />
+        <ComboBox ItemsSource="{Binding SnapOptions}" SelectedItem="{Binding SelectedSnap}"
+                  IsEnabled="{Binding SnapEnabled}" MinWidth="80" Margin="0,0,6,6" />
+        <CheckBox Content="To beats" IsChecked="{Binding UseBeatSnap}" IsEnabled="{Binding HasBeatGrid}"
+                  ToolTip.Tip="Also snap to the beat grid (set one in Now Playing)" Margin="0,0,18,6" VerticalAlignment="Center" />
+
+        <Button Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (Ctrl+wheel)" Margin="0,0,4,6" />
+        <Button Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (Ctrl+wheel)" Margin="0,0,4,6" />
+        <Button Content="Fit" Command="{Binding FitCommand}" Margin="0,0,18,6" />
+
+        <Button Content="{Binding SaveButtonText}" Command="{Binding SaveCommand}" IsEnabled="{Binding HasTrack}"
+                Classes="primary" ToolTip.Tip="Save next to the audio file (Ctrl+S)" Margin="0,0,6,6" />
+        <Button Content="Reload" Command="{Binding ReloadCommand}" IsEnabled="{Binding HasTrack}"
+                ToolTip.Tip="Discard changes and reload from disk" Margin="0,0,0,6" />
+      </WrapPanel>
+    </StackPanel>
+
+    <!-- Canvas + inspector -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <Border Grid.Column="0" Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" ClipToBounds="True">
+        <Grid>
+          <ScrollViewer x:Name="CanvasScroll"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Auto"
+                        IsVisible="{Binding HasTrack}">
+            <ctl:TimelineCanvas Editor="{Binding}" />
+          </ScrollViewer>
+          <TextBlock Classes="secondary" Text="Load a track in Now Playing to edit its timeline."
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     IsVisible="{Binding !HasTrack}" />
+        </Grid>
+      </Border>
+
+      <!-- Inspector -->
+      <Border Grid.Column="1" Width="260" Background="{StaticResource Brush.Bg.Raised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" Padding="12">
+        <ScrollViewer>
+          <StackPanel Spacing="8">
+            <TextBlock Classes="heading" Text="Inspector" />
+
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       IsVisible="{Binding !HasSelection}"
+                       Text="Click an event or section to edit it. Drag blocks to move them, drag a right edge to resize, double-click an empty lane to add an event." />
+
+            <!-- Event -->
+            <StackPanel Spacing="6" IsVisible="{Binding HasEventSelection}">
+              <TextBlock Classes="secondary" Text="Target (lane)" />
+              <TextBox Text="{Binding EventTarget}" />
+              <TextBlock Classes="secondary" Text="Action" />
+              <TextBox Text="{Binding EventAction}" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <StackPanel Grid.Column="0" Spacing="6">
+                  <TextBlock Classes="secondary" Text="Time (s)" />
+                  <TextBox Text="{Binding EventTimeText}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="6">
+                  <TextBlock Classes="secondary" Text="Length (s)" />
+                  <TextBox Text="{Binding EventDurationText}" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Classes="secondary" Text="Easing" />
+              <TextBox Text="{Binding EventEasing}" />
+              <TextBlock Classes="secondary" Text="Params (key=value per line)" />
+              <TextBox Text="{Binding EventParamsText}" AcceptsReturn="True" TextWrapping="Wrap"
+                       MinHeight="90" FontFamily="{StaticResource Font.Data}" />
+            </StackPanel>
+
+            <!-- Section -->
+            <StackPanel Spacing="6" IsVisible="{Binding HasSectionSelection}">
+              <TextBlock Classes="secondary" Text="Label" />
+              <TextBox Text="{Binding SectionLabel}" />
+              <TextBlock Classes="secondary" Text="Mood" />
+              <TextBox Text="{Binding SectionMood}" />
+            </StackPanel>
+
+            <Button Content="Apply" Command="{Binding ApplyInspectorCommand}"
+                    IsVisible="{Binding HasSelection}" Classes="primary" HorizontalAlignment="Right" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <TextBlock Grid.Row="2" Classes="secondary" Text="{Binding Status}" TextWrapping="Wrap"
+               FontSize="{StaticResource FontSize.UI.Small}" />
+  </Grid>
+</UserControl>

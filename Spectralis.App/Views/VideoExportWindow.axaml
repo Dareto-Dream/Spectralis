@@ -33,15 +33,21 @@
           </Grid>
         </StackPanel>
 
+        <!-- Preset -->
+        <StackPanel Spacing="6">
+          <TextBlock Text="Preset" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" />
+          <ComboBox x:Name="PresetBox" HorizontalAlignment="Stretch" SelectionChanged="OnPresetChanged" />
+        </StackPanel>
+
         <!-- Format -->
         <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
           <StackPanel Grid.Column="0" Spacing="6">
             <TextBlock Text="Resolution" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" />
-            <ComboBox x:Name="ResolutionBox" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="ResolutionBox" HorizontalAlignment="Stretch" SelectionChanged="OnFormatEdited" />
           </StackPanel>
           <StackPanel Grid.Column="1" Spacing="6">
             <TextBlock Text="Frame Rate" Classes="secondary" FontSize="{StaticResource FontSize.UI.Small}" />
-            <ComboBox x:Name="FpsBox" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="FpsBox" HorizontalAlignment="Stretch" SelectionChanged="OnFormatEdited" />
           </StackPanel>
         </Grid>
 
@@ -86,6 +92,19 @@
           </WrapPanel>
         </StackPanel>
 
+        <!-- Batch queue -->
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" x:Name="QueueHeader" Text="Batch queue" Classes="secondary"
+                       VerticalAlignment="Center" FontSize="{StaticResource FontSize.UI.Small}" />
+            <Button Grid.Column="1" x:Name="QueueClearButton" Content="Clear finished" Classes="ghost" Click="OnQueueClear" />
+            <Button Grid.Column="2" x:Name="QueueRunButton" Content="Run queue" Click="OnQueueRun" />
+          </Grid>
+          <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" CornerRadius="4">
+            <ListBox x:Name="QueueList" Height="90" Background="Transparent" />
+          </Border>
+        </StackPanel>
+
         <!-- Progress -->
         <StackPanel Spacing="8">
           <ProgressBar x:Name="ExportProgress" Minimum="0" Maximum="100" Height="5" IsVisible="False" />
@@ -100,7 +119,7 @@
     </ScrollViewer>
 
     <!-- Buttons -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,16,0,0">
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,16,0,0">
       <TextBlock Grid.Column="0"
                  x:Name="FfmpegHintLabel"
                  Classes="muted"
@@ -108,8 +127,9 @@
                  Text="Requires FFmpeg in the app folder or PATH."
                  VerticalAlignment="Center"
                  TextWrapping="Wrap" />
-      <Button Grid.Column="1" x:Name="ExportButton" Content="Export" Click="OnExport" Classes="primary" />
-      <Button Grid.Column="2" x:Name="CloseButton" Classes="ghost" Content="Close" Click="OnClose" />
+      <Button Grid.Column="1" x:Name="QueueAddButton" Content="Add to queue" Click="OnQueueAdd" />
+      <Button Grid.Column="2" x:Name="ExportButton" Content="Export" Click="OnExport" Classes="primary" />
+      <Button Grid.Column="3" x:Name="CloseButton" Classes="ghost" Content="Close" Click="OnClose" />
     </Grid>
 
   </Grid>

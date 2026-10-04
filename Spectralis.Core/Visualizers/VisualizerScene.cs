@@ -28,6 +28,12 @@ public enum VisualizerMode
     BounceBars,
     CircularEq,
     BlockGrid,
+
+    // GPU visualizers (wgpu-host viz pipeline). Appended after the legacy stubs so existing saved
+    // settings keep their meaning. They only appear in pickers while a GPU source is available.
+    GpuBars,
+    GpuRadial,
+    GpuTunnel,
 }
 
 /// <summary>Immutable per-frame scene handed to renderers.</summary>
