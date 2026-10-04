@@ -174,3 +174,26 @@ test('re-running the same release is safe and leaves the bucket the same size', 
   assert.equal(second.ok, true);
   assert.equal(storage.total(), first, 're-running the same release must not grow the bucket');
 });
+
+test('packages already in the bucket at the same size are not sent again, and do not count toward the peak', async () => {
+  const storage = fakeStorage(pkgFiles('6.1.0').map(({ key, size }) => ({ key, size })));
+  const before = storage.total();
+
+  const result = await runSync({
+    storage, files: [...pkgFiles('6.1.0'), ...pkgFiles('7.0.0')], readFeed: async () => '{}',
+    budgetBytes: 1.8 * GB, keepVersions: 4, apply: true,
+  });
+
+  assert.equal(result.ok, true, 'only the new release needs room, not a second copy of the old one');
+  assert.deepEqual(storage.calls.filter((c) => c[0] === 'put').map((c) => c[1]).sort(), pkgFiles('7.0.0').map((f) => f.key).sort());
+  assert.ok(storage.total() > before);
+});
+
+test('a package whose size differs from the stored one is replaced', async () => {
+  const [full] = pkgFiles('6.1.0');
+  const storage = fakeStorage([{ key: full.key, size: full.size - 1 }]);
+
+  await runSync({ storage, files: [full], readFeed: async () => '{}', budgetBytes: 5 * GB, keepVersions: 4, apply: true });
+
+  assert.equal(storage.objects.get(full.key), full.size);
+});
