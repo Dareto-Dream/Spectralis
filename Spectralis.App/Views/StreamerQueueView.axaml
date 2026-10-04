@@ -30,6 +30,12 @@
         <StackPanel Spacing="2">
           <TextBlock Classes="heading" Text="Streamer Queue" />
           <TextBlock Classes="secondary" Text="{Binding StatusText}" />
+          <WrapPanel>
+            <Button Content="Connect Ward / manage profile" Command="{Binding LinkWardQueueCommand}" Margin="0,8,8,0" />
+            <Button Content="Load saved queues" Command="{Binding RefreshWardQueuesCommand}" Margin="0,8,8,0" />
+            <ComboBox ItemsSource="{Binding WardQueues}" SelectedItem="{Binding WardQueue}" MinWidth="140" Margin="0,8,8,0" />
+            <Button Content="Use queue" Command="{Binding UseWardQueueCommand}" Margin="0,8,8,0" />
+          </WrapPanel>
         </StackPanel>
 
         <!-- P2W badge -->

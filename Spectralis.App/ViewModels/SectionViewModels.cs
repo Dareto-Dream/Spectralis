@@ -71,7 +71,7 @@ public sealed class SharedPlayMemberVm : ViewModelBase
     public ReactiveCommand<Unit, Unit> KickCommand { get; }
 }
 
-public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
+public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 {
     private readonly SharedPlaySessionController _controller = new();
     private readonly SharedPlayJoinRuntime _joinRuntime = new();
@@ -374,6 +374,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
             : settings.SharedPlayHostName);
         RaiseCapProps();
         ReapplyControllerSettings();
+        _ = LoadOwnedRoomsAsync();
     }
 
     public bool SharedPlayEnabled
@@ -556,7 +557,7 @@ public sealed class SharedPlayViewModel : ViewModelBase, IDisposable
         _controller.ApplySettings(
             _hostingRequested,
             _settings?.SharedPlayCdnBaseUrl,
-            _settings?.SharedPlayLiveChannelEnabled ?? false,
+            WardAccount.IsConnected && (_settings?.SharedPlayLiveChannelEnabled ?? false),
             _settings?.SharedPlayLiveChannelId ?? string.Empty,
             _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty,
             _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty);
