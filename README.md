@@ -8,7 +8,7 @@ Spectralis is a user-oriented cross-platform music runtime built with AvaloniaUI
 
 Spectralis is built around the center ideation that every song is not a simple auditory experience but instead a fully immersive one, tailored via signed capsules, interactive album worlds, reactive timelines, synced annotated lyrics, and live visualizers. To aid in the social perspective of the audio, it can be shared through Shared Play rooms, OBS overlays, and a Discord Rich Presence.
 
-I am hella lazy so the legacy windows-only winforms app remains in the repo as a feature reference during migration periods; see [docs/legacy-winforms.md](docs/legacy-winforms.md).
+The old windows-only winforms app is outdated and no longer in git; it only lives on disk as a feature reference, see [docs/legacy-winforms.md](docs/legacy-winforms.md).
 
 ## Repository layout
 
@@ -22,7 +22,7 @@ I am hella lazy so the legacy windows-only winforms app remains in the repo as a
 | [`backend/`](backend/) | Rust backend for Shared play and Streamer queues (Railway) |
 | [`web-share/`](web-share/), [`extension/`](extension/) | An extension format that is pretty outdated |
 | [`discord-bot/`](discord-bot/) | A discord bot containing Queueing capability |
-| [`legacy/`](legacy/) | The legacy WinForms app, maintenance mode ([docs/legacy-winforms.md](docs/legacy-winforms.md)) |
+| `legacy/` | Outdated WinForms app, gitignored and kept on disk only ([docs/legacy-winforms.md](docs/legacy-winforms.md)) |
 | [`Assets/`](Assets/), `yt-dlp.exe`, `ffmpeg.exe`, [`build/`](build/) | Runtime assets and build helpers for all platform versions of the app |
 
 ## Features

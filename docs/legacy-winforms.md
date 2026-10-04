@@ -1,5 +1,9 @@
 # The legacy WinForms app
 
+> **OUTDATED:** the legacy WinForms app is no longer tracked in git (as of Oct 2026).
+> `legacy/` is ignored and only exists on machines that still have a local copy.
+> Nothing here is maintained and the Avalonia app is the only supported build.
+
 The original Spectralis is a Windows-only WinForms/.NET 8 desktop app. It
 remains in the repository in **maintenance mode**: it's the feature reference
 while the remaining modules port to the Avalonia system
