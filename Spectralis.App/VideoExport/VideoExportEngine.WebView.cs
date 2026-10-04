@@ -145,6 +145,10 @@ public static partial class VideoExportEngine
             // Let the page run a few animation frames before we start stepping it.
             await Task.Delay(400, ct);
 
+            // Freeze the page clock; it only moves when we push a frame (see ExportClockShim).
+            await host.ExecuteScriptAsync(ExportClockShim);
+            var frameMs = (1000.0 / fps).ToString("0.######", CultureInfo.InvariantCulture);
+
             for (var frame = 0; frame < totalFrames; frame++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -159,7 +163,7 @@ public static partial class VideoExportEngine
                 sceneState.UpdateFrame(visProvider.GetFrame(), true, elapsed, VisualizerMode.MirrorSpectrum);
                 var scene = sceneState.CreateScene("HTML");
 
-                await host.ExecuteScriptAsync(BuildFrameScript(scene, elapsed, isVideo));
+                await host.ExecuteScriptAsync(BuildFrameScript(scene, elapsed, isVideo, frameMs));
                 // One real animation frame's worth of time for the page to paint.
                 await Task.Delay(16, ct);
 
@@ -216,7 +220,21 @@ public static partial class VideoExportEngine
         return ms.ToArray();
     }
 
-    private static string BuildFrameScript(VisualizerScene scene, float elapsed, bool syncVideo)
+    // Offline export steps exact frame times at an uneven wall-clock pace. Capsules that predict ahead
+    // of the last pushed time with performance.now() overshoot and glide back (visible forward/back
+    // jitter). Pinning performance.now()/Date.now() to a virtual clock that advances exactly one frame
+    // per push makes that prediction land on the pushed time, so capsules don't each need a
+    // __spectralisExportFrame hook (the hook is still honoured if a capsule defines one).
+    private const string ExportClockShim =
+        "(function(){if(window.__spectralisExportClock)return;" +
+        "var v0=performance.now(),v=v0,d0=Date.now();" +
+        "window.__spectralisExportClock={advance:function(ms){v+=ms;}};" +
+        "performance.now=function(){return v;};" +
+        "Date.now=function(){return d0+(v-v0);};" +
+        "document.documentElement.classList.add('spectralis-exporting');" +
+        "window.__spectralisExporting=true;})()";
+
+    private static string BuildFrameScript(VisualizerScene scene, float elapsed, bool syncVideo, string frameMs)
     {
         var levels = SampleLevels(scene.SpectrumLevels, 64);
         var sb = new StringBuilder("[");
@@ -233,6 +251,7 @@ public static partial class VideoExportEngine
 
         return
             "(function(){" +
+            $"if(window.__spectralisExportClock)window.__spectralisExportClock.advance({frameMs});" +
             $"var f={{time:{time},levels:{sb},peak:{peak},rms:{rms},active:true}};" +
             "var d=document.documentElement.style;" +
             "d.setProperty('--audio-peak',String(f.peak));" +
@@ -244,6 +263,7 @@ public static partial class VideoExportEngine
             "if(typeof window.spectral.onPlaybackFrame==='function')window.spectral.onPlaybackFrame(f);}" +
             "if(typeof window.onSpectralisFrame==='function')window.onSpectralisFrame(f);" +
             "if(typeof window.onAudioTime==='function')window.onAudioTime(f.time);" +
+            "if(typeof window.__spectralisExportFrame==='function')window.__spectralisExportFrame(f.time);" +
             (syncVideo
                 ? "var v=window.currentVideoElement||document.querySelector('video');" +
                   "if(v){try{v.pause();}catch(e){}" +
