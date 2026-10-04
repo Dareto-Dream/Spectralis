@@ -1,5 +1,6 @@
 mod collab;
 mod protocol;
+mod sq_realtime;
 mod store;
 
 use std::{
@@ -46,6 +47,8 @@ const STRIPE_CONNECT_TOKEN: &str = "https://connect.stripe.com/oauth/token";
 struct AppState {
     store: Arc<store::Store>,
     rooms: collab::Rooms,
+    /// Streamer Queue sockets (see sq_realtime.rs), separate from Shared Play's rooms.
+    sq_rooms: collab::Rooms,
     web_share_root: Arc<PathBuf>,
     public_base_url: Option<String>,
     stripe_secret_key: Option<Arc<String>>,
@@ -107,6 +110,7 @@ async fn main() -> Result<()> {
     let state = AppState {
         store,
         rooms: collab::Rooms::default(),
+        sq_rooms: collab::Rooms::default(),
         web_share_root: Arc::new(web_share_root),
         public_base_url,
         stripe_secret_key,
@@ -214,6 +218,7 @@ async fn main() -> Result<()> {
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid", delete(delete_sq_submission))
         .route("/streamer-queue/v1/rooms/:id/order", put(put_sq_order))
         .route("/streamer-queue/v1/rooms/:id/now-playing", post(post_sq_now_playing))
+        .route("/streamer-queue/v2/rooms/:id/socket", get(sq_realtime::ws_handler))
         .route("/streamer-queue/v1/rooms/:id/stripe/connect", get(get_sq_stripe_connect))
         .route("/streamer-queue/v1/rooms/:id/stripe/disconnect", post(post_sq_stripe_disconnect))
         .route("/webhooks/stripe", post(post_stripe_webhook))
@@ -2903,7 +2908,11 @@ async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, App
 }
 
 async fn write_sq_room_file(state: &AppState, room_id: &str, room: &Value) -> Result<(), AppError> {
-    write_json(state, &sq_room_key_checked(room_id)?, room).await
+    write_json(state, &sq_room_key_checked(room_id)?, room).await?;
+    // Every handler that changes a room funnels through here, so one hook tells every connected
+    // dashboard/overlay/bot to refresh instead of each of them polling.
+    sq_realtime::notify_changed(state, room_id, room).await;
+    Ok(())
 }
 
 fn sq_owner_token_valid(room: &Value, token: &str) -> bool {

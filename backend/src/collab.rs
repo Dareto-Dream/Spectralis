@@ -184,7 +184,7 @@ struct RoomLocal {
 pub struct Rooms(Arc<Mutex<HashMap<String, RoomLocal>>>);
 
 impl Rooms {
-    async fn add(&self, code: &str, conn_id: u64, tx: mpsc::UnboundedSender<String>, is_host: bool) {
+    pub(crate) async fn add(&self, code: &str, conn_id: u64, tx: mpsc::UnboundedSender<String>, is_host: bool) {
         let mut g = self.0.lock().await;
         let room = g.entry(code.to_string()).or_default();
         room.sockets.insert(conn_id, tx);
@@ -193,7 +193,7 @@ impl Rooms {
         }
     }
 
-    async fn remove(&self, code: &str, conn_id: u64) {
+    pub(crate) async fn remove(&self, code: &str, conn_id: u64) {
         let mut g = self.0.lock().await;
         if let Some(room) = g.get_mut(code) {
             room.sockets.remove(&conn_id);
@@ -206,7 +206,7 @@ impl Rooms {
         }
     }
 
-    async fn fanout_all(&self, code: &str, payload: &str) {
+    pub(crate) async fn fanout_all(&self, code: &str, payload: &str) {
         let g = self.0.lock().await;
         if let Some(room) = g.get(code) {
             for tx in room.sockets.values() {
@@ -232,7 +232,7 @@ pub fn spawn_replica_fanout(state: AppState) {
         loop {
             let mut sub = match state
                 .store
-                .subscribe(vec!["sp:ev:*".to_string(), "sp:cmd:*".to_string()])
+                .subscribe(vec!["sp:ev:*".to_string(), "sp:cmd:*".to_string(), "sq:ev:*".to_string()])
                 .await
             {
                 Ok(s) => s,
@@ -247,6 +247,8 @@ pub fn spawn_replica_fanout(state: AppState) {
                     state.rooms.fanout_all(code, &payload).await;
                 } else if let Some(code) = channel.strip_prefix("sp:cmd:") {
                     state.rooms.fanout_host(code, &payload).await;
+                } else if let Some(room_id) = channel.strip_prefix("sq:ev:") {
+                    state.sq_rooms.fanout_all(room_id, &payload).await;
                 }
             }
             eprintln!("collab: pub/sub stream ended — reconnecting");
@@ -966,6 +968,7 @@ mod collab_tests {
         AppState {
             store: std::sync::Arc::new(store),
             rooms: Rooms::default(),
+            sq_rooms: Rooms::default(),
             web_share_root: std::sync::Arc::new(std::path::PathBuf::from("web-share")),
             public_base_url: None,
             stripe_secret_key: None,
