@@ -47,6 +47,36 @@ public sealed class ObsOverlayServerTests : IDisposable
     }
 
     [Fact]
+    public async Task State_CarriesTheProtocolVersionSoAStalePageCanTellItIsOutOfDate()
+    {
+        var json = await _client.GetStringAsync($"{_baseUrl}/state");
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.Equal(ObsOverlayProtocol.Version, doc.RootElement.GetProperty("protocol").GetInt32());
+    }
+
+    [Fact]
+    public void OverlayPage_ExpectsTheSameProtocolTheServerSpeaks()
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(ObsOverlayHtml.Template, @"const PROTOCOL=(\d+);");
+
+        Assert.True(match.Success, "the overlay page must declare const PROTOCOL");
+        Assert.Equal(ObsOverlayProtocol.Version, int.Parse(match.Groups[1].Value));
+    }
+
+    [Fact]
+    public void OverlayPage_ChecksTheProtocolBeforeApplyingState()
+    {
+        var html = ObsOverlayHtml.Template;
+        var check = html.IndexOf("if(protocolMismatch(s)) return;", StringComparison.Ordinal);
+        var apply = html.IndexOf("state=s;", StringComparison.Ordinal);
+
+        Assert.True(check >= 0, "applyData must bail out on a protocol mismatch");
+        Assert.True(check < apply, "the check must run before the state is applied");
+        Assert.Contains("Right-click the browser source", html);
+    }
+
+    [Fact]
     public async Task WrongToken_Is404()
     {
         var response = await _client.GetAsync(_baseUrl.Replace(Token, "wrong-token"));
