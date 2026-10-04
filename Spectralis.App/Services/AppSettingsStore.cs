@@ -38,6 +38,9 @@ public sealed class AppSettings
     /// <summary>Join tracks with no gap when the next queue item is ready.</summary>
     public bool GaplessPlayback { get; set; } = true;
 
+    /// <summary>Chosen output device (null = follow the system default). Kept even while unplugged.</summary>
+    public string? OutputDeviceId { get; set; }
+
     /// <summary>Crossfade between queue tracks, in seconds (0 = off, max 12).</summary>
     public int CrossfadeSeconds { get; set; }
 
@@ -157,6 +160,7 @@ public sealed class AppSettings
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
             GaplessPlayback = GaplessPlayback,
+            OutputDeviceId = OutputDeviceId,
             CrossfadeSeconds = CrossfadeSeconds,
             EffectChainJson = EffectChainJson,
             EqSpotifyAudioExperimental = EqSpotifyAudioExperimental,
