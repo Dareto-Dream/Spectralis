@@ -52,7 +52,16 @@ export async function runSync({ storage, files, readFeed, budgetBytes, keepVersi
   }
 
   const existing = await storage.list();
-  const plan = planSync({ existing, incoming: wanted.map(({ key, size }) => ({ key, size })), budgetBytes, keepVersions });
+
+  // A versioned package never changes once released, so one already in the bucket at the same size is done.
+  // Skipping it saves the bandwidth and keeps it from being counted as new bytes in the peak. Feeds and
+  // installers keep their name from release to release, so those are always sent again.
+  const stored = new Map(existing.map((o) => [o.key, o.size]));
+  const unchanged = (f) => classify(f.key).kind === 'package' && stored.get(f.key) === f.size;
+  const toSend = wanted.filter((f) => !unchanged(f));
+  if (toSend.length < wanted.length) log(`Skipping ${wanted.length - toSend.length} package(s) already in the bucket.`);
+
+  const plan = planSync({ existing, incoming: toSend.map(({ key, size }) => ({ key, size })), budgetBytes, keepVersions });
 
   log(`In the bucket now: ${formatBytes(existing.reduce((n, o) => n + o.size, 0))}   budget: ${formatBytes(plan.budgetBytes)}`);
   if (!plan.ok) {

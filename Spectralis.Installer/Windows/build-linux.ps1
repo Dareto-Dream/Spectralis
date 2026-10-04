@@ -35,7 +35,7 @@ $tmpWin    = Join-Path $env:TEMP "spectralis-build-appimage.sh"
 [System.IO.File]::WriteAllText(
     $tmpWin,
     [System.IO.File]::ReadAllText($scriptWin).Replace("`r`n", "`n").Replace("`r", "`n"),
-    [System.Text.Encoding]::UTF8)
+    (New-Object System.Text.UTF8Encoding($false)))
 $tmpWsl = "/mnt/" + $tmpWin[0].ToString().ToLower() + ($tmpWin.Substring(2).Replace('\', '/'))
 
 $env:WSLENV   = "SPECTRALIS_SPOTIFY_CLIENT_ID/u:SPECTRALIS_DISCORD_CLIENT_ID/u:REPO_ROOT"
