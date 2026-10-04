@@ -472,12 +472,21 @@ async fn handle_socket(
     .unwrap_or_else(|| "Listener".to_string());
 
     let is_host = requested_role == "host";
+    let mut access_headers = axum::http::HeaderMap::new();
+    if let Some(token) = hello.get("accessToken").and_then(Value::as_str) {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&format!("Bearer {token}")) { access_headers.insert(axum::http::header::AUTHORIZATION,value); }
+    }
     if is_host {
         let key = hello.get("key").and_then(Value::as_str).unwrap_or("");
         if crate::validate_session_key(&state, &code, key).await.is_err() {
             let _ = sender
                 .send(Message::Text(error_frame("bad_key", "Session key rejected")))
                 .await;
+            return;
+        }
+    } else {
+        if crate::player::session_access(&state, &code, &access_headers).await.is_err() {
+            let _ = sender.send(Message::Text(error_frame("admission_required", "Sign in and request admission from the room page."))).await;
             return;
         }
     }
@@ -560,8 +569,11 @@ async fn handle_socket(
     // Outbound pump task. Some room-channel frames are point-to-point (`kicked`,
     // `error`): they carry a target client id and are dropped for everyone else.
     let pump_client_id = client_id.clone();
+    let pump_state = state.clone();
+    let pump_code = code.clone();
     let mut pump = tokio::spawn(async move {
         while let Some(text) = out_rx.recv().await {
+            if !is_host && crate::player::session_access(&pump_state,&pump_code,&access_headers).await.is_err() { break; }
             if text.contains("\"kicked\"") || text.contains("toClientId") {
                 if let Ok(v) = serde_json::from_str::<Value>(&text) {
                     let tag = v.get("t").and_then(Value::as_str);

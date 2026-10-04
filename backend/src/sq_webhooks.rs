@@ -227,7 +227,7 @@ mod tests {
 
     /// An enabled room plus its owner token and a fresh webhook key.
     async fn room_with_key(state: &AppState) -> (String, String, String) {
-        let created = crate::post_sq_create_room(State(state.clone())).await.unwrap().into_response();
+        let created = crate::post_sq_create_room(State(state.clone()), HeaderMap::new()).await.unwrap().into_response();
         let created = body_json(created).await;
         let room_id = created["roomId"].as_str().unwrap().to_string();
         let owner = created["ownerToken"].as_str().unwrap().to_string();
