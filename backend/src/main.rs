@@ -1,4 +1,7 @@
 mod collab;
+mod protocol;
+mod sq_realtime;
+mod sq_webhooks;
 mod store;
 
 use std::{
@@ -45,6 +48,8 @@ const STRIPE_CONNECT_TOKEN: &str = "https://connect.stripe.com/oauth/token";
 struct AppState {
     store: Arc<store::Store>,
     rooms: collab::Rooms,
+    /// Streamer Queue sockets (see sq_realtime.rs), separate from Shared Play's rooms.
+    sq_rooms: collab::Rooms,
     web_share_root: Arc<PathBuf>,
     public_base_url: Option<String>,
     stripe_secret_key: Option<Arc<String>>,
@@ -108,6 +113,7 @@ async fn main() -> Result<()> {
     let state = AppState {
         store,
         rooms: collab::Rooms::default(),
+        sq_rooms: collab::Rooms::default(),
         web_share_root: Arc::new(web_share_root),
         public_base_url,
         stripe_secret_key,
@@ -220,6 +226,10 @@ async fn main() -> Result<()> {
         .route("/streamer-queue/v1/rooms/:id/submissions/:sid", delete(delete_sq_submission))
         .route("/streamer-queue/v1/rooms/:id/order", put(put_sq_order))
         .route("/streamer-queue/v1/rooms/:id/now-playing", post(post_sq_now_playing))
+        .route("/streamer-queue/v2/rooms/:id/socket", get(sq_realtime::ws_handler))
+        .route("/streamer-queue/v2/rooms/:id/webhook/key", post(sq_webhooks::post_webhook_key))
+        .route("/streamer-queue/v2/rooms/:id/webhook/submit", post(sq_webhooks::post_webhook_submit))
+        .route("/streamer-queue/v2/rooms/:id/webhook/status", post(sq_webhooks::post_webhook_status))
         .route("/streamer-queue/v1/rooms/:id/stripe/connect", get(get_sq_stripe_connect))
         .route("/streamer-queue/v1/rooms/:id/stripe/disconnect", post(post_sq_stripe_disconnect))
         .route("/webhooks/stripe", post(post_stripe_webhook))
@@ -3066,7 +3076,11 @@ async fn read_sq_room_file(state: &AppState, room_id: &str) -> Result<Value, App
 }
 
 async fn write_sq_room_file(state: &AppState, room_id: &str, room: &Value) -> Result<(), AppError> {
-    write_json(state, &sq_room_key_checked(room_id)?, room).await
+    write_json(state, &sq_room_key_checked(room_id)?, room).await?;
+    // Every handler that changes a room funnels through here, so one hook tells every connected
+    // dashboard/overlay/bot to refresh instead of each of them polling.
+    sq_realtime::notify_changed(state, room_id, room).await;
+    Ok(())
 }
 
 fn sq_owner_token_valid(room: &Value, token: &str) -> bool {
@@ -3218,6 +3232,14 @@ fn sq_normalize_mix_pattern(incoming: &Value, channels: &Value) -> Result<Value,
 // ── Fingerprint scoring ───────────────────────────────────────────────────────
 
 fn sq_fingerprint_score(a: &Value, b: &Value) -> f64 {
+    // Both sides carry an authenticated identity (webhook submissions): it decides on its own,
+    // because IP/browser signals describe the chat bridge there, not the viewer.
+    let id_a = a.get("id").and_then(Value::as_str).unwrap_or("");
+    let id_b = b.get("id").and_then(Value::as_str).unwrap_or("");
+    if !id_a.is_empty() && !id_b.is_empty() {
+        return if id_a == id_b { 1.0 } else { 0.0 };
+    }
+
     let mut score = 0.0f64;
 
     // IP /24 subnet match — weight 0.35
@@ -3312,6 +3334,7 @@ fn build_fingerprint(headers: &HeaderMap, payload: &Value) -> Value {
     json!({
         "ip": ip,
         "ip4": ip4,
+        "id": payload.get("fpId").and_then(Value::as_str).unwrap_or(""),
         "cookie": payload.get("fpCookie").and_then(Value::as_str).unwrap_or(""),
         "ua": payload.get("fpUa").and_then(Value::as_str).unwrap_or(""),
         "screen": payload.get("fpScreen").and_then(Value::as_str).unwrap_or(""),
@@ -3500,6 +3523,7 @@ fn sq_strip_private(mut room: Value) -> Value {
     }
     if let Some(obj) = room.as_object_mut() {
         obj.remove("ownerToken");
+        obj.remove("webhookKeyHash");
     }
     room
 }

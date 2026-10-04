@@ -2,9 +2,23 @@
 
 namespace Spectralis.Core.Integrations.Obs;
 
+/// <summary>
+/// Version of the contract between the app's overlay server and the overlay page. OBS keeps a browser
+/// source's page cached across app updates, so a stale page can end up reading a newer state shape; the
+/// page compares this number with its own and asks for a refresh when they differ. Bump it whenever the
+/// state JSON changes in a way an old page would misread, and bump <c>PROTOCOL</c> in ObsOverlayHtml to match
+/// (a test fails if they drift).
+/// </summary>
+public static class ObsOverlayProtocol
+{
+    public const int Version = 2;
+}
+
 public sealed class ObsOverlayState
 {
     public static readonly ObsOverlayState Empty = new();
+
+    [JsonPropertyName("protocol")]   public int Protocol { get; init; } = ObsOverlayProtocol.Version;
 
     [JsonPropertyName("track")]      public ObsTrackState Track { get; init; } = new();
     [JsonPropertyName("playback")]   public ObsPlaybackState Playback { get; init; } = new();

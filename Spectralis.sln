@@ -9,12 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Core", "Spectral
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Tests", "Spectralis.Tests\Spectralis.Tests.csproj", "{E977179B-1477-4A48-A076-902093F7A56A}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "legacy", "legacy", "{871BE218-8F83-E3CD-0B70-B1CC1745EA7C}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Legacy", "legacy\Spectralis.csproj", "{4040BE38-1670-437F-BA5E-89ADDBB415FA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Legacy.Startup", "legacy\Startup\Startup.csproj", "{BB650978-E436-491C-943A-0923A7967365}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,37 +55,11 @@ Global
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x64.Build.0 = Release|Any CPU
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x86.ActiveCfg = Release|Any CPU
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x86.Build.0 = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|x64.Build.0 = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Debug|x86.Build.0 = Debug|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|x64.ActiveCfg = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|x64.Build.0 = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|x86.ActiveCfg = Release|Any CPU
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA}.Release|x86.Build.0 = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|x64.Build.0 = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Debug|x86.Build.0 = Debug|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|Any CPU.Build.0 = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|x64.ActiveCfg = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|x64.Build.0 = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|x86.ActiveCfg = Release|Any CPU
-		{BB650978-E436-491C-943A-0923A7967365}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{4040BE38-1670-437F-BA5E-89ADDBB415FA} = {871BE218-8F83-E3CD-0B70-B1CC1745EA7C}
-		{BB650978-E436-491C-943A-0923A7967365} = {871BE218-8F83-E3CD-0B70-B1CC1745EA7C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {E88B8677-56DF-4226-8F10-92B8005BA546}

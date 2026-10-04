@@ -12,7 +12,9 @@ namespace Spectralis.App.Services;
 /// </summary>
 public sealed class VelopackUpdateService : IUpdateService
 {
-    private const string ReleasesUrl = "https://cdn.deltavdevs.com/spectralis";
+    // Cloudflare R2 behind the spectralis-cdn subdomain. Builds before this one still read the legacy
+    // cdn.deltavdevs.com/spectralis feed, which deploy.ps1 keeps publishing to.
+    private const string ReleasesUrl = "https://spectralis-cdn.deltavdevs.com";
 
     private static string Channel =>
         OperatingSystem.IsWindows() ? "win-x64" :

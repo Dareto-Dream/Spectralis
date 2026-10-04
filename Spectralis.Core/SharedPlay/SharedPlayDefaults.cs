@@ -9,7 +9,15 @@ public static class SharedPlayDefaults
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
     public const string ProtocolVersion = "shared-play-v2";
     /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
-    public const int SocketEnvelopeVersion = 1;
+    public const int SocketEnvelopeVersion = RealtimeProtocolVersion;
+    /// <summary>
+    /// Spectralis realtime protocol this client speaks (one protocol for Shared Play and the
+    /// Streamer Queue, shared with the Rust backend, Discord bot and OBS overlay). The server
+    /// refuses clients that don't announce at least its minimum with an "update required" error.
+    /// </summary>
+    public const int RealtimeProtocolVersion = 2;
+    /// <summary>Optional protocol features this client understands (see backend/src/protocol.rs).</summary>
+    public static readonly string[] RealtimeFeatures = ["roster", "reactions", "commands"];
     public const string SocketPath = "/shared-play/v2/sessions/{0}/socket";
     public const string ClientName = "Spectralis";
     public const string RichPackageContentType = "application/vnd.spectralis.shared-play+zip";

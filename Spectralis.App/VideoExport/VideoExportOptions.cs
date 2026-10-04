@@ -25,6 +25,9 @@ public sealed class VideoExportOptions
     public bool ShowAlbumArt { get; set; } = true;
     public bool ShowProgressBar { get; set; } = true;
 
+    /// <summary>Caps the exported length (platform limits like Shorts); null exports the whole track.</summary>
+    public int? MaxDurationSeconds { get; set; }
+
     public string OutputPath { get; set; } = "";
 
     /// <summary>The single selection when not cycling — the first entry.</summary>

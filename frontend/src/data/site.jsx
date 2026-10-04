@@ -55,6 +55,9 @@ export const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','W
 
 export const CHANGELOG_URL = 'https://cdn.deltavdevs.com/spectralis/changelog.json'
 
+// Backend the Streamer Queue dashboard talks to by default (same one the desktop app uses).
+export const SQ_API_BASE = 'https://audioplayer-production-5b83.up.railway.app'
+
 // changelog groups reference icons by name (CDN JSON can't carry components)
 export const CHANGELOG_ICONS = {
   Waves, Radio, Zap, Shield, FileCode2, Package, MonitorPlay, BarChart3,

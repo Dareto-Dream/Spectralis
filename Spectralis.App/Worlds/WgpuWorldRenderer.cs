@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Spectralis.App.Services;
+using Spectralis.Core.Common;
 
 namespace Spectralis.App.Worlds;
 
@@ -126,7 +127,7 @@ public sealed class WgpuWorldRenderer : IDisposable
         _consecutiveDroppedFrames = 0;
         _bgraScratch ??= new byte[expected];
         Marshal.Copy(srcPtr, _bgraScratch, 0, srcLen);
-        SwapRedAndBlueInPlace(_bgraScratch);
+        PixelSwizzle.SwapRedBlueInPlace(_bgraScratch);
         return _bgraScratch;
     }
 
@@ -220,15 +221,6 @@ public sealed class WgpuWorldRenderer : IDisposable
 
         var bytes = rgba.ToArray();
         return WgpuHostNative.wgpu_host_set_texture(_handle, bytes, (UIntPtr)bytes.Length, width, height);
-    }
-
-    /// <summary>wgpu-host emits RGBA8; Avalonia's WriteableBitmap here is BGRA8 — swap R/B in place.</summary>
-    private static void SwapRedAndBlueInPlace(byte[] rgba)
-    {
-        for (var i = 0; i < rgba.Length; i += 4)
-        {
-            (rgba[i], rgba[i + 2]) = (rgba[i + 2], rgba[i]);
-        }
     }
 
     public void Dispose()

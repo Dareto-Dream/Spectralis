@@ -65,6 +65,7 @@ public static partial class VideoExportEngine
         if (durationSeconds <= 0)
             throw new InvalidOperationException(
                 "Could not determine audio duration. The file may be unsupported or corrupt.");
+        durationSeconds = ClampDuration(durationSeconds, options.MaxDurationSeconds);
 
         ISampleProvider rawProvider = audioStream is ISampleProvider sp ? sp : audioStream.ToSampleProvider();
         var visProvider = new VisualizerSampleProvider(rawProvider);
@@ -347,6 +348,9 @@ public static partial class VideoExportEngine
             remaining -= requested;
         }
     }
+
+    public static double ClampDuration(double audioSeconds, int? maxSeconds) =>
+        maxSeconds is > 0 ? Math.Min(audioSeconds, maxSeconds.Value) : audioSeconds;
 
     private static IReadOnlyList<string> BuildFfmpegArgs(
         string audioPath,

@@ -245,6 +245,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         NowPlaying.SessionReset += (_, _) => Capsules.Clear();
         NowPlaying.LyricsTargetActivated += (_, _) => SelectSection(NowPlaying);
         TimingStudio = new TimingStudioViewModel(Engine, AppSettings);
+        TimelineEditor = new TimelineEditorViewModel(Engine, NowPlaying);
         ObsOverlay = new ObsOverlayCoordinator(Engine, NowPlaying, AppSettings);
         ObsOverlay.Start();
         Satellite = new SatelliteCoordinator(Engine);
@@ -306,6 +307,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
             new("Song Wars", IconData.SongWars, SongWars),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
+            new("Timeline Editor", IconData.TimelineEditor, TimelineEditor),
             new("OBS Overlay", IconData.Obs, ObsEditor),
             new("Settings", IconData.Settings, Settings),
         };
@@ -445,6 +447,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public RandomizerToolsViewModel RandomizerTools { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
+    public TimelineEditorViewModel TimelineEditor { get; }
     public SettingsViewModel Settings { get; }
 
     public ObservableCollection<NavSection> Sections { get; }

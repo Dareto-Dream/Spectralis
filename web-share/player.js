@@ -700,7 +700,10 @@
   // reaction polling; startSessionLoops() stays as a fallback for proxies that
   // block WebSockets or when the socket can't hold a connection.
 
-  var ENVELOPE_V = 1;
+  // Spectralis realtime protocol v2 (backend/src/protocol.rs): the hello says which protocol and
+  // optional features this page speaks; a server that needs newer answers `update_required`.
+  var ENVELOPE_V = 2;
+  var CLIENT_FEATURES = ["roster", "reactions"];
 
   function roomSocketUrl(roomCode) {
     var base = new URL(config.cdnBaseUrl);
@@ -737,7 +740,15 @@
     ws.addEventListener("open", function () {
       runtime.socketAttempt = 0;
       cancelSocketFallback();
-      socketSend({ t: "hello", role: "listener", clientId: runtime.clientId, name: roomDisplayName() });
+      socketSend({
+        t: "hello",
+        proto: ENVELOPE_V,
+        client: { kind: "web", version: String(config.clientVersion || "") },
+        features: CLIENT_FEATURES,
+        role: "listener",
+        clientId: runtime.clientId,
+        name: roomDisplayName()
+      });
       window.clearInterval(runtime.socketPingTimer);
       runtime.socketPingTimer = window.setInterval(function () { socketSend({ t: "ping" }); }, 20000);
       // The realtime feed supersedes network polling.
@@ -838,6 +849,14 @@
         renderSkipProgress();
         break;
       case "error":
+        if (msg.code === "update_required") {
+          // A cached copy of this page is older than the server; reconnecting can't fix that.
+          runtime.socketWantOpen = false;
+          closeRoomSocket();
+          setDotState("error");
+          setStatus("This page is out of date. Refresh to keep listening.");
+          break;
+        }
         setStatus(stringOrEmpty(msg.message) || "That action was not allowed.");
         break;
       case "kicked":

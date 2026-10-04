@@ -10,6 +10,7 @@ param(
     [switch]$UseMappedDrive,
     [switch]$SkipSquirrel,
     [switch]$SkipVelopack,
+    [switch]$SkipR2,
     [switch]$RequireLinux,
     [switch]$SyncSquirrelHistory,
     [switch]$ForceUpload
@@ -397,6 +398,33 @@ if ($hasLinuxAppImage) {
     Copy-Artifact $appImage $cdnTarget "Linux AppImage"
 } else {
     Write-Warning "Linux AppImage not found - skipping (build with -Linux to produce it)"
+}
+
+# R2 mirror
+# New builds read updates from spectralis-cdn.deltavdevs.com (Cloudflare R2); installs that already
+# exist keep reading the legacy CDN above, so both get every release. sync.mjs enforces the storage
+# budget (it refuses rather than go over) and prunes to the newest releases, see tools/r2/README.md.
+
+$r2Ready = $env:R2_ACCOUNT_ID -and $env:R2_ACCESS_KEY_ID -and $env:R2_SECRET_ACCESS_KEY
+if ($SkipR2 -or $SkipVelopack) {
+    Write-Host ""
+    Write-Host "[R2] skipped"
+} elseif (-not $r2Ready) {
+    Write-Warning "R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not set - the new CDN did NOT get this release"
+} else {
+    Write-Host ""
+    Write-Host "[R2] $velopackDir"
+    Write-Host "  -> spectralis-cdn"
+    $syncArgs = @("sync.mjs", "--source", $velopackDir)
+    if (-not $WhatIfPreference) { $syncArgs += "--apply" }
+    Push-Location (Join-Path $PSScriptRoot "tools\r2")
+    try {
+        if (-not (Test-Path "node_modules")) { npm ci --silent; if ($LASTEXITCODE -ne 0) { throw "npm ci failed in tools/r2" } }
+        & node @syncArgs
+        if ($LASTEXITCODE -ne 0) { throw "R2 sync failed (exit $LASTEXITCODE) - the legacy CDN is updated, the new one is not" }
+    } finally {
+        Pop-Location
+    }
 }
 
 # Summary

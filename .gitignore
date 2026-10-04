@@ -97,3 +97,8 @@ commit/
 *_payload.zip
 metadata/
 AGENTS.md
+
+# Legacy WinForms app: kept on disk as a reference, not in git
+legacy/
+
+tools/r2/node_modules/

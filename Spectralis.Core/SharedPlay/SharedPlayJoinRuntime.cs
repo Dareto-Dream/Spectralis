@@ -209,6 +209,8 @@ public sealed class SharedPlayJoinRuntime : IDisposable
         socket.SkipProgressReceived += p => { _skipProgress = p; SkipProgressChanged?.Invoke(this, p); };
         socket.Kicked += () => { _status = "The host removed you from this room."; Leave(clearStatus: false); StatusChanged?.Invoke(this, EventArgs.Empty); };
         socket.ConnectionChanged += _ => StatusChanged?.Invoke(this, EventArgs.Empty);
+        // Server said this build is too old for the room protocol: say so instead of a silent dead room.
+        socket.UpdateRequiredReceived += message => { _status = message; StatusChanged?.Invoke(this, EventArgs.Empty); };
 
         _socket = socket;
         socket.Start();

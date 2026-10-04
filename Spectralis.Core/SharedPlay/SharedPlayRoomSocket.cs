@@ -106,6 +106,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private volatile bool _connected;
+    private volatile bool _updateRequired;
 
     private string? _lastStateJson;
     private string? _lastQueueJson;
@@ -127,6 +128,12 @@ public sealed class SharedPlayRoomSocket : IDisposable
     }
 
     public bool IsConnected => _connected;
+
+    /// <summary>Features both sides agreed on in the last welcome (empty until welcomed).</summary>
+    public IReadOnlyList<string> NegotiatedFeatures { get; private set; } = [];
+
+    /// <summary>True once the server said this build is too old; the socket won't reconnect.</summary>
+    public bool UpdateRequired => _updateRequired;
     public string ClientId => _clientId;
 
     public event Action<JsonElement>? StateReceived;
@@ -138,6 +145,9 @@ public sealed class SharedPlayRoomSocket : IDisposable
     public event Action<SharedPlayIncomingCommand>? CommandReceived;
     public event Action? Kicked;
     public event Action<string, string>? ErrorReceived;
+
+    /// <summary>The server refused this client as too old (message is user-presentable). Fires once.</summary>
+    public event Action<string>? UpdateRequiredReceived;
     public event Action<bool>? ConnectionChanged;
     public event Action<JsonElement, SharedPlayCapabilities, IReadOnlyList<SharedPlayMember>>? Welcomed;
 
@@ -193,6 +203,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
                     var text = await _transport.ReceiveTextAsync(ct).ConfigureAwait(false);
                     if (text is null) break;
                     Dispatch(text);
+                    if (_updateRequired) break;
                 }
             }
             catch (OperationCanceledException)
@@ -205,7 +216,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
             }
 
             SetConnected(false);
-            if (ct.IsCancellationRequested) break;
+            if (ct.IsCancellationRequested || _updateRequired) break;
             var delay = Backoff[Math.Min(attempt, Backoff.Length - 1)];
             attempt++;
             try { await Task.Delay(delay, ct).ConfigureAwait(false); }
@@ -234,6 +245,9 @@ public sealed class SharedPlayRoomSocket : IDisposable
             switch (t)
             {
                 case "welcome":
+                    NegotiatedFeatures = root.TryGetProperty("features", out var fEl) && fEl.ValueKind == JsonValueKind.Array
+                        ? fEl.EnumerateArray().Select(f => f.GetString() ?? "").Where(f => f.Length > 0).ToArray()
+                        : [];
                     var caps = root.TryGetProperty("caps", out var cEl)
                         ? SharedPlayCapabilities.FromJson(cEl)
                         : SharedPlayCapabilities.Default;
@@ -303,6 +317,11 @@ public sealed class SharedPlayRoomSocket : IDisposable
                 case "error":
                     var ec = root.TryGetProperty("code", out var ecEl) ? ecEl.GetString() ?? "error" : "error";
                     var em = root.TryGetProperty("message", out var emEl) ? emEl.GetString() ?? "" : "";
+                    if (ec == "update_required" && !_updateRequired)
+                    {
+                        _updateRequired = true;
+                        Raise(() => UpdateRequiredReceived?.Invoke(em));
+                    }
                     Raise(() => ErrorReceived?.Invoke(ec, em));
                     break;
             }
@@ -394,12 +413,22 @@ public sealed class SharedPlayRoomSocket : IDisposable
 
     public void Ping() => _ = SendAsync(Envelope("ping"));
 
+    private static readonly string ClientVersion =
+        typeof(SharedPlayRoomSocket).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
     private string HelloFrame()
     {
         var dict = new Dictionary<string, object?>
         {
             ["v"] = SharedPlayDefaults.SocketEnvelopeVersion,
             ["t"] = "hello",
+            ["proto"] = SharedPlayDefaults.RealtimeProtocolVersion,
+            ["client"] = new Dictionary<string, object?>
+            {
+                ["kind"] = "app",
+                ["version"] = ClientVersion,
+            },
+            ["features"] = SharedPlayDefaults.RealtimeFeatures,
             ["role"] = _role,
             ["clientId"] = _clientId,
             ["name"] = _name,

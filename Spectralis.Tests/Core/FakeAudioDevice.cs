@@ -57,6 +57,19 @@ public sealed class FakeAudioDevice : IAudioDevice
         PlaybackStopped?.Invoke(this, new AudioDeviceStoppedEventArgs(null));
     }
 
+    /// <summary>Reads up to <paramref name="samples"/> interleaved samples, like one device callback.</summary>
+    public float[] Pump(int samples)
+    {
+        if (_source is null)
+        {
+            return [];
+        }
+
+        var buffer = new float[samples];
+        var read = _source.Read(buffer, 0, samples);
+        return buffer.AsSpan(0, read).ToArray();
+    }
+
     public void FailPlayback(Exception ex)
     {
         IsPlaying = false;

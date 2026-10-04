@@ -8,6 +8,11 @@ public sealed class NullVizCanvas : IVizCanvas
 {
     public int CallCount { get; private set; }
 
+    /// <summary>How many times DrawPixels was called, and the arguments of the last call.</summary>
+    public int PixelBlits { get; private set; }
+
+    public (byte[] Bgra, int Width, int Height, VizRect Dest)? LastBlit { get; private set; }
+
     private void Count() => CallCount++;
 
     public void FillRect(VizRect rect, VizColor color) => Count();
@@ -25,7 +30,12 @@ public sealed class NullVizCanvas : IVizCanvas
     public void DrawArc(VizRect rect, float startAngleDeg, float sweepDeg, VizColor color, float width) => Count();
     public void DrawText(string text, VizRect rect, VizColor color, float fontSize, VizTextAlign align, bool bold = false) => Count();
     public void DrawImage(IVizImage image, VizRect dest) => Count();
-    public void DrawPixels(byte[] bgra, int pixelWidth, int pixelHeight, VizRect dest) => Count();
+    public void DrawPixels(byte[] bgra, int pixelWidth, int pixelHeight, VizRect dest)
+    {
+        Count();
+        PixelBlits++;
+        LastBlit = (bgra, pixelWidth, pixelHeight, dest);
+    }
     public void DrawRoundedRect(VizRect rect, float radius, VizColor color, float width) => Count();
     public void PushClipEllipse(VizRect rect) => Count();
     public void PushClipRect(VizRect rect) => Count();
