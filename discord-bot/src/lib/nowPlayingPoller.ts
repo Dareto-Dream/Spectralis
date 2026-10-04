@@ -1,6 +1,8 @@
 import type { Client, SendableChannels } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
 import { getRoom, getRoomAsBot } from './sqApi.js';
+import { config } from './config.js';
+import { RoomSocket } from './sqRealtime.js';
 import { trackedForChannel, untrackSubmission } from './db.js';
 import type { GuildLink, SqBotRoom, SqSubmission } from '../types.js';
 
@@ -130,6 +132,7 @@ async function postOrEditNowPlaying(
 }
 
 const timers = new Map<string, NodeJS.Timeout>();
+const sockets = new Map<string, RoomSocket>();
 
 export function startPolling(client: Client, link: GuildLink, indexForStagger = 0): void {
   const key = keyFor(link);
@@ -140,6 +143,17 @@ export function startPolling(client: Client, link: GuildLink, indexForStagger = 
     timers.set(key, setTimeout(tick, POLL_INTERVAL_MS));
   }, delay);
   timers.set(key, timer);
+
+  // The 15s poll above stays as the safety net; the room socket just says "something changed" so
+  // reactions and the now-playing embed refresh immediately.
+  const socket = new RoomSocket({
+    baseUrl: config.sqApiBaseUrl,
+    roomId: link.roomId,
+    onChanged: () => void pollOnce(client, link),
+    log: (line) => console.log(`${key} ${line}`),
+  });
+  sockets.set(key, socket);
+  socket.start();
 }
 
 export function stopPolling(link: GuildLink): void {
@@ -149,5 +163,7 @@ export function stopPolling(link: GuildLink): void {
     clearTimeout(timer);
     timers.delete(key);
   }
+  sockets.get(key)?.stop();
+  sockets.delete(key);
   state.delete(key);
 }
