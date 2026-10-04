@@ -99,6 +99,7 @@ public class TrackListBenchmark
     }
 }
 
+[Collection("GpuVisualizerSource")]
 public class VisualizerSustainedBenchmark
 {
     [Fact]
