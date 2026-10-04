@@ -42,6 +42,7 @@ public static partial class VideoExportEngine
         if (durationSeconds <= 0)
             throw new InvalidOperationException(
                 "Could not determine audio duration. The file may be unsupported or corrupt.");
+        durationSeconds = ClampDuration(durationSeconds, options.MaxDurationSeconds);
 
         ISampleProvider rawProvider = audioStream is ISampleProvider sp ? sp : audioStream.ToSampleProvider();
         var visProvider = new VisualizerSampleProvider(rawProvider);
