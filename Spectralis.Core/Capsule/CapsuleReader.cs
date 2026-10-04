@@ -1,15 +1,13 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Crypto.Signers;
 
 namespace Spectralis.Core.Capsule;
 
 // Binary layout: [4 magic][4 version][32 pubkey][64 sig][zip payload]
 public sealed class CapsulePackage
 {
-    private readonly byte[] _payloadBytes;
+    private readonly CapsulePayload _payload;
 
     public string FilePath { get; }
     public CapsuleManifest Manifest { get; }
@@ -21,35 +19,18 @@ public sealed class CapsulePackage
         CapsuleManifest manifest,
         byte[] publicKeyBytes,
         string fingerprint,
-        byte[] payloadBytes)
+        CapsulePayload payload)
     {
         FilePath = filePath;
         Manifest = manifest;
         PublicKeyBytes = publicKeyBytes;
         Fingerprint = fingerprint;
-        _payloadBytes = payloadBytes;
+        _payload = payload;
     }
 
-    public byte[]? TryReadEntry(string name)
-    {
-        using var zip = new ZipArchive(new MemoryStream(_payloadBytes), ZipArchiveMode.Read);
-        var entry = zip.GetEntry(name);
-        if (entry is null || entry.Length > CapsuleFormat.MaxEntryBytes)
-        {
-            return null;
-        }
+    public byte[]? TryReadEntry(string name) => _payload.TryReadEntry(name, CapsuleFormat.MaxEntryBytes);
 
-        using var ms = new MemoryStream((int)entry.Length);
-        using var es = entry.Open();
-        CopyBounded(es, ms, CapsuleFormat.MaxEntryBytes);
-        return ms.ToArray();
-    }
-
-    public IReadOnlyList<string> EntryNames()
-    {
-        using var zip = new ZipArchive(new MemoryStream(_payloadBytes), ZipArchiveMode.Read);
-        return zip.Entries.Select(static entry => entry.FullName).ToArray();
-    }
+    public IReadOnlyList<string> EntryNames() => _payload.EntryNames();
 
     /// <summary>Bounded copy: a zip entry lying about its decompressed size cannot balloon memory.</summary>
     internal static void CopyBounded(Stream source, Stream destination, long maxBytes)
@@ -112,14 +93,15 @@ public static class CapsuleReader
         var payloadBytes = new byte[fs.Length - PayloadOffset];
         fs.ReadExactly(payloadBytes);
 
-        VerifySignature(publicKey, signature, payloadBytes);
+        CapsuleSignatureVerifier.Verify(publicKey, signature, payloadBytes, "Capsule");
 
         var fingerprintBytes = SHA256.HashData(publicKey);
         var fingerprint = Convert.ToHexString(fingerprintBytes).ToLowerInvariant();
 
-        var manifest = ReadManifest(payloadBytes, fingerprint, version);
+        var payload = new CapsulePayload(payloadBytes);
+        var manifest = ReadManifest(payload, fingerprint, version);
 
-        return new CapsulePackage(path, manifest, publicKey, fingerprint, payloadBytes);
+        return new CapsulePackage(path, manifest, publicKey, fingerprint, payload);
     }
 
     private static void ValidateMagic(byte[] header)
@@ -133,56 +115,36 @@ public static class CapsuleReader
         }
     }
 
-    private static void VerifySignature(byte[] publicKey, byte[] signature, byte[] payload)
+    private static CapsuleManifest ReadManifest(CapsulePayload payload, string fingerprint, int binaryVersion)
     {
-        Ed25519PublicKeyParameters pubKeyParams;
-        try
+        // The archive borrowed here goes back to the payload's pool, so the first entry read reuses it.
+        var manifest = payload.Use(zip =>
         {
-            pubKeyParams = new Ed25519PublicKeyParameters(publicKey);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidDataException("Capsule public key is malformed.", ex);
-        }
+            var entry = zip.GetEntry("manifest.json")
+                ?? throw new InvalidDataException("Capsule is missing manifest.json.");
 
-        var verifier = new Ed25519Signer();
-        verifier.Init(forSigning: false, pubKeyParams);
-        verifier.BlockUpdate(payload, 0, payload.Length);
-
-        if (!verifier.VerifySignature(signature))
-        {
-            throw new InvalidDataException("Capsule Ed25519 signature is invalid.");
-        }
-    }
-
-    private static CapsuleManifest ReadManifest(byte[] payloadBytes, string fingerprint, int binaryVersion)
-    {
-        using var zip = new ZipArchive(new MemoryStream(payloadBytes), ZipArchiveMode.Read);
-        var entry = zip.GetEntry("manifest.json")
-            ?? throw new InvalidDataException("Capsule is missing manifest.json.");
-
-        if (entry.Length > CapsuleFormat.MaxManifestBytes)
-        {
-            throw new InvalidDataException("manifest.json exceeds the allowed size.");
-        }
-
-        CapsuleManifest manifest;
-        try
-        {
-            using var manifestBuffer = new MemoryStream();
-            using (var stream = entry.Open())
+            if (entry.Length > CapsuleFormat.MaxManifestBytes)
             {
-                CapsulePackage.CopyBounded(stream, manifestBuffer, CapsuleFormat.MaxManifestBytes);
+                throw new InvalidDataException("manifest.json exceeds the allowed size.");
             }
 
-            manifestBuffer.Position = 0;
-            manifest = JsonSerializer.Deserialize<CapsuleManifest>(manifestBuffer)
-                ?? throw new InvalidDataException("manifest.json is empty.");
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidDataException("manifest.json is not valid JSON.", ex);
-        }
+            try
+            {
+                using var manifestBuffer = new MemoryStream();
+                using (var stream = entry.Open())
+                {
+                    CapsulePackage.CopyBounded(stream, manifestBuffer, CapsuleFormat.MaxManifestBytes);
+                }
+
+                manifestBuffer.Position = 0;
+                return JsonSerializer.Deserialize<CapsuleManifest>(manifestBuffer)
+                    ?? throw new InvalidDataException("manifest.json is empty.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidDataException("manifest.json is not valid JSON.", ex);
+            }
+        });
 
         if (!string.Equals(manifest.Format, CapsuleFormat.FormatName, StringComparison.Ordinal))
         {

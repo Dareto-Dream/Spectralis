@@ -27,4 +27,9 @@
     <PackageReference Include="Concentus" Version="2.2.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Capsule internals (payload pool, signature verifier) are unit-tested directly. -->
+    <InternalsVisibleTo Include="Spectralis.Tests" />
+  </ItemGroup>
+
 </Project>
