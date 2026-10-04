@@ -468,6 +468,8 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         _engine.Volume = (float)(_volumePercent / 100.0);
         _engine.SetPreferredSampleRate(_settings.PreferredSampleRate);
+        _engine.GaplessEnabled = _settings.GaplessPlayback;
+        _engine.CrossfadeSeconds = _settings.CrossfadeSeconds;
         _engine.SetMidiPlaybackInstrument(_settings.MidiInstrument);
         ResetVisualizerCycleDeadline();
         _reactiveRuntime.ParamsChanged += OnReactiveParamsChanged;
@@ -476,6 +478,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         // TrackEnded arrives on the audio device callback thread; auto-advance on the UI thread.
         _engine.TrackEnded += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = AutoAdvanceAsync());
+        // The chain moved to the next track by itself (gapless/crossfade); the queue still has to
+        // follow. AutoAdvance lands in LoadCurrentQueueTrackAsync, whose TrySeamlessAdvance
+        // recognises the track is already playing and just applies metadata/lyrics.
+        _engine.TrackTransitioned += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = AutoAdvanceAsync());
         _engine.StateMachine.StateChanged += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(RefreshFromEngine);
@@ -1755,6 +1762,38 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions { get; }
+
+    public bool GaplessPlayback
+    {
+        get => _settings.GaplessPlayback;
+        set
+        {
+            if (_settings.GaplessPlayback == value)
+                return;
+            _settings.GaplessPlayback = value;
+            _engine.GaplessEnabled = value;
+            this.RaisePropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    public int CrossfadeSeconds
+    {
+        get => _settings.CrossfadeSeconds;
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 12);
+            if (_settings.CrossfadeSeconds == clamped)
+                return;
+            _settings.CrossfadeSeconds = clamped;
+            _engine.CrossfadeSeconds = clamped;
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(CrossfadeText));
+            SaveSettings();
+        }
+    }
+
+    public string CrossfadeText => CrossfadeSeconds == 0 ? "Off" : $"{CrossfadeSeconds}s";
     public IReadOnlyList<SelectionOption<int>> CycleDurationOptions { get; }
 
     public bool ShowVisualizer

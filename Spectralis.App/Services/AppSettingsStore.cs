@@ -35,6 +35,12 @@ public sealed class AppSettings
     public int VisualizerCycleSeconds { get; set; } = 12;
     public int PreferredSampleRate { get; set; }
 
+    /// <summary>Join tracks with no gap when the next queue item is ready.</summary>
+    public bool GaplessPlayback { get; set; } = true;
+
+    /// <summary>Crossfade between queue tracks, in seconds (0 = off, max 12).</summary>
+    public int CrossfadeSeconds { get; set; }
+
     /// <summary>Serialized effects rack (order, enable state, parameters) — see <c>EffectChainState</c>.</summary>
     public string EffectChainJson { get; set; } = string.Empty;
 
@@ -150,6 +156,8 @@ public sealed class AppSettings
             EnableVisualizerAutoCycle = EnableVisualizerAutoCycle,
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
+            GaplessPlayback = GaplessPlayback,
+            CrossfadeSeconds = CrossfadeSeconds,
             EffectChainJson = EffectChainJson,
             EqSpotifyAudioExperimental = EqSpotifyAudioExperimental,
             MidiInstrument = MidiInstrument,
@@ -284,6 +292,7 @@ public static class AppSettingsStore
         settings.PreferredSampleRate = AllowedSampleRates.Contains(settings.PreferredSampleRate)
             ? settings.PreferredSampleRate
             : 0;
+        settings.CrossfadeSeconds = Math.Clamp(settings.CrossfadeSeconds, 0, 12);
         settings.MidiInstrument = MidiPlaybackInstrumentCatalog.Normalize(settings.MidiInstrument);
         settings.SharedPlaySkipVotesRequired = Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20);
         settings.DefaultVolume = Math.Clamp(settings.DefaultVolume, 0, 100);

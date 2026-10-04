@@ -1902,6 +1902,9 @@ public sealed class SettingsViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.AutoCycleVisualizers):
                 case nameof(NowPlayingViewModel.SelectedCycleDuration):
                 case nameof(NowPlayingViewModel.SelectedSampleRate):
+                case nameof(NowPlayingViewModel.GaplessPlayback):
+                case nameof(NowPlayingViewModel.CrossfadeSeconds):
+                case nameof(NowPlayingViewModel.CrossfadeText):
                 case nameof(NowPlayingViewModel.VolumePercent):
                     this.RaisePropertyChanged(e.PropertyName);
                     break;
@@ -2150,6 +2153,28 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged();
         }
     }
+
+    public bool GaplessPlayback
+    {
+        get => _nowPlaying.GaplessPlayback;
+        set
+        {
+            _nowPlaying.GaplessPlayback = value;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public int CrossfadeSeconds
+    {
+        get => _nowPlaying.CrossfadeSeconds;
+        set
+        {
+            _nowPlaying.CrossfadeSeconds = value;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string CrossfadeText => _nowPlaying.CrossfadeText;
 
     public SelectionOption<int> SelectedSampleRate
     {
