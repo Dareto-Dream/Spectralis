@@ -600,6 +600,11 @@ public partial class MainWindow : Window
                     e.Handled = true;
                     SelectSection(vm, vm.TimingStudio);
                     return;
+
+                case Key.T:
+                    e.Handled = true;
+                    SelectSection(vm, vm.TimelineEditor);
+                    return;
             }
         }
 
@@ -930,6 +935,14 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             vm.SelectSection(vm.Playlists);
+        }
+    }
+
+    private void OnMenuTimelineEditor(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.SelectSection(vm.TimelineEditor);
         }
     }
 
