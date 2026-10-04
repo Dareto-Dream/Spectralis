@@ -466,6 +466,7 @@ public sealed class SharedPlaySessionController : IDisposable
         socket.CommandReceived += cmd => CommandReceived?.Invoke(cmd);
         socket.SkipProgressReceived += p => SkipProgressReceived?.Invoke(p);
         socket.ConnectionChanged += _ => OnStatusChanged();
+        socket.UpdateRequiredReceived += message => SetError(message);
 
         roomSocket = socket;
         socket.Start();
