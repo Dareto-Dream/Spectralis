@@ -12,6 +12,7 @@
 
     <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
       <ComboBox x:Name="PeriodBox" MinWidth="150" SelectionChanged="OnPeriodChanged" />
+      <Button x:Name="ShareButton" Content="Share as image…" Click="OnShareImage" />
     </StackPanel>
 
     <!-- Headline numbers -->

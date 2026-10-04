@@ -1,4 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using Spectralis.App.Stats;
 using Spectralis.Core.Scrobbling;
 
 namespace Spectralis.App.Views;
@@ -21,6 +24,26 @@ public partial class StatsWindow : Window
 
     private void OnPeriodChanged(object? sender, SelectionChangedEventArgs e) => Refresh();
 
+    private ListeningStats _stats = ListeningStats.Compute([], DateTime.MinValue);
+
+    private async void OnShareImage(object? sender, RoutedEventArgs e)
+    {
+        var period = PeriodBox.SelectedItem as string ?? "All Time";
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save your wrapped card…",
+            SuggestedFileName = $"spectralis-wrapped-{period.Replace(' ', '-').ToLowerInvariant()}.png",
+            FileTypeChoices = [FilePickerFileTypes.ImagePng],
+            DefaultExtension = "png",
+        });
+        if (file is null)
+            return;
+
+        var png = WrappedCardRenderer.RenderPng(WrappedSummary.From(_stats, period));
+        await using var stream = await file.OpenWriteAsync();
+        await stream.WriteAsync(png);
+    }
+
     private void Refresh()
     {
         var since = PeriodBox.SelectedIndex switch
@@ -31,6 +54,8 @@ public partial class StatsWindow : Window
         };
 
         var stats = ListeningStats.Compute(_history, since);
+        _stats = stats;
+        ShareButton.IsEnabled = stats.TotalScrobbles > 0;
 
         ScrobblesText.Text = stats.TotalScrobbles.ToString("N0");
         HoursText.Text = stats.TotalHours.ToString("0.#");
