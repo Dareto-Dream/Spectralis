@@ -8,6 +8,8 @@
 //! one shared texture atlas, no per-object transforms/materials. That's explicit follow-up
 //! work tracked in the authoring SDK, not this crate.
 
+pub mod viz;
+
 use std::ffi::c_void;
 use std::mem;
 
