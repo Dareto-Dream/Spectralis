@@ -15,6 +15,17 @@ public sealed class SharedPlayCdnClient : IDisposable
     };
 
     private readonly HttpClient httpClient;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> sessionKeys = new();
+
+    private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        WardAccount.Authorize(request);
+        var parts = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 4 && parts[0] == "shared-play" && parts[2] == "sessions"
+            && sessionKeys.TryGetValue(request.RequestUri.GetLeftPart(UriPartial.Authority) + "/" + parts[3], out var key))
+            request.Headers.TryAddWithoutValidation("x-session-key", key);
+        return httpClient.SendAsync(request, ct);
+    }
 
     public SharedPlayCdnClient()
         : this(new HttpClient { Timeout = TimeSpan.FromSeconds(45) })
@@ -43,6 +54,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         var roomCode = response.RoomCode?.Trim();
         if (string.IsNullOrWhiteSpace(roomCode))
             throw new InvalidOperationException("The CDN did not return a Shared Play room code.");
+        sessionKeys[cdnBaseUri.GetLeftPart(UriPartial.Authority) + "/" + roomCode] = response.SessionKey ?? string.Empty;
 
         var stateUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "state");
         var queueUri = BuildSessionEndpoint(cdnBaseUri, roomCode, "queue");
@@ -167,7 +179,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play prepared track activation", cancellationToken);
 
         return session with { TrackId = preparedTrack.TrackId };
@@ -189,7 +201,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play session fetch", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -206,7 +218,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, stateUrl);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play state request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -269,7 +281,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play playback publish", cancellationToken);
     }
 
@@ -282,7 +294,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, queueUrl);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play queue request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -306,7 +318,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play queue publish", cancellationToken);
     }
 
@@ -319,7 +331,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, presenceUrl);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play presence request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -339,7 +351,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, reactionsUrl);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play reactions request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -377,7 +389,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Get streamer queue", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -405,7 +417,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Put streamer queue settings", cancellationToken);
     }
 
@@ -422,7 +434,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Get Stripe Connect URL", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -445,7 +457,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(new { ownerToken })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Stripe disconnect", cancellationToken);
     }
 
@@ -465,7 +477,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(new { sessionKey })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Approve submission", cancellationToken);
     }
 
@@ -485,7 +497,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(new { sessionKey })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Reject submission", cancellationToken);
     }
 
@@ -505,7 +517,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             Content = JsonContent(payload)
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play live channel publish", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -543,7 +555,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             })
         };
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play create session request", cancellationToken);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -610,7 +622,7 @@ public sealed class SharedPlayCdnClient : IDisposable
         using var request = new HttpRequestMessage(method, uploadUri) { Content = content };
         ApplyUploadHeaders(request, uploadTarget.Headers);
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play package upload", cancellationToken);
     }
 
@@ -843,6 +855,13 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"{label} must use HTTPS.");
+    }
+
+    public async Task EndSessionAsync(SharedPlayRoomSession session)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(session.StateUrl,"end"));
+        using var response = await SendAuthorizedAsync(request,CancellationToken.None);
+        response.EnsureSuccessStatusCode();
     }
 
     public void Dispose() => httpClient.Dispose();

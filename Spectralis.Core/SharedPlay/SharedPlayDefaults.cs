@@ -64,17 +64,14 @@ public static class SharedPlayDefaults
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')), encodedCode, null);
+        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}");
     }
 
     public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string roomCode)
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return AddSessionQuery(
-            new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')),
-            encodedCode,
-            DiscordActivitySource);
+        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}?source={DiscordActivitySource}");
     }
 
     public static string ConvertToDiscordActivityJoinUrl(string joinUrl)

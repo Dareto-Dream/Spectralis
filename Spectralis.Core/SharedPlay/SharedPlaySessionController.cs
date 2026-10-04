@@ -109,7 +109,7 @@ public sealed class SharedPlaySessionController : IDisposable
             liveChannelOwnerToken = channelOwnerToken;
             liveChannelDisplayName = channelDisplayName;
             liveChannelUrl = liveChannelEnabled
-                ? SharedPlayDefaults.BuildEndpoint(cdnBaseUri, $"{SharedPlayDefaults.WebSharePlayerPath}?channel={Uri.EscapeDataString(liveChannelId)}").ToString()
+                ? $"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(liveChannelId)}"
                 : null;
 
             if (!enabled)
@@ -267,6 +267,8 @@ public sealed class SharedPlaySessionController : IDisposable
 
     public void ClearActiveSession()
     {
+        var ending = GetSession();
+        if (ending is not null) _ = EndSessionQuietlyAsync(ending);
         CancellationTokenSource? oldCancellation = null;
         lock (statusLock)
         {
@@ -292,6 +294,12 @@ public sealed class SharedPlaySessionController : IDisposable
     }
 
     public void ClearCache() => cacheStore.Clear();
+
+    private async Task EndSessionQuietlyAsync(SharedPlayRoomSession ending)
+    {
+        try { await cdnClient.EndSessionAsync(ending); }
+        catch (Exception ex) { Log($"Could not end the remote session: {ex.Message}"); }
+    }
 
     public void PrepareUpcomingTrack(string? path)
     {
@@ -737,7 +745,7 @@ public sealed class SharedPlaySessionController : IDisposable
             descriptor = activeTrackDescriptor;
         }
 
-        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(ownerToken))
+        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || !WardAccount.IsConnected)
             return;
 
         descriptor ??= new SharedPlayTrackDescriptor(
@@ -756,7 +764,7 @@ public sealed class SharedPlaySessionController : IDisposable
             track.HasEmbeddedContent,
             []);
 
-        var signature = $"{activeSession.RoomCode}:{activeSession.TrackId}:{playback.IsPlaying}:{Math.Round(playback.PositionSeconds, 0)}";
+        var signature = $"{activeSession.RoomCode}:{activeSession.TrackId}:{playback.IsPlaying}:{playback.HostClockUtc.ToUnixTimeSeconds() / 5}";
         lock (statusLock)
         {
             if (string.Equals(signature, lastPublishedChannelSignature, StringComparison.Ordinal))
