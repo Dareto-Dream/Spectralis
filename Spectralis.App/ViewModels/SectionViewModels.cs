@@ -1903,6 +1903,9 @@ public sealed class SettingsViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.SelectedCycleDuration):
                 case nameof(NowPlayingViewModel.SelectedSampleRate):
                 case nameof(NowPlayingViewModel.GaplessPlayback):
+                case nameof(NowPlayingViewModel.OutputDeviceOptions):
+                case nameof(NowPlayingViewModel.SelectedOutputDevice):
+                case nameof(NowPlayingViewModel.OutputDeviceStatus):
                 case nameof(NowPlayingViewModel.CrossfadeSeconds):
                 case nameof(NowPlayingViewModel.CrossfadeText):
                 case nameof(NowPlayingViewModel.VolumePercent):
@@ -2153,6 +2156,22 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged();
         }
     }
+
+    public IReadOnlyList<SelectionOption<string?>> OutputDeviceOptions => _nowPlaying.OutputDeviceOptions;
+
+    public SelectionOption<string?>? SelectedOutputDevice
+    {
+        get => _nowPlaying.SelectedOutputDevice;
+        set
+        {
+            _nowPlaying.SelectedOutputDevice = value;
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public string OutputDeviceStatus => _nowPlaying.OutputDeviceStatus;
+
+    public void RefreshOutputDevices() => _nowPlaying.RefreshOutputDevices();
 
     public bool GaplessPlayback
     {

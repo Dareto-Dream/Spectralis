@@ -469,6 +469,10 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _engine.Volume = (float)(_volumePercent / 100.0);
         _engine.SetPreferredSampleRate(_settings.PreferredSampleRate);
         _engine.GaplessEnabled = _settings.GaplessPlayback;
+        OutputManager = new AudioOutputManager(_engine, _engine.DeviceEnumerator, _settings.OutputDeviceId);
+        OutputManager.DevicesChanged += () => Avalonia.Threading.Dispatcher.UIThread.Post(RefreshOutputDevices);
+        OutputManager.Notice += notice => Avalonia.Threading.Dispatcher.UIThread.Post(() => OnOutputNotice(notice));
+        RefreshOutputDevices();
         _engine.CrossfadeSeconds = _settings.CrossfadeSeconds;
         _engine.SetMidiPlaybackInstrument(_settings.MidiInstrument);
         ResetVisualizerCycleDeadline();
@@ -503,6 +507,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
         if (enablePositionPolling)
         {
+            OutputManager.StartWatching();
             _positionPoll = Observable
                 .Interval(TimeSpan.FromMilliseconds(250))
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -1762,6 +1767,76 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public IReadOnlyList<SelectionOption<int>> SampleRateOptions { get; }
+
+    public AudioOutputManager OutputManager { get; }
+
+    private IReadOnlyList<SelectionOption<string?>> _outputDeviceOptions = [];
+    private SelectionOption<string?>? _selectedOutputDevice;
+    private string _outputDeviceStatus = string.Empty;
+
+    public IReadOnlyList<SelectionOption<string?>> OutputDeviceOptions
+    {
+        get => _outputDeviceOptions;
+        private set => this.RaiseAndSetIfChanged(ref _outputDeviceOptions, value);
+    }
+
+    /// <summary>The picked device. While the pick is unplugged it stays selected (as "name (not connected)").</summary>
+    public SelectionOption<string?>? SelectedOutputDevice
+    {
+        get => _selectedOutputDevice;
+        set
+        {
+            if (value is null || Equals(_selectedOutputDevice, value))
+                return;
+
+            this.RaiseAndSetIfChanged(ref _selectedOutputDevice, value);
+            _settings.OutputDeviceId = value.Value;
+            OutputManager.SetPreferred(value.Value);
+            SaveSettings();
+            UpdateOutputDeviceStatus();
+        }
+    }
+
+    public string OutputDeviceStatus
+    {
+        get => _outputDeviceStatus;
+        private set => this.RaiseAndSetIfChanged(ref _outputDeviceStatus, value);
+    }
+
+    public void RefreshOutputDevices() => RebuildOutputDeviceOptions();
+
+    private void RebuildOutputDeviceOptions()
+    {
+        var options = new List<SelectionOption<string?>> { new("System default", null) };
+        foreach (var device in OutputManager.Devices.Where(d => !d.IsDefault))
+            options.Add(new SelectionOption<string?>(device.FriendlyName, device.Id));
+
+        var preferred = OutputManager.PreferredDeviceId;
+        if (preferred is not null && options.All(o => o.Value != preferred))
+            options.Add(new SelectionOption<string?>($"{preferred} (not connected)", preferred));
+
+        OutputDeviceOptions = options;
+        var match = options.FirstOrDefault(o => o.Value == preferred) ?? options[0];
+        if (!Equals(_selectedOutputDevice, match))
+        {
+            _selectedOutputDevice = match;
+            this.RaisePropertyChanged(nameof(SelectedOutputDevice));
+        }
+        UpdateOutputDeviceStatus();
+    }
+
+    private void UpdateOutputDeviceStatus() =>
+        OutputDeviceStatus = OutputManager.IsFallbackActive
+            ? $"\"{OutputManager.PreferredDeviceId}\" isn't connected, so audio is on the system default. It switches back when the device returns."
+            : string.Empty;
+
+    private void OnOutputNotice(AudioOutputNotice notice)
+    {
+        RebuildOutputDeviceOptions();
+        RemoteStatus = notice.Kind == AudioOutputNoticeKind.FellBackToDefault
+            ? $"{notice.DeviceName} disconnected. Playing on the system default."
+            : $"{notice.DeviceName} reconnected.";
+    }
 
     public bool GaplessPlayback
     {
@@ -4239,6 +4314,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         _resumeFlushTimer?.Stop();
         _sleepTimer?.Stop();
         _positionPoll?.Dispose();
+        OutputManager.Dispose();
         _idleActivityTick?.Dispose();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();

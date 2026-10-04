@@ -59,6 +59,9 @@ public sealed class AudioEngine : IDisposable
         _latencyMs = latencyMs;
     }
 
+    /// <summary>The platform backend used to list and open output devices.</summary>
+    public IAudioDeviceEnumerator DeviceEnumerator => _deviceEnumerator;
+
     public PlaybackStateMachine StateMachine { get; } = new();
 
     public TrackInfo? CurrentTrack { get; private set; }
