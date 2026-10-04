@@ -22,6 +22,7 @@ The old windows-only winforms app is outdated and no longer in git; it only live
 | [`backend/`](backend/) | Rust backend for Shared play and Streamer queues (Railway) |
 | [`web-share/`](web-share/), [`extension/`](extension/) | An extension format that is pretty outdated |
 | [`discord-bot/`](discord-bot/) | A discord bot containing Queueing capability |
+| [`chat-bridge/`](chat-bridge/) | Twitch and YouTube chat requests for the Streamer Queue, through the webhook API |
 | `legacy/` | Outdated WinForms app, gitignored and kept on disk only ([docs/legacy-winforms.md](docs/legacy-winforms.md)) |
 | [`Assets/`](Assets/), `yt-dlp.exe`, `ffmpeg.exe`, [`build/`](build/) | Runtime assets and build helpers for all platform versions of the app |
 
@@ -30,12 +31,12 @@ The old windows-only winforms app is outdated and no longer in git; it only live
 - Library with metadata, cover art, watched folders, auto-scanning, live updates, search, filters, and sortable columns.
 - Queue with auto-advance, playlist export, shuffle, and repeat.
 - Remembers window size, position, and maximized state.
-- .lrc lyrics, embedded lyrics, and .lrc.json annotations. Includes a Lyric Timing Studio.
+- .lrc lyrics, embedded lyrics, and .lrc.json annotations. Includes a Lyric Timing Studio and a Timeline Editor for reactive timelines.
 - 11 built-in visualizers at 60 FPS.
 - .spectralis-reactive.json for synced sections, events, and parameter changes.
 - Signed .spectralis capsules with artist verification, stories, custom HTML pages, and audio fallback.
 - Signed .spectral album worlds with interactive HTML, playback hooks, stats, bookmarks, and tracklist fallback.
-- Streamer Queue with submissions, priority tiers, pay-to-skip, and Discord commands.
+- Streamer Queue with submissions, priority tiers, pay-to-skip, Discord commands, Twitch and YouTube chat requests, a webhook API, and a web dashboard for moderation and analytics.
 - OBS overlay with presets, live state, artwork, and lyrics.
 - Discord Rich Presence, Listen Together, favorite tracks, and listening stats.
 - System audio capture via WASAPI, PulseAudio/PipeWire, and macOS backends.
@@ -143,7 +144,9 @@ Full documentation lives in [`docs/`](docs/README.md).
 | [docs/legacy-winforms.md](docs/legacy-winforms.md) | The legacy WinForms app: building it, data compatibility, behavior differences |
 | [docs/guidelines.md](docs/guidelines.md) | Product philosophy and feature direction |
 | [docs/standards.md](docs/standards.md) | How to extend the app — visualizers, themes, settings |
-| [docs/creator-tools.md](docs/creator-tools.md) | Creator workflows such as Lyrics Timing Studio and Lyric Explanations |
+| [docs/creator-tools.md](docs/creator-tools.md) | Creator workflows such as Lyrics Timing Studio, the Timeline Editor and Lyric Explanations |
+| [docs/realtime-protocol.md](docs/realtime-protocol.md) | The realtime websocket protocol shared by the app, backend, bot and web player |
+| [docs/streamer-queue-webhooks.md](docs/streamer-queue-webhooks.md) | Webhook API for feeding the Streamer Queue from any chat platform |
 | [docs/formats/spectralis-capsule.md](docs/formats/spectralis-capsule.md) | `.spectralis` single-track capsule format |
 | [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md) | `.spectral` album world format |
 | [docs/formats/reactive-timeline.md](docs/formats/reactive-timeline.md) | Reactive timeline sidecar format |
