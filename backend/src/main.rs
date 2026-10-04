@@ -1,4 +1,5 @@
 mod collab;
+mod protocol;
 mod store;
 
 use std::{

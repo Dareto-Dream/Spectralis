@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
@@ -26,7 +26,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::{sess_key, AppState};
 
-const ENVELOPE_V: u64 = 1;
+const ENVELOPE_V: u64 = crate::protocol::PROTOCOL_VERSION;
 const ROOM_TTL: Duration = Duration::from_secs(12 * 3600);
 const MAX_ROSTER: usize = 300;
 const REACTION_MIN_INTERVAL: Duration = Duration::from_millis(250);
@@ -432,12 +432,28 @@ async fn handle_socket(
             return;
         }
     };
-    if hello.get("t").and_then(Value::as_str) != Some("hello") {
-        let _ = sender
-            .send(Message::Text(error_frame("no_hello", "Expected hello")))
-            .await;
-        return;
-    }
+    let client_hello = match crate::protocol::parse_hello(&hello) {
+        Ok(h) => h,
+        Err(crate::protocol::HelloError::NotHello) => {
+            let _ = sender
+                .send(Message::Text(error_frame("no_hello", "Expected hello")))
+                .await;
+            return;
+        }
+        Err(crate::protocol::HelloError::UpdateRequired { client_proto }) => {
+            // Old clients get one readable error and a distinctive close code.
+            let _ = sender
+                .send(Message::Text(crate::protocol::update_required_frame(client_proto)))
+                .await;
+            let _ = sender
+                .send(Message::Close(Some(CloseFrame {
+                    code: crate::protocol::CLOSE_UPDATE_REQUIRED,
+                    reason: "update required".into(),
+                })))
+                .await;
+            return;
+        }
+    };
 
     let requested_role = hello.get("role").and_then(Value::as_str).unwrap_or("listener");
     let client_id = crate::clean_client_id(hello.get("clientId").and_then(Value::as_str).unwrap_or(""))
@@ -509,7 +525,7 @@ async fn handle_socket(
     // Welcome frame with a full snapshot.
     let snapshot_state = crate::read_json_opt(&state, &sess_key(&code, "state")).await;
     let snapshot_queue = crate::read_json_opt(&state, &sess_key(&code, "queue")).await;
-    let welcome = json!({
+    let mut welcome = json!({
         "v": ENVELOPE_V,
         "t": "welcome",
         "you": { "clientId": client_id, "name": name, "role": role.as_str(), "isHost": is_host },
@@ -518,6 +534,13 @@ async fn handle_socket(
         "state": snapshot_state,
         "queue": snapshot_queue,
     });
+    // proto / features / server: what this connection agreed with the server (protocol v2).
+    if let (Some(frame), Some(agreed)) = (
+        welcome.as_object_mut(),
+        crate::protocol::welcome_fields(&client_hello).as_object().cloned(),
+    ) {
+        frame.extend(agreed);
+    }
     let _ = out_tx.send(welcome.to_string());
     publish_roster(&state, &code).await;
 
