@@ -4,8 +4,7 @@ namespace Spectralis.Core.SharedPlay;
 
 public static class SharedPlayDefaults
 {
-    public const string LegacyCdnBaseUrl = "https://cdn.deltavdevs.com";
-    public const string CdnBaseUrl = "https://audioplayer-production-5b83.up.railway.app";
+    public const string CdnBaseUrl = Spectralis.Core.Platform.SpectralisEndpoints.ApiBase;
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
     public const string ProtocolVersion = "shared-play-v2";
     /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
@@ -64,17 +63,14 @@ public static class SharedPlayDefaults
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')), encodedCode, null);
+        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}");
     }
 
     public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string roomCode)
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return AddSessionQuery(
-            new Uri(cdnBaseUri, WebSharePlayerPath.TrimStart('/')),
-            encodedCode,
-            DiscordActivitySource);
+        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}?source={DiscordActivitySource}");
     }
 
     public static string ConvertToDiscordActivityJoinUrl(string joinUrl)
@@ -128,6 +124,14 @@ public static class SharedPlayDefaults
                 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')).Trim()
                 : null;
             return NormalizeRoomCode(raw);
+        }
+
+        // Join links are /sessions/<code> now; older ones carried the code in the query string.
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i + 1 < segments.Length; i++)
+        {
+            if (string.Equals(segments[i], "sessions", StringComparison.OrdinalIgnoreCase))
+                return NormalizeRoomCode(Uri.UnescapeDataString(segments[i + 1]));
         }
         return null;
     }

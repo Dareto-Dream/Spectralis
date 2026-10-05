@@ -73,6 +73,19 @@ public class EmbeddedHtmlDocumentTests
             ["decoded", "stripped-inline-handlers", "assets-resolved", "performance-prelude", "track-meta", "bridge-bootstrap", "csp-final"],
             stages);
     }
+
+    [Fact]
+    public void Frame_bridge_does_not_reanchor_extrapolation_on_replayed_frames()
+    {
+        // WebView2 re-delivers the last pushed frame on every rAF until the next push lands. If a
+        // replay re-anchors the extrapolation to "now" the clock pins to the push time and capsules
+        // see time freeze half the frames, then jump. Replays must extrapolate, not re-anchor.
+        var script = EmbeddedHtmlDocument.BuildFrameBridgeScript();
+
+        Assert.Contains("frame === lastFrame", script);
+        Assert.Contains("if (!replay)", script);
+        Assert.Contains("replay && interpActive", script);
+    }
 }
 
 public class VideoExportOptionsTests

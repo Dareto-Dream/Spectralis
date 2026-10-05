@@ -13,8 +13,11 @@ This directory is where all the real documentation lives (as oppposed to whateve
 | [guidelines.md](guidelines.md) | Product north star — pillars, design direction, non-goals |
 | [standards.md](standards.md) | Extension rules — visualizers, themes, settings, per-track stores, controls, OBS overlay |
 | [creator-tools.md](creator-tools.md) | Built-in creator workflows — Lyrics Timing Studio, Content Warnings |
-| [cdn-contract.md](cdn-contract.md) | CDN endpoint shapes the app expects from `cdn.deltavdevs.com` |
-| [api-contract.md](api-contract.md) | Service routing contract — CDN vs API split, all routes |
+| [api-contract.md](api-contract.md) | Every origin and route: content, accounts and rooms, Shared Play, Streamer Queue, admin |
+| [content-api.md](content-api.md) | Warnings, changelog, community and verified creators: shapes, admin writes, telescreen, import |
+| [rooms.md](rooms.md) | Shared Play rooms: temporary (signed out, link-only) and permanent (one per Ward account) |
+| [devtools.md](devtools.md) | Developer Tools: the network log, the widget tester and how to add to them |
+| [cdn-contract.md](cdn-contract.md) | The release CDN on R2: file layout, publishing, the storage cap, the legacy CDN |
 | [realtime-protocol.md](realtime-protocol.md) | Realtime protocol v2 — one websocket protocol for Shared Play and the Streamer Queue, version negotiation, update-required |
 | [streamer-queue-webhooks.md](streamer-queue-webhooks.md) | Chat-platform-agnostic webhook API for the Streamer Queue (keys, submit, status) |
 | [song-wars-implementation-plan.md](song-wars-implementation-plan.md) | Song Wars tournament mode implementation plan |
@@ -34,7 +37,7 @@ This directory is where all the real documentation lives (as oppposed to whateve
 
 | Document | What it covers |
 |---|---|
-| [../backend/README.md](../backend/README.md) | Rust Shared Play backend (Railway) |
+| [../backend/README.md](../backend/README.md) | Rust backend at `spectralis-api.deltavdevs.com` (Railway) |
 | [../chat-bridge/README.md](../chat-bridge/README.md) | Twitch and YouTube chat bridge for the Streamer Queue |
 | [../extension/README.md](../extension/README.md) | Chromium browser extension |
 | [../metadata/STANDARDS.md](../metadata/STANDARDS.md) | Metadata packing standard and tool spec |

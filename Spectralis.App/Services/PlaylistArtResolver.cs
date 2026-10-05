@@ -17,7 +17,7 @@ public sealed class PlaylistArtResolver
 {
     private const int CollageCellPx = 150;
 
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("playlist-art");
 
     private readonly Dictionary<string, byte[]?> _urlCache = [];
     private readonly Dictionary<Guid, (Bitmap? Bitmap, string Version)> _resolved = [];

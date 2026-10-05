@@ -187,6 +187,12 @@ public sealed class SharedPlayCacheStore
                 }
 
                 var sidecarLyricsPath = Path.ChangeExtension(sourcePath, ".lrc");
+                if (track.CoverArt is { Length: > 0 } cover)
+                {
+                    var coverEntry = archive.CreateEntry("artwork/cover", CompressionLevel.NoCompression);
+                    using var coverStream = coverEntry.Open();
+                    coverStream.Write(cover);
+                }
                 if (File.Exists(sidecarLyricsPath))
                 {
                     var lyricsEntry = archive.CreateEntry("audio/track.lrc", CompressionLevel.Fastest);

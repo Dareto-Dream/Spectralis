@@ -10,13 +10,13 @@ public sealed class CapsuleCdnClient : IDisposable
         PropertyNameCaseInsensitive = true,
     };
 
-    public static readonly Uri DefaultCdnBase = new("https://cdn.deltavdevs.com/");
+    public static readonly Uri DefaultCdnBase = new(Spectralis.Core.Platform.SpectralisEndpoints.ApiBase + "/");
 
     private readonly HttpClient _httpClient;
     private readonly Uri _cdnBase;
 
     public CapsuleCdnClient()
-        : this(new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, DefaultCdnBase)
+        : this(Spectralis.Core.Diagnostics.NetworkClients.Create("capsules", TimeSpan.FromSeconds(20)), DefaultCdnBase)
     {
     }
 

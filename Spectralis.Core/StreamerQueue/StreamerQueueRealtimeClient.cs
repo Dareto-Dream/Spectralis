@@ -36,7 +36,7 @@ public sealed class StreamerQueueRealtimeClient : IDisposable
         TimeSpan? debounce = null)
     {
         _uri = socketUri;
-        _transportFactory = transportFactory ?? (() => new ClientWebSocketTransport());
+        _transportFactory = transportFactory ?? (() => new SharedPlay.ClientWebSocketTransport("streamer-queue"));
         _debounce = debounce ?? TimeSpan.FromMilliseconds(400);
     }
 

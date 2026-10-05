@@ -34,7 +34,7 @@ public sealed class VelopackUpdateService : IUpdateService
         try
         {
             var mgr = CreateManager();
-            var update = await Task.Run(() => mgr.CheckForUpdatesAsync(), ct);
+            var update = await Spectralis.Core.Diagnostics.NetworkLog.TrackAsync("updater", "CHECK", $"{ReleasesUrl}/releases.{Channel}.json", () => Task.Run(() => mgr.CheckForUpdatesAsync(), ct));
             if (update is null)
             {
                 LogUpdate("No updates available (Velopack SDK).");
@@ -61,7 +61,7 @@ public sealed class VelopackUpdateService : IUpdateService
         try
         {
             var feedUrl = $"{ReleasesUrl}/releases.{Channel}.json";
-            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var http = Spectralis.Core.Diagnostics.NetworkClients.Create("updater", TimeSpan.FromSeconds(10));
             var json = await http.GetStringAsync(feedUrl, ct);
 
             // Scan for version strings in Velopack nupkg filenames:
@@ -104,7 +104,7 @@ public sealed class VelopackUpdateService : IUpdateService
     {
         LogUpdate("Starting update download and apply.");
         var mgr = CreateManager();
-        var update = await Task.Run(() => mgr.CheckForUpdatesAsync(), ct);
+        var update = await Spectralis.Core.Diagnostics.NetworkLog.TrackAsync("updater", "CHECK", $"{ReleasesUrl}/releases.{Channel}.json", () => Task.Run(() => mgr.CheckForUpdatesAsync(), ct));
         if (update is null)
         {
             LogUpdate("No update found during download check.");
@@ -112,7 +112,7 @@ public sealed class VelopackUpdateService : IUpdateService
         }
 
         LogUpdate($"Downloading update: {update.TargetFullRelease.Version}");
-        await mgr.DownloadUpdatesAsync(update, progress == null ? null : p => progress.Report(p / 100.0));
+        await Spectralis.Core.Diagnostics.NetworkLog.TrackAsync("updater", "DOWNLOAD", $"{ReleasesUrl}/{update.TargetFullRelease.FileName}", () => mgr.DownloadUpdatesAsync(update, progress == null ? null : p => progress.Report(p / 100.0)));
         LogUpdate("Download complete. Applying and restarting.");
         mgr.ApplyUpdatesAndRestart(update);
     }

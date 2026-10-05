@@ -48,6 +48,30 @@ public sealed class AlbumWorldSection
     /// a blank field falls back to its own default independently of the others.
     /// </summary>
     [JsonPropertyName("pauseMenu")] public AlbumPauseMenuConfig? PauseMenu { get; set; }
+
+    /// <summary>
+    /// Content disclosure shown before the world loads (before any Wasm instance starts, so
+    /// nothing in the world runs until the listener says yes). Deliberately NOT capability-gated:
+    /// a creator warning their listeners shouldn't need the CDN key's permission to do it. Once
+    /// accepted it isn't shown again unless the wording changes (see <c>ContentWarningStore</c>).
+    /// </summary>
+    [JsonPropertyName("contentWarning")] public AlbumContentWarning? ContentWarning { get; set; }
+}
+
+public sealed class AlbumContentWarning
+{
+    [JsonPropertyName("title")] public string? Title { get; set; }
+    [JsonPropertyName("intro")] public string? Intro { get; set; }
+    [JsonPropertyName("items")] public List<AlbumContentWarningItem> Items { get; set; } = [];
+    [JsonPropertyName("outro")] public string? Outro { get; set; }
+    [JsonPropertyName("acceptLabel")] public string? AcceptLabel { get; set; }
+    [JsonPropertyName("declineLabel")] public string? DeclineLabel { get; set; }
+}
+
+public sealed class AlbumContentWarningItem
+{
+    [JsonPropertyName("heading")] public string Heading { get; set; } = string.Empty;
+    [JsonPropertyName("detail")] public string Detail { get; set; } = string.Empty;
 }
 
 public sealed class AlbumPauseMenuConfig

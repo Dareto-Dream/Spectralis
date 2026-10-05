@@ -19,7 +19,7 @@ public sealed record MusicBrainzRecording(
 
 public static class MusicBrainzClient
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("musicbrainz");
 
     static MusicBrainzClient()
     {

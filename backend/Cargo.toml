@@ -21,3 +21,4 @@ redis = { version = "0.27", default-features = false, features = ["tokio-comp", 
 object_store = { version = "0.11", features = ["aws"] }
 bytes = "1"
 futures-util = "0.3"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }

@@ -48,7 +48,7 @@ internal static class SoundCloudNativeResolver
             try
             {
                 using var handler = new HttpClientHandler { AllowAutoRedirect = false };
-                using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+                using var http = Spectralis.Core.Diagnostics.NetworkClients.Create("soundcloud", TimeSpan.FromSeconds(10), handler);
 
                 for (var redirect = 0; redirect < 8; redirect++)
                 {
@@ -527,7 +527,7 @@ internal static class SoundCloudNativeResolver
 
     private static HttpClient CreateHttpClient()
     {
-        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        var http = Spectralis.Core.Diagnostics.NetworkClients.Create("soundcloud", TimeSpan.FromSeconds(20));
         http.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/json,text/html,application/xhtml+xml,*/*");

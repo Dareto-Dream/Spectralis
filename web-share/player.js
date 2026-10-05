@@ -2,7 +2,7 @@
   "use strict";
 
   var config = {
-    cdnBaseUrl: window.location.origin || "https://audioplayer-production-5b83.up.railway.app",
+    cdnBaseUrl: window.location.origin || "https://spectralis-api.deltavdevs.com",
     channelPollIntervalMs: 5000,
     presenceIntervalMs: 8000,
     reactionIntervalMs: 2500,
@@ -79,7 +79,6 @@
     statusDot:            document.getElementById("statusDot"),
     statusLine:           document.getElementById("statusLine"),
     trackArtist:          document.getElementById("trackArtist"),
-    trackKicker:          document.getElementById("trackKicker"),
     trackTitle:           document.getElementById("trackTitle"),
     volumeSlider:         document.getElementById("volumeSlider")
   };
@@ -395,7 +394,6 @@
       setDotState("waiting");
       el.trackTitle.textContent = payload.displayName || "Live Channel";
       el.trackArtist.textContent = "Waiting for the host to start sharing.";
-      el.trackKicker.textContent = "Permanent listen link";
       setStatus("This channel is not live right now.");
       return;
     }
@@ -410,7 +408,6 @@
   function enterChannelMode(channelId) {
     document.body.classList.add("is-channel-room");
     if (el.channelPanel) el.channelPanel.hidden = false;
-    el.trackKicker.textContent = "Live Channel";
     if (el.channelName) el.channelName.textContent = channelId || "Channel";
   }
 
@@ -428,7 +425,6 @@
     if (!payload || typeof payload !== "object") return;
     var name = stringOrEmpty(payload.displayName) || runtime.channelId || "Channel";
     if (el.channelName) el.channelName.textContent = name;
-    el.trackKicker.textContent = payload.isLive ? "Live Channel · On air" : "Live Channel · Waiting";
   }
 
   // ─── Session normalization ────────────────────────────────────────────────
@@ -1481,8 +1477,8 @@
       var barH = Math.max(4 * dpr, level * h * 0.82);
       var x = i * (barW + gap);
       var y = (h - barH) / 2;
-      ctx.fillStyle = "rgba(168, 130, 242, " + (runtime.analyser ? 0.95 : 0.38) + ")";
-      roundRect(ctx, x, y, barW, barH, 5 * dpr);
+      ctx.fillStyle = "rgba(235, 104, 65, " + (runtime.analyser ? 0.95 : 0.38) + ")";
+      roundRect(ctx, x, y, barW, barH, 0);
       ctx.fill();
     }
 
@@ -1528,11 +1524,6 @@
     runtime.lyrics = track.lyrics || [];
     runtime.lyricIndex = -1;
 
-    var badges = [];
-    if (track.formatName) badges.push(track.formatName);
-    if (track.hasLyrics || runtime.lyrics.length > 0) badges.push("Lyrics");
-    if (track.hasEmbeddedVisualizer) badges.push("Visualizer");
-    el.trackKicker.textContent = badges.length ? badges.join(" · ") : "Now Playing";
 
     if (el.lyricsPanel) {
       el.lyricsPanel.hidden = runtime.lyrics.length === 0;

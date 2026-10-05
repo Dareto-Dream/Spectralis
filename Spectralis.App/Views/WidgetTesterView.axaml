@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:svc="using:Spectralis.App.Services"
+             x:Class="Spectralis.App.Views.WidgetTesterView"
+             x:DataType="vm:WidgetTesterViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24,16,24,24">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+      <TextBlock Classes="heading" Text="Widget tester" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Open any of the app's dialogs and windows on sample data to check how they look and what they return. Nothing here touches your library. The ones marked 'real data' act on your actual settings." />
+    </StackPanel>
+
+    <TextBox Grid.Row="1" Text="{Binding FilterText}" Watermark="Filter widgets" Margin="0,0,0,12" />
+
+    <ScrollViewer Grid.Row="2">
+      <ItemsControl ItemsSource="{Binding Groups}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:WidgetGroup">
+            <StackPanel Spacing="6" Margin="0,0,0,18">
+              <TextBlock Classes="secondary" Text="{Binding Title}" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding Widgets}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="svc:DevWidget">
+                    <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,8">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" Margin="0,0,12,0">
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Name}" />
+                            <TextBlock Classes="data" Foreground="{StaticResource Brush.Warning}" Text="real data"
+                                       IsVisible="{Binding TouchesRealData}" VerticalAlignment="Center" />
+                          </StackPanel>
+                          <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding Description}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Open" Click="OnOpen" VerticalAlignment="Center" MinWidth="72" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <Border Grid.Row="3" Background="{StaticResource Brush.Bg.Raised}" Padding="12,8" Margin="0,12,0,0">
+      <TextBlock Classes="data" Text="{Binding LastResult}" TextWrapping="Wrap" />
+    </Border>
+  </Grid>
+</UserControl>

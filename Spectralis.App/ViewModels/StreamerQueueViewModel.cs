@@ -206,7 +206,7 @@ public sealed class SqMixSlotVm : ViewModelBase
 
 // ── Main ViewModel ────────────────────────────────────────────────────────────
 
-public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
+public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
 {
     private readonly StreamerQueueRoomController _controller = new();
     private readonly OpenUrlService _openUrlService = new();
@@ -257,7 +257,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     private string _addToQueueChannelId = string.Empty;
     private int _channelSeq;
 
-    private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
+    private Uri _cdnBaseUri = new(Spectralis.Core.SharedPlay.SharedPlayDefaults.CdnBaseUrl);
     private AppSettings? _settings;
 
     public StreamerQueueViewModel()
@@ -696,7 +696,7 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(RoomId)) return;
         var baseUrl = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
         foreach (var channel in Channels)
-            channel.ShareUrl = $"{baseUrl}/spectralis/web-share/sq.html?room={Uri.EscapeDataString(RoomId)}&ch={Uri.EscapeDataString(channel.Id)}";
+            channel.ShareUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}?ch={Uri.EscapeDataString(channel.Id)}";
     }
 
     // ── Queue actions ─────────────────────────────────────────────────────────
@@ -1048,6 +1048,6 @@ public sealed class StreamerQueueViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
         var base_ = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
-        SubmitUrl = $"{base_}/spectralis/web-share/sq.html?room={Uri.EscapeDataString(RoomId)}";
+        SubmitUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}";
     }
 }

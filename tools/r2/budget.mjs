@@ -38,8 +38,13 @@ const PACKAGE = /^(?<id>[A-Za-z0-9_.]+?)-(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.
 const FEED = /^(?:releases\.[A-Za-z0-9_-]+\.json|RELEASES(?:-[A-Za-z0-9_-]+)?)$/; // assets.*.json is a build log with local paths: never ours to publish
 const INSTALLER = /\.(?:exe|msi|appimage|pkg|dmg)$/i;
 
-/** Classifies a bucket key by its file name (the directory part is ignored). */
+/**
+ * Classifies a bucket key by its file name (the directory part is ignored), with one exception: everything under
+ * `visualizers/` is site content (the redeemable visualizers and their manifest). It is never pruned by version
+ * and the janitor never deletes it, but it still counts toward the size of the bucket.
+ */
 export function classify(key) {
+  if (key.startsWith('visualizers/')) return { kind: 'content' };
   const name = key.split('/').pop() ?? key;
   const pkg = PACKAGE.exec(name);
   if (pkg) return { kind: 'package', version: pkg.groups.version, rid: pkg.groups.rid, type: pkg.groups.type };

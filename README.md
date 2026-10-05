@@ -151,7 +151,9 @@ Full documentation lives in [`docs/`](docs/README.md).
 | [docs/formats/spectral-album-world.md](docs/formats/spectral-album-world.md) | `.spectral` album world format |
 | [docs/formats/reactive-timeline.md](docs/formats/reactive-timeline.md) | Reactive timeline sidecar format |
 | [docs/formats/metadata-embedding.md](docs/formats/metadata-embedding.md) | ID3v2 embedded WASM/HTML/video modules |
-| [docs/cdn-contract.md](docs/cdn-contract.md) | CDN endpoint shapes |
-| [docs/api-contract.md](docs/api-contract.md) | Full service routing contract |
+| [docs/api-contract.md](docs/api-contract.md) | Every origin and route the app and site use |
+| [docs/content-api.md](docs/content-api.md) | Warnings, changelog, community and verified creators |
+| [docs/rooms.md](docs/rooms.md) | Shared Play rooms: temporary and permanent |
+| [docs/cdn-contract.md](docs/cdn-contract.md) | The release CDN: layout, publishing, storage cap |
 | [docs/legal/terms-of-service.md](docs/legal/terms-of-service.md) | Terms for official builds, hosted services, Shared Play, and integrations |
 | [docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) | Privacy disclosures |

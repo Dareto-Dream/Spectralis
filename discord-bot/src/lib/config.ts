@@ -9,6 +9,6 @@ function required(name: string): string {
 export const config = {
   discordToken: required('DISCORD_TOKEN'),
   discordClientId: required('DISCORD_CLIENT_ID'),
-  sqApiBaseUrl: (process.env.SQ_API_BASE_URL ?? 'https://audioplayer-production-5b83.up.railway.app').replace(/\/+$/, ''),
+  sqApiBaseUrl: (process.env.SQ_API_BASE_URL ?? 'https://spectralis-api.deltavdevs.com').replace(/\/+$/, ''),
   dbPath: process.env.DB_PATH ?? './data/bot.sqlite3',
 };

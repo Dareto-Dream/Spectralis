@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels"
+             x:Class="Spectralis.App.Views.NetworkTabView"
+             x:DataType="vm:NetworkLogViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="{StaticResource Brush.Error}" />
+    </Style>
+    <Style Selector="TextBlock.live">
+      <Setter Property="Foreground" Value="{StaticResource Brush.Warning}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*,6,200" Margin="24,16,24,24">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+      <TextBlock Classes="heading" Text="Network" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Every call the app makes: HTTP requests, websocket connections and the updater. Tokens, keys and cookies are masked before anything is kept, and bodies are never stored." />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,8">
+      <TextBox Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter: words match source, method, URL or status"
+               Margin="0,0,8,0" />
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Sources}" SelectedItem="{Binding SourceFilter}"
+                MinWidth="150" Margin="0,0,8,0" />
+      <CheckBox Grid.Column="2" Content="Errors only" IsChecked="{Binding ErrorsOnly}" Margin="0,0,8,0" />
+      <ToggleButton Grid.Column="3" Content="{Binding PauseLabel}" IsChecked="{Binding Paused}" Margin="0,0,8,0" />
+      <Button Grid.Column="4" Content="Clear" Click="OnClear" Margin="0,0,8,0" />
+      <Button Grid.Column="5" Content="Copy" Click="OnCopy" />
+    </Grid>
+
+    <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected, Mode=TwoWay}"
+              IsReadOnly="True" SelectionMode="Single" AutoGenerateColumns="False"
+              CanUserResizeColumns="True" CanUserSortColumns="False"
+              GridLinesVisibility="Horizontal">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Time" Binding="{Binding Time}" CellStyleClasses="data" Width="100" />
+        <DataGridTextColumn Header="Method" Binding="{Binding Method}" CellStyleClasses="data" Width="104" />
+        <DataGridTemplateColumn Header="Status" Width="64">
+          <DataTemplate x:DataType="vm:NetworkRowViewModel">
+            <TextBlock Text="{Binding Status}" Classes="data" VerticalAlignment="Center" Margin="8,0"
+                       Classes.error="{Binding IsError}" Classes.live="{Binding IsLive}" />
+          </DataTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="110" />
+        <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="190" />
+        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" />
+        <DataGridTextColumn Header="Took" Binding="{Binding Duration}" CellStyleClasses="data right" Width="80" />
+        <DataGridTextColumn Header="Size" Binding="{Binding Size}" CellStyleClasses="data right" Width="110" />
+      </DataGrid.Columns>
+    </DataGrid>
+
+    <GridSplitter Grid.Row="3" Background="{StaticResource Brush.Border}" ResizeDirection="Rows" />
+
+    <Grid Grid.Row="4" RowDefinitions="Auto,*" Margin="0,8,0,0">
+      <TextBlock Grid.Row="0" Classes="secondary" Text="{Binding Summary}" Margin="0,0,0,6" />
+      <TextBox Grid.Row="1" Text="{Binding Detail}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+               FontFamily="{StaticResource Font.Data}" FontSize="{StaticResource FontSize.Data}"
+               Watermark="Select a call to see its URL, timing and headers." />
+    </Grid>
+  </Grid>
+</UserControl>

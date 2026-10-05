@@ -31,6 +31,19 @@ node sync.mjs --source ..\..\releases-velopack --apply
 `deploy.ps1` runs this for you after the legacy CDN upload. Exit codes: 0 ok, 1 refused (nothing written),
 2 written but the bucket measured over budget, 3 error.
 
+## Visualizers
+
+`upload-visualizers.mjs` puts the redeemable visualizers under `visualizers/`. It plans against the same
+budget, skips files that are already there at the same size, uploads `manifest.json` last and verifies
+every file by size.
+
+```powershell
+node upload-visualizers.mjs --source <folder with manifest.json>          # dry run
+node upload-visualizers.mjs --source <folder with manifest.json> --apply
+```
+
+Anything under `visualizers/` counts toward the cap and is never pruned or deleted by the janitor.
+
 ## The janitor
 
 ```powershell

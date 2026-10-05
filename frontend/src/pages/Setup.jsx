@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Download, Terminal, Apple, GitFork, ArrowUpRight } from 'lucide-react'
-import { FAQ, APP_VERSION } from '../data/site.jsx'
+import { FAQ, APP_VERSION, DOWNLOAD_BASE } from '../data/site.jsx'
 
 export default function Setup() {
   return (
@@ -53,7 +53,7 @@ export default function Setup() {
           </div>
 
           <a
-            href="https://cdn.deltavdevs.com/spectralis/Spectralis-win-x64-Setup.exe"
+            href={`${DOWNLOAD_BASE}/Spectralis-win-x64-Setup.exe`}
             className="btn btn--primary btn--lg dl-card__btn"
           >
             <Download size={16} />
@@ -101,7 +101,7 @@ export default function Setup() {
 
           <div className="dl-card__arch">
             <a
-              href="https://cdn.deltavdevs.com/spectralis/Spectralis-osx-arm64-Setup.pkg"
+              href={`${DOWNLOAD_BASE}/Spectralis-osx-arm64-Setup.pkg`}
               className="btn btn--primary dl-card__arch-btn"
             >
               <Download size={16} />
@@ -109,7 +109,7 @@ export default function Setup() {
               <span className="dl-card__arch-tag">arm64</span>
             </a>
             <a
-              href="https://cdn.deltavdevs.com/spectralis/Spectralis-osx-x64-Setup.pkg"
+              href={`${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
               className="btn btn--ghost dl-card__arch-btn"
             >
               <Download size={16} />
@@ -161,7 +161,7 @@ export default function Setup() {
           </div>
 
           <a
-            href="https://cdn.deltavdevs.com/spectralis/Spectralis-linux-x64.AppImage"
+            href={`${DOWNLOAD_BASE}/Spectralis-linux-x64.AppImage`}
             className="btn btn--primary btn--lg dl-card__btn"
           >
             <Download size={16} />

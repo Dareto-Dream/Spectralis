@@ -203,7 +203,7 @@ internal static class RemoteAudioCache
 
     private static HttpClient CreateHttpClient()
     {
-        var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var http = Spectralis.Core.Diagnostics.NetworkClients.Create("audio-cache", TimeSpan.FromMinutes(5));
         http.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
         return http;

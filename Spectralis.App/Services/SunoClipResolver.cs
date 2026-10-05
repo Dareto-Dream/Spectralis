@@ -87,7 +87,7 @@ internal static class SunoClipResolver
 
     private static HttpClient CreateHttpClient()
     {
-        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        var http = Spectralis.Core.Diagnostics.NetworkClients.Create("suno", TimeSpan.FromSeconds(15));
         http.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
         http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");

@@ -254,6 +254,43 @@
         </StackPanel>
       </Panel>
 
+      <!-- World content warning: full cover, opaque, and the world behind it isn't even loaded
+           (NowPlayingViewModel.EvaluateContentWarning keeps every surface detached while this is
+           up). The copy is the album manifest's own world.contentWarning, rendered generically. -->
+      <Border Grid.Row="0" Grid.RowSpan="2"
+              IsVisible="{Binding ShowContentWarning}"
+              Background="#F7070709">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="640" Margin="32,48" Spacing="18" HorizontalAlignment="Center"
+                      DataContext="{Binding ContentWarning}">
+            <TextBlock Text="{Binding Title}" FontSize="26" FontWeight="700"
+                       Foreground="#E0454C" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Intro}" IsVisible="{Binding Intro, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       FontSize="14" LineHeight="21" TextWrapping="Wrap"
+                       Foreground="{StaticResource Brush.Ink.Primary}" />
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,0,0,12" Spacing="2">
+                    <TextBlock Text="{Binding Heading}" FontSize="13" FontWeight="700"
+                               LetterSpacing="0.4" Foreground="{StaticResource Brush.Ink.Primary}" />
+                    <TextBlock Text="{Binding Detail}" FontSize="13" LineHeight="19" TextWrapping="Wrap"
+                               Foreground="{StaticResource Brush.Ink.Secondary}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="{Binding Outro}" IsVisible="{Binding Outro, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       FontSize="13" LineHeight="19" TextWrapping="Wrap" FontStyle="Italic"
+                       Foreground="{StaticResource Brush.Ink.Secondary}" />
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+              <Button Content="{Binding AcceptLabel}" Click="OnContentWarningAccept" Padding="18,9" />
+              <Button Content="{Binding DeclineLabel}" Click="OnContentWarningDecline" Padding="18,9" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
       <!-- Mirror's VN pager: bottom-third overlay over the still-visible (but frozen — see
            chaser_room's STORY_ACTIVE) room. E/Space advances a page, or on the last page exits
            into the gated track — MainWindow.OnWindowKeyDown intercepts both while this is up. -->
