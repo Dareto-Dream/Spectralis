@@ -5,7 +5,8 @@ namespace Spectralis.Core.Visualizers.Installed;
 
 public sealed class RedeemableVisualizerClient : IDisposable
 {
-    public const string DefaultManifestUrl = "https://cdn.deltavdevs.com/spectralis/visualizers";
+    // The release CDN (tools/r2/upload-visualizers.mjs puts them there); asset paths in the manifest are relative to it.
+    public const string DefaultManifestUrl = "https://spectralis-cdn.deltavdevs.com/visualizers/manifest.json";
 
     private const int MaxManifestBytes = 2 * 1024 * 1024;
     private const int MaxModuleBytes = 256 * 1024;

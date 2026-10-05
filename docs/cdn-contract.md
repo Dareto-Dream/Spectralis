@@ -25,8 +25,39 @@ Everything is at the bucket root. There are no folders.
 The app's update client reads `https://spectralis-cdn.deltavdevs.com/releases.<rid>.json` (see
 `VelopackUpdateService`). The website's download buttons point at the installers above.
 
+`visualizers/` holds the redeemable visualizers: `visualizers/manifest.json` plus one folder per
+visualizer with its module, binary, data and artwork (see below).
+
 Only the newest four release versions are kept. Older ones stay on the legacy CDN and in the local
 backup; the feeds are pruned to match, so a client is never told to fetch a package that is gone.
+
+---
+
+## Redeemable visualizers
+
+`https://spectralis-cdn.deltavdevs.com/visualizers/manifest.json` is what the app redeems keys against
+(`RedeemableVisualizerClient.DefaultManifestUrl`). It is a `spectralis.visualizers.v1` document:
+
+```json
+{
+  "schema": "spectralis.visualizers.v1",
+  "visualizers": [
+    {
+      "id": "dare-to-dream", "name": "Dare to Dream", "version": "1.0.0",
+      "redeemKeys": ["daretodream"],
+      "moduleUrl": "dare-to-dream/dare-to-dream_module.json",
+      "binaryUrl": "dare-to-dream/dare-to-dream_visualizer.wat",
+      "dataUrls": { "dare_to_dream_config": "dare-to-dream/dare-to-dream_config.json" },
+      "assetUrls": { "cover": "dare-to-dream/cover.png" }
+    }
+  ]
+}
+```
+
+Every `…Url` is relative to the manifest's folder. Publish with `tools/r2/upload-visualizers.mjs`
+(dry run unless `--apply`), which uploads the manifest last and refuses anything that would push the
+bucket over its budget. Everything under `visualizers/` counts toward the cap but is never pruned by
+version and never touched by the janitor.
 
 ---
 
@@ -68,4 +99,4 @@ A Billing usage alert on R2 storage in the Cloudflare dashboard is the third lay
 
 `https://cdn.deltavdevs.com/spectralis` keeps the same files (plus the old `warning.json`,
 `changelog.json`, `community.json`, `keys/`, `visualizers/` and `web-share/`). It exists for installs
-on 7.0.0 and earlier. The redeemable visualizers (`/spectralis/visualizers`) have not moved yet.
+on 7.0.0 and earlier, which still read it. New builds don't.
