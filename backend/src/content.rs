@@ -117,6 +117,13 @@ fn valid_https_url(s: &str) -> bool {
     s.len() <= 300 && s.starts_with("https://") && s.len() > 8 && !s.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
+/// Plain http is only accepted for this machine, so a local test server can hand out avatar links.
+fn valid_loopback_http_url(s: &str) -> bool {
+    s.len() <= 300
+        && (s.starts_with("http://127.0.0.1") || s.starts_with("http://localhost"))
+        && !s.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
 fn valid_fingerprint(s: &str) -> bool {
     s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
 }
@@ -222,9 +229,10 @@ pub fn validate_changelog(value: &Value) -> Result<Value, String> {
     let mut seen = std::collections::HashSet::new();
     for item in items(value, "The changelog", 100)? {
         let o = object(item, "release")?;
-        let version = text(o, "version", 32, true)?.unwrap();
-        if !valid_version(&version) {
-            return Err(format!("\"{version}\" is not a version number."));
+        // a display label: usually a version, sometimes a range like "4.0.x - 4.1.x"
+        let version = text(o, "version", 40, true)?.unwrap();
+        if version.chars().any(|c| c.is_control() || matches!(c, '<' | '>')) {
+            return Err(format!("\"{version}\" has characters a version label can't use."));
         }
         if !seen.insert(version.clone()) {
             return Err(format!("Version {version} is listed twice."));
@@ -270,7 +278,7 @@ pub fn validate_community(value: &Value) -> Result<Value, String> {
         let o = object(item, "person")?;
         let avatar = text(o, "avatar", 300, false)?;
         if let Some(url) = &avatar {
-            if !valid_https_url(url) {
+            if !valid_https_url(url) && !valid_loopback_http_url(url) {
                 return Err("avatar must be an https link.".to_string());
             }
         }
@@ -308,11 +316,19 @@ pub fn validate_creator(fingerprint: &str, body: &Value, existing: Option<&Value
     capabilities.dedup();
 
     let previous = |key: &str| existing.and_then(|e| e.get(key)).and_then(Value::as_str).map(str::to_string);
-    let created = previous("createdAtUtc").unwrap_or_else(|| now.to_string());
+    // A first-time registration may carry the key's real history (an import from the old CDN does);
+    // after that the server owns these times.
+    let supplied = |key: &str| -> Option<String> {
+        let raw = o.get(key)?.as_str()?;
+        chrono::DateTime::parse_from_rfc3339(raw)
+            .ok()
+            .map(|t| t.with_timezone(&Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    };
+    let created = previous("createdAtUtc").or_else(|| supplied("createdAtUtc")).unwrap_or_else(|| now.to_string());
     let revoked = if status == "active" {
         None
     } else {
-        Some(previous("revokedAtUtc").unwrap_or_else(|| now.to_string()))
+        Some(previous("revokedAtUtc").or_else(|| supplied("revokedAtUtc")).unwrap_or_else(|| now.to_string()))
     };
     let key_id = match text(o, "keyId", 80, false)? {
         Some(k) => k,
@@ -704,9 +720,15 @@ mod tests {
     }
 
     #[test]
+    fn a_range_label_from_the_legacy_changelog_is_accepted() {
+        let out = validate_changelog(&json!([{ "version": "4.0.x - 4.1.x", "label": "Early builds" }])).unwrap();
+        assert_eq!(out[0]["version"], "4.0.x - 4.1.x");
+    }
+
+    #[test]
     fn bad_changelogs_are_refused() {
         assert!(validate_changelog(&json!([{ "version": "7.0.0", "label": "a" }, { "version": "7.0.0", "label": "b" }])).is_err());
-        assert!(validate_changelog(&json!([{ "version": "7 0", "label": "a" }])).is_err());
+        assert!(validate_changelog(&json!([{ "version": "7<script>", "label": "a" }])).is_err());
         assert!(validate_changelog(&json!([{ "version": "7.0.0" }])).is_err(), "label is required");
         assert!(validate_changelog(&json!([{ "version": "7.0.0", "label": "a", "groups": [{ "icon": "<b>", "title": "t" }] }])).is_err());
     }
@@ -716,6 +738,7 @@ mod tests {
         let ok = validate_community(&json!([{ "name": "A", "subtitle": "s", "avatar": "https://x.test/a.png" }])).unwrap();
         assert_eq!(ok[0]["avatar"], "https://x.test/a.png");
         assert!(validate_community(&json!([{ "name": "A", "avatar": "http://x.test/a.png" }])).is_err());
+        assert!(validate_community(&json!([{ "name": "A", "avatar": "http://127.0.0.1:8094/a.png" }])).is_ok(), "this machine only");
         assert!(validate_community(&json!([{ "subtitle": "no name" }])).is_err());
     }
 
@@ -743,6 +766,24 @@ mod tests {
         assert_eq!(again["revokedAtUtc"], "2026-11-01T00:00:00Z");
         let restored = validate_creator(FP, &json!({ "displayName": "X", "status": "active" }), Some(&again), "2026-11-10T00:00:00Z").unwrap();
         assert_eq!(restored["revokedAtUtc"], Value::Null);
+    }
+
+    #[test]
+    fn a_first_registration_can_carry_the_keys_real_history_but_an_update_cannot_rewrite_it() {
+        let body = json!({ "displayName": "DeltaWave", "status": "revoked",
+            "createdAtUtc": "2026-05-15T10:30:43Z", "revokedAtUtc": "2026-06-01T08:00:00Z" });
+        let imported = validate_creator(FP, &body, None, NOW).unwrap();
+        assert_eq!(imported["createdAtUtc"], "2026-05-15T10:30:43Z");
+        assert_eq!(imported["revokedAtUtc"], "2026-06-01T08:00:00Z");
+
+        let forged = json!({ "displayName": "DeltaWave", "status": "revoked",
+            "createdAtUtc": "2020-01-01T00:00:00Z", "revokedAtUtc": "2020-01-02T00:00:00Z" });
+        let again = validate_creator(FP, &forged, Some(&imported), "2026-12-01T00:00:00Z").unwrap();
+        assert_eq!(again["createdAtUtc"], "2026-05-15T10:30:43Z", "an update must not rewrite when the key was created");
+        assert_eq!(again["revokedAtUtc"], "2026-06-01T08:00:00Z", "or when it was revoked");
+
+        let junk = validate_creator(FP, &json!({ "displayName": "X", "createdAtUtc": "yesterday" }), None, NOW).unwrap();
+        assert_eq!(junk["createdAtUtc"], NOW, "an unreadable time falls back to now");
     }
 
     #[test]

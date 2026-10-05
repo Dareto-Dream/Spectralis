@@ -113,7 +113,10 @@ pub async fn boundary(State(state): State<AppState>, request: Request, next: Nex
     match guard(&state, &parts.uri, parts.method.as_str(), &parts.headers).await {
         Ok(()) => {
             let mut response = next.run(Request::from_parts(parts,body)).await;
-            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            // Private and room data is never cached; public content (warnings, creator keys) sets its own policy.
+            if !response.headers().contains_key(header::CACHE_CONTROL) {
+                response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            }
             response
         },
         Err(error) => error.into_response(),
