@@ -342,6 +342,14 @@ mod tests {
             let mut host=HeaderMap::new();host.insert("x-session-key",HeaderValue::from_static("abcdefgh12345678"));
             assert!(guard(&state,&uri,method,&host).await.is_ok());
         }
+        // Released clients send the key twice on the package upload ("key, key"); that must still be the host.
+        let uri="/shared-play/v2/sessions/ABC123/package".parse().unwrap();
+        let mut doubled=HeaderMap::new();doubled.insert("x-session-key",HeaderValue::from_static("abcdefgh12345678, abcdefgh12345678"));
+        assert!(guard(&state,&uri,"PUT",&doubled).await.is_ok());
+        let mut wrong=HeaderMap::new();wrong.insert("x-session-key",HeaderValue::from_static("abcdefgh12345678, someoneelses123456"));
+        assert!(guard(&state,&uri,"PUT",&wrong).await.is_ok(), "only the first value is the key");
+        let mut other=HeaderMap::new();other.insert("x-session-key",HeaderValue::from_static("someoneelses123456, abcdefgh12345678"));
+        assert!(guard(&state,&uri,"PUT",&other).await.is_err());
         let uri="/shared-play/v2/sessions/ABC123/queue/items".parse().unwrap();
         assert!(guard(&state,&uri,"POST",&HeaderMap::new()).await.is_ok());
         write_json(&state,&sess_key("ABC123","room:caps"),&json!({"queueAdd":"host"})).await.unwrap();

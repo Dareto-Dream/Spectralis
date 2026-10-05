@@ -2734,6 +2734,9 @@ fn public_streamer_queue(mut sq: Value) -> Value {
 }
 
 async fn validate_session_key(state: &AppState, room_code: &str, provided: &str) -> Result<(), AppError> {
+    // Released clients add the key twice on the package upload (once from the upload headers, once as the session
+    // key), which arrives as "key, key". Cleaning that as one token glues the two together, so take the first value.
+    let provided = provided.split(',').next().unwrap_or("");
     let cleaned = clean_owner_token(provided)
         .map_err(|_| AppError::forbidden("Session key was invalid."))?;
     let room_code = touch_session(state, room_code).await?;
