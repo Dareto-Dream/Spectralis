@@ -8,7 +8,7 @@ public static class CapsuleFormat
     public const string FormatName = "spectralis-capsule";
     public const int FormatVersion = 3;
     public const string DefaultAlgorithm = "Ed25519";
-    public const string CdnKeyEndpointTemplate = "spectralis/keys/{0}.json";
+    public const string CdnKeyEndpointTemplate = Spectralis.Core.Platform.SpectralisEndpoints.CreatorPathTemplate;
 
     // Untrusted-input limits enforced before any payload is processed.
     public const long MaxCapsuleBytes = 768L * 1024 * 1024;

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Spectralis.Core.Platform;
 
 /// <summary>
-/// Deserialized from https://cdn.deltavdevs.com/spectralis/warning.json.
+/// Deserialized from the warnings feed on the Spectralis backend (see SpectralisEndpoints).
 /// Lets us push an urgent notice to users without shipping an app update.
 /// </summary>
 public sealed class CdnWarning
@@ -86,10 +86,10 @@ public sealed class CdnWarning
 
 public static class CdnWarningClient
 {
-    private const string WarningUrl = "https://cdn.deltavdevs.com/spectralis/warning.json";
+    private const string WarningUrl = SpectralisEndpoints.WarningsUrl;
 
     /// <summary>
-    /// Fetches warning.json and returns every warning that is active, applies to
+    /// Fetches the warnings feed and returns every warning that is active, applies to
     /// the current version, and has not already been dismissed by the user.
     /// Returns an empty list on network failure, 404, or malformed JSON.
     /// </summary>

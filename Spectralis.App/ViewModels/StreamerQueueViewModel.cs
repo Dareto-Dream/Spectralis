@@ -257,7 +257,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private string _addToQueueChannelId = string.Empty;
     private int _channelSeq;
 
-    private Uri _cdnBaseUri = new("https://audioplayer-production-5b83.up.railway.app");
+    private Uri _cdnBaseUri = new(Spectralis.Core.SharedPlay.SharedPlayDefaults.CdnBaseUrl);
     private AppSettings? _settings;
 
     public StreamerQueueViewModel()

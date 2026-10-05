@@ -4,8 +4,7 @@ namespace Spectralis.Core.SharedPlay;
 
 public static class SharedPlayDefaults
 {
-    public const string LegacyCdnBaseUrl = "https://cdn.deltavdevs.com";
-    public const string CdnBaseUrl = "https://audioplayer-production-5b83.up.railway.app";
+    public const string CdnBaseUrl = Spectralis.Core.Platform.SpectralisEndpoints.ApiBase;
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
     public const string ProtocolVersion = "shared-play-v2";
     /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
