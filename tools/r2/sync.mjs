@@ -12,15 +12,10 @@
 //
 // R2 has no hard storage cap, so this is the cap: see budget.mjs for the rules and why they hold.
 
-import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  AbortMultipartUploadCommand, DeleteObjectsCommand, HeadObjectCommand, ListMultipartUploadsCommand,
-  ListObjectsV2Command, S3Client,
-} from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
+import { r2Client, s3Storage } from './s3-storage.mjs';
 import { DEFAULT_BUDGET_BYTES, DEFAULT_KEEP_VERSIONS, GB, MAX_BUDGET_BYTES, classify } from './budget.mjs';
 import { runSync } from './sync-core.mjs';
 
@@ -46,59 +41,6 @@ function requireEnv(name) {
   return value;
 }
 
-function s3Storage(client, bucket) {
-  return {
-    async list() {
-      const objects = [];
-      let token;
-      do {
-        const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: token }));
-        for (const o of page.Contents ?? []) objects.push({ key: o.Key, size: o.Size ?? 0 });
-        token = page.IsTruncated ? page.NextContinuationToken : undefined;
-      } while (token);
-      return objects;
-    },
-
-    async abortStaleUploads() {
-      const page = await client.send(new ListMultipartUploadsCommand({ Bucket: bucket }));
-      for (const u of page.Uploads ?? []) {
-        await client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: u.Key, UploadId: u.UploadId }));
-      }
-      return (page.Uploads ?? []).length;
-    },
-
-    async remove(keys) {
-      for (let i = 0; i < keys.length; i += 1000) {
-        const batch = keys.slice(i, i + 1000).map((Key) => ({ Key }));
-        const result = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: batch, Quiet: true } }));
-        if (result.Errors?.length) throw new Error(`Could not delete ${result.Errors.map((e) => e.Key).join(', ')}`);
-      }
-    },
-
-    async put(key, body, size) {
-      const upload = new Upload({
-        client,
-        params: { Bucket: bucket, Key: key, Body: body.bytes ?? createReadStream(body.path), ContentLength: size,
-          ContentType: key.endsWith('.json') ? 'application/json' : 'application/octet-stream' },
-        partSize: 16 * 1024 * 1024,
-        queueSize: 2,
-        leavePartsOnError: false, // a failed upload must not leave billable parts behind
-      });
-      await upload.done();
-    },
-
-    async sizeOf(key) {
-      try {
-        const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-        return head.ContentLength ?? null;
-      } catch (error) {
-        if (error?.$metadata?.httpStatusCode === 404) return null;
-        throw error;
-      }
-    },
-  };
-}
-
 async function localFiles(dir) {
   const files = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -118,11 +60,7 @@ async function main() {
 
   const accountId = requireEnv('R2_ACCOUNT_ID');
   const bucket = process.env.R2_BUCKET?.trim() || 'spectralis-cdn';
-  const client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: requireEnv('R2_ACCESS_KEY_ID'), secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY') },
-  });
+  const client = r2Client(accountId, requireEnv('R2_ACCESS_KEY_ID'), requireEnv('R2_SECRET_ACCESS_KEY'));
 
   const requested = args.budgetGb === null ? DEFAULT_BUDGET_BYTES : args.budgetGb * GB;
   if (requested > MAX_BUDGET_BYTES) {

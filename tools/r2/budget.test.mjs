@@ -297,3 +297,22 @@ test('the janitor ceiling cannot be configured above the hard maximum either', (
 
   assert.equal(plan.action, 'prune', 'a 9 GB bucket must trigger even if someone asked for a 50 GB ceiling');
 });
+
+test('the visualizers are site content: counted, never pruned by version, never deleted by the janitor', () => {
+  assert.equal(classify('visualizers/zero/clip_twerk.mp4').kind, 'content');
+  assert.equal(classify('visualizers/manifest.json').kind, 'content');
+  assert.equal(classify('manifest.json').kind, 'unknown', 'only the visualizers folder is content');
+
+  const content = [{ key: 'visualizers/zero/clip.mp4', size: 40 * MB }, { key: 'visualizers/manifest.json', size: 3000 }];
+  const packages = [
+    { key: 'Spectralis-1.0.0-win-x64-full.nupkg', size: 900 * MB },
+    { key: 'Spectralis-2.0.0-win-x64-full.nupkg', size: 900 * MB },
+    { key: 'Spectralis-3.0.0-win-x64-full.nupkg', size: 900 * MB },
+  ];
+  const sync = planSync({ existing: [...content, ...packages], incoming: [], budgetBytes: 5 * GB, keepVersions: 1 });
+  assert.ok(sync.deleteAfter.every((k) => !k.startsWith('visualizers/')), 'a sync never prunes them');
+
+  const prune = planEmergencyPrune({ objects: [...content, ...packages], ceilingBytes: 1 * GB, targetBytes: 0.5 * GB, protectNewest: 1 });
+  assert.ok(prune.deletes.every((k) => !k.startsWith('visualizers/')), 'the janitor never deletes them');
+  assert.ok(prune.total >= 2700 * MB + 40 * MB, 'but they are counted in the total');
+});
