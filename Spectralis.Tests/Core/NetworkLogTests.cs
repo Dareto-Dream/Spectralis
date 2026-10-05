@@ -167,4 +167,37 @@ public sealed class NetworkLogTests
 
         Assert.Equal(3, count);
     }
+
+    [Fact]
+    public void FilterMatchesWordsErrorsAndSource()
+    {
+        var ok = new NetworkEntry { Source = "shared-play", Method = "GET", Url = "https://api.example.com/rooms", State = NetworkState.Complete, StatusCode = 200 };
+        var bad = ok with { Source = "spotify", Url = "https://api.spotify.com/v1/me", StatusCode = 401 };
+
+        Assert.True(NetworkLogFormatter.Matches(ok, "rooms get", false, null));
+        Assert.False(NetworkLogFormatter.Matches(ok, "rooms post", false, null));
+        Assert.True(NetworkLogFormatter.Matches(bad, "401", false, null));
+        Assert.False(NetworkLogFormatter.Matches(ok, null, true, null));
+        Assert.True(NetworkLogFormatter.Matches(bad, null, true, "Spotify"));
+        Assert.False(NetworkLogFormatter.Matches(bad, null, false, "shared-play"));
+    }
+
+    [Fact]
+    public void FormatsStatusSizesAndDetail()
+    {
+        var e = new NetworkEntry
+        {
+            Source = "capsules", Method = "GET", Url = "https://api.example.com/spectralis/v1/creators/abc?x=1",
+            State = NetworkState.Complete, StatusCode = 200, Reason = "OK", DurationMs = 1530, ResponseBytes = 2048,
+            ResponseHeaders = [new("Content-Type", "application/json")],
+        };
+
+        Assert.Equal("200", NetworkLogFormatter.StatusText(e));
+        Assert.Equal("1.53 s", NetworkLogFormatter.Duration(e.DurationMs));
+        Assert.Equal("2 KB", NetworkLogFormatter.SizeText(e));
+        Assert.Equal("/spectralis/v1/creators/abc?x=1", NetworkLogFormatter.PathAndQuery(e));
+        Assert.Contains("Content-Type: application/json", NetworkLogFormatter.Detail(e));
+        Assert.Equal("LIVE", NetworkLogFormatter.StatusText(e with { State = NetworkState.Live }));
+        Assert.Equal("ERR", NetworkLogFormatter.StatusText(e with { State = NetworkState.Failed }));
+    }
 }
