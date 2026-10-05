@@ -101,6 +101,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public SharedPlayViewModel()
     {
+        RequestedTracks.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasRequests));
         _controller.StatusChanged += OnStatusChanged;
         _controller.CommandReceived += OnCommandReceived;
         _controller.SkipProgressReceived += p => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -217,6 +218,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     }
 
     public ObservableCollection<SharedPlayRequestedTrackVm> RequestedTracks { get; } = [];
+    public bool HasRequests => RequestedTracks.Count > 0;
 
     // ── Collaborative room: roster, capabilities, activity ──────────────────
     public ObservableCollection<SharedPlayMemberVm> Members { get; } = [];
@@ -374,7 +376,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             : settings.SharedPlayHostName);
         RaiseCapProps();
         ReapplyControllerSettings();
-        _ = LoadOwnedRoomsAsync();
+        _ = LoadMyRoomAsync();
     }
 
     public bool SharedPlayEnabled
@@ -534,13 +536,14 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     /// whether to send play or pause.</summary>
     public Func<bool>? NowPlayingIsPlayingProbe { get; set; }
 
-    private Task HostAsync()
+    private async Task HostAsync()
     {
+        // Signed in, the party runs in the account's one permanent room, so it has to exist before we start.
+        await EnsureRoomAsync();
         _hostingRequested = true;
         ReapplyControllerSettings();
         StartPolling();
         OnStatusChanged(null, EventArgs.Empty);
-        return Task.CompletedTask;
     }
 
     private void Stop()
@@ -557,16 +560,20 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         _controller.ApplySettings(
             _hostingRequested,
             _settings?.SharedPlayCdnBaseUrl,
-            WardAccount.IsConnected && (_settings?.SharedPlayLiveChannelEnabled ?? false),
+            // Signed in with a room: always the permanent room. Signed out: a temporary, link-only one.
+            WardAccount.IsConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
             _settings?.SharedPlayLiveChannelId ?? string.Empty,
             _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty,
             _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty);
     }
 
+    /// <summary>The link to share: the permanent room's address when signed in, otherwise this party's invite link.</summary>
+    public string ShareLink => WardConnected && HasRoom ? RoomLink : _joinUrl;
+
     private void CopyLink()
     {
-        if (string.IsNullOrEmpty(_joinUrl)) return;
-        CopyToClipboardRequested?.Invoke(_joinUrl);
+        if (string.IsNullOrEmpty(ShareLink)) return;
+        CopyToClipboardRequested?.Invoke(ShareLink);
         CopyLinkLabel = "Copied!";
         _ = ResetCopyLinkLabelAsync();
     }
@@ -584,6 +591,8 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         HostPending = snap.IsEnabled && !IsHosting;
         if (!IsHosting) CopyLinkLabel = "Copy Link";
         JoinUrl = snap.JoinUrl ?? string.Empty;
+        this.RaisePropertyChanged(nameof(ShareLink));
+        this.RaisePropertyChanged(nameof(CanCopyRoomLink));
         RoomCode = snap.DisplayCode ?? snap.RoomCode ?? string.Empty;
         LastError = snap.LastError ?? string.Empty;
         StatusText = BuildStatusText(snap);
