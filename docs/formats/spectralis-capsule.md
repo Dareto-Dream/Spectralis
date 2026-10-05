@@ -134,7 +134,7 @@ The image path must point to a file inside the ZIP.
 
 1. `CapsuleReader.Read(path)` — validates SPCC magic, version 3, verifies Ed25519 signature
    (BouncyCastle), computes fingerprint, reads `manifest.json`.
-2. `CapsuleCdnClient.FetchCreatorKeyAsync(fingerprint)` — `GET /spectralis/keys/{fingerprint}.json`.
+2. `CapsuleCdnClient.FetchCreatorKeyAsync(fingerprint)` — `GET /spectralis/v1/creators/{fingerprint}` on the Spectralis API (see [content-api.md](../content-api.md)).
    Falls back to `CreatorTrustStore` cache on network failure.
 3. Reject if key is 404, `status` is not `active`, or `revokedAtUtc` is set.
 4. Intersect `manifest.capabilities` with `keyMetadata.allowedCapabilities`; reject if any

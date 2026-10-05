@@ -38,7 +38,7 @@ capsules work unchanged for `.spectral` capsules.
 Trust check mirrors the `.spectralis` flow exactly:
 
 1. `AlbumCapsuleReader.Read(path)` validates SPAC magic, version 1, and the Ed25519 signature.
-2. `CapsuleCdnClient.FetchCreatorKeyAsync(fingerprint)` — `GET /spectralis/keys/{fingerprint}.json`.
+2. `CapsuleCdnClient.FetchCreatorKeyAsync(fingerprint)` — `GET /spectralis/v1/creators/{fingerprint}` on the Spectralis API (see [content-api.md](../content-api.md)).
    Falls back to `CreatorTrustStore` cache on network failure.
 3. Reject if key is 404, `status` is not `active`, or `revokedAtUtc` is set.
 4. Intersect `manifest.capabilities` with `keyMetadata.allowedCapabilities`. Reject if any
