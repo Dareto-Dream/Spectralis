@@ -190,11 +190,11 @@ public sealed class NowPlayingViewModelTests : IDisposable
     }
 
     [Fact]
-    public void AlbumWorldTrackPlayback_WasmRoom_StaysShowingWorld()
+    public void AlbumWorldTrackPlayback_WasmRoom_LeavesTheWorldAndComesBackWhenTheTrackEnds()
     {
-        // Unlike an HTML "world map" (a menu you pick a track from and leave), a Wasm/wgpu world
-        // like CHASER's walkable room is a place — picking a track via its own interact key
-        // shouldn't tear the room out from under a listener who's still walking around in it.
+        // A Wasm/wgpu room behaves like an HTML world map: picking a track (here via the room's own interact
+        // key) exits the world for the normal player, and the world returns when the track completes. This
+        // used to be a carve-out that kept the room up during playback; it was reversed on purpose.
         var worldHtml = new EmbeddedHtmlContext(
             "world",
             "<!doctype html><html><body></body></html>"u8.ToArray(),
@@ -203,15 +203,15 @@ public sealed class NowPlayingViewModelTests : IDisposable
             null);
 
         _vm.AttachAlbumWorld(worldHtml, "{}", "world-dir", wasmBytes: new byte[] { 0 });
-
         Assert.True(_vm.IsAlbumWorldShowingWorld);
 
         _vm.BeginAlbumWorldTrackPlayback();
+        Assert.False(_vm.IsAlbumWorldShowingWorld, "picking a track hands the screen back to the player");
 
-        Assert.True(_vm.IsAlbumWorldShowingWorld);
+        _vm.NotifyAlbumWorldTrackCompleted("track-1", 30, 30);
+        Assert.True(_vm.IsAlbumWorldShowingWorld, "the world is back when the track ends");
 
         _vm.DetachAlbumWorld();
-
         Assert.False(_vm.IsAlbumWorldShowingWorld);
     }
 

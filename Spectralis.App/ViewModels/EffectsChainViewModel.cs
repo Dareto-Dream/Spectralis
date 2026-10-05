@@ -323,9 +323,11 @@ public sealed class EffectsChainViewModel : ViewModelBase
             return;
         }
 
+        // A built-in can't be overwritten, so saving over one keeps the user's chain as a copy instead of
+        // silently doing nothing (same as the EQ editor).
         if (EffectChainPresets.BuiltInNames.Contains(name, StringComparer.OrdinalIgnoreCase))
         {
-            return;
+            name += " (custom)";
         }
 
         EffectChainPresetStore.AddOrReplace(EffectChainPreset.FromChain(_chain, name));
