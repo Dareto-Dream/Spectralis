@@ -1,4 +1,5 @@
 mod collab;
+mod content;
 mod media;
 mod player;
 mod protocol;
@@ -136,6 +137,28 @@ async fn main() -> Result<()> {
         .route("/spectralis/web-share/", get(index))
         .route("/spectralis/web-share/index.html", get(index))
         .route("/spectralis/web-share/*path", get(web_share_static))
+        .route("/spectralis/v1/warnings", get(content::get_warnings))
+        .route("/spectralis/v1/changelog", get(content::get_changelog))
+        .route("/spectralis/v1/community", get(content::get_community))
+        .route("/spectralis/v1/community/avatars/:slug", get(content::get_community_avatar))
+        .route("/spectralis/v1/creators/:fingerprint", get(content::get_creator))
+        .route("/spectralis/v1/creators/:fingerprint/avatar", get(content::get_creator_avatar))
+        .route("/spectralis/v1/admin/warnings", put(content::put_warnings))
+        .route("/spectralis/v1/admin/changelog", put(content::put_changelog))
+        .route("/spectralis/v1/admin/community", put(content::put_community))
+        .route(
+            "/spectralis/v1/admin/community/avatars/:slug",
+            put(content::put_community_avatar).layer(DefaultBodyLimit::max(content::MAX_AVATAR_BYTES + 1024)),
+        )
+        .route("/spectralis/v1/admin/creators", get(content::list_creators))
+        .route(
+            "/spectralis/v1/admin/creators/:fingerprint",
+            put(content::put_creator).delete(content::delete_creator),
+        )
+        .route(
+            "/spectralis/v1/admin/creators/:fingerprint/avatar",
+            put(content::put_creator_avatar).layer(DefaultBodyLimit::max(content::MAX_AVATAR_BYTES + 1024)),
+        )
         .route("/player/v1/rooms", get(list_public_rooms))
         .route("/player/v1/rooms/:id", get(get_public_room))
         .route("/player/v1/rooms", post(create_public_room))
