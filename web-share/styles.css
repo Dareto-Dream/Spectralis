@@ -65,17 +65,13 @@ body::after {
 }
 
 body::before {
-  background:
-    linear-gradient(0deg, rgba(230,80,24,0.65), rgba(224,120,35,0.28) 28%, transparent 60%),
-    linear-gradient(90deg, rgba(230,80,24,0.35), transparent 20%, transparent 80%, rgba(230,80,24,0.35));
+  background: rgba(235,104,65,0.30);
   mix-blend-mode: screen;
   opacity: var(--fire-heat);
 }
 
 body::after {
-  background:
-    linear-gradient(180deg, rgba(76,201,216,0.18), transparent 42%),
-    linear-gradient(0deg, rgba(224,163,58,0.14), transparent 40%);
+  background: rgba(68,187,164,0.14);
   opacity: max(var(--love-heat), var(--boost-heat));
 }
 
@@ -195,22 +191,7 @@ body::after {
   z-index: 0;
   overflow: hidden;
 }
-
-.backdrop-img {
-  position: absolute;
-  inset: -40px;
-  background-size: cover;
-  background-position: center;
-  filter: blur(40px) saturate(1.4) brightness(0.35);
-  transform: scale(1.08);
-  transition: background-image 600ms ease;
-}
-
-.backdrop-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 10%, rgba(10,10,10,0.72) 80%);
-}
+.backdrop { display: none; }
 
 /* ─── Player shell ────────────────────────────────────────────────────────── */
 
@@ -330,7 +311,7 @@ body::after {
   height: 100%;
   border-radius: 50%;
   position: relative;
-  background: radial-gradient(circle at 30% 30%, #2a2a2a, #111 60%, #0a0a0a);
+  background: #2e2b2f;
   box-shadow:
     0 0 0 6px rgba(255,255,255,0.04),
     0 0 0 12px rgba(255,255,255,0.02),
@@ -375,7 +356,7 @@ body::after {
   width: 22%;
   height: 22%;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #2a2a2a, #0a0a0a);
+  background: #161416;
   border: 2px solid rgba(255,255,255,0.12);
   z-index: 1;
 }
@@ -956,7 +937,7 @@ input[type="range"]::-moz-range-thumb {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #2e2e2e, #111);
+  background: #2e2b2f;
   border: 2px solid rgba(255,255,255,0.08);
   flex-shrink: 0;
   position: relative;
@@ -989,7 +970,7 @@ input[type="range"]::-moz-range-thumb {
   width: 28%;
   height: 28%;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #2a2a2a, #0a0a0a);
+  background: #161416;
   border: 1.5px solid rgba(255,255,255,0.10);
 }
 
@@ -1317,8 +1298,6 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.55; }
   border-bottom: var(--rule) solid var(--border);
 }
 .queue-panel, .lyrics-panel { backdrop-filter: none; -webkit-backdrop-filter: none; }
-.backdrop-img { filter: blur(40px) saturate(1.1) brightness(0.28); }
-.backdrop-vignette { background: radial-gradient(ellipse at center, transparent 10%, rgba(28,26,28,0.8) 80%); }
 
 /* panels and cards: hard border + offset block shadow */
 .queue-panel, .channel-panel, .lyrics-panel, .sq-card, .sq-now-playing {
@@ -1436,7 +1415,7 @@ input[type="range"]::-moz-range-thumb { border-radius: 0; background: var(--ink)
 .seek-track.interactive:hover .seek-fill { background: var(--accent); }
 
 /* record: keep it round, drop the glow and use the theme's block shadow */
-.disc { box-shadow: 6px 6px 0 var(--shadow); background: radial-gradient(circle at 30% 30%, #38353a, #1c1a1c 60%, #161416); }
+.disc { box-shadow: 6px 6px 0 var(--shadow); background: #2e2b2f; }
 .disc.is-playing { box-shadow: 6px 6px 0 var(--accent); }
 .sq-disc.sq-disc-spinning { box-shadow: 3px 3px 0 var(--accent); }
 
