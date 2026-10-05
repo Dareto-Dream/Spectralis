@@ -1477,8 +1477,8 @@
       var barH = Math.max(4 * dpr, level * h * 0.82);
       var x = i * (barW + gap);
       var y = (h - barH) / 2;
-      ctx.fillStyle = "rgba(168, 130, 242, " + (runtime.analyser ? 0.95 : 0.38) + ")";
-      roundRect(ctx, x, y, barW, barH, 5 * dpr);
+      ctx.fillStyle = "rgba(235, 104, 65, " + (runtime.analyser ? 0.95 : 0.38) + ")";
+      roundRect(ctx, x, y, barW, barH, 0);
       ctx.fill();
     }
 
