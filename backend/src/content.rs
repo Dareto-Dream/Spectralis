@@ -65,7 +65,7 @@ fn check_admin(expected: &str, headers: &HeaderMap) -> Result<(), AppError> {
     Ok(())
 }
 
-fn require_admin(headers: &HeaderMap) -> Result<(), AppError> {
+pub(crate) fn require_admin(headers: &HeaderMap) -> Result<(), AppError> {
     check_admin(&std::env::var("SPECTRALIS_ADMIN_TOKEN").unwrap_or_default(), headers)
 }
 

@@ -3,6 +3,7 @@ mod content;
 mod media;
 mod player;
 mod protocol;
+mod rooms;
 mod sq_realtime;
 mod sq_webhooks;
 mod store;
@@ -165,6 +166,8 @@ async fn main() -> Result<()> {
         .route("/player/v1/rooms/:id/profile", put(update_public_room_profile))
         .route("/player/v1/me", get(player::me).delete(player::disconnect))
         .route("/player/v1/me/rooms", get(player::my_rooms))
+        .route("/player/v1/me/room", get(rooms::my_room))
+        .route("/spectralis/v1/admin/rooms/wipe", post(rooms::wipe_rooms))
         .route("/player/v1/queues/:id/claim", post(player::claim_queue))
         .route("/player/v1/rooms/:id/host", get(player::host_credentials))
         .route("/player/v1/rooms/:id/images/:kind", get(player::get_image).put(player::upload_image).layer(DefaultBodyLimit::max(5*1024*1024)))
@@ -331,6 +334,9 @@ async fn create_session(
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AppError> {
     let (room_code, session_key) = generate_room_code();
+    // Signed in: the session belongs to the account. Not signed in: it is a temporary, link-only room.
+    let owner = player::optional_subject(&state, &headers).await?;
+    let temporary = owner.is_none();
 
     let now = Utc::now();
     let expires_at = now + Duration::hours(SESSION_TTL_HOURS);
@@ -348,7 +354,8 @@ async fn create_session(
         "protocolVersion": PROTOCOL_VERSION,
         "roomCode": &room_code,
         "sessionKey": &session_key,
-        "wardOwnerId": player::optional_subject(&state, &headers).await?,
+        "wardOwnerId": owner,
+        "temporary": temporary,
         "createdAtUtc": now.to_rfc3339(),
         "expiresAtUtc": expires_at.to_rfc3339(),
         "activeTrackId": &track_id_text,
@@ -380,6 +387,7 @@ async fn create_session(
             "protocolVersion": PROTOCOL_VERSION,
             "roomCode": &room_code,
             "displayCode": display_room_code(&room_code),
+            "temporary": temporary,
             "sessionKey": &session_key,
             "trackId": &track_id_text,
             "joinUrl": &join_url,
@@ -1172,6 +1180,12 @@ async fn create_public_room(
     let name = clean_short_text(payload.get("name").and_then(Value::as_str).unwrap_or(""), 60)
         .ok_or_else(|| AppError::bad_request("A room name is required."))?;
     let (access_policy, room_kind, tags) = public_room_fields(&payload)?;
+    // One permanent Shared Play room per Ward account. Streamer queues are separate and not limited here.
+    if room_kind == "channel" {
+        if let Some(existing) = rooms::room_of(&state, &ward_owner_id).await? {
+            return Err(rooms::already_has_room(&existing));
+        }
+    }
     let room_id = format!("room-{}", uuid::Uuid::new_v4().simple());
     let owner_token = bytes_to_hex(&rand::thread_rng().gen::<[u8; 32]>());
     let now = Utc::now().to_rfc3339();
