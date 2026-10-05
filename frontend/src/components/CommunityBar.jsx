@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const COMMUNITY_URL = 'https://cdn.deltavdevs.com/spectralis/community.json'
+import { COMMUNITY_URL } from '../data/site.jsx'
 
 const AVATAR_COLORS = ['#a882f2', '#764cd2', '#e78aa7', '#5ca3ff', '#62d4b0', '#fc8444']
 

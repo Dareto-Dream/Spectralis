@@ -2,7 +2,7 @@
   "use strict";
 
   var config = {
-    cdnBaseUrl: window.location.origin || "https://audioplayer-production-5b83.up.railway.app",
+    cdnBaseUrl: window.location.origin || "https://spectralis-api.deltavdevs.com",
     channelPollIntervalMs: 5000,
     presenceIntervalMs: 8000,
     reactionIntervalMs: 2500,

@@ -53,10 +53,17 @@ export const FAQ = [
 
 export const FORMAT_LIST = ['MP3','FLAC','WAV','OGG','Opus','M4A','AAC','WMA','WebM','AIFF','MP4']
 
-export const CHANGELOG_URL = 'https://cdn.deltavdevs.com/spectralis/changelog.json'
+// The self-hosted Spectralis backend: changelog, community, warnings, creators and Shared Play.
+export const API_BASE = 'https://spectralis-api.deltavdevs.com'
+
+// Installers and update feeds live on the release CDN.
+export const DOWNLOAD_BASE = 'https://spectralis-cdn.deltavdevs.com'
+
+export const CHANGELOG_URL = `${API_BASE}/spectralis/v1/changelog`
+export const COMMUNITY_URL = `${API_BASE}/spectralis/v1/community`
 
 // Backend the Streamer Queue dashboard talks to by default (same one the desktop app uses).
-export const SQ_API_BASE = 'https://audioplayer-production-5b83.up.railway.app'
+export const SQ_API_BASE = API_BASE
 
 // changelog groups reference icons by name (CDN JSON can't carry components)
 export const CHANGELOG_ICONS = {
