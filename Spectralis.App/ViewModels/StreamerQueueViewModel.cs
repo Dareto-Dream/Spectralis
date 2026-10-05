@@ -875,10 +875,37 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private async Task PollOnceAsync()
     {
         var room = await _controller.PollAsync(CancellationToken.None);
+        if (_controller.RoomMissing)
+        {
+            Dispatcher.UIThread.Post(DropMissingRoom);
+            return;
+        }
         if (room is not null)
             ApplyQueueSnapshot(room);
         else if (_controller.LastError is not null)
             LastError = _controller.LastError;
+    }
+
+    // Queue rooms live in the backend's memory, so a restart or deploy drops them. A saved room that now 404s is gone
+    // for good: forget it, stop the poll and the socket, and let the owner make a new one.
+    private void DropMissingRoom()
+    {
+        if (!HasRoom) return;
+        _pollCts.Cancel();
+        StopRealtime();
+        _controller.Configure(_cdnBaseUri, null, null);
+        RoomId = string.Empty;
+        HasRoom = false;
+        IsOwner = false;
+        UpdateSubmitUrl();
+        LastError = string.Empty;
+        StatusText = "Your queue room no longer exists, which happens when the server restarts. Create a new one.";
+        if (_settings is not null)
+        {
+            _settings.SqRoomId = string.Empty;
+            _settings.SqOwnerToken = string.Empty;
+            SettingsSaveRequested?.Invoke(_settings);
+        }
     }
 
     // ── Snapshot application ──────────────────────────────────────────────────

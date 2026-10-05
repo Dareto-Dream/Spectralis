@@ -26,8 +26,20 @@ public static class SharedPlayDefaults
 
     private static readonly Regex RoomCodePattern = new(@"^[A-Z0-9]{6}$", RegexOptions.Compiled);
 
+    /// <summary>The address the backend lived at before it moved to its own domain. It still answers, but nothing should be
+    /// pointed at it: saved settings and join links from older versions that carry it are treated as "use the default".</summary>
+    public const string LegacyBackendHost = "audioplayer-production-5b83.up.railway.app";
+
+    public static bool IsLegacyBackend(string? url) =>
+        Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Host, LegacyBackendHost, StringComparison.OrdinalIgnoreCase);
+
     public static string NormalizeCdnBaseUrl(string? value)
     {
+        if (IsLegacyBackend(value))
+        {
+            return CdnBaseUrl;
+        }
         if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) ||
             !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {

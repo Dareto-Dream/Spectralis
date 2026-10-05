@@ -16,6 +16,10 @@ public sealed class StreamerQueueRoomController : IDisposable
     /// interval as this climbs instead of hammering a room that's down for a while.</summary>
     public int ConsecutiveFailureCount { get; private set; }
 
+    /// <summary>True when the last poll got a 404: the room no longer exists on the backend (rooms live in its memory,
+    /// so a restart drops them). Retrying will never bring it back.</summary>
+    public bool RoomMissing { get; private set; }
+
     public StreamerQueueRoomController() : this(new StreamerQueueClient()) { }
 
     internal StreamerQueueRoomController(StreamerQueueClient client) => this.client = client;
@@ -47,12 +51,14 @@ public sealed class StreamerQueueRoomController : IDisposable
             var snapshot = await client.GetRoomAsync(cdnBaseUri, roomId, ownerToken, ct);
             LastSnapshot = snapshot;
             LastError = null;
+            RoomMissing = false;
             ConsecutiveFailureCount = 0;
             return snapshot;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
+            RoomMissing = ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound };
             ConsecutiveFailureCount++;
             return LastSnapshot;
         }
