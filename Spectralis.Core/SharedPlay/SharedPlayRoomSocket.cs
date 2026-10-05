@@ -21,19 +21,38 @@ internal sealed class ClientWebSocketTransport : ISharedPlaySocketTransport
 {
     private ClientWebSocket _ws = new();
     private readonly byte[] _buffer = new byte[64 * 1024];
+    private readonly string _source;
+    private Diagnostics.SocketTrace? _trace;
+
+    public ClientWebSocketTransport(string source = "shared-play") => _source = source;
 
     public WebSocketState State => _ws.State;
 
     public async Task ConnectAsync(Uri uri, CancellationToken ct)
     {
+        _trace?.Closed("reconnecting");
         _ws.Dispose();
         _ws = new ClientWebSocket();
         _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
-        await _ws.ConnectAsync(uri, ct).ConfigureAwait(false);
+        var trace = _trace = Diagnostics.NetworkLog.OpenSocket(_source, uri);
+        try
+        {
+            await _ws.ConnectAsync(uri, ct).ConfigureAwait(false);
+            trace.Opened();
+        }
+        catch (Exception ex)
+        {
+            trace.Failed(ex);
+            throw;
+        }
     }
 
-    public Task SendTextAsync(string text, CancellationToken ct) =>
-        _ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, endOfMessage: true, ct);
+    public Task SendTextAsync(string text, CancellationToken ct)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        _trace?.Sent(bytes.Length);
+        return _ws.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+    }
 
     public async Task<string?> ReceiveTextAsync(CancellationToken ct)
     {
@@ -45,21 +64,29 @@ internal sealed class ClientWebSocketTransport : ISharedPlaySocketTransport
             {
                 result = await _ws.ReceiveAsync(_buffer, ct).ConfigureAwait(false);
             }
-            catch (WebSocketException)
+            catch (WebSocketException ex)
             {
+                _trace?.Failed(ex);
                 return null;
             }
             catch (OperationCanceledException)
             {
+                _trace?.Closed("canceled");
                 return null;
             }
 
             if (result.MessageType == WebSocketMessageType.Close)
+            {
+                _trace?.Closed(_ws.CloseStatusDescription ?? "closed by server");
                 return null;
+            }
 
             ms.Write(_buffer, 0, result.Count);
             if (result.EndOfMessage)
+            {
+                _trace?.Received(ms.Length);
                 return Encoding.UTF8.GetString(ms.ToArray());
+            }
         }
     }
 
@@ -71,9 +98,14 @@ internal sealed class ClientWebSocketTransport : ISharedPlaySocketTransport
                 await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", ct).ConfigureAwait(false);
         }
         catch { /* ignore */ }
+        _trace?.Closed("closed by app");
     }
 
-    public void Dispose() => _ws.Dispose();
+    public void Dispose()
+    {
+        _trace?.Closed("disposed");
+        _ws.Dispose();
+    }
 }
 
 /// <summary>Client for a collaborative Shared Play room. Connects as host (with the

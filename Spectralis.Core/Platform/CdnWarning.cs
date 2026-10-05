@@ -100,7 +100,7 @@ public static class CdnWarningClient
     {
         try
         {
-            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            using var http = Spectralis.Core.Diagnostics.NetworkClients.Create("warnings", TimeSpan.FromSeconds(8));
             var json = await http.GetStringAsync(WarningUrl, ct);
             var warnings = JsonSerializer.Deserialize<List<CdnWarning>>(json);
             if (warnings is null) return [];

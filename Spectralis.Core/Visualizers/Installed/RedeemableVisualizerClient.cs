@@ -17,7 +17,7 @@ public sealed class RedeemableVisualizerClient : IDisposable
     private readonly HttpClient _httpClient;
 
     public RedeemableVisualizerClient()
-        : this(new HttpClient { Timeout = TimeSpan.FromSeconds(30) })
+        : this(Spectralis.Core.Diagnostics.NetworkClients.Create("visualizers", TimeSpan.FromSeconds(30)))
     {
     }
 

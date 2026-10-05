@@ -20,7 +20,7 @@ public sealed class StreamerQueueClient : IDisposable
     private readonly HttpClient http;
 
     public StreamerQueueClient()
-        : this(new HttpClient(new Spectralis.Core.SharedPlay.WardHttpHandler()) { Timeout = TimeSpan.FromSeconds(30) }) { }
+        : this(Spectralis.Core.Diagnostics.NetworkClients.Create("streamer-queue", TimeSpan.FromSeconds(30), new Spectralis.Core.SharedPlay.WardHttpHandler())) { }
 
     internal StreamerQueueClient(HttpClient http) => this.http = http;
 

@@ -14,7 +14,7 @@ public sealed class SpotifyService : IDisposable
     private const string Scopes = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state " +
         "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read";
 
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("spotify");
 
     private SpotifyTokenStore tokens;
 

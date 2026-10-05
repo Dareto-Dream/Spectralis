@@ -7,7 +7,7 @@ namespace Spectralis.Core.Scrobbling;
 /// <summary>MD5-signed Last.fm API client: token/session auth, now-playing, scrobble batches.</summary>
 public sealed class LastFmClient
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("lastfm");
     private const string ApiBase = "https://ws.audioscrobbler.com/2.0/";
 
     static LastFmClient()

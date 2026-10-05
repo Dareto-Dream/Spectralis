@@ -16,7 +16,7 @@ public sealed class CapsuleCdnClient : IDisposable
     private readonly Uri _cdnBase;
 
     public CapsuleCdnClient()
-        : this(new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, DefaultCdnBase)
+        : this(Spectralis.Core.Diagnostics.NetworkClients.Create("capsules", TimeSpan.FromSeconds(20)), DefaultCdnBase)
     {
     }
 

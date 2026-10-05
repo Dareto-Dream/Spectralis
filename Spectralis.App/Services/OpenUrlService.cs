@@ -1005,7 +1005,7 @@ public sealed class OpenUrlService
             AllowAutoRedirect = true,
             MaxAutomaticRedirections = 8,
         };
-        var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        var http = Spectralis.Core.Diagnostics.NetworkClients.Create("open-url", TimeSpan.FromSeconds(30), handler);
         http.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/json,text/html,application/xhtml+xml,*/*");

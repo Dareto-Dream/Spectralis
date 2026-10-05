@@ -8,7 +8,7 @@ namespace Spectralis.Core.Integrations.Spotify;
 public static class SpotifyLyricsService
 {
     private const string ApiBase = "https://spotify-lyrics-api-production.up.railway.app/";
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("spotify-lyrics");
 
     public static async Task<LyricsDocument?> FetchAsync(string trackId, CancellationToken ct = default)
     {

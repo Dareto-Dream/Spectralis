@@ -2824,7 +2824,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            using var http = new System.Net.Http.HttpClient();
+            using var http = Spectralis.Core.Diagnostics.NetworkClients.Create("artwork");
             return await http.GetByteArrayAsync(url, ct);
         }
         catch { return null; }

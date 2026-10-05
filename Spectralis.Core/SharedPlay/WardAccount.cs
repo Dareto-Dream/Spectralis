@@ -11,7 +11,7 @@ namespace Spectralis.Core.SharedPlay;
 /// secret ships in the desktop binary, and credentials never travel in URLs.</summary>
 public static class WardAccount
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("ward", TimeSpan.FromSeconds(20));
     private static readonly string TokenPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spectralis", "ward-account.dat");
     private static string? _token;
     private static string _origin = SharedPlayDefaults.CdnBaseUrl;

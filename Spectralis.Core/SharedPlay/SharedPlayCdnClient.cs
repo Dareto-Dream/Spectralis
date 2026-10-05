@@ -28,7 +28,7 @@ public sealed class SharedPlayCdnClient : IDisposable
     }
 
     public SharedPlayCdnClient()
-        : this(new HttpClient { Timeout = TimeSpan.FromSeconds(45) })
+        : this(Spectralis.Core.Diagnostics.NetworkClients.Create("shared-play", TimeSpan.FromSeconds(45)))
     {
     }
 

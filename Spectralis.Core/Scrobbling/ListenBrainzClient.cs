@@ -6,7 +6,7 @@ namespace Spectralis.Core.Scrobbling;
 
 public sealed class ListenBrainzClient
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("listenbrainz");
     private const string ApiBase = "https://api.listenbrainz.org";
 
     static ListenBrainzClient()
