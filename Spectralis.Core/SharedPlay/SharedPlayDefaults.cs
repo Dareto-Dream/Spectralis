@@ -125,6 +125,14 @@ public static class SharedPlayDefaults
                 : null;
             return NormalizeRoomCode(raw);
         }
+
+        // Join links are /sessions/<code> now; older ones carried the code in the query string.
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i + 1 < segments.Length; i++)
+        {
+            if (string.Equals(segments[i], "sessions", StringComparison.OrdinalIgnoreCase))
+                return NormalizeRoomCode(Uri.UnescapeDataString(segments[i + 1]));
+        }
         return null;
     }
 

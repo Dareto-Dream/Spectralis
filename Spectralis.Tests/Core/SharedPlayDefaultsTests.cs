@@ -28,8 +28,26 @@ public class SharedPlayDefaultsTests
     {
         var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "X7K29Q");
 
-        Assert.StartsWith("https://cdn.example.com/spectralis/web-share", url.ToString());
-        Assert.Contains("session=X7K29Q", url.Query);
+        Assert.Equal("https://player.deltavdevs.com/sessions/X7K29Q", url.ToString());
+    }
+
+    [Theory]
+    [InlineData("https://player.deltavdevs.com/sessions/AB12CD")]
+    [InlineData("https://player.deltavdevs.com/sessions/ab1-2cd")]
+    [InlineData("https://player.deltavdevs.com/sessions/AB12CD?source=discord")]
+    [InlineData("https://old.example.com/spectralis/web-share/?session=AB12CD")]
+    public void TryReadRoomCode_UnderstandsPathAndQueryJoinLinks(string link)
+    {
+        Assert.Equal("AB12CD", SharedPlayDefaults.TryReadRoomCode(new Uri(link)));
+    }
+
+    [Theory]
+    [InlineData("https://player.deltavdevs.com/rooms/room-abc123")]
+    [InlineData("https://player.deltavdevs.com/sessions/")]
+    [InlineData("https://player.deltavdevs.com/sessions/TOOSHORT1")]
+    public void TryReadRoomCode_IgnoresLinksThatAreNotSessions(string link)
+    {
+        Assert.Null(SharedPlayDefaults.TryReadRoomCode(new Uri(link)));
     }
 
     [Fact]
@@ -41,9 +59,7 @@ public class SharedPlayDefaultsTests
 
         var activityUrl = SharedPlayDefaults.ConvertToDiscordActivityJoinUrl(joinUrl);
 
-        Assert.Contains("session=AB12CD", activityUrl);
-        Assert.Contains("source=discord", activityUrl);
-        Assert.Contains("mode=activity", activityUrl);
+        Assert.Equal("https://player.deltavdevs.com/sessions/AB12CD?source=discord", activityUrl);
     }
 
     [Fact]
