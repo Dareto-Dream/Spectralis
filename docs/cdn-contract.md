@@ -93,6 +93,8 @@ So the cap is enforced in two independent layers:
 
 A Billing usage alert on R2 storage in the Cloudflare dashboard is the third layer and is set by hand.
 
+Telescreen has a **Release CDN** page for this bucket (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` on the telescreen service). It shows usage against the budget and the hard cap, browses the bucket, and lets an owner upload to `visualizers/` (8 MB, refused if it would pass the budget) and delete objects. Releases still go up with `tools/r2/sync.mjs`.
+
 ---
 
 ## Legacy CDN
