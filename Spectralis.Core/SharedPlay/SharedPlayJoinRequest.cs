@@ -110,6 +110,10 @@ public sealed record SharedPlayJoinRequest(string RoomCode, string? CdnBaseUrl)
 
     private static string? NormalizeCdnBaseUrl(string? value)
     {
+        if (SharedPlayDefaults.IsLegacyBackend(value))
+        {
+            return SharedPlayDefaults.CdnBaseUrl;
+        }
         if (Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) &&
             string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {

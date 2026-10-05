@@ -286,6 +286,12 @@ public static class AppSettingsStore
 
     public static AppSettings Normalize(AppSettings settings)
     {
+        // A backend address saved before the move to spectralis-api.deltavdevs.com would pin Shared Play and Streamer
+        // Queue to the old host for good, so a saved legacy address is dropped and the default takes over.
+        if (Spectralis.Core.SharedPlay.SharedPlayDefaults.IsLegacyBackend(settings.SharedPlayCdnBaseUrl))
+            settings.SharedPlayCdnBaseUrl = string.Empty;
+        if (Spectralis.Core.SharedPlay.SharedPlayDefaults.IsLegacyBackend(settings.SqCdnBaseUrl))
+            settings.SqCdnBaseUrl = string.Empty;
         settings.ThemeMode = Enum.IsDefined(settings.ThemeMode) ? settings.ThemeMode : AppThemeMode.Dark;
         settings.ThemeAccent = Enum.IsDefined(settings.ThemeAccent) ? settings.ThemeAccent : AppThemeAccent.Amber;
         settings.P2wBannerStyle = Enum.IsDefined(settings.P2wBannerStyle) ? settings.P2wBannerStyle : P2wBannerStyle.YellowBanner;

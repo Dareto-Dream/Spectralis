@@ -10,12 +10,12 @@ public class ExternalOpenIpcTests
     {
         // Exactly what web-share/player.js's createSpectralisJoinUrl() builds.
         var request = ExternalOpenIpc.TryParseProtocolArgument(
-            "spectralis://shared-play/join?session=X7K29Q&cdn=https%3A%2F%2Faudioplayer-production-5b83.up.railway.app");
+            "spectralis://shared-play/join?session=X7K29Q&cdn=https%3A%2F%2Fspectralis-api.deltavdevs.com");
 
         Assert.NotNull(request);
         Assert.Equal(ExternalOpenKind.SharedPlay, request!.Kind);
         Assert.Equal("X7K29Q", request.Value);
-        Assert.Equal("https://audioplayer-production-5b83.up.railway.app", request.CdnBaseUrl);
+        Assert.Equal("https://spectralis-api.deltavdevs.com", request.CdnBaseUrl);
     }
 
     [Fact]
