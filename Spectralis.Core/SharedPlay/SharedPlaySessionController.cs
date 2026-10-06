@@ -44,6 +44,10 @@ public sealed class SharedPlaySessionController : IDisposable
     /// apply to the audio engine / queue.</summary>
     public event Action<SharedPlayIncomingCommand>? CommandReceived;
 
+    /// <summary>The room socket says the shared queue changed (a listener added a link, or someone published a new
+    /// queue). The host app uses it to fetch the queue now instead of waiting for its next poll.</summary>
+    public event Action? RoomQueueChanged;
+
     /// <summary>Raised as vote-skip votes accumulate.</summary>
     public event Action<SharedPlaySkipProgress>? SkipProgressReceived;
 
@@ -472,6 +476,7 @@ public sealed class SharedPlaySessionController : IDisposable
             OnStatusChanged();
         };
         socket.CommandReceived += cmd => CommandReceived?.Invoke(cmd);
+        socket.QueueReceived += _ => RoomQueueChanged?.Invoke();
         socket.SkipProgressReceived += p => SkipProgressReceived?.Invoke(p);
         socket.ConnectionChanged += _ => OnStatusChanged();
         socket.UpdateRequiredReceived += message => SetError(message);

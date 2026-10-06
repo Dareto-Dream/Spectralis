@@ -104,6 +104,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         RequestedTracks.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasRequests));
         _controller.StatusChanged += OnStatusChanged;
         _controller.CommandReceived += OnCommandReceived;
+        _controller.RoomQueueChanged += OnRoomQueueChanged;
         _controller.SkipProgressReceived += p => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             SkipProgressText = p is { Votes: > 0 } ? $"Vote-skip {p.Votes}/{p.Required}" : string.Empty);
         _joinRuntime.StatusChanged += OnJoinStatusChanged;
@@ -376,6 +377,10 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             : settings.SharedPlayHostName);
         RaiseCapProps();
         ReapplyControllerSettings();
+        // Hosting resumes by itself when it was left on, and a room is created the moment a track plays. The poll that
+        // picks up listener requests, reactions and the listener count used to start only from the Start button, so
+        // after any restart nothing a listener sent ever reached the host.
+        if (_hostingRequested) StartPolling();
         _ = LoadMyRoomAsync();
     }
 
@@ -643,12 +648,31 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         _pollCts.Cancel();
         _pollCts = new CancellationTokenSource();
+        _polling = true;
         _ = PollLoopAsync(_pollCts.Token);
     }
+
+    private int _queuePollPending;
+
+    // The server pushes a "queue" frame whenever the shared queue changes, so a request shows up on the host at once
+    // instead of on the next 5 second poll. Frames can arrive in bursts, so at most one extra poll is queued.
+    private void OnRoomQueueChanged()
+    {
+        if (!_hostingRequested || Interlocked.Exchange(ref _queuePollPending, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            try { await PollOnceAsync(_pollCts.Token); }
+            finally { Interlocked.Exchange(ref _queuePollPending, 0); }
+        });
+    }
+
+    private bool _polling;
+    internal bool IsPolling => _polling;
 
     private void StopPolling()
     {
         _pollCts.Cancel();
+        _polling = false;
         ListenerCount = 0;
         RecentReactionsText = string.Empty;
         RequestedTracks.Clear();
