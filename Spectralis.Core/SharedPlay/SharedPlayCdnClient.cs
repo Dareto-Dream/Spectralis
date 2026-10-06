@@ -23,7 +23,12 @@ public sealed class SharedPlayCdnClient : IDisposable
         var parts = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 4 && parts[0] == "shared-play" && parts[2] == "sessions"
             && sessionKeys.TryGetValue(request.RequestUri.GetLeftPart(UriPartial.Authority) + "/" + parts[3], out var key))
+        {
+            // Set it, don't append: the upload headers the server hands back already carry the key, and two values arrive
+            // as "key, key", which the backend reads as a different (longer) key and refuses with 403.
+            request.Headers.Remove("x-session-key");
             request.Headers.TryAddWithoutValidation("x-session-key", key);
+        }
         return httpClient.SendAsync(request, ct);
     }
 
@@ -621,6 +626,10 @@ public sealed class SharedPlayCdnClient : IDisposable
 
         using var request = new HttpRequestMessage(method, uploadUri) { Content = content };
         ApplyUploadHeaders(request, uploadTarget.Headers);
+        // Without this a server that refuses the upload (bad key, ended room) replies and closes before the body is
+        // read, and .NET reports that as "Error while copying content to a stream" instead of the server's reason.
+        // Asking first means the real status and message come back.
+        request.Headers.ExpectContinue = true;
 
         using var response = await SendAuthorizedAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "Shared Play package upload", cancellationToken);
@@ -638,6 +647,8 @@ public sealed class SharedPlayCdnClient : IDisposable
         {
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value)) continue;
             if (IsRestrictedHeader(name, value)) continue;
+            // The package content already carries its own Content-Type; adding the server's copy made it "type, type".
+            if (string.Equals(name, "content-type", StringComparison.OrdinalIgnoreCase) && request.Content?.Headers.ContentType is not null) continue;
             if (!request.Headers.TryAddWithoutValidation(name, value))
                 request.Content?.Headers.TryAddWithoutValidation(name, value);
         }
