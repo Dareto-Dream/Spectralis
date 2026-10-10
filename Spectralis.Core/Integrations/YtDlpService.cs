@@ -73,6 +73,7 @@ public static class YtDlpService
 
         return
         [
+            .. JsRuntimeArguments(),
             "-g",
             "--no-playlist",
             "-f",
@@ -84,6 +85,7 @@ public static class YtDlpService
 
     public static string[] BuildSearchArguments(string query) =>
     [
+        .. JsRuntimeArguments(),
         "--no-playlist",
         "--print",
         "webpage_url",
@@ -138,6 +140,38 @@ public static class YtDlpService
         return result.Stdout
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(static line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static readonly Lazy<string[]> JsRuntimeArgs = new(FindJsRuntimeArguments);
+
+    /// <summary>
+    /// yt-dlp needs a JS runtime for YouTube but only enables deno on its own.
+    /// Point it at node or bun when one is on PATH, otherwise formats go missing.
+    /// </summary>
+    public static string[] JsRuntimeArguments() => JsRuntimeArgs.Value;
+
+    private static string[] FindJsRuntimeArguments()
+    {
+        var suffix = OperatingSystem.IsWindows() ? ".exe" : "";
+        foreach (var runtime in new[] { "deno", "node", "bun" })
+        {
+            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator))
+            {
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    continue;
+                }
+
+                var candidate = Path.Combine(dir.Trim(), runtime + suffix);
+                if (File.Exists(candidate))
+                {
+                    // deno is already on by default, nothing to add.
+                    return runtime == "deno" ? [] : ["--js-runtimes", $"{runtime}:{candidate}"];
+                }
+            }
+        }
+
+        return [];
     }
 
     /// <summary>

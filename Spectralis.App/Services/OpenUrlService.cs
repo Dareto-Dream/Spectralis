@@ -436,6 +436,7 @@ public sealed class OpenUrlService
         var result = await SafeProcessRunner.RunWithProgressAsync(
             executable,
             [
+                .. YtDlpService.JsRuntimeArguments(),
                 "--no-playlist",
                 "--progress",
                 "--newline",
@@ -487,7 +488,7 @@ public sealed class OpenUrlService
     {
         var result = await SafeProcessRunner.RunAsync(
             executable,
-            ["--dump-json", "--no-playlist", "--skip-download", "--", url],
+            [.. YtDlpService.JsRuntimeArguments(), "--dump-json", "--no-playlist", "--skip-download", "--", url],
             YtDlpInfoTimeout,
             maxOutputBytes: 2 * 1024 * 1024,
             cancellationToken);
