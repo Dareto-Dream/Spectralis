@@ -461,9 +461,8 @@ public sealed class OpenUrlService
 
         if (result.ExitCode != 0)
         {
-            var stderr = result.Stderr.Trim();
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(stderr) ? $"yt-dlp failed (exit {result.ExitCode})." : stderr);
+            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"yt-dlp download failed (exit {result.ExitCode}):\n{result.Stderr.Trim()}");
+            throw new InvalidOperationException(YtDlpService.DescribeFailure(result.Stderr, result.ExitCode));
         }
 
         var downloadedPath = RemoteAudioCache.FindDownloadedFile(token);
