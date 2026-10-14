@@ -149,7 +149,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1440, "height": 960}, reduced_motion="reduce")
     room = Room(page)
     page.goto(BASE + "/?session=ABC123")
-    expect(page.locator("#libraryButton")).to_be_visible()
+    expect(page.get_by_role("button", name="Put something on")).to_be_visible()
     expect(page.locator("#lyricsTiming")).to_have_text("Word timed")
     expect(page.locator(".lyric-word.is-active")).to_have_text("there")
     assert page.locator("#lyricsPanel button, #lyricsPanel a, [data-timing-mode]").count() == 0
