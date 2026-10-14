@@ -53,6 +53,8 @@ class Room:
         self.ws = None
         self.playing = False
         self.package = False
+        self.accounts = False
+        self.channel_requests = 0
         self.queue = {"currentIndex": 0, "items": [{"id": "q1", "title": "Meteor Shower", "artist": "DeltaWave", "sourceKind": "local"}, {"id": "q2", "title": "KATAMARI", "artist": "femtanyl", "sourceKind": "local"}]}
         page.on("pageerror", lambda error: self.errors.append(str(error)))
         page.route("**/*", self.http)
@@ -78,7 +80,12 @@ class Room:
     def http(self, route):
         path = urlparse(route.request.url).path
         if path == "/shared-play/v2/config":
-            route.fulfill(json={"accountsEnabled": False})
+            route.fulfill(json={"accountsEnabled": self.accounts})
+        elif path == "/player/v1/me":
+            route.fulfill(json={"sub": "isolated-user", "name": "Test listener"})
+        elif path == "/shared-play/v2/channels/local-test":
+            self.channel_requests += 1
+            route.fulfill(json={"channelId": "local-test", "displayName": "Test channel", "isLive": True, "roomCode": "ABC123"})
         elif path.endswith("/sessions/ABC123"):
             route.fulfill(json=self.manifest())
         elif path.endswith("/state"):
@@ -255,6 +262,23 @@ with sync_playwright() as p:
     assert page.locator("#sharedAudio").evaluate("a => a.paused && !a.hasAttribute('src')")
     assert not room.errors, room.errors
     assert not room.unexpected, room.unexpected
+    # Account changes reload permissions/media without leaving a permanent channel.
+    channel_page = browser.new_page()
+    channel = Room(channel_page)
+    channel.accounts = True
+    channel_page.add_init_script("sessionStorage.setItem('spectralis.room-account:https://room.test', 'isolated-channel-token')")
+    channel_page.goto(BASE + "/spectralis/web-share/?channel=local-test")
+    channel_page.locator("#libraryButton").click()
+    expect(channel_page.locator("#libraryAccount")).to_contain_text("Test listener")
+    channel_page.locator("#librarySignOut").click()
+    expect(channel_page.locator("#librarySignIn")).to_be_visible()
+    expect(channel_page.locator("#channelPanel")).to_be_visible()
+    channel_page.wait_for_function("document.querySelector('#sharedAudio').readyState >= 1")
+    before = channel.channel_requests
+    channel_page.wait_for_timeout(5200)
+    assert channel.channel_requests > before, "Signing out stopped the channel from following its host"
+    assert not channel.errors, channel.errors
+    assert not channel.unexpected, channel.unexpected
     browser.close()
     print("Room integration passed: real page, lyric modes/track changes, no lyric seeking, audio, permissions, queue commands, artwork, dialogs, fullscreen and 5 widths.")
     print(f"Screenshots: {screenshots}")

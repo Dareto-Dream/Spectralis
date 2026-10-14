@@ -152,7 +152,13 @@
       baseUrl: config.cdnBaseUrl,
       room: function () { return { code: runtime.activeRoomCode, allowUploads: !!runtime.session && !!runtime.caps && runtime.caps.audioUploads }; },
       onQueue: function (queue) { runtime.queue = queue; renderQueue(queue); },
-      onAuth: function () { if (runtime.activeRoomCode) loadSession(runtime.activeRoomCode); }
+      onAuth: function () {
+        if (runtime.channelId && !runtime.session) {
+          loadChannel(runtime.channelId).catch(function (err) { setStatus(err.message || "Could not reload the channel."); });
+        } else if (runtime.activeRoomCode) {
+          loadSession(runtime.activeRoomCode, { fromChannel: Boolean(runtime.channelId) });
+        }
+      }
     });
     bindEvents();
     drawMeter();
