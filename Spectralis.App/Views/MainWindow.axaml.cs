@@ -906,9 +906,9 @@ public partial class MainWindow : Window
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = deck is { } d ? $"Load audio into deck {(d == 0 ? "A" : "B")}" : addToQueue ? "Add files to queue" : "Open audio file",
+            Title = deck is { } d ? $"Load audio into deck {(d == 0 ? "A" : "B")}" : addToQueue ? "Add files to queue" : "Open file",
             AllowMultiple = true,
-            FileTypeFilter = BuildOpenFileFilters(addToQueue),
+            FileTypeFilter = OpenFileFilters.Build(audioOnly: addToQueue || deck is not null),
         });
 
         var paths = files
@@ -975,28 +975,6 @@ public partial class MainWindow : Window
     { if (DataContext is MainWindowViewModel vm) await vm.LoadCurrentInDjAsync(0); }
     private async void OnCurrentToMixB(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     { if (DataContext is MainWindowViewModel vm) await vm.LoadCurrentInDjAsync(1); }
-
-    private static IReadOnlyList<FilePickerFileType> BuildOpenFileFilters(bool addToQueue)
-    {
-        var filters = new List<FilePickerFileType>
-        {
-            new("Audio files")
-            {
-                Patterns = SupportedAudioFormats.Extensions.Select(ext => "*" + ext).ToArray(),
-            },
-        };
-
-        if (!addToQueue)
-        {
-            filters.Add(new FilePickerFileType("Spectralis packages")
-            {
-                Patterns = ["*.spectralis", "*.spectral"],
-            });
-        }
-
-        filters.Add(FilePickerFileTypes.All);
-        return filters;
-    }
 
     private async void OnMenuOpenAudio(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

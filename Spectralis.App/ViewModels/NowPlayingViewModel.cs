@@ -2542,8 +2542,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>Compact volume caption; legacy swaps "VOL" for "Muted" at zero.</summary>
     public string VolumeLabel => IsMuted ? "MUTED" : "VOL";
 
-    /// <summary>Playback-menu label parity: Open Audio... / Play / Pause.</summary>
-    public string PlayPauseMenuLabel => IsMixSource ? _mixSource!.PlayPauseLabel : !HasTrack ? "Open Audio..." : IsPlaying ? "Pause" : "Play";
+    /// <summary>Playback-menu label parity: Open File... / Play / Pause.</summary>
+    public string PlayPauseMenuLabel => IsMixSource ? _mixSource!.PlayPauseLabel : !HasTrack ? "Open File..." : IsPlaying ? "Pause" : "Play";
 
     public string LoadError
     {
@@ -3405,6 +3405,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void AttachAlbumWorld(EmbeddedHtmlContext worldHtml, string readyJson, string worldDir, byte[]? wasmBytes = null)
     {
+        SelectTrackSource();
         _pinnedAlbumWorldHtml = worldHtml;
         _albumWorldDir = worldDir;
         _albumWorldShowingWorld = true;

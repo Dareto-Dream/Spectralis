@@ -773,30 +773,25 @@ public NowPlayingView()
 
     private async void OnOpenFileClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not NowPlayingViewModel vm || TopLevel.GetTopLevel(this) is not { } topLevel)
+        // Both the main window and a popped-out page carry the shared shell model.
+        // Native packages need its capsule/world loader, not the raw audio decoder.
+        if (TopLevel.GetTopLevel(this) is not { DataContext: MainWindowViewModel shell } topLevel)
         {
             return;
         }
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Open audio file",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("Audio files")
-                {
-                    Patterns = SupportedAudioFormats.Extensions.Select(ext => "*" + ext).ToArray(),
-                },
-                FilePickerFileTypes.All,
-            ],
+            Title = "Open file",
+            AllowMultiple = true,
+            FileTypeFilter = OpenFileFilters.Build(),
         });
 
-        var path = files.FirstOrDefault()?.TryGetLocalPath();
-        if (path is not null)
-        {
-            await vm.LoadTrackAsync(path);
-        }
+        var paths = files.Select(file => file.TryGetLocalPath())
+            .Where(path => path is not null && File.Exists(path))
+            .Select(path => path!)
+            .ToArray();
+        if (paths.Length > 0) await shell.OpenFilesAsync(paths);
     }
 
     private async void OnOpenUrlClick(object? sender, RoutedEventArgs e)
