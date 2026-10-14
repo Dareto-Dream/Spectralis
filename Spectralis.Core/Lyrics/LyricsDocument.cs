@@ -38,7 +38,7 @@ public sealed class LyricsDocument
 
     public bool IsDescription { get; }
 
-    public bool HasWordTimings => lines.Any(static line => line.Segments.Count > 1);
+    public bool HasWordTimings => lines.Any(static line => line.HasWordTimings);
 
     public bool HasLines => lines.Length > 0;
 
@@ -85,7 +85,7 @@ public sealed class LyricsLine
 {
     private readonly LyricsSegment[] segments;
 
-    public LyricsLine(double startTime, string text, IEnumerable<LyricsSegment>? segments = null, string? explanation = null)
+    public LyricsLine(double startTime, string text, IEnumerable<LyricsSegment>? segments = null, string? explanation = null, bool? hasWordTimings = null)
     {
         StartTime = Math.Max(0, startTime);
         Text = text ?? string.Empty;
@@ -93,6 +93,7 @@ public sealed class LyricsLine
         this.segments = (segments ?? [])
             .OrderBy(static segment => segment.StartTime)
             .ToArray();
+        HasWordTimings = hasWordTimings ?? this.segments.Length > 1;
     }
 
     public double StartTime { get; }
@@ -102,6 +103,8 @@ public sealed class LyricsLine
     public string? Explanation { get; }
 
     public IReadOnlyList<LyricsSegment> Segments => segments;
+
+    public bool HasWordTimings { get; }
 
     public int FindActiveSegmentIndex(double positionSeconds)
     {
@@ -137,7 +140,8 @@ public sealed class LyricsLine
             StartTime + deltaSeconds,
             Text,
             segments.Select(segment => segment.ShiftedBy(deltaSeconds)),
-            Explanation);
+            Explanation,
+            HasWordTimings);
 }
 
 public readonly record struct LyricsSegment(double StartTime, string Text)

@@ -105,6 +105,8 @@ public static partial class LrcParser
         var lyricBody = cursor >= line.Length ? string.Empty : line[cursor..];
         var baseSegments = ParseSegments(lyricBody, timestamps[0]);
         var displayText = BuildDisplayText(baseSegments, lyricBody);
+        var hasWordTimings = InlineTimestampRegex.Matches(lyricBody)
+            .Any(match => TryParseTimestamp(match.Groups["time"].Value, out _));
 
         foreach (var timestamp in timestamps)
         {
@@ -113,7 +115,7 @@ public static partial class LrcParser
                 ? baseSegments
                 : baseSegments.Select(segment => segment.ShiftedBy(deltaSeconds)).ToArray();
 
-            lines.Add(new LyricsLine(timestamp, displayText, shiftedSegments));
+            lines.Add(new LyricsLine(timestamp, displayText, shiftedSegments, hasWordTimings: hasWordTimings));
         }
     }
 

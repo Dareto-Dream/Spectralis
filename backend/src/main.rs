@@ -19,9 +19,9 @@ use std::{
 use anyhow::{Context, Result};
 use axum::{
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Multipart, Path as AxumPath, Query, State},
+    extract::{DefaultBodyLimit, Multipart, OriginalUri, Path as AxumPath, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
@@ -134,7 +134,9 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/player.js", get(player_js))
         .route("/styles.css", get(styles_css))
-        .route("/spectralis/web-share", get(index))
+        .route("/room.css", get(room_css))
+        .route("/room-lyrics.js", get(room_lyrics_js))
+        .route("/spectralis/web-share", get(web_share_redirect))
         .route("/spectralis/web-share/", get(index))
         .route("/spectralis/web-share/index.html", get(index))
         .route("/spectralis/web-share/*path", get(web_share_static))
@@ -310,12 +312,25 @@ async fn index(State(state): State<AppState>) -> Result<Response, AppError> {
     send_file(state.web_share_root.join("index.html"), None).await
 }
 
+async fn web_share_redirect(OriginalUri(uri): OriginalUri) -> Redirect {
+    let query = uri.query().map(|value| format!("?{value}")).unwrap_or_default();
+    Redirect::temporary(&format!("/spectralis/web-share/{query}"))
+}
+
 async fn player_js(State(state): State<AppState>) -> Result<Response, AppError> {
     send_file(state.web_share_root.join("player.js"), None).await
 }
 
 async fn styles_css(State(state): State<AppState>) -> Result<Response, AppError> {
     send_file(state.web_share_root.join("styles.css"), None).await
+}
+
+async fn room_css(State(state): State<AppState>) -> Result<Response, AppError> {
+    send_file(state.web_share_root.join("room.css"), None).await
+}
+
+async fn room_lyrics_js(State(state): State<AppState>) -> Result<Response, AppError> {
+    send_file(state.web_share_root.join("room-lyrics.js"), None).await
 }
 
 async fn web_share_static(

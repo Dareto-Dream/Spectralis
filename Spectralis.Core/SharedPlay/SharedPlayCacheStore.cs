@@ -290,14 +290,14 @@ public sealed class SharedPlayCacheStore
             track.SampleRateHz,
             0,
             track.CoverArt is { Length: > 0 },
-            lyrics is not null,
+            lyrics is { IsDescription: false } && lyrics.Lines.Any(static line => !string.IsNullOrWhiteSpace(line.Text)),
             track.EmbeddedVisualizer is not null,
             track.EmbeddedTheme is not null,
             track.HasEmbeddedContent,
             BuildSharedPlayLyrics(lyrics));
     }
 
-    private static SharedPlayLyricLine[] BuildSharedPlayLyrics(LyricsDocument? lyrics)
+    internal static SharedPlayLyricLine[] BuildSharedPlayLyrics(LyricsDocument? lyrics)
     {
         if (lyrics is null || lyrics.IsDescription || !lyrics.HasLines)
             return Array.Empty<SharedPlayLyricLine>();
@@ -307,7 +307,12 @@ public sealed class SharedPlayCacheStore
             .Take(400)
             .Select(static line => new SharedPlayLyricLine(
                 Math.Max(0, line.StartTime),
-                line.Text.Trim()))
+                line.Text.Trim(),
+                // Plain LRC also has a fallback segment; only export real inline timings.
+                line.HasWordTimings
+                    ? line.Segments.Select(static word => new SharedPlayLyricWord(
+                        Math.Max(0, word.StartTime), word.Text)).ToArray()
+                    : null))
             .ToArray();
     }
 

@@ -94,7 +94,10 @@ public sealed record SharedPlayTrackDescriptor(
 
 public sealed record SharedPlayLyricLine(
     double TimeSeconds,
-    string Text);
+    string Text,
+    SharedPlayLyricWord[]? Words = null);
+
+public sealed record SharedPlayLyricWord(double TimeSeconds, string Text);
 
 public sealed record SharedPlayPackage(
     string TrackId,
