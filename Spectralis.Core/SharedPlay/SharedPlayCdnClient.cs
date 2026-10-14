@@ -17,7 +17,7 @@ public sealed class SharedPlayCdnClient : IDisposable
     private readonly HttpClient httpClient;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> sessionKeys = new();
 
-    private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct)
+    private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
     {
         WardAccount.Authorize(request);
         var parts = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -29,7 +29,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             request.Headers.Remove("x-session-key");
             request.Headers.TryAddWithoutValidation("x-session-key", key);
         }
-        return httpClient.SendAsync(request, ct);
+        return httpClient.SendAsync(request, completion, ct);
     }
 
     public SharedPlayCdnClient()
@@ -46,7 +46,8 @@ public sealed class SharedPlayCdnClient : IDisposable
         Uri cdnBaseUri,
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SharedPlayCapabilities? roomCapabilities = null)
     {
         EnsureHttps(cdnBaseUri, "CDN base URL");
 
@@ -54,7 +55,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             SharedPlayDefaults.BuildEndpoint(cdnBaseUri, "/shared-play/v2/sessions"),
             package,
             playback,
-            cancellationToken);
+            cancellationToken, roomCapabilities: roomCapabilities);
 
         var roomCode = response.RoomCode?.Trim();
         if (string.IsNullOrWhiteSpace(roomCode))
@@ -238,7 +239,8 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         EnsureHttps(packageUrl, "Shared Play package URL");
 
-        using var response = await httpClient.GetAsync(packageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, packageUrl);
+        using var response = await SendAuthorizedAsync(request, cancellationToken, HttpCompletionOption.ResponseHeadersRead);
         await EnsureSuccessAsync(response, "Shared Play package download", cancellationToken);
 
         var contentLength = response.Content.Headers.ContentLength;
@@ -263,6 +265,56 @@ public sealed class SharedPlayCdnClient : IDisposable
                 throw new InvalidOperationException("Shared Play package is larger than the download safety limit.");
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
         }
+    }
+
+    internal async Task DownloadListenerUploadAsync(SharedPlayRoomSession session, Uri url, string path, CancellationToken ct)
+    {
+        const long limit = 64 * 1024 * 1024;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        ct = timeout.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("x-session-key", session.SessionKey);
+        using var response = await SendAuthorizedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        await EnsureSuccessAsync(response, "Listener audio download", ct);
+        if (response.Content.Headers.ContentLength is > limit) throw new InvalidOperationException("Listener audio exceeds the 64 MB limit.");
+        var temporary = path + ".partial";
+        try
+        {
+            await using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var input = await response.Content.ReadAsStreamAsync(ct))
+            {
+                var buffer = new byte[128 * 1024];
+                long total = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, ct)) != 0)
+                {
+                    total += read;
+                    if (total > limit) throw new InvalidOperationException("Listener audio exceeds the 64 MB limit.");
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+                if (total == 0) throw new InvalidOperationException("The listener audio was empty.");
+            }
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    internal async Task AcknowledgeListenerUploadAsync(SharedPlayRoomSession session, string id, CancellationToken ct)
+    {
+        var url = new Uri(session.StateUrl, $"uploads/{id}/received");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.TryAddWithoutValidation("x-session-key", session.SessionKey);
+        using var response = await SendAuthorizedAsync(request, ct);
+        await EnsureSuccessAsync(response, "Listener audio receipt", ct);
+    }
+
+    internal async Task RemoveQueueItemAsync(SharedPlayRoomSession session, string id, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, new Uri(session.StateUrl, $"queue/items/{Uri.EscapeDataString(id)}"));
+        request.Headers.TryAddWithoutValidation("x-session-key", session.SessionKey);
+        using var response = await SendAuthorizedAsync(request, ct);
+        await EnsureSuccessAsync(response, "Remove listener request", ct);
     }
 
     public async Task PublishPlaybackStateAsync(
@@ -534,7 +586,8 @@ public sealed class SharedPlayCdnClient : IDisposable
         SharedPlayPackage package,
         SharedPlayPlaybackSnapshot playback,
         CancellationToken cancellationToken,
-        bool activateOnUpload = true)
+        bool activateOnUpload = true,
+        SharedPlayCapabilities? roomCapabilities = null)
     {
         var playbackWithTrack = playback with { TrackId = package.TrackId };
 
@@ -556,6 +609,7 @@ public sealed class SharedPlayCdnClient : IDisposable
                     SharedPlayDefaults.RichPackageContentType),
                 playback = playbackWithTrack,
                 capabilities = SharedPlayCacheStore.CreateCapabilities(),
+                roomCapabilities,
                 activateOnUpload
             })
         };

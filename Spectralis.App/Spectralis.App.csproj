@@ -49,10 +49,14 @@
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('osx'))">osx</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('linux'))">linux</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">win</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">osx</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == ''">linux</SpectralisHelperOs>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Spectralis.Tests" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.2" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
@@ -119,6 +123,10 @@
     <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'linux'">libwgpu_host.so</WgpuHostDll>
     <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'osx'">libwgpu_host.dylib</WgpuHostDll>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\untitled-cache.js" />
+  </ItemGroup>
 
   <Target Name="BuildWgpuHost" BeforeTargets="Build" Condition="Exists('..\wgpu-host\Cargo.toml')">
     <Exec Command="cargo build --release --manifest-path &quot;$(MSBuildProjectDirectory)\..\wgpu-host\Cargo.toml&quot;" ContinueOnError="true" />

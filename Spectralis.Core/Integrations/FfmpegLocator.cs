@@ -13,9 +13,11 @@ public static class FfmpegLocator
 
     public static string? FindExecutable()
     {
-        var appDir = Path.GetDirectoryName(Environment.ProcessPath);
-        if (appDir is not null)
+        // Framework-dependent launches run under dotnet, whose process directory
+        // is not where the application's bundled helpers live.
+        foreach (var appDir in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(Environment.ProcessPath) })
         {
+            if (string.IsNullOrWhiteSpace(appDir)) continue;
             var bundled = Path.Combine(appDir, ExecutableName);
             if (File.Exists(bundled))
             {

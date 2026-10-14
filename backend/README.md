@@ -42,6 +42,7 @@ Useful environment variables:
 | `SPECTRALIS_PUBLIC_BASE_URL` | inferred from forwarded headers | Public origin to put into generated URLs. |
 | `SPECTRALIS_ADMIN_TOKEN` | unset | Bearer token for the `/spectralis/v1/admin` routes (warnings, changelog, community, creators, the room wipe). 24 or more characters. While it is unset those routes answer `503`. Telescreen sends the same value. |
 | `WARD_ISSUER` | `https://ward.deltavdevs.com` | The Ward server accounts sign in through. |
+| `SPECTRALIS_ENVIRONMENT` | `RAILWAY_ENVIRONMENT_NAME`, otherwise `development` | Only `production` enables Ward accounts and permanent rooms. Development/staging uses temporary rooms, ignores Ward credentials on guest requests, and exposes the shared track's artwork/lyrics without sign-in. Host writes still require the session key. |
 
 ## Use With Spectralis
 

@@ -55,8 +55,6 @@
     landingError:         document.getElementById("landingError"),
     landingScreen:        document.getElementById("landingScreen"),
     listenerCount:        document.getElementById("listenerCount"),
-    lyricCurrent:         document.getElementById("lyricCurrent"),
-    lyricNext:            document.getElementById("lyricNext"),
     lyricsPanel:          document.getElementById("lyricsPanel"),
     meterCanvas:          document.getElementById("meterCanvas"),
     openAppButton:        document.getElementById("openAppButton"),
@@ -83,6 +81,14 @@
     volumeSlider:         document.getElementById("volumeSlider")
   };
 
+  ["roomTitle", "connectionLabel", "trackFormat", "trackAlbum", "mediaTabs", "visualizerTab",
+    "lyricsTab", "lyricsTiming", "lyricsLines", "followLyrics", "visualizerPanel", "fullscreenButton", "playIcon",
+    "listenButton", "queueHint", "inviteButton", "inviteDialog", "inviteLink", "inviteStatus",
+    "settingsButton", "settingsDialog", "nameForm", "listenerName", "settingsStatus",
+    "permissionsSummary", "hostSettings", "queuePermission", "transportPermission", "audioUploadPermission"].forEach(function (id) {
+    el[id] = document.getElementById(id);
+  });
+
   var runtime = {
     analyser:              null,
     audioContext:          null,
@@ -107,6 +113,14 @@
     skipProgress:         null,
     lyrics:                [],
     lyricIndex:            -1,
+    lyricWordIndex:        -1,
+    lyricMode:             null,
+    lyricNodes:            [],
+    mediaView:             "visualizer",
+    preferredMediaView:    "lyrics",
+    followLyrics:          true,
+    reducedMotion:         window.matchMedia("(prefers-reduced-motion: reduce)"),
+    artworkObjectUrl:      null,
     lastNetworkStatusAt:   0,
     networkMode:           "quality",
     networkScore:          0,
@@ -129,12 +143,27 @@
     userActivated:         false
   };
 
+  var library;
   init();
 
-  function init() {
+  async function init() {
     applyExternalConfig();
+    library = window.RoomLibrary({
+      baseUrl: config.cdnBaseUrl,
+      room: function () { return { code: runtime.activeRoomCode, allowLinks: !!runtime.session && !!runtime.caps && capAllows(runtime.caps.queueAdd), allowUploads: !!runtime.session && !!runtime.caps && runtime.caps.audioUploads }; },
+      addLink: addQueueLink,
+      onQueue: function (queue) { runtime.queue = queue; renderQueue(queue); },
+      onAuth: function () {
+        if (runtime.channelId && !runtime.session) {
+          loadChannel(runtime.channelId).catch(function (err) { setStatus(err.message || "Could not reload the channel."); });
+        } else if (runtime.activeRoomCode) {
+          loadSession(runtime.activeRoomCode, { fromChannel: Boolean(runtime.channelId) });
+        }
+      }
+    });
     bindEvents();
     drawMeter();
+    await library.init();
 
     var params = new URLSearchParams(window.location.search);
     var channelId = cleanChannelId(stringOrEmpty(params.get("channel")));
@@ -180,6 +209,8 @@
 
     el.copyButton.addEventListener("click", copyJoinLink);
     el.openAppButton.addEventListener("click", openInSpectralis);
+    bindRoomControls();
+    el.audio.volume = Number(el.volumeSlider.value) / 100;
 
     el.reactionButtons.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -189,18 +220,12 @@
       });
     });
 
-    el.queueAddForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      addQueueLink().catch(function (err) {
-        setStatus(err.message || "Queue link could not be added.");
-      });
-    });
-
     el.volumeSlider.addEventListener("input", function () {
       el.audio.volume = Number(el.volumeSlider.value) / 100;
     });
 
     if (el.transportPlay) el.transportPlay.addEventListener("click", function () {
+      handleUserGesture();
       sendTransport(runtime.lastPlayback && runtime.lastPlayback.isPlaying ? "pause" : "play");
     });
     if (el.transportNext) el.transportNext.addEventListener("click", function () { sendTransport("next"); });
@@ -213,11 +238,24 @@
       var duration = (runtime.lastPlayback && runtime.lastPlayback.durationSeconds) || el.audio.duration || 0;
       if (duration > 0) sendTransport("seek", frac * duration);
     });
+    el.seekTrack.addEventListener("keydown", function (event) {
+      if (!canControlTransport()) return;
+      var duration = (runtime.lastPlayback && runtime.lastPlayback.durationSeconds) || el.audio.duration || 0;
+      var position = el.audio.currentTime || 0;
+      if (event.key === "ArrowRight") position += 5;
+      else if (event.key === "ArrowLeft") position -= 5;
+      else if (event.key === "Home") position = 0;
+      else if (event.key === "End") position = duration;
+      else return;
+      event.preventDefault();
+      sendTransport("seek", Math.max(0, Math.min(duration, position)));
+    });
 
     el.audio.addEventListener("loadedmetadata", function () {
       runtime.audioReady = true;
       reportNetworkSuccess(0, "audio metadata");
       updateTimeline();
+      applyPlaybackSync(true);
     });
     el.audio.addEventListener("timeupdate", updateTimeline);
     el.audio.addEventListener("canplay", function () { reportNetworkSuccess(0, "audio canplay"); });
@@ -242,19 +280,103 @@
       setStatus("Audio could not be loaded for this session.");
     });
 
-    // Browsers refuse audio.play()/AudioContext without a real user gesture
-    // first. Any tap anywhere on the page counts — this is what actually
-    // flips runtime.userActivated (nothing else in this file does).
-    document.addEventListener("click", handleUserGesture);
-    document.addEventListener("touchend", handleUserGesture, { passive: true });
+    // Listening is explicit: browsing lyrics or room settings must never seek.
+    el.listenButton.addEventListener("click", handleUserGesture);
   }
 
   function handleUserGesture() {
     if (runtime.userActivated) return;
     runtime.userActivated = true;
+    el.listenButton.hidden = true;
     ensureAudioGraph().then(function () {
       applyPlaybackSync(true);
     });
+  }
+
+  function bindRoomControls() {
+    function pauseLyricFollow() {
+      if (!runtime.lyrics.length) return;
+      runtime.followLyrics = false;
+      el.followLyrics.hidden = el.lyricsPanel.hidden;
+    }
+    el.lyricsPanel.addEventListener("wheel", pauseLyricFollow, { passive: true });
+    el.lyricsPanel.addEventListener("touchmove", pauseLyricFollow, { passive: true });
+    el.lyricsPanel.addEventListener("keydown", function (event) {
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) pauseLyricFollow();
+    });
+    el.followLyrics.addEventListener("click", function () {
+      runtime.followLyrics = true;
+      el.followLyrics.hidden = true;
+      scrollToCurrentLyric();
+    });
+    el.visualizerTab.addEventListener("click", function () { selectMediaView("visualizer", true); });
+    el.lyricsTab.addEventListener("click", function () { selectMediaView("lyrics", true); });
+    el.mediaTabs.addEventListener("keydown", function (event) {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !runtime.lyrics.length) return;
+      event.preventDefault();
+      var next = event.key === "Home" ? "visualizer" : event.key === "End" ? "lyrics" : runtime.mediaView === "lyrics" ? "visualizer" : "lyrics";
+      selectMediaView(next, true);
+      el[next === "lyrics" ? "lyricsTab" : "visualizerTab"].focus();
+    });
+    el.fullscreenButton.addEventListener("click", async function () {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (el.visualizerPanel.requestFullscreen) await el.visualizerPanel.requestFullscreen();
+        else setStatus("Fullscreen is unavailable in this browser.");
+      } catch (_) { setStatus("Fullscreen could not be opened."); }
+    });
+    if (!document.fullscreenEnabled) el.fullscreenButton.hidden = true;
+    document.addEventListener("fullscreenchange", function () {
+      el.fullscreenButton.setAttribute("aria-label", document.fullscreenElement ? "Exit fullscreen" : "Fullscreen visualizer");
+    });
+    el.inviteButton.addEventListener("click", function () {
+      el.inviteLink.value = roomJoinLink();
+      el.inviteStatus.textContent = "";
+      el.inviteDialog.showModal();
+    });
+    el.settingsButton.addEventListener("click", function () {
+      el.listenerName.value = roomDisplayName();
+      el.settingsStatus.textContent = "";
+      updateRoomPermissions();
+      el.settingsDialog.showModal();
+    });
+    document.querySelectorAll("[data-close-dialog]").forEach(function (button) {
+      button.addEventListener("click", function () { button.closest("dialog").close(); });
+    });
+    el.nameForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var name = el.listenerName.value.trim().slice(0, 32);
+      if (!name) return;
+      try { window.localStorage.setItem("spectralisSharedPlayName", name); }
+      catch (_) { el.settingsStatus.textContent = "Your browser could not save the name."; return; }
+      connectRoomSocket();
+      el.settingsStatus.textContent = "Name saved. Rejoining the room…";
+    });
+    [[el.queuePermission, "queueAdd"], [el.transportPermission, "transport"]].forEach(function (entry) {
+      entry[0].addEventListener("change", function () {
+        if (runtime.role !== "host") return;
+        var caps = {}; caps[entry[1]] = entry[0].value;
+        el.settingsStatus.textContent = socketSend({ t: "caps.set", caps: caps }) ? "Permission update requested." : "Reconnecting…";
+      });
+    });
+    el.discArt.addEventListener("error", function () { el.discArt.hidden = true; });
+    el.audioUploadPermission.addEventListener("change", function () {
+      if (runtime.role !== "host") return;
+      el.settingsStatus.textContent = socketSend({ t: "caps.set", caps: { audioUploads: el.audioUploadPermission.checked } }) ? "Permission update requested." : "Reconnecting…";
+    });
+  }
+
+  function updateRoomPermissions() {
+    var canAdd = Boolean(runtime.session && runtime.caps && capAllows(runtime.caps.queueAdd));
+    el.queueHint.textContent = canAdd ? "Share a favourite with the room." : runtime.session ? "The host controls who can add tracks." : "Waiting for the host.";
+    el.hostSettings.hidden = runtime.role !== "host";
+    el.permissionsSummary.textContent = "Your role: " + (runtime.role === "codj" ? "co-DJ" : runtime.role === "host" ? "host" : "listener") + ". " + (canControlTransport() ? "You can control playback." : "Playback follows the host.");
+    if (runtime.caps) {
+      el.queuePermission.value = runtime.caps.queueAdd;
+      el.transportPermission.value = runtime.caps.transport;
+      el.audioUploadPermission.checked = runtime.caps.audioUploads;
+    }
+    if (library) library.refresh();
   }
 
   // ─── Room code helpers ────────────────────────────────────────────────────
@@ -328,10 +450,14 @@
     runtime.caps = null;
     runtime.roster = [];
     runtime.skipProgress = null;
+    renderQueue(null);
+    renderRoster();
+    updateTransportControls();
     if (!options.fromChannel) leaveChannelMode();
 
     runtime.activeRoomCode = roomCode;
     runtime.userActivated = false;
+    el.listenButton.hidden = false;
     runtime.reactionsPrimed = false;
     runtime.seenReactionIds = new Set();
     resetReactionAmbience();
@@ -345,12 +471,16 @@
     try {
       var payload = await fetchJson(v2Url("sessions/" + encodeURIComponent(roomCode)));
       runtime.session = normalizeSession(roomCode, payload);
+      applyCaps((payload.session || payload).capabilities || {});
+      if (!runtime.channelId) el.roomTitle.textContent = runtime.session.roomName || "Listening room";
       runtime.activeTrackId = runtime.session.trackId;
       renderTrack(runtime.session.track);
+      // Queue and permission updates must work while a track is still preparing,
+      // or when this browser cannot decode the current track.
+      connectRoomSocket();
       await prepareAudio(runtime.session);
       await refreshQueueState();
       await refreshPlaybackState();
-      connectRoomSocket();
       setDotState("live");
       setStatus(runtime.hostStateAvailable ? "Synced." : "Waiting for host to start…");
       updateReactionButtons();
@@ -388,9 +518,19 @@
 
     if (!payload.isLive || !payload.roomCode) {
       stopSessionLoops();
+      closeRoomSocket();
       resetAudio();
+      clearPreloadedPackages();
       runtime.session = null;
       runtime.queue = null;
+      runtime.roster = [];
+      runtime.caps = null;
+      runtime.role = "follower";
+      renderQueue(null);
+      renderRoster();
+      updateListenerCount(0);
+      updateTransportControls();
+      updateReactionButtons();
       setDotState("waiting");
       el.trackTitle.textContent = payload.displayName || "Live Channel";
       el.trackArtist.textContent = "Waiting for the host to start sharing.";
@@ -425,12 +565,14 @@
     if (!payload || typeof payload !== "object") return;
     var name = stringOrEmpty(payload.displayName) || runtime.channelId || "Channel";
     if (el.channelName) el.channelName.textContent = name;
+    el.roomTitle.textContent = name;
   }
 
   // ─── Session normalization ────────────────────────────────────────────────
 
   function normalizeSession(roomCode, payload) {
-    var src = payload || {};
+    // The HTTP API wraps its full manifest in `session`; older hosts send it flat.
+    var src = payload && payload.session || payload || {};
     var track = src.track || {};
     var trackId = stringOrEmpty(src.trackId || src.activeTrackId || track.trackId);
     var stateUrl = firstUrl(src.stateUrl) || v2Url("sessions/" + encodeURIComponent(roomCode) + "/state");
@@ -455,6 +597,7 @@
     return {
       roomCode:       stringOrEmpty(src.roomCode || roomCode),
       displayCode:    stringOrEmpty(src.displayCode) || displayRoomCode(roomCode),
+      roomName:       stringOrEmpty(src.roomName || src.profile && src.profile.name),
       joinUrl:        joinUrl,
       trackId:        trackId,
       stateUrl:       stateUrl,
@@ -484,14 +627,7 @@
   }
 
   function normalizeLyrics(lines) {
-    if (!Array.isArray(lines)) return [];
-    return lines.map(function (line) {
-      var text = stringOrEmpty(line && (line.text || line.value || line.line)).trim();
-      if (!text) return null;
-      return { timeSeconds: finiteNumber(line.timeSeconds || line.startTime || line.time || 0), text: text };
-    }).filter(Boolean).sort(function (a, b) {
-      return a.timeSeconds - b.timeSeconds;
-    }).slice(0, 400);
+    return window.RoomLyrics.normalize(lines);
   }
 
   // ─── Audio ────────────────────────────────────────────────────────────────
@@ -500,6 +636,8 @@
     el.audio.pause();
     el.audio.removeAttribute("src");
     runtime.audioReady = false;
+    if (runtime.artworkObjectUrl) URL.revokeObjectURL(runtime.artworkObjectUrl);
+    runtime.artworkObjectUrl = null;
 
     if (runtime.audioObjectUrl) {
       URL.revokeObjectURL(runtime.audioObjectUrl);
@@ -520,17 +658,22 @@
     var preloaded = runtime.preloadedPackages[session.packageUrl];
     if (preloaded && preloaded.objectUrl) {
       runtime.audioObjectUrl = preloaded.objectUrl;
+      runtime.artworkObjectUrl = preloaded.artworkObjectUrl || null;
       delete runtime.preloadedPackages[session.packageUrl];
       el.audio.src = runtime.audioObjectUrl;
       el.audio.load();
+      maybeLoadAlbumArt();
       setStatus("Preloaded audio ready.");
       return;
     }
 
     setStatus("Extracting audio from room package…");
-    runtime.audioObjectUrl = await extractAudioObjectUrlFromPackage(session.packageUrl);
+    var assets = await extractAudioObjectUrlFromPackage(session.packageUrl);
+    runtime.audioObjectUrl = assets.objectUrl;
+    runtime.artworkObjectUrl = assets.artworkObjectUrl;
     el.audio.src = runtime.audioObjectUrl;
     el.audio.load();
+    maybeLoadAlbumArt();
   }
 
   // ─── Playback state ───────────────────────────────────────────────────────
@@ -565,6 +708,8 @@
   async function switchActiveTrack(trackId, statePayload) {
     if (runtime.switchingTrack || !runtime.session) return;
     runtime.switchingTrack = true;
+    renderLyrics([]);
+    el.audio.pause();
     setDotState("loading");
     setStatus("Loading next track…");
 
@@ -583,10 +728,16 @@
       runtime.session = nextSession;
       runtime.activeTrackId = trackId;
       renderTrack(nextSession.track);
+      var playback = findPlaybackPayload(statePayload) || nextSession.playback;
+      if (playback) {
+        runtime.lastPlayback = normalizePlayback(playback, trackId);
+        runtime.hostStateAvailable = true;
+      }
       setDotState("live");
       setStatus("Next track ready.");
     } finally {
       runtime.switchingTrack = false;
+      applyPlaybackSync(true);
     }
   }
 
@@ -651,7 +802,9 @@
       if (runtime.userActivated && el.audio.paused) {
         ensureAudioGraph().then(function () {
           el.audio.play().catch(function () {
-            setStatus("Tap to start audio.");
+            runtime.userActivated = false;
+            el.listenButton.hidden = false;
+            setStatus("Select Start listening to enable audio.");
           });
         });
       }
@@ -738,6 +891,7 @@
       cancelSocketFallback();
       socketSend({
         t: "hello",
+        accessToken: library.token(),
         proto: ENVELOPE_V,
         client: { kind: "web", version: String(config.clientVersion || "") },
         features: CLIENT_FEATURES,
@@ -861,6 +1015,20 @@
         setDotState("error");
         setStatus("The host removed you from this room.");
         resetAudio();
+        clearPreloadedPackages();
+        runtime.session = null;
+        runtime.queue = null;
+        runtime.caps = null;
+        runtime.role = "follower";
+        runtime.roster = [];
+        runtime.activeRoomCode = "";
+        leaveChannelMode();
+        stopSessionLoops();
+        renderQueue(null);
+        renderRoster();
+        updateListenerCount(0);
+        updateTransportControls();
+        updateReactionButtons();
         break;
     }
   }
@@ -868,14 +1036,18 @@
   function applyRealtimeState(playbackPayload) {
     var newTrackId = extractTrackId(playbackPayload) || extractTrackId({ playback: playbackPayload });
     if (newTrackId && runtime.activeTrackId && newTrackId !== runtime.activeTrackId) {
-      switchActiveTrack(newTrackId, { playback: playbackPayload }).catch(function () {});
+      switchActiveTrack(newTrackId, { playback: playbackPayload }).catch(function (error) {
+        setDotState("error");
+        setStatus(error.message || "The next track could not be loaded.");
+      });
       return;
     }
     if (newTrackId && !runtime.activeTrackId) {
       runtime.activeTrackId = newTrackId;
       if (runtime.session) runtime.session.trackId = newTrackId;
     }
-    var playback = findPlaybackPayload({ playback: playbackPayload }) || playbackPayload;
+    // Both welcome.state and state.playback can contain the backend's state envelope.
+    var playback = findPlaybackPayload(playbackPayload);
     if (!hasPlaybackFields(playback)) {
       runtime.hostStateAvailable = false;
       runtime.lastPlayback = null;
@@ -910,6 +1082,7 @@
   function applyCaps(caps) {
     runtime.caps = {
       queueAdd: caps.queueAdd || "everyone",
+      audioUploads: caps.audioUploads !== false,
       queueRemove: caps.queueRemove || "host",
       queueReorder: caps.queueReorder || "host",
       transport: caps.transport || "host",
@@ -935,6 +1108,7 @@
     updateListenerCount(runtime.roster.length);
     renderRoster();
     updateTransportControls();
+    renderQueue(runtime.queue);
   }
 
   function renderRoster() {
@@ -944,6 +1118,11 @@
       var chip = document.createElement("span");
       chip.className = "roster-chip" + (m.isHost ? " is-host" : m.role === "codj" ? " is-codj" : "");
       chip.textContent = m.name + (m.isHost ? " · host" : m.role === "codj" ? " · co-DJ" : "");
+      var avatar = document.createElement("span");
+      avatar.className = "roster-avatar";
+      avatar.setAttribute("aria-hidden", "true");
+      avatar.textContent = m.name.slice(0, 2).toUpperCase();
+      chip.prepend(avatar);
       el.rosterList.appendChild(chip);
     });
   }
@@ -957,6 +1136,9 @@
       el.transportHint.hidden = can;
     }
     if (el.seekTrack) el.seekTrack.classList.toggle("interactive", can);
+    el.seekTrack.setAttribute("role", can ? "slider" : "progressbar");
+    el.seekTrack.tabIndex = can ? 0 : -1;
+    updateRoomPermissions();
     if (el.voteSkipButton) {
       var showVote = Boolean(runtime.caps && runtime.caps.voteSkip) && !can;
       el.voteSkipButton.hidden = !showVote;
@@ -978,7 +1160,7 @@
     if (!canControlTransport()) return;
     var payload = { t: "transport", action: action };
     if (typeof position === "number") payload.position = position;
-    socketSend(payload);
+    if (!socketSend(payload)) setStatus("Reconnecting…");
   }
 
   function voteSkip() {
@@ -1155,32 +1337,36 @@
     preloadUpcomingQueueTracks();
   }
 
-  async function addQueueLink() {
-    var value = stringOrEmpty(el.queueUrlInput.value).trim();
+  async function addQueueLink(value, title) {
+    if (!runtime.caps || !capAllows(runtime.caps.queueAdd)) throw new Error("The host has not enabled adding tracks for you.");
+    value = stringOrEmpty(value).trim();
     if (!value) return;
+    var parsed = new URL(value);
+    if (!["https:", "http:", "spotify:"].includes(parsed.protocol)) throw new Error("Paste an http, https or Spotify track link.");
 
     var item = buildQueueLinkItem(value);
-    if (socketSend({ t: "queue.add", item: { url: item.url, title: item.title, sourceKind: item.sourceKind } })) {
-      el.queueUrlInput.value = "";
-      setStatus("Request sent to room queue.");
-      return;
+    if (title) item.title = title;
+    // The HTTP endpoint confirms queue acceptance. Restricted requests still use their socket role.
+    if ((runtime.role === "codj" || runtime.role === "host") && runtime.caps.queueAdd !== "everyone") {
+      if (!socketSend({ t: "queue.add", item: item })) throw new Error("Reconnect to the room and try again.");
+      return { confirmed: false };
     }
 
     if (!runtime.session || !runtime.session.queueUrl) throw new Error("Load a room first.");
     var itemsUrl = runtime.session.queueUrl.replace(/\/queue(?:\?.*)?$/, "/queue/items");
     var response = await fetch(itemsUrl, {
       method: "POST",
+      signal: AbortSignal.timeout(15000),
       cache: "no-store",
       credentials: "omit",
-      headers: { "accept": "application/json", "content-type": "application/json" },
+      headers: library.headers(itemsUrl, { "accept": "application/json", "content-type": "application/json" }),
       body: JSON.stringify({ item: item })
     });
 
     if (!response.ok) throw new Error("Queue update failed with HTTP " + response.status + ".");
-    el.queueUrlInput.value = "";
     runtime.queue = normalizeQueue(await response.json());
     renderQueue(runtime.queue);
-    setStatus("Request sent to room queue.");
+    return { confirmed: true };
   }
 
   function normalizeQueue(payload) {
@@ -1220,16 +1406,41 @@
     items.slice(0, 30).forEach(function (item, index) {
       var row = document.createElement("li");
       row.className = "queue-item" + (index === queue.currentIndex ? " is-current" : "");
+      if (index === queue.currentIndex) row.setAttribute("aria-current", "true");
+      var number = document.createElement("span");
+      number.className = "queue-number";
+      number.textContent = index === queue.currentIndex ? "♫" : String(index + 1).padStart(2, "0");
+      var info = document.createElement("div");
+      info.className = "queue-info";
       var titleEl = document.createElement("span");
       titleEl.className = "queue-title";
-      titleEl.textContent = item.title + (item.artist ? " — " + item.artist : "");
+      titleEl.textContent = item.title;
       var kindEl = document.createElement("span");
       kindEl.className = "queue-kind";
-      kindEl.textContent = item.sourceKind;
-      row.appendChild(titleEl);
-      row.appendChild(kindEl);
+      kindEl.textContent = item.artist || item.sourceKind;
+      info.append(titleEl, kindEl);
+      var actions = document.createElement("div");
+      actions.className = "queue-actions";
+      if (item.id && runtime.caps) {
+        if (capAllows(runtime.caps.queueReorder) && index > 0) queueAction(actions, "↑", "Move " + item.title + " up", function () {
+          if (capAllows(runtime.caps.queueReorder) && !socketSend({ t: "queue.move", id: item.id, toIndex: index - 1 })) setStatus("Reconnecting…");
+        });
+        if (capAllows(runtime.caps.queueRemove)) queueAction(actions, "×", "Remove " + item.title, function () {
+          if (capAllows(runtime.caps.queueRemove) && !socketSend({ t: "queue.remove", id: item.id })) setStatus("Reconnecting…");
+        });
+      }
+      row.append(number, info, actions);
       el.queueList.appendChild(row);
     });
+  }
+
+  function queueAction(container, text, label, handler) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", handler);
+    container.appendChild(button);
   }
 
   function buildQueueLinkItem(value) {
@@ -1284,9 +1495,13 @@
     if (runtime.preloadedPackages[item.packageUrl]) return;
     var generation = runtime.preloadGeneration;
     runtime.preloadedPackages[item.packageUrl] = { loading: true, objectUrl: "", trackId: item.trackId };
-    extractAudioObjectUrlFromPackage(item.packageUrl).then(function (objectUrl) {
-      if (generation !== runtime.preloadGeneration) { URL.revokeObjectURL(objectUrl); return; }
-      runtime.preloadedPackages[item.packageUrl] = { loading: false, objectUrl: objectUrl, trackId: item.trackId };
+    extractAudioObjectUrlFromPackage(item.packageUrl).then(function (assets) {
+      if (generation !== runtime.preloadGeneration || !runtime.preloadedPackages[item.packageUrl]) {
+        URL.revokeObjectURL(assets.objectUrl);
+        if (assets.artworkObjectUrl) URL.revokeObjectURL(assets.artworkObjectUrl);
+        return;
+      }
+      runtime.preloadedPackages[item.packageUrl] = { loading: false, objectUrl: assets.objectUrl, artworkObjectUrl: assets.artworkObjectUrl, trackId: item.trackId };
     }).catch(function () {
       delete runtime.preloadedPackages[item.packageUrl];
     });
@@ -1307,13 +1522,18 @@
   function revokePreloadedPackage(url) {
     var cached = runtime.preloadedPackages[url];
     if (cached && cached.objectUrl) URL.revokeObjectURL(cached.objectUrl);
+    if (cached && cached.artworkObjectUrl) URL.revokeObjectURL(cached.artworkObjectUrl);
     delete runtime.preloadedPackages[url];
   }
 
   // ─── Audio graph ──────────────────────────────────────────────────────────
 
   async function ensureAudioGraph() {
-    if (runtime.audioContext || (!window.AudioContext && !window.webkitAudioContext)) return;
+    if (runtime.audioContext) {
+      if (runtime.audioContext.state === "suspended") await runtime.audioContext.resume();
+      return;
+    }
+    if (!window.AudioContext && !window.webkitAudioContext) return;
     try {
       var Ctor = window.AudioContext || window.webkitAudioContext;
       runtime.audioContext = new Ctor();
@@ -1331,7 +1551,7 @@
   async function extractAudioObjectUrlFromPackage(packageUrl) {
     var startedAt = performance.now();
     try {
-      var response = await fetch(packageUrl, { cache: "no-store", credentials: "omit" });
+      var response = await fetch(packageUrl, { cache: "no-store", credentials: "omit", headers: library.headers(packageUrl) });
       if (!response.ok) {
         var httpErr = new Error("Package download failed with HTTP " + response.status + ".");
         httpErr.handledHttp = true;
@@ -1356,7 +1576,12 @@
 
       var audioBuffer = buffer.slice(entry.dataStart, entry.dataStart + entry.compressedSize);
       var blob = new Blob([audioBuffer], { type: mimeFromFileName(entry.fileName) });
-      return URL.createObjectURL(blob);
+      var artworkObjectUrl = null;
+      try {
+        var cover = findStoredZipEntry(buffer, /^artwork\/cover(?:\.[a-z0-9]+)?$/i);
+        if (cover) artworkObjectUrl = URL.createObjectURL(new Blob([buffer.slice(cover.dataStart, cover.dataStart + cover.compressedSize)]));
+      } catch (_) { /* Missing artwork must not prevent audio playback. */ }
+      return { objectUrl: URL.createObjectURL(blob), artworkObjectUrl: artworkObjectUrl };
     } catch (err) {
       if (err && !err.networkReported && !err.handledHttp) reportNetworkTrouble(1.5, err.message || "Package download failed.");
       throw err;
@@ -1455,8 +1680,12 @@
   // ─── Canvas meter ─────────────────────────────────────────────────────────
 
   function drawMeter() {
+    window.requestAnimationFrame(drawMeter);
+    if (document.hidden || el.playerShell.hidden) return;
+    renderLyricsForPosition(el.audio.currentTime || 0);
+    if (el.visualizerPanel.hidden) return;
     var canvas = el.meterCanvas;
-    if (!canvas) { window.requestAnimationFrame(drawMeter); return; }
+    if (!canvas) return;
     var ctx = canvas.getContext("2d");
     var rect = canvas.getBoundingClientRect();
     var dpr = window.devicePixelRatio || 1;
@@ -1465,24 +1694,22 @@
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     ctx.clearRect(0, 0, w, h);
 
-    var bars = getMeterBars();
+    var bars = runtime.reducedMotion.matches ? new Array(36).fill(0.08) : getMeterBars();
     var gap = Math.max(3 * dpr, w / 180);
     var barW = Math.max(5 * dpr, (w - gap * (bars.length - 1)) / bars.length);
     var time = performance.now() / 700;
 
     for (var i = 0; i < bars.length; i++) {
       var synthetic = 0.32 + Math.sin(time + i * 0.54) * 0.18 + Math.sin(time * 0.48 + i) * 0.08;
-      var level = runtime.analyser ? bars[i] : synthetic;
+      var level = runtime.analyser ? bars[i] : runtime.reducedMotion.matches ? 0.1 : synthetic;
       if (!runtime.lastPlayback || !runtime.lastPlayback.isPlaying) level *= 0.35;
       var barH = Math.max(4 * dpr, level * h * 0.82);
       var x = i * (barW + gap);
       var y = (h - barH) / 2;
-      ctx.fillStyle = "rgba(235, 104, 65, " + (runtime.analyser ? 0.95 : 0.38) + ")";
+      ctx.fillStyle = "rgba(212, 239, 117, " + (runtime.analyser ? 0.95 : 0.38) + ")";
       roundRect(ctx, x, y, barW, barH, 0);
       ctx.fill();
     }
-
-    window.requestAnimationFrame(drawMeter);
   }
 
   function getMeterBars() {
@@ -1520,45 +1747,94 @@
 
   function renderTrack(track) {
     el.trackTitle.textContent = track.displayName;
-    el.trackArtist.textContent = [track.artist, track.album].filter(Boolean).join(" / ") || "";
-    runtime.lyrics = track.lyrics || [];
-    runtime.lyricIndex = -1;
-
-
-    if (el.lyricsPanel) {
-      el.lyricsPanel.hidden = runtime.lyrics.length === 0;
-    }
-
-    renderLyricsForPosition(el.audio.currentTime || 0);
+    el.trackArtist.textContent = track.artist;
+    el.trackFormat.textContent = track.formatName;
+    el.trackAlbum.textContent = track.album;
+    renderLyrics(track.lyrics || []);
     maybeLoadAlbumArt();
   }
 
   function maybeLoadAlbumArt() {
-    if (!runtime.session || !runtime.session.albumArtUrl) return;
-    var url = runtime.session.albumArtUrl;
-    if (el.discArt) {
-      el.discArt.src = url;
-      el.discArt.alt = "";
-    }
-    if (el.backdropImg) {
-      el.backdropImg.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
-    }
+    var url = runtime.session && runtime.session.albumArtUrl || runtime.artworkObjectUrl || "";
+    el.discArt.hidden = !url;
+    if (url) el.discArt.src = url;
+    else el.discArt.removeAttribute("src");
+    el.backdropImg.style.backgroundImage = url ? "url(" + JSON.stringify(url) + ")" : "";
   }
 
-  // ─── Timeline ─────────────────────────────────────────────────────────────
+  function selectMediaView(view, remember) {
+    if (view === "lyrics" && !runtime.lyrics.length) view = "visualizer";
+    if (remember) runtime.preferredMediaView = view;
+    runtime.mediaView = view;
+    var lyrics = view === "lyrics";
+    el.lyricsPanel.hidden = !lyrics;
+    el.visualizerPanel.hidden = lyrics;
+    el.lyricsTiming.hidden = !lyrics || !runtime.lyricMode;
+    el.followLyrics.hidden = !lyrics || !runtime.lyricMode || runtime.followLyrics;
+    [el.visualizerTab, el.lyricsTab].forEach(function (tab, index) {
+      var selected = index === (lyrics ? 1 : 0);
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    if (lyrics) scrollToCurrentLyric();
+  }
+
+  function renderLyrics(lines) {
+    var hadFocus = el.lyricsPanel.contains(document.activeElement) || document.activeElement === el.lyricsTab;
+    runtime.lyrics = lines;
+    runtime.lyricIndex = -1;
+    runtime.lyricWordIndex = -1;
+    runtime.followLyrics = true;
+    runtime.lyricMode = window.RoomLyrics.mode(lines);
+    el.lyricsTab.hidden = !runtime.lyricMode;
+    el.lyricsTiming.textContent = runtime.lyricMode === "word" ? "Word timed" : runtime.lyricMode === "line" ? "Line timed" : "";
+    el.lyricsTiming.title = runtime.lyricMode ? "Timing provided by this track's lyrics" : "";
+    el.lyricsPanel.dataset.timing = runtime.lyricMode || "";
+    runtime.lyricNodes = lines.map(function (line) {
+      // Plain text nodes, never links/buttons: lyrics cannot control playback.
+      var node = document.createElement("p");
+      node.className = "lyric-line" + (line.words.length ? " has-words" : "");
+      if (line.words.length) {
+        line.words.forEach(function (word) {
+          var span = document.createElement("span");
+          span.className = "lyric-word";
+          span.textContent = word.text;
+          node.appendChild(span);
+        });
+      } else node.textContent = line.text;
+      return node;
+    });
+    el.lyricsLines.replaceChildren.apply(el.lyricsLines, runtime.lyricNodes);
+    el.lyricsPanel.scrollTop = 0;
+    selectMediaView(document.fullscreenElement === el.visualizerPanel ? "visualizer" : runtime.preferredMediaView, false);
+    if (hadFocus && !lines.length) el.visualizerTab.focus();
+    renderLyricsForPosition(el.audio.currentTime || 0);
+  }
+
+  function scrollToCurrentLyric() {
+    var node = runtime.lyricNodes[runtime.lyricIndex];
+    if (!node || el.lyricsPanel.hidden || !runtime.followLyrics) return;
+    el.lyricsPanel.scrollTo({
+      top: Math.max(0, node.offsetTop - el.lyricsPanel.clientHeight * 0.35),
+      behavior: runtime.reducedMotion.matches ? "instant" : "smooth"
+    });
+  }
 
   function updateTimeline() {
     var duration = finiteNumber((runtime.lastPlayback && runtime.lastPlayback.durationSeconds) || el.audio.duration || 0);
     var position = finiteNumber(el.audio.currentTime || 0);
     if (el.currentTime) el.currentTime.textContent = formatTime(position);
     if (el.durationTime) el.durationTime.textContent = formatTime(duration);
+    el.seekTrack.setAttribute("aria-valuemax", String(duration || 100));
+    el.seekTrack.setAttribute("aria-valuenow", String(position));
+    el.seekTrack.setAttribute("aria-valuetext", formatTime(position) + " of " + formatTime(duration));
     if (el.seekFill) {
       var pct = duration > 0 ? (position / duration * 100).toFixed(2) : "0";
       el.seekFill.style.width = pct + "%";
     }
     if (el.transportPlay) {
       var playing = Boolean(runtime.lastPlayback && runtime.lastPlayback.isPlaying);
-      el.transportPlay.textContent = playing ? "⏸" : "▶";
+      el.playIcon.setAttribute("href", playing ? "#i-pause" : "#i-play");
       el.transportPlay.setAttribute("aria-label", playing ? "Pause" : "Play");
     }
     renderLyricsForPosition(position);
@@ -1567,38 +1843,32 @@
   // ─── Lyrics ───────────────────────────────────────────────────────────────
 
   function renderLyricsForPosition(position) {
-    if (!el.lyricCurrent || !el.lyricNext) return;
-    if (!runtime.lyrics.length) {
-      el.lyricCurrent.textContent = "";
-      el.lyricNext.textContent = "";
-      return;
+    if (!runtime.lyrics.length) return;
+    var index = window.RoomLyrics.indexAt(runtime.lyrics, position);
+    var lineChanged = index !== runtime.lyricIndex;
+    if (lineChanged) {
+      runtime.lyricIndex = index;
+      runtime.lyricWordIndex = -1;
+      runtime.lyricNodes.forEach(function (node, i) {
+        node.classList.toggle("is-current", i === index);
+        node.classList.toggle("is-past", i < index);
+        node.querySelectorAll(".lyric-word").forEach(function (word) {
+          word.classList.remove("is-sung", "is-active");
+        });
+      });
+      scrollToCurrentLyric();
     }
-
-    var index = findLyricIndex(position);
-    runtime.lyricIndex = index;
-    if (index < 0) {
-      el.lyricCurrent.textContent = "";
-      el.lyricNext.textContent = runtime.lyrics[0].text;
-    } else {
-      el.lyricCurrent.textContent = runtime.lyrics[index].text;
-      el.lyricNext.textContent = index + 1 < runtime.lyrics.length ? runtime.lyrics[index + 1].text : "";
+    if (index < 0) return;
+    var line = runtime.lyrics[index];
+    var wordIndex = window.RoomLyrics.indexAt(line.words, position);
+    if (lineChanged || wordIndex !== runtime.lyricWordIndex) {
+      runtime.lyricWordIndex = wordIndex;
+      Array.prototype.forEach.call(runtime.lyricNodes[index].children, function (word, i) {
+        word.classList.toggle("is-sung", i <= wordIndex);
+        word.classList.toggle("is-active", i === wordIndex);
+      });
     }
   }
-
-  function findLyricIndex(position) {
-    var low = 0;
-    var high = runtime.lyrics.length - 1;
-    var found = -1;
-    var target = finiteNumber(position) + 0.05;
-    while (low <= high) {
-      var mid = Math.floor((low + high) / 2);
-      if (runtime.lyrics[mid].timeSeconds <= target) { found = mid; low = mid + 1; }
-      else { high = mid - 1; }
-    }
-    return found;
-  }
-
-  // ─── UI helpers ───────────────────────────────────────────────────────────
 
   function updateReactionButtons() {
     var enabled = Boolean(runtime.session && runtime.session.reactionsUrl);
@@ -1610,14 +1880,15 @@
     el.audio.removeAttribute("src");
     el.audio.load();
     if (el.disc) el.disc.classList.remove("is-playing");
-    if (el.discArt) el.discArt.src = "";
+    if (el.discArt) { el.discArt.removeAttribute("src"); el.discArt.hidden = true; }
     if (el.backdropImg) el.backdropImg.style.backgroundImage = "";
     runtime.audioReady = false;
     runtime.hostStateAvailable = false;
     runtime.lastPlayback = null;
     runtime.activeTrackId = "";
-    runtime.lyrics = [];
-    runtime.lyricIndex = -1;
+    renderLyrics([]);
+    if (runtime.artworkObjectUrl) URL.revokeObjectURL(runtime.artworkObjectUrl);
+    runtime.artworkObjectUrl = null;
     if (runtime.audioObjectUrl) {
       URL.revokeObjectURL(runtime.audioObjectUrl);
       runtime.audioObjectUrl = null;
@@ -1625,14 +1896,26 @@
     updateTimeline();
   }
 
+  function roomJoinLink() {
+    return runtime.channelId ? createWebShareChannelUrl(runtime.channelId) :
+      (runtime.session && runtime.session.joinUrl) || createWebShareJoinUrl(runtime.activeRoomCode);
+  }
+
   function copyJoinLink() {
-    var joinUrl = runtime.channelId
-      ? createWebShareChannelUrl(runtime.channelId)
-      : (runtime.session && runtime.session.joinUrl) || "";
+    var joinUrl = roomJoinLink();
     if (!joinUrl) return;
+    if (!navigator.clipboard) {
+      el.inviteLink.select();
+      el.inviteStatus.textContent = "Copy the selected link to invite a friend.";
+      return;
+    }
     navigator.clipboard.writeText(joinUrl).then(function () {
-      setStatus(runtime.channelId ? "Channel link copied." : "Room link copied.");
-    }).catch(function () { setStatus(joinUrl); });
+      el.inviteStatus.textContent = "Link copied.";
+      setStatus("Room link copied.");
+    }).catch(function () {
+      el.inviteLink.select();
+      el.inviteStatus.textContent = "Copy the selected link to invite a friend.";
+    });
   }
 
   function openInSpectralis() {
@@ -1650,6 +1933,7 @@
     if (!el.statusDot) return;
     el.statusDot.dataset.state = state;
     el.statusDot.className = "status-dot dot-" + state;
+    el.connectionLabel.textContent = { live: "Live", paused: "Paused", loading: "Connecting", waiting: "Offline", error: "Disconnected" }[state] || state;
   }
 
   // ─── Channel stats ────────────────────────────────────────────────────────
@@ -1744,7 +2028,7 @@
   async function fetchJson(url) {
     var startedAt = performance.now();
     try {
-      var response = await fetch(url, { cache: "no-store", credentials: "omit", headers: { "accept": "application/json" } });
+      var response = await fetch(url, { cache: "no-store", credentials: "omit", headers: library.headers(url, { "accept": "application/json" }) });
       var elapsedMs = performance.now() - startedAt;
       if (!response.ok) {
         var httpErr = new Error("Request failed with HTTP " + response.status + ".");
@@ -1772,7 +2056,7 @@
         method: "POST",
         cache: "no-store",
         credentials: "omit",
-        headers: { "accept": "application/json", "content-type": "application/json" },
+        headers: library.headers(url, { "accept": "application/json", "content-type": "application/json" }),
         body: JSON.stringify(payload || {})
       });
       var elapsedMs = performance.now() - startedAt;

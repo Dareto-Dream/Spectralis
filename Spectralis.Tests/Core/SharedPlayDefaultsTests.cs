@@ -26,7 +26,7 @@ public class SharedPlayDefaultsTests
     [Fact]
     public void BuildWebShareJoinUrl_EncodesRoomCode()
     {
-        var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "X7K29Q");
+        var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri(SharedPlayDefaults.CdnBaseUrl), "X7K29Q");
 
         Assert.Equal("https://player.deltavdevs.com/sessions/X7K29Q", url.ToString());
     }
@@ -54,7 +54,7 @@ public class SharedPlayDefaultsTests
     public void ConvertToDiscordActivityJoinUrl_AddsSourceAndMode()
     {
         var joinUrl = SharedPlayDefaults
-            .BuildWebShareJoinUrl(new Uri("https://cdn.example.com"), "AB12CD")
+            .BuildWebShareJoinUrl(new Uri(SharedPlayDefaults.CdnBaseUrl), "AB12CD")
             .ToString();
 
         var activityUrl = SharedPlayDefaults.ConvertToDiscordActivityJoinUrl(joinUrl);
@@ -69,5 +69,15 @@ public class SharedPlayDefaultsTests
         Assert.Equal(
             "https://cdn.example.com/no-session",
             SharedPlayDefaults.ConvertToDiscordActivityJoinUrl("https://cdn.example.com/no-session"));
+    }
+
+    [Theory]
+    [InlineData(SharedPlayDefaults.StagingCdnBaseUrl)]
+    [InlineData("https://dev.example.test")]
+    public void DevelopmentInvitesStayOnTheirOwnBackend(string backend)
+    {
+        var url = SharedPlayDefaults.BuildWebShareJoinUrl(new Uri(backend), "AB12CD").ToString();
+        Assert.Equal(backend + "/spectralis/web-share/?session=AB12CD", url);
+        Assert.Equal(url + "&source=discord&mode=activity", SharedPlayDefaults.ConvertToDiscordActivityJoinUrl(url));
     }
 }

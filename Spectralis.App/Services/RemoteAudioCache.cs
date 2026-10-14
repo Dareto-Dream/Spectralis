@@ -71,6 +71,8 @@ internal static class RemoteAudioCache
                 Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
             {
                 request.Headers.Referrer = refererUri;
+                if (refererUri.Host.Equals("untitled.stream", StringComparison.OrdinalIgnoreCase))
+                    request.Headers.Add("Origin", "https://untitled.stream");
             }
 
             using var response = await Http.SendAsync(
@@ -112,6 +114,28 @@ internal static class RemoteAudioCache
                 }
             }
 
+            return path;
+        }
+        catch
+        {
+            TryDelete(path);
+            throw;
+        }
+    }
+
+    public static async Task<string> DownloadSunoAsync(
+        string clipId, Uri audioUrl, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(CacheRoot);
+        var path = Path.Combine(CacheRoot, $"{Guid.NewGuid():N}.m4a");
+        try
+        {
+            await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite,
+                FileShare.None, 128 * 1024, useAsync: true))
+            {
+                var decoder = new Spectralis.Core.Integrations.SunoGuestAudioDecoder(Http);
+                await decoder.DownloadAndDecryptAsync(clipId, audioUrl, output, cancellationToken);
+            }
             return path;
         }
         catch

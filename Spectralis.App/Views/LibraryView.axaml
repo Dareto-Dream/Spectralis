@@ -85,6 +85,10 @@
         <DataGrid.ContextMenu>
           <ContextMenu>
             <MenuItem Header="Play" Click="OnContextPlay" />
+            <MenuItem Header="Load into Mix" IsVisible="{Binding DjModeEnabled}">
+              <MenuItem Header="Deck A" Click="OnMixA" />
+              <MenuItem Header="Deck B" Click="OnMixB" />
+            </MenuItem>
             <MenuItem Header="Play Next" Click="OnContextPlayNext" />
             <MenuItem Header="Add to Queue" Click="OnContextAddToQueue" />
             <MenuItem Header="Add to Playlist..." Click="OnContextAddToPlaylist" />

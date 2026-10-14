@@ -11,6 +11,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private readonly SharedPlayCacheStore cacheStore;
     private readonly SharedPlayCdnClient cdnClient;
+    private readonly SharedPlayListenerUploads listenerUploads;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object statusLock = new();
 
@@ -44,6 +45,10 @@ public sealed class SharedPlaySessionController : IDisposable
     /// apply to the audio engine / queue.</summary>
     public event Action<SharedPlayIncomingCommand>? CommandReceived;
 
+    /// <summary>The room socket says the shared queue changed (a listener added a link, or someone published a new
+    /// queue). The host app uses it to fetch the queue now instead of waiting for its next poll.</summary>
+    public event Action? RoomQueueChanged;
+
     /// <summary>Raised as vote-skip votes accumulate.</summary>
     public event Action<SharedPlaySkipProgress>? SkipProgressReceived;
 
@@ -68,6 +73,7 @@ public sealed class SharedPlaySessionController : IDisposable
     {
         this.cacheStore = cacheStore;
         this.cdnClient = cdnClient;
+        listenerUploads = new SharedPlayListenerUploads(cdnClient);
     }
 
     public event EventHandler? StatusChanged;
@@ -103,8 +109,10 @@ public sealed class SharedPlaySessionController : IDisposable
         lock (statusLock)
         {
             enabled = enableSharedPlay;
-            cdnBaseUri = new Uri($"{SharedPlayDefaults.NormalizeCdnBaseUrl(cdnBaseUrl)}/");
-            liveChannelEnabled = enableLiveChannel;
+            var nextBackend = new Uri($"{SharedPlayDefaults.NormalizeCdnBaseUrl(cdnBaseUrl)}/");
+            var backendChanged = cdnBaseUri != nextBackend;
+            cdnBaseUri = nextBackend;
+            liveChannelEnabled = enableLiveChannel && SharedPlayDefaults.SupportsWard(cdnBaseUri);
             liveChannelId = channelId;
             liveChannelOwnerToken = channelOwnerToken;
             liveChannelDisplayName = channelDisplayName;
@@ -112,7 +120,7 @@ public sealed class SharedPlaySessionController : IDisposable
                 ? $"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(liveChannelId)}"
                 : null;
 
-            if (!enabled)
+            if (!enabled || backendChanged)
             {
                 oldCancellation = cancellation;
                 cancellation = new CancellationTokenSource();
@@ -168,6 +176,15 @@ public sealed class SharedPlaySessionController : IDisposable
 
         return await cdnClient.FetchQueueStateAsync(activeSession.QueueUrl, cancellationToken);
     }
+
+    public Task ReceiveListenerUploadAsync(SharedPlayQueueItem item, Func<string, Task> accept, bool playNow, CancellationToken ct)
+    {
+        var active = GetSession() ?? throw new InvalidOperationException("This room has ended.");
+        return listenerUploads.ReceiveAsync(active, item, accept, playNow, ct);
+    }
+
+    public Task RemoveQueueItemAsync(string id, CancellationToken ct) =>
+        GetSession() is { } active ? cdnClient.RemoveQueueItemAsync(active, id, ct) : Task.CompletedTask;
 
     public async Task<SharedPlayPresenceSnapshot?> FetchPresenceAsync(CancellationToken cancellationToken)
     {
@@ -472,6 +489,7 @@ public sealed class SharedPlaySessionController : IDisposable
             OnStatusChanged();
         };
         socket.CommandReceived += cmd => CommandReceived?.Invoke(cmd);
+        socket.QueueReceived += _ => RoomQueueChanged?.Invoke();
         socket.SkipProgressReceived += p => SkipProgressReceived?.Invoke(p);
         socket.ConnectionChanged += _ => OnStatusChanged();
         socket.UpdateRequiredReceived += message => SetError(message);
@@ -490,12 +508,15 @@ public sealed class SharedPlaySessionController : IDisposable
         socket.Dispose();
         lock (statusLock)
         {
-            capabilities = SharedPlayCapabilities.Default;
             members = Array.Empty<SharedPlayMember>();
         }
     }
 
-    public void SetCapabilities(SharedPlayCapabilities caps) => roomSocket?.SetCaps(caps);
+    public void SetCapabilities(SharedPlayCapabilities caps)
+    {
+        lock (statusLock) capabilities = caps;
+        roomSocket?.SetCaps(caps);
+    }
     public void SetMemberRole(string clientId, SharedPlayRole role) => roomSocket?.SetMemberRole(clientId, role);
     public void KickMember(string clientId) => roomSocket?.KickMember(clientId);
 
@@ -510,7 +531,7 @@ public sealed class SharedPlaySessionController : IDisposable
             Log($"Creating session for '{track.DisplayTitle}' ({track.SourcePath}) via {GetCdnBaseUri()}");
             var package = await cacheStore.CreateOrGetPackageAsync(track, cancellationToken);
             Log($"Package ready: {package.PackagePath} ({package.PackageBytes} bytes)");
-            var newSession = await cdnClient.CreateSessionAndUploadAsync(cdnBaseUri, package, playback, cancellationToken);
+            var newSession = await cdnClient.CreateSessionAndUploadAsync(cdnBaseUri, package, playback, cancellationToken, Capabilities);
             Log($"Session ready: Room {newSession.DisplayCode} — {newSession.JoinUrl}");
 
             lock (statusLock)
@@ -745,7 +766,7 @@ public sealed class SharedPlaySessionController : IDisposable
             descriptor = activeTrackDescriptor;
         }
 
-        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || !WardAccount.IsConnected)
+        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || !WardAccount.IsConnectedTo(GetCdnBaseUri()))
             return;
 
         descriptor ??= new SharedPlayTrackDescriptor(
@@ -903,6 +924,7 @@ public sealed class SharedPlaySessionController : IDisposable
     {
         CloseRoomSocket();
         cancellation.Cancel();
+        listenerUploads.Dispose();
         cancellation.Dispose();
         operationGate.Dispose();
         cdnClient.Dispose();

@@ -37,6 +37,10 @@ public sealed class AppSettings
 
     /// <summary>Join tracks with no gap when the next queue item is ready.</summary>
     public bool GaplessPlayback { get; set; } = true;
+    public bool DjModeEnabled { get; set; }
+    public bool DjAiStemSeparationEnabled { get; set; }
+    public string? DjMasterOutputDeviceId { get; set; }
+    public string? DjCueOutputDeviceId { get; set; }
 
     /// <summary>Chosen output device (null = follow the system default). Kept even while unplugged.</summary>
     public string? OutputDeviceId { get; set; }
@@ -54,6 +58,8 @@ public sealed class AppSettings
     public MidiPlaybackInstrument MidiInstrument { get; set; } = MidiPlaybackInstrument.AcousticGrandPiano;
     public int DefaultVolume { get; set; } = 85;
     public bool AutoPlayOnOpen { get; set; } = true;
+    /// <summary>Convert downloaded remote tracks to MP3 and embed the available tags and cover art.</summary>
+    public bool AutoFormatDownloadedSongs { get; set; } = true;
     public bool QueueByDefault { get; set; }
     public bool RememberWindowPlacement { get; set; } = true;
     public bool PreserveSession { get; set; } = true;
@@ -104,6 +110,7 @@ public sealed class AppSettings
     public string SharedPlayHostName { get; set; } = string.Empty;
     // Default collaborative-room capabilities for a freshly hosted room.
     public bool SharedPlayListenersCanQueue { get; set; } = true;
+    public bool SharedPlayListenersCanUploadAudio { get; set; } = true;
     public bool SharedPlayListenersCanReorder { get; set; }
     public bool SharedPlayListenersCanRemove { get; set; }
     public bool SharedPlayListenersCanControlPlayback { get; set; }
@@ -160,6 +167,10 @@ public sealed class AppSettings
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
             GaplessPlayback = GaplessPlayback,
+            DjModeEnabled = DjModeEnabled,
+            DjAiStemSeparationEnabled = DjAiStemSeparationEnabled,
+            DjMasterOutputDeviceId = DjMasterOutputDeviceId,
+            DjCueOutputDeviceId = DjCueOutputDeviceId,
             OutputDeviceId = OutputDeviceId,
             CrossfadeSeconds = CrossfadeSeconds,
             EffectChainJson = EffectChainJson,
@@ -167,6 +178,7 @@ public sealed class AppSettings
             MidiInstrument = MidiInstrument,
             DefaultVolume = DefaultVolume,
             AutoPlayOnOpen = AutoPlayOnOpen,
+            AutoFormatDownloadedSongs = AutoFormatDownloadedSongs,
             QueueByDefault = QueueByDefault,
             RememberWindowPlacement = RememberWindowPlacement,
             PreserveSession = PreserveSession,
@@ -210,6 +222,7 @@ public sealed class AppSettings
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
             SharedPlayHostName = SharedPlayHostName,
             SharedPlayListenersCanQueue = SharedPlayListenersCanQueue,
+            SharedPlayListenersCanUploadAudio = SharedPlayListenersCanUploadAudio,
             SharedPlayListenersCanReorder = SharedPlayListenersCanReorder,
             SharedPlayListenersCanRemove = SharedPlayListenersCanRemove,
             SharedPlayListenersCanControlPlayback = SharedPlayListenersCanControlPlayback,

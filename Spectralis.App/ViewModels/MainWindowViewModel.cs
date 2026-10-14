@@ -113,7 +113,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 // queue-driven mixed-source) tracks never accumulated listened time and never
                 // crossed the scrobble threshold. NowPlayingViewModel already unifies both
                 // sources into these two properties (see RefreshFromEngine/ApplySpotifyStateAsync).
-                Scrobbling.Tick(NowPlaying.PositionSeconds, NowPlaying.IsPlaying);
+                Scrobbling.Tick(NowPlaying.PositionSeconds, !NowPlaying.IsMixSource && NowPlaying.IsPlaying);
                 return true;
             },
             TimeSpan.FromSeconds(5));
@@ -282,6 +282,21 @@ public sealed class MainWindowViewModel : ViewModelBase
             id => ObsOverlay.RemoveNamedLayout(id));
         StreamerSettings = new StreamerSettingsViewModel(AppSettings, ObsEditor);
         ObsEditor.StreamerSettings = StreamerSettings;
+        Dj = new DjViewModel(AppSettings, LibraryDatabase, NowPlaying.PauseTrackSource);
+        NowPlaying.AttachMixer(Dj, () => SelectSection(Dj));
+        Dj.QueueSource = () => NowPlaying.QueueItems.Where(t => !string.IsNullOrWhiteSpace(t.Path))
+            .Select(t => new DjLibraryTrack(t.Path, t.Title, t.Subtitle, "—"));
+        Dj.BrowseLibrary = () => SelectSection(Library);
+        Dj.LoadNowPlaying = LoadCurrentInDjAsync;
+        Dj.ShowNowPlaying = () => { NowPlaying.SelectMixSource(); SelectSection(NowPlaying); };
+        Presentation = new PlaybackVisualizerSource(NowPlaying, Dj);
+        NowPlaying.VisualizationSource = Presentation;
+        NowPlaying.QueueItems.CollectionChanged += (_, _) => { if (Dj.Enabled && Dj.BrowserSource == "Queue") Dj.RefreshLibrary(); };
+        Dj.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DjViewModel.HasSession) or nameof(DjViewModel.IsPlaying) or nameof(DjViewModel.SessionTitle) or nameof(DjViewModel.Status) or nameof(DjViewModel.Enabled) or nameof(DjViewModel.UseForVisualization))
+                RefreshDjShell();
+        };
         Settings = new SettingsViewModel(
             AppSettings,
             NowPlaying,
@@ -292,7 +307,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 this.RaisePropertyChanged(nameof(ShowP2wYellowBanner));
                 this.RaisePropertyChanged(nameof(ShowP2wBadge));
-            });
+            }, onDjModeChanged: UpdateDjNavigation);
 
         Sections = new ObservableCollection<NavSection>
         {
@@ -313,11 +328,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         };
 
         _selectedSection = Sections[0];
+        UpdateDjNavigation(AppSettings.DjModeEnabled);
+        Settings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SettingsViewModel.DjAiStemSeparationEnabled)) Dj.RefreshOptions();
+        };
+        NowPlaying.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(NowPlayingViewModel.IsPlaying) && NowPlaying.IsPlaying && !NowPlaying.IsMixSource)
+            { Dj.Mixer.PauseAll(); Dj.UseForVisualization = false; }
+        };
 
         RefreshObsSettings();
 
         NowPlaying.PropertyChanged += (_, e) =>
         {
+            if (e.PropertyName is nameof(NowPlayingViewModel.PlayPauseMenuLabel) or nameof(NowPlayingViewModel.MuteMenuLabel)) RefreshDjShell();
             switch (e.PropertyName)
             {
                 case nameof(NowPlayingViewModel.HasTrack):
@@ -351,6 +377,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get
         {
+            if (Dj.IsPlaying) return $"DJ · {Dj.SessionTitle} - Spectralis";
             if (!NowPlaying.HasTrack)
             {
                 return "Spectralis";
@@ -366,6 +393,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get
         {
+            if (Dj.IsPlaying) return "Mixing · " + Dj.SessionTitle;
+            if (IsDjSelected) return Dj.Status;
             if (!string.IsNullOrWhiteSpace(NowPlaying.RemoteStatus) && !NowPlaying.HasTrack)
             {
                 return NowPlaying.RemoteStatus;
@@ -394,14 +423,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    public bool IsStatusAccent => NowPlaying.IsPlaying;
+    public bool IsStatusAccent => NowPlaying.IsPlaying || Dj.IsPlaying;
 
-    public string OutputStatusText => $"Output: {NowPlaying.OutputRateText}";
+    public string OutputStatusText => Dj.IsPlaying ? "DJ output: 48 kHz" : $"Output: {NowPlaying.OutputRateText}";
 
     private static string KeyboardShortcutText =>
         "Space: Play/Pause  ·  ←→: Seek  ·  ↑↓: Volume  ·  M: Mute  ·  Ctrl+←→: Prev/Next  ·  Ctrl+O: Open  ·  Ctrl+,: Settings";
 
-    public string StatusHintText => NowPlaying.HasTrack
+    public string StatusHintText => IsDjSelected ? "F1/F2: Deck play · Space: Play/pause mix · Ctrl+O / Ctrl+L: Load selected deck" : NowPlaying.HasTrack
         ? KeyboardShortcutText
         : IdleActivityText;
 
@@ -449,6 +478,65 @@ public sealed class MainWindowViewModel : ViewModelBase
     public TimingStudioViewModel TimingStudio { get; }
     public TimelineEditorViewModel TimelineEditor { get; }
     public SettingsViewModel Settings { get; }
+    public DjViewModel Dj { get; }
+    public PlaybackVisualizerSource Presentation { get; }
+    public bool IsDjSelected => ReferenceEquals(CurrentContent, Dj);
+    public bool ShowDjDock => Dj.HasSession && !IsDjSelected;
+    public bool ControlsMix => NowPlaying.IsMixSource;
+    public string PlayPauseMenuLabel => ControlsMix ? Dj.PlayPauseLabel : NowPlaying.PlayPauseMenuLabel;
+    public string MuteMenuLabel => ControlsMix ? "Mute / unmute mix" : NowPlaying.MuteMenuLabel;
+
+    private void RefreshDjShell()
+    {
+        this.RaisePropertyChanged(nameof(ShowDjDock)); this.RaisePropertyChanged(nameof(WindowTitle));
+        this.RaisePropertyChanged(nameof(StatusText)); this.RaisePropertyChanged(nameof(IsStatusAccent));
+        this.RaisePropertyChanged(nameof(OutputStatusText)); this.RaisePropertyChanged(nameof(StatusHintText));
+        this.RaisePropertyChanged(nameof(PlayPauseMenuLabel)); this.RaisePropertyChanged(nameof(MuteMenuLabel));
+    }
+
+    public async Task LoadDjSourcesAsync(int deck, IReadOnlyList<DjSource> sources)
+    {
+        if (!Dj.Enabled || sources.Count == 0) return;
+        Dj.ActiveDeckIndex = deck;
+        SelectSection(Dj);
+        await Dj.ActiveDeck.LoadSourcesAsync(sources);
+    }
+
+    public Task LoadCurrentInDjAsync(int deck)
+    {
+        if (NowPlaying.IsMixSource)
+        {
+            Dj.Status = "Choose Track in Now Playing to load that track, or load a file or URL directly into a deck.";
+            return Task.CompletedTask;
+        }
+        var remote = NowPlaying.CurrentRemoteAudio;
+        var path = NowPlaying.CurrentTrackPath;
+        if (NowPlaying.SourceLabel == "Spotify")
+            return LoadDjSourcesAsync(deck, [new DjSource("spotify:", Service: "Spotify")]);
+        if (remote is not null)
+            return LoadDjSourcesAsync(deck, [new DjSource(remote.SourceUrl, remote.IsWebViewFallback() ? null : path,
+                NowPlaying.Title, NowPlaying.Artist, remote.ServiceLabel)]);
+        if (path is not null)
+            return LoadDjSourcesAsync(deck, [new DjSource(path, Title: NowPlaying.Title, Artist: NowPlaying.Artist)]);
+        Dj.Status = "Open a track in Now Playing first, or load a file or URL directly into a deck.";
+        return Task.CompletedTask;
+    }
+
+    private void UpdateDjNavigation(bool enabled)
+    {
+        var existing = Sections.FirstOrDefault(s => ReferenceEquals(s.Content, Dj));
+        if (enabled && existing is null)
+            Sections.Insert(Sections.IndexOf(Sections.First(s => ReferenceEquals(s.Content, NowPlaying))) + 1,
+                new NavSection("DJ tools", IconData.Dj, Dj));
+        else if (!enabled && existing is not null)
+        {
+            if (ReferenceEquals(SelectedSection, existing)) SelectSection(Settings);
+            Sections.Remove(existing);
+        }
+        _ = Dj.SetEnabledAsync(enabled);
+        Library.RefreshDjMode(); NowPlaying.RefreshDjMode();
+        RefreshDjShell();
+    }
 
     public ObservableCollection<NavSection> Sections { get; }
 
@@ -462,6 +550,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsNowPlayingSelected));
             this.RaisePropertyChanged(nameof(IsLibrarySelected));
             this.RaisePropertyChanged(nameof(IsPlaylistsSelected));
+            this.RaisePropertyChanged(nameof(IsDjSelected));
+            RefreshDjShell();
         }
     }
 
@@ -614,6 +704,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// </summary>
     private async Task PlayStreamerQueueTrackAsync(string url)
     {
+        if (Path.IsPathFullyQualified(url) && File.Exists(url))
+        {
+            await NowPlaying.PlayQueueAsync([url], 0);
+            return;
+        }
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
         if (CapsulesViewModel.IsPackageExtension(extension))
         {
@@ -630,6 +725,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <see cref="PlayStreamerQueueTrackAsync"/>, which replaces and plays immediately).</summary>
     private async Task QueueStreamerRequestTrackAsync(string url)
     {
+        if (Path.IsPathFullyQualified(url) && File.Exists(url))
+        {
+            await NowPlaying.QueueFilesAsync([url], playIfQueueWasEmpty: false);
+            return;
+        }
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
         if (CapsulesViewModel.IsPackageExtension(extension))
         {

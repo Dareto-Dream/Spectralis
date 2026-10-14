@@ -18,9 +18,21 @@ internal static class SoundCloudNativeResolver
     {
         Log($"Resolve: {uri.AbsoluteUri}");
         var playbackSource = await ResolvePlaybackSourceAsync(uri, cancellationToken);
-        var nativeTrack = await ResolveNativeTrackAsync(playbackSource, cancellationToken) ??
+        var nativeTrack = await ResolveNativeTrackAsync(playbackSource, cancellationToken);
+        if (nativeTrack is null)
+        {
+            // The scraped client_id is cached for the whole session and SoundCloud rotates
+            // it, so a failure may just mean it went stale: drop it, rediscover, retry once.
+            Log("Native resolve failed; discarding cached client_id and retrying");
+            cachedClientId = null;
+            nativeTrack = await ResolveNativeTrackAsync(playbackSource, cancellationToken);
+        }
+
+        if (nativeTrack is null)
+        {
             throw new InvalidOperationException(
                 "SoundCloud did not expose a native progressive MP3 stream for this track.");
+        }
 
         return new RemoteAudioResolveResult(
             RemoteAudioServiceKind.SoundCloud,
@@ -93,7 +105,7 @@ internal static class SoundCloudNativeResolver
 
         var playbackUrl = NormalizePlaybackUrl(uri);
         return await ResolveOEmbedSourceAsync(playbackUrl, cancellationToken) ??
-            new SoundCloudPlaybackSource(playbackUrl, null);
+            new SoundCloudPlaybackSource(playbackUrl, TryExtractPathSecretToken(playbackUrl));
     }
 
     private static async Task<SoundCloudPlaybackSource?> ResolveOEmbedSourceAsync(
@@ -189,7 +201,11 @@ internal static class SoundCloudNativeResolver
             return null;
         }
 
-        var streamUrl = await ResolveStreamUrlAsync(transcodingUrl, clientId, cancellationToken);
+        // Private (/s-xxxx) and some restricted tracks only hand out a stream URL when the
+        // transcoding request carries the track's own authorization token.
+        var trackAuthorization = TryGetJsonString(root, "track_authorization");
+        var streamUrl = await ResolveStreamUrlAsync(
+            transcodingUrl, clientId, trackAuthorization, playbackSource.SecretToken, cancellationToken);
         if (string.IsNullOrWhiteSpace(streamUrl))
         {
             return null;
@@ -259,11 +275,23 @@ internal static class SoundCloudNativeResolver
     private static async Task<string?> ResolveStreamUrlAsync(
         string transcodingUrl,
         string clientId,
+        string? trackAuthorization,
+        string? secretToken,
         CancellationToken cancellationToken)
     {
         try
         {
             var url = AppendQueryParameter(transcodingUrl, "client_id", clientId);
+            if (!string.IsNullOrWhiteSpace(trackAuthorization))
+            {
+                url = AppendQueryParameter(url, "track_authorization", trackAuthorization);
+            }
+
+            if (!string.IsNullOrWhiteSpace(secretToken))
+            {
+                url = AppendQueryParameter(url, "secret_token", secretToken);
+            }
+
             var json = await Http.GetStringAsync(url, cancellationToken);
             using var doc = JsonDocument.Parse(json);
             return TryGetJsonString(doc.RootElement, "url");
@@ -371,6 +399,13 @@ internal static class SoundCloudNativeResolver
         }
 
         return null;
+    }
+
+    /// <summary>Private share links look like soundcloud.com/user/track/s-AbCd123; the s-… part is the secret token.</summary>
+    private static string? TryExtractPathSecretToken(string url)
+    {
+        var match = Regex.Match(url, @"soundcloud\.com/[^/?#]+/[^/?#]+/(?<token>s-[A-Za-z0-9]+)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["token"].Value : null;
     }
 
     private static bool ShouldResolveRedirect(Uri uri) =>

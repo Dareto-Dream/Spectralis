@@ -88,7 +88,7 @@ public sealed class AnalysisWorker
         try
         {
             var (bpm, firstBeat) = await BpmAnalyzer.AnalyzeAsync(path, ct);
-            var key = await Task.Run(() => KeyAnalyzer.AnalyzeFile(path), ct);
+            var key = await Task.Run(() => KeyAnalyzer.AnalyzeFile(path, ct), ct);
 
             ct.ThrowIfCancellationRequested();
 

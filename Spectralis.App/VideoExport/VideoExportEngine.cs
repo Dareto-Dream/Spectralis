@@ -3,10 +3,10 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using NAudio.Vorbis;
 using NAudio.Wave;
-using NLayer.NAudioSupport;
 using Spectralis.App.Controls;
+using Spectralis.Core.Audio;
+using Spectralis.Core.Integrations;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Scripting;
 
@@ -58,7 +58,7 @@ public static partial class VideoExportEngine
         var fps = options.FrameRate;
         var bounds = new VizRect(0, 0, w, h);
 
-        using var audioStream = OpenAudioStream(request.AudioFilePath);
+        using var audioStream = OpenAudioStream(request.AudioFilePath, ct);
         var sampleRate = audioStream.WaveFormat.SampleRate;
         var channels = audioStream.WaveFormat.Channels;
         var durationSeconds = audioStream.TotalTime.TotalSeconds;
@@ -299,27 +299,8 @@ public static partial class VideoExportEngine
 
     // ── Shared audio / ffmpeg plumbing ────────────────────────────────────────
 
-    private static WaveStream OpenAudioStream(string path)
-    {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-
-        if (ext is ".ogg" or ".oga")
-            return new VorbisWaveReader(path);
-
-        try
-        {
-            return new AudioFileReader(path);
-        }
-        catch
-        {
-            return ext switch
-            {
-                ".wav" => new WaveFileReader(path),
-                ".mp3" => new Mp3FileReaderBase(path, wf => new Mp3FrameDecompressor(wf)),
-                _ => new MediaFoundationReader(path),
-            };
-        }
-    }
+    private static WaveStream OpenAudioStream(string path, CancellationToken ct = default) =>
+        AudioStreamFactory.Open(path, cancellationToken: ct);
 
     private static float[] CreateAnalysisBuffer(int sampleRate, int channels, int fps)
     {
@@ -398,63 +379,8 @@ public static partial class VideoExportEngine
         return p;
     }
 
-    // The bundled/PATH binary has no ".exe" suffix outside Windows — searching
-    // for "ffmpeg.exe" on Linux/macOS never matches a real ffmpeg install.
-    private static string FfmpegExecutableName => OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
-
-    private static string FindFfmpegPath()
-    {
-        var appDir = Path.GetDirectoryName(Environment.ProcessPath);
-        if (appDir is not null)
-        {
-            var bundled = Path.Combine(appDir, FfmpegExecutableName);
-            if (File.Exists(bundled))
-            {
-                EnsureExecutable(bundled);
-                return bundled;
-            }
-        }
-
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "")
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(dir, FfmpegExecutableName);
-                if (File.Exists(candidate))
-                    return candidate;
-            }
-            catch { }
-        }
-
-        throw new FileNotFoundException(
-            $"FFmpeg not found. Place {FfmpegExecutableName} in the Spectralis application folder, " +
+    private static string FindFfmpegPath() =>
+        FfmpegLocator.FindExecutable() ?? throw new FileNotFoundException(
+            "FFmpeg not found. Place FFmpeg in the Spectralis application folder, " +
             "or install FFmpeg and add it to your system PATH.");
-    }
-
-    /// <summary>Re-asserts the executable bit on the bundled binary (git tracks
-    /// it explicitly since this repo is cross-published from Windows) so a
-    /// stray build step or plain copy deploy can't silently break launch.</summary>
-    private static void EnsureExecutable(string path)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        try
-        {
-            const UnixFileMode exec =
-                UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
-            var mode = File.GetUnixFileMode(path);
-            if ((mode & exec) != exec)
-            {
-                File.SetUnixFileMode(path, mode | exec);
-            }
-        }
-        catch
-        {
-            // Best-effort; if this fails, Process.Start surfaces a clear error.
-        }
-    }
 }

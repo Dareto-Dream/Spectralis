@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Integrations;
 using Xunit;
@@ -13,24 +15,16 @@ namespace Spectralis.Tests.Core;
 /// </summary>
 public class FfmpegWaveStreamTests : IDisposable
 {
-    private readonly string _previousPath;
     private readonly string _workDir;
 
     public FfmpegWaveStreamTests()
     {
-        // Under `dotnet test` Environment.ProcessPath is the dotnet muxer, so the
-        // locator's app-dir probe misses the ffmpeg the build copied beside us.
-        _previousPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        Environment.SetEnvironmentVariable(
-            "PATH", AppContext.BaseDirectory + Path.PathSeparator + _previousPath);
-
         _workDir = Path.Combine(Path.GetTempPath(), "spectralis-decode-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_workDir);
     }
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("PATH", _previousPath);
         try { Directory.Delete(_workDir, recursive: true); } catch { }
     }
 
@@ -79,16 +73,15 @@ public class FfmpegWaveStreamTests : IDisposable
 
         var encoded = Encode(ffmpeg!, "m4a", seconds: 2);
 
-        var before = Directory.GetFiles(Path.GetTempPath(), "spectralis-decode-*.wav").Length;
-
-        var stream = FfmpegWaveStream.Open(encoded);
+        using var stream = FfmpegWaveStream.Open(encoded);
+        var decodedPath = stream.DecodedPath;
+        Assert.True(File.Exists(decodedPath));
         stream.Position = stream.Length / 2;
         Assert.Equal(stream.Length / 2, stream.Position);
         Assert.True(stream.Read(new byte[1024], 0, 1024) > 0, "could not read after seeking");
         stream.Dispose();
 
-        var after = Directory.GetFiles(Path.GetTempPath(), "spectralis-decode-*.wav").Length;
-        Assert.True(after <= before, "Dispose left its temporary WAV behind");
+        Assert.False(File.Exists(decodedPath), "Dispose left its temporary WAV behind");
     }
 
     [Fact]
@@ -98,6 +91,33 @@ public class FfmpegWaveStreamTests : IDisposable
         File.WriteAllText(junk, "this is not audio");
 
         Assert.ThrowsAny<Exception>(() => FfmpegWaveStream.Open(junk));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Open_HungInput_RespectsTimeoutAndCancellation(bool cancel)
+    {
+        // Accept FFmpeg's HTTP request without replying, so stderr stays open and
+        // silent. Reading stderr synchronously before waiting used to hang forever.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var cancellation = new CancellationTokenSource();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var decode = FfmpegWaveStream.OpenAsync($"http://127.0.0.1:{port}/hung.m4a",
+            timeout: TimeSpan.FromSeconds(cancel ? 30 : 2), cancellationToken: cancellation.Token);
+        using var client = await listener.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        if (cancel)
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => decode.WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() => decode.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.True(decode.IsCompleted, "Only the test deadline expired; FFmpeg is still blocked.");
+        }
     }
 
     /// <summary>Renders a short stereo tone into the requested container.</summary>

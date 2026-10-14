@@ -19,9 +19,8 @@ internal sealed record SunoClipInfo(
 
 internal static class SunoClipResolver
 {
-    // Suno's studio API now returns audio through a flat, unauthenticated CloudFront
-    // path derived from the clip id alone: https://<host>/1/clip/{id}.m4a (m4a-opus).
-    // The old cdn1.suno.ai/{id}.mp3 path is gone.
+    // The current CloudFront M4A is encrypted. Guest rights must be requested and
+    // the media decrypted before it can be passed to the native audio engine.
     private const string AudioCdnHost = "d2lwuy8qc234o3.cloudfront.net";
 
     private static string BuildCdnAudioUrl(string clipId) =>
@@ -328,8 +327,7 @@ internal static class SunoClipResolver
             return false;
         }
 
-        // studio-api-prod.suno.com / studio-api.prod.suno.com only gate discovery,
-        // never delivery — an audio URL on that host is the decoy.
+        // API endpoints aren't media URLs; rights are requested separately.
         return !uri.Host.Contains("studio-api", StringComparison.OrdinalIgnoreCase) &&
                !uri.Host.Contains("api.prod.suno", StringComparison.OrdinalIgnoreCase);
     }
@@ -440,7 +438,7 @@ internal static class SunoClipResolver
         return null;
     }
 
-    private static void LogSuno(string message)
+    internal static void LogSuno(string message)
     {
         try
         {
@@ -470,8 +468,7 @@ internal static class SunoClipResolver
         [JsonPropertyName("audio_url")]
         public string? AudioUrl { get; set; }
 
-        // Real playback source(s). media_urls[0].url is a flat, unauthenticated
-        // CloudFront path (content_type "m4a-opus", progressive delivery).
+        // Encrypted playback source(s), usually content_type "m4a-opus".
         [JsonPropertyName("media_urls")]
         public List<SunoMediaUrlJson>? MediaUrls { get; set; }
 

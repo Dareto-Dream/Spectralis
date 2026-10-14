@@ -3,6 +3,7 @@ namespace Spectralis.App.Design;
 public static class IconData
 {
     public const string NowPlaying = Play;
+    public const string Dj = "M4,3 H6 V8 H4 Z M3,9 H7 V13 H3 Z M4,14 H6 V21 H4 Z M11,3 H13 V13 H11 Z M10,14 H14 V18 H10 Z M11,19 H13 V21 H11 Z M18,3 H20 V5 H18 Z M17,6 H21 V10 H17 Z M18,11 H20 V21 H18 Z";
     public const string Library = "M4,5 H7 V19 H4 Z M9,5 H12 V19 H9 Z M14,5 H20 V8 H14 Z M14,10 H20 V13 H14 Z M14,15 H20 V19 H14 Z";
     public const string Playlists = "M4,5 H16 V7 H4 Z M4,10 H16 V12 H4 Z M4,15 H11 V17 H4 Z M14,14 L21,17.5 L14,21 Z";
     /// <summary>Placeholder cover glyph for a playlist with no user image, Spotify image, or resolvable track art.</summary>

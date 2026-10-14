@@ -111,7 +111,7 @@ mod tests {
             stripe_webhook_secret: None,
             stripe_connect_client_id: None,
             stripe_publishable_key: None,
-            ward_issuer: Arc::new("http://127.0.0.1:1".into()),
+            ward_issuer: Arc::new("http://127.0.0.1:1".into()), ward_enabled: true,
         }
     }
 

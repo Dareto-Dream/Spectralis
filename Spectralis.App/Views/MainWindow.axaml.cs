@@ -37,6 +37,10 @@ public partial class MainWindow : Window
     private readonly OpenUrlService _clipboardUrlResolver = new();
     private string _lastClipboardText = string.Empty;
     private bool _checkingClipboard;
+    private readonly DispatcherTimer _mixTimer;
+    private PageWindowService? _pageWindows;
+    private WindowState _beforePageFullscreen;
+    private bool _pageFullscreen;
 
     // Pointer-lock panic escape — see OnWindowKeyDown's plain-Escape branch and
     // StartEscapeHoldTimerIfNeeded. Non-null exactly while a physical Esc hold is being timed.
@@ -46,6 +50,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _mixTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background,
+            (_, _) => { if (DataContext is MainWindowViewModel { Dj.Enabled: true } shell) shell.Dj.Tick(); });
 #if DEBUG
         this.AttachDevTools();
 #endif
@@ -64,6 +70,31 @@ public partial class MainWindow : Window
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.Capsules.TrustCreatorPrompt = PromptTrustCreatorAsync;
+                _pageWindows?.Dispose();
+                _pageWindows = new PageWindowService(PageContentHost, vm, page => new ViewLocator().Build(page)!);
+                _pageWindows.WindowOpened += window =>
+                {
+                    window.AddHandler(KeyDownEvent, OnWindowKeyDown);
+                    window.AddHandler(KeyUpEvent, OnWindowKeyUp, handledEventsToo: true);
+                    window.Deactivated += (_, _) =>
+                    { if (window.PageHost.Content is NowPlayingView && vm.NowPlaying.IsAlbumWorldShowingWorld) vm.NowPlaying.TriggerPointerLockPanic(); };
+                    window.FullscreenChanged += enabled =>
+                    { if (window.PageHost.Content is NowPlayingView playing) playing.SetVisualizerFullscreen(enabled); };
+                    window.AddHandler(DragDrop.DragOverEvent, OnDragOver);
+                    window.AddHandler(DragDrop.DropEvent, OnDrop);
+                    DragDrop.SetAllowDrop(window, true);
+                };
+                vm.PropertyChanged += (_, args) =>
+                {
+                    if (args.PropertyName == nameof(MainWindowViewModel.CurrentContent))
+                    {
+                        if (_pageFullscreen && PageContentHost.Content is NowPlayingView playing) playing.SetVisualizerFullscreen(false);
+                        _pageWindows.Select(vm.CurrentContent, vm.SelectedSection.Label);
+                    }
+                };
+                vm.Dj.PropertyChanged += (_, args) =>
+                { if (args.PropertyName == nameof(DjViewModel.Enabled) && !vm.Dj.Enabled) _pageWindows.Return(vm.Dj); };
+                _pageWindows.Select(vm.CurrentContent, vm.SelectedSection.Label);
                 vm.NowPlaying.ContentWarningPrompt = PromptContentWarningAsync;
                 vm.NowPlaying.RemoteLoadFailedRequested = (url, error) => _ = PromptRemoteLoadFailedAsync(url, error);
                 InitializeSpotifyPlaybackHost(vm);
@@ -109,6 +140,7 @@ public partial class MainWindow : Window
         {
             ApplySavedWindowPlacement();
             _clipboardMonitorTimer.Start();
+            _mixTimer.Start();
             InitializeMediaSession();
             ApplyDeadZoneAvoidance();
             await ShowConsentDialogIfNeededAsync();
@@ -116,6 +148,10 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _clipboardMonitorTimer.Stop();
+            _mixTimer.Stop();
+            _pageWindows?.Dispose();
+            (DataContext as MainWindowViewModel)?.Presentation.Dispose();
+            (DataContext as MainWindowViewModel)?.Dj.Dispose();
         };
         Closing += (_, _) =>
         {
@@ -222,7 +258,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// Creates the hidden Spotify Web Playback SDK host once per window. Must live in the
     /// visual tree (SpotifyHostSlot) for WebView2Host's native control to initialize, but
-    /// nothing actually connects to Spotify until the user clicks "Play Spotify".
+    /// connects on demand when the user opens a Spotify link or clicks "Play Spotify".
     /// </summary>
     private void InitializeSpotifyPlaybackHost(MainWindowViewModel vm)
     {
@@ -269,7 +305,7 @@ public partial class MainWindow : Window
             if (handle != IntPtr.Zero)
             {
                 var session = new Platform.Windows.WindowsMediaSessionService(handle);
-                session.StopRequested += (_, _) => RunOnUi(vm.NowPlaying.ResetPlaybackSession);
+                session.StopRequested += (_, _) => RunOnUi(() => { if (vm.ControlsMix) vm.Dj.StopPlayback(); else vm.NowPlaying.ResetPlaybackSession(); });
                 _mediaSession = session;
             }
         }
@@ -286,6 +322,7 @@ public partial class MainWindow : Window
 
         _mediaSession.PlayRequested += (_, _) => RunOnUi(() =>
         {
+            if (vm.ControlsMix) { if (!vm.Dj.IsPlaying) vm.Dj.TogglePlayback(); return; }
             if (!vm.NowPlaying.IsPlaying)
             {
                 vm.NowPlaying.TogglePlayback();
@@ -293,18 +330,27 @@ public partial class MainWindow : Window
         });
         _mediaSession.PauseRequested += (_, _) => RunOnUi(() =>
         {
+            if (vm.ControlsMix) { if (vm.Dj.IsPlaying) vm.Dj.TogglePlayback(); return; }
             if (vm.NowPlaying.IsPlaying)
             {
                 vm.NowPlaying.TogglePlayback();
             }
         });
-        _mediaSession.NextRequested += (_, _) => RunOnUi(() => _ = vm.NowPlaying.PlayNextAsync());
-        _mediaSession.PreviousRequested += (_, _) => RunOnUi(() => _ = vm.NowPlaying.PlayPreviousAsync());
+        _mediaSession.NextRequested += (_, _) => RunOnUi(() => { if (!vm.ControlsMix) _ = vm.NowPlaying.PlayNextAsync(); });
+        _mediaSession.PreviousRequested += (_, _) => RunOnUi(() => { if (!vm.ControlsMix) _ = vm.NowPlaying.PlayPreviousAsync(); });
         _mediaSession.SeekRequested += (_, position) => RunOnUi(() =>
             vm.NowPlaying.PositionSeconds = position.TotalSeconds);
 
         vm.NowPlaying.PropertyChanged += (_, e) =>
         {
+            if (vm.ControlsMix)
+            {
+                if (e.PropertyName is nameof(NowPlayingViewModel.IsMixSource) or nameof(NowPlayingViewModel.Title))
+                    _mediaSession?.UpdateMetadata(vm.NowPlaying.Title, vm.NowPlaying.Artist, "", null);
+                if (e.PropertyName is nameof(NowPlayingViewModel.IsMixSource) or nameof(NowPlayingViewModel.IsPlaying))
+                    _mediaSession?.UpdatePlaybackState(vm.NowPlaying.IsPlaying, TimeSpan.Zero, TimeSpan.Zero);
+                return;
+            }
             switch (e.PropertyName)
             {
                 case nameof(NowPlayingViewModel.HasTrack):
@@ -475,7 +521,8 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.Data.Contains(DataFormats.Files)
+        e.DragEffects = e.Data.Contains(DataFormats.Files) ||
+            (DataContext is MainWindowViewModel vm && IsDjTarget(sender, vm) && OpenUrlService.MightBeUrl(e.Data.GetText() ?? ""))
             ? DragDropEffects.Copy
             : DragDropEffects.None;
     }
@@ -495,7 +542,18 @@ public partial class MainWindow : Window
 
         if (paths is { Count: > 0 })
         {
+            if (IsDjTarget(sender, vm))
+            {
+                e.Handled = true;
+                await vm.LoadDjSourcesAsync(vm.Dj.ActiveDeckIndex, paths.Select(p => new DjSource(p)).ToArray());
+                return;
+            }
             await vm.OpenFilesAsync(paths);
+        }
+        else if (IsDjTarget(sender, vm) && e.Data.GetText() is { } url && OpenUrlService.MightBeUrl(url))
+        {
+            e.Handled = true;
+            await vm.LoadDjSourcesAsync(vm.Dj.ActiveDeckIndex, [new(url.Trim())]);
         }
     }
 
@@ -565,6 +623,23 @@ public partial class MainWindow : Window
         {
             return;
         }
+        var nowPlayingView = sender is PageWindow floating ? floating.PageHost.Content as NowPlayingView : PageContentHost.Content as NowPlayingView;
+        if (nowPlayingView is not null && e.KeyModifiers == KeyModifiers.None &&
+            (e.Key == Key.F11 || e.Key == Key.Escape && vm.NowPlaying.IsVisualizerFullscreen))
+        {
+            nowPlayingView.SetVisualizerFullscreen(!vm.NowPlaying.IsVisualizerFullscreen); e.Handled = true; return;
+        }
+
+        if ((vm.ControlsMix || vm.Dj.Enabled && IsDjTarget(sender, vm)) && e.KeyModifiers == KeyModifiers.None)
+        {
+            if (e.Key == Key.F1) { vm.Dj.DeckA.PlayCommand.Execute().Subscribe(); e.Handled = true; }
+            else if (e.Key == Key.F2) { vm.Dj.DeckB.PlayCommand.Execute().Subscribe(); e.Handled = true; }
+            else if (e.Key == Key.Space) { vm.Dj.TogglePlayback(); e.Handled = true; }
+            else if (e.Key == Key.M) { vm.Dj.ToggleMute(); e.Handled = true; }
+            else if (e.Key == Key.Up) { vm.Dj.MasterVolume = Math.Min(100, vm.Dj.MasterVolume + 5); e.Handled = true; }
+            else if (e.Key == Key.Down) { vm.Dj.MasterVolume = Math.Max(0, vm.Dj.MasterVolume - 5); e.Handled = true; }
+            if (e.Handled) return;
+        }
 
         // The mirror's VN pager owns E/Space entirely while it's up — advance it and stop, ahead
         // of everything else (Space would otherwise reach TogglePlayback below). The wasm guest's
@@ -593,7 +668,7 @@ public partial class MainWindow : Window
             {
                 case Key.O:
                     e.Handled = true;
-                    await OpenAudioFilesAsync(vm, addToQueue: true);
+                    await OpenAudioFilesAsync(vm, addToQueue: true, djTarget: IsDjTarget(sender, vm), owner: sender as Window);
                     return;
 
                 case Key.L:
@@ -624,7 +699,7 @@ public partial class MainWindow : Window
 
                 case Key.O:
                     e.Handled = true;
-                    await OpenAudioFilesAsync(vm, addToQueue: false);
+                    await OpenAudioFilesAsync(vm, addToQueue: false, djTarget: IsDjTarget(sender, vm), owner: sender as Window);
                     return;
 
                 case Key.B:
@@ -639,7 +714,7 @@ public partial class MainWindow : Window
 
                 case Key.L:
                     e.Handled = true;
-                    await OpenUrlAsync(vm);
+                    await OpenUrlAsync(vm, IsDjTarget(sender, vm), sender as Window);
                     return;
 
                 case Key.Q:
@@ -738,7 +813,8 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    vm.NowPlaying.ResetPlaybackSession();
+                    if (vm.NowPlaying.IsMixSource) vm.NowPlaying.StopPlayback();
+                    else vm.NowPlaying.ResetPlaybackSession();
                 }
                 return;
 
@@ -804,30 +880,35 @@ public partial class MainWindow : Window
         _escapeHoldTimer = null;
     }
 
-    private async Task OpenUrlAsync(MainWindowViewModel vm)
+    private static bool IsDjTarget(object? sender, MainWindowViewModel vm) => sender is PageWindow window
+        ? (window.PageHost.Content as Control)?.DataContext == vm.Dj : vm.IsDjSelected;
+    private async Task OpenUrlAsync(MainWindowViewModel vm, bool? djTarget = null, Window? owner = null)
     {
-        var url = await OpenUrlWindow.PromptAsync(this);
+        int? deck = (djTarget ?? vm.IsDjSelected) ? vm.Dj.ActiveDeckIndex : null;
+        var url = await OpenUrlWindow.PromptAsync(owner ?? this, deck is { } d ? (d == 0 ? "DECK A" : "DECK B") : null);
         if (string.IsNullOrWhiteSpace(url))
         {
             return;
         }
 
+        if (deck is { } target) { await vm.LoadDjSourcesAsync(target, [new(url)]); return; }
         vm.SelectedSection = vm.Sections[0];
         await vm.NowPlaying.LoadUrlAsync(url);
     }
 
-    private async Task OpenAudioFilesAsync(MainWindowViewModel vm, bool addToQueue)
+    private async Task OpenAudioFilesAsync(MainWindowViewModel vm, bool addToQueue, bool? djTarget = null, Window? owner = null)
     {
-        if (TopLevel.GetTopLevel(this) is not { } topLevel)
+        int? deck = !addToQueue && (djTarget ?? vm.IsDjSelected) ? vm.Dj.ActiveDeckIndex : null;
+        if (TopLevel.GetTopLevel(owner ?? this) is not { } topLevel)
         {
             return;
         }
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = addToQueue ? "Add files to queue" : "Open audio file",
+            Title = deck is { } d ? $"Load audio into deck {(d == 0 ? "A" : "B")}" : addToQueue ? "Add files to queue" : "Open file",
             AllowMultiple = true,
-            FileTypeFilter = BuildOpenFileFilters(addToQueue),
+            FileTypeFilter = OpenFileFilters.Build(audioOnly: addToQueue || deck is not null),
         });
 
         var paths = files
@@ -855,30 +936,45 @@ public partial class MainWindow : Window
             return;
         }
 
-        await vm.OpenFilesAsync(paths);
+        if (deck is { } target) await vm.LoadDjSourcesAsync(target, paths.Select(p => new DjSource(p)).ToArray());
+        else await vm.OpenFilesAsync(paths);
     }
 
-    private static IReadOnlyList<FilePickerFileType> BuildOpenFileFilters(bool addToQueue)
+    private void OnPopOutPage(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var filters = new List<FilePickerFileType>
+        if (DataContext is MainWindowViewModel vm && ReferenceEquals(vm.CurrentContent, vm.SongWars))
         {
-            new("Audio files")
-            {
-                Patterns = SupportedAudioFormats.Extensions.Select(ext => "*" + ext).ToArray(),
-            },
-        };
-
-        if (!addToQueue)
-        {
-            filters.Add(new FilePickerFileType("Spectralis packages")
-            {
-                Patterns = ["*.spectralis", "*.spectral"],
-            });
+            vm.NowPlaying.ShowSongWarsPanel = false;
+            _songWarsWindow?.Close();
         }
-
-        filters.Add(FilePickerFileTypes.All);
-        return filters;
+        if (PageContentHost.Content is NowPlayingView playing) playing.SetVisualizerFullscreen(false);
+        _pageWindows?.PopOutCurrent();
     }
+    private void OnFullscreenVisualizer(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        vm.SelectSection(vm.NowPlaying);
+        var view = new ViewLocator().Build(vm.NowPlaying) as NowPlayingView;
+        if (_pageWindows?.Find(vm.NowPlaying) is { } window) PageWindowService.Focus(window);
+        view?.SetVisualizerFullscreen(true);
+    }
+    public void SetPageFullscreen(bool enabled)
+    {
+        if (_pageFullscreen == enabled) return;
+        _pageFullscreen = enabled;
+        ShellTitleBar.IsVisible = ShellSidebar.IsVisible = ShellStatus.IsVisible = PageToolbar.IsVisible = !enabled;
+        MixDockHost.IsVisible = !enabled;
+        ShellLayout.RowDefinitions = new RowDefinitions(enabled ? "0,*,0" : "36,*,Auto");
+        PageArea.RowDefinitions = new RowDefinitions(enabled ? "0,*,0" : "Auto,*,Auto");
+        if (enabled) { _beforePageFullscreen = WindowState; WindowState = WindowState.FullScreen; }
+        else WindowState = _beforePageFullscreen == WindowState.Maximized ? WindowState.Maximized : WindowState.Normal;
+    }
+    private void OnOpenMix(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    { if (DataContext is MainWindowViewModel { Dj.Enabled: true } vm) vm.SelectSection(vm.Dj); }
+    private async void OnCurrentToMixA(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    { if (DataContext is MainWindowViewModel vm) await vm.LoadCurrentInDjAsync(0); }
+    private async void OnCurrentToMixB(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    { if (DataContext is MainWindowViewModel vm) await vm.LoadCurrentInDjAsync(1); }
 
     private async void OnMenuOpenAudio(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -901,6 +997,53 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             await OpenUrlAsync(vm);
+        }
+    }
+
+    private async void OnMenuDownloadSong(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            !vm.NowPlaying.CanDownloadCurrentTrack ||
+            TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose a folder for the downloaded song",
+            AllowMultiple = false,
+        });
+        var destinationFolder = folders.FirstOrDefault()?.TryGetLocalPath();
+        var sourcePath = vm.NowPlaying.CurrentTrackPath;
+        if (string.IsNullOrWhiteSpace(destinationFolder))
+            return;
+
+        var remote = vm.NowPlaying.CurrentRemoteAudio;
+        var autoFormat = remote is not null && vm.AppSettings.AutoFormatDownloadedSongs;
+        var coverArt = vm.NowPlaying.CoverArtBytes;
+        if (autoFormat && coverArt is null)
+        {
+            coverArt = await OpenUrlService.TryFetchArtworkBytesAsync(remote?.ArtworkUrl, CancellationToken.None);
+        }
+
+        try
+        {
+            var title = string.IsNullOrWhiteSpace(remote?.Title) ? vm.NowPlaying.Title : remote.Title;
+            var artist = string.IsNullOrWhiteSpace(remote?.Artist) ? vm.NowPlaying.Artist : remote.Artist;
+            var album = string.IsNullOrWhiteSpace(remote?.Album) ? vm.NowPlaying.Album : remote.Album;
+            var savedPath = sourcePath is not null && remote?.IsWebViewFallback() != true
+                ? await SongDownloadService.SaveAsync(sourcePath, destinationFolder, autoFormat, title, artist, album, coverArt)
+                : remote is not null
+                    ? await SongDownloadService.DownloadFromUrlAsync(remote.SourceUrl, destinationFolder, autoFormat,
+                        title, artist, album, coverArt)
+                    : throw new InvalidOperationException("The current song is no longer available to download.");
+            await MessageWindow.ShowAsync(this, "Song downloaded",
+                autoFormat ? $"Saved an MP3 with track tags and cover art when available:\n{savedPath}" : $"Saved the audio file:\n{savedPath}");
+        }
+        catch (Exception ex)
+        {
+            await MessageWindow.ShowAsync(this, "Download failed", ex.Message);
         }
     }
 
@@ -961,6 +1104,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (vm.ControlsMix) { vm.Dj.TogglePlayback(); return; }
         if (vm.NowPlaying.HasTrack)
         {
             vm.NowPlaying.TogglePlayback();
@@ -975,8 +1119,13 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel vm)
         {
-            vm.NowPlaying.ToggleMute();
+            if (vm.ControlsMix) vm.Dj.ToggleMute(); else vm.NowPlaying.ToggleMute();
         }
+    }
+    private void OnMenuStopPlayback(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+        { if (vm.ControlsMix) vm.Dj.StopPlayback(); else vm.NowPlaying.StopCommand.Execute().Subscribe(); }
     }
 
     private async void OnMenuOpenPlaylist(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1134,6 +1283,7 @@ public partial class MainWindow : Window
     private void OpenOrFocusSongWars(MainWindowViewModel vm)
     {
         if (_songWarsView is null) return;
+        if (_pageWindows?.Find(vm.SongWars) is { } page) { PageWindowService.Focus(page); return; }
 
         if (_songWarsWindow is { IsVisible: true })
         {

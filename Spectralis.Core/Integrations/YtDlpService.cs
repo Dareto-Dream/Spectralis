@@ -73,6 +73,7 @@ public static class YtDlpService
 
         return
         [
+            .. JsRuntimeArguments(),
             "-g",
             "--no-playlist",
             "-f",
@@ -84,6 +85,7 @@ public static class YtDlpService
 
     public static string[] BuildSearchArguments(string query) =>
     [
+        .. JsRuntimeArguments(),
         "--no-playlist",
         "--print",
         "webpage_url",
@@ -104,9 +106,7 @@ public static class YtDlpService
         var stdout = result.Stdout.Trim();
         if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(stdout))
         {
-            var stderr = result.Stderr.Trim();
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(stderr) ? $"yt-dlp failed (exit {result.ExitCode})" : stderr);
+            throw new InvalidOperationException(DescribeFailure(result.Stderr, result.ExitCode));
         }
 
         var url = stdout.Split('\n')[0].Trim();
@@ -130,14 +130,72 @@ public static class YtDlpService
 
         if (result.ExitCode != 0)
         {
-            var stderr = result.Stderr.Trim();
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(stderr) ? $"yt-dlp search failed (exit {result.ExitCode})" : stderr);
+            throw new InvalidOperationException(DescribeFailure(result.Stderr, result.ExitCode));
         }
 
         return result.Stdout
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(static line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static readonly Lazy<string[]> JsRuntimeArgs = new(FindJsRuntimeArguments);
+
+    /// <summary>
+    /// yt-dlp needs a JS runtime for YouTube but only enables deno on its own.
+    /// Point it at node or bun when one is on PATH, otherwise formats go missing.
+    /// </summary>
+    public static string[] JsRuntimeArguments() => JsRuntimeArgs.Value;
+
+    private static string[] FindJsRuntimeArguments()
+    {
+        var suffix = OperatingSystem.IsWindows() ? ".exe" : "";
+        foreach (var runtime in new[] { "deno", "node", "bun" })
+        {
+            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator))
+            {
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    continue;
+                }
+
+                var candidate = Path.Combine(dir.Trim(), runtime + suffix);
+                if (File.Exists(candidate))
+                {
+                    // deno is already on by default, nothing to add.
+                    return runtime == "deno" ? [] : ["--js-runtimes", $"{runtime}:{candidate}"];
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Turns yt-dlp's stderr (a wall of WARNING lines plus the real ERROR) into
+    /// one line a person can act on. The raw text belongs in the log, not the UI.
+    /// </summary>
+    public static string DescribeFailure(string? stderr, int exitCode)
+    {
+        var text = stderr ?? string.Empty;
+        if (text.Contains("confirm you", StringComparison.OrdinalIgnoreCase) &&
+            text.Contains("not a bot", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("HTTP Error 429", StringComparison.OrdinalIgnoreCase))
+        {
+            return "YouTube is blocking requests from this connection. That usually means a VPN or " +
+                   "shared network — turn the VPN off or try again later.";
+        }
+
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var error = lines.LastOrDefault(static l => l.StartsWith("ERROR:", StringComparison.Ordinal))
+            ?? lines.LastOrDefault(static l => !l.StartsWith("WARNING:", StringComparison.Ordinal));
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            return $"yt-dlp failed (exit {exitCode}).";
+        }
+
+        // "ERROR: [youtube] abc123: Video unavailable" -> "Video unavailable"
+        error = System.Text.RegularExpressions.Regex.Replace(error, @"^ERROR:\s*(\[[^\]]+\]\s*[^:\s]+:\s*)?", "");
+        return error;
     }
 
     /// <summary>

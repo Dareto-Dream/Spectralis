@@ -125,7 +125,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -199,7 +199,26 @@
                        FontSize="{StaticResource FontSize.UI.Small}"
                        Text="Captures Spotify's audio, runs it through the effects chain, and re-plays it while muting the original. Adds ~150 ms latency. Takes effect on the next Spotify track." />
           </StackPanel>
+
+          <TextBlock Grid.Row="12" Grid.Column="0" Classes="secondary" Text="Downloaded songs" VerticalAlignment="Top" Margin="0,4,0,0" />
+          <StackPanel Grid.Row="12" Grid.Column="1" Spacing="2" HorizontalAlignment="Left">
+            <CheckBox IsChecked="{Binding AutoFormatDownloadedSongs}"
+                      Content="Auto-format downloaded songs" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="420"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Convert to MP3 and embed the available title, artist, album, and cover art. Turn off to keep the source audio format." />
+          </StackPanel>
         </Grid>
+      </StackPanel>
+
+      <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
+        <TextBlock Classes="heading" Text="Mix &amp; visualizers" />
+        <CheckBox Content="Enable DJ mode" IsChecked="{Binding DjModeEnabled}" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="580"
+                   Text="Adds Mix as a source in Now Playing and enables DJ tools. Pop out Now Playing for the room, then use fullscreen visuals. Cues, loops and headphone controls are available when you need them. Disabling DJ mode stops the mix and finalizes recording." />
+        <CheckBox Content="Allow local AI stem separation" IsChecked="{Binding DjAiStemSeparationEnabled}" IsEnabled="{Binding DjModeEnabled}" />
+        <TextBlock Classes="muted" TextWrapping="Wrap" MaxWidth="580"
+                   Text="Prepared stems work without AI. AI tools and model weights are only downloaded when you choose Install AI tools in DJ tools. You can remove them there to reclaim space." />
       </StackPanel>
 
       <!-- Library -->
@@ -308,6 +327,14 @@
                      Text="{Binding UpdateStatus}"
                      TextWrapping="Wrap" />
         </StackPanel>
+      </StackPanel>
+
+      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+        <TextBlock Classes="heading" Text="Temporary storage" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="580"
+                   Text="Spectralis automatically removes old decode, separation and installer leftovers at startup and every six hours. Files still in use, installed AI models, and current or pending updates are kept." />
+        <Button Content="Clean old temporary files now" Click="OnCleanupTemp" HorizontalAlignment="Left" />
+        <TextBlock x:Name="CleanupResult" Classes="data" TextWrapping="Wrap" />
       </StackPanel>
 
       <!-- About -->

@@ -23,7 +23,9 @@ public static class SafeProcessRunner
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
         int maxOutputBytes = DefaultMaxOutputBytes,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? environment = null,
+        Encoding? outputEncoding = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -32,12 +34,16 @@ public static class SafeProcessRunner
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            StandardOutputEncoding = outputEncoding,
+            StandardErrorEncoding = outputEncoding,
         };
 
         foreach (var argument in arguments)
         {
             psi.ArgumentList.Add(argument);
         }
+        if (environment is not null)
+            foreach (var (key, value) in environment) psi.Environment[key] = value;
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start {Path.GetFileName(executablePath)}.");

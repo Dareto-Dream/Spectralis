@@ -215,7 +215,7 @@ public static class LyricsLoader
             var explanation = LyricsExplanationParser.GetExplanationForTimestamp(annotations, line.StartTime);
             return explanation is null
                 ? line
-                : new LyricsLine(line.StartTime, line.Text, line.Segments, explanation);
+                : new LyricsLine(line.StartTime, line.Text, line.Segments, explanation, line.HasWordTimings);
         });
 
         return new LyricsDocument(annotatedLines, document.Metadata, document.OffsetMilliseconds, document.SourceLabel);

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Spectralis.Core.Common;
 using Spectralis.Core.Integrations;
+using Spectralis.Core.Integrations.Spotify;
 
 namespace Spectralis.App.Services;
 
@@ -57,6 +58,9 @@ public sealed class OpenUrlService
 
     public async Task<RemoteAudioResolveResult> ResolveAsync(string input, CancellationToken cancellationToken, bool quickOnly = false)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (SpotifyPlaybackLink.TryParse(input, out var spotifyLink))
+            return BuildSpotifyResult(spotifyLink);
         var sourceUri = NormalizeInput(input);
         var expandedUri = await TryExpandRedirectAsync(sourceUri, cancellationToken);
         var kind = DetectTarget(expandedUri);
@@ -64,11 +68,13 @@ public sealed class OpenUrlService
         return kind switch
         {
             RemoteAudioServiceKind.DirectAudio => ResolveDirect(expandedUri),
-            RemoteAudioServiceKind.Untitled => await ResolveUntitledTrackAsync(expandedUri, cancellationToken),
-            RemoteAudioServiceKind.Suno => await ResolveSunoWithFallbackAsync(expandedUri, cancellationToken),
+            RemoteAudioServiceKind.Untitled => await ResolveUntitledWithFallbackAsync(expandedUri, cancellationToken, quickOnly),
+            RemoteAudioServiceKind.Suno => await ResolveSunoWithFallbackAsync(expandedUri, cancellationToken, quickOnly),
             RemoteAudioServiceKind.SoundCloud => await ResolveSoundCloudWithFallbackAsync(expandedUri, cancellationToken),
             RemoteAudioServiceKind.BandLab => await BandLabNativeResolver.ResolveAsync(expandedUri, cancellationToken),
-            RemoteAudioServiceKind.Spotify => BuildSpotifyWebViewResult(expandedUri),
+            RemoteAudioServiceKind.Spotify => SpotifyPlaybackLink.TryParse(expandedUri.AbsoluteUri, out var link)
+                ? BuildSpotifyResult(link)
+                : throw new InvalidOperationException("Open a Spotify track, album, playlist, artist, or episode link."),
             _ => await ResolveWithYtDlpAsync(expandedUri, kind, cancellationToken, quickOnly),
         };
     }
@@ -82,6 +88,7 @@ public sealed class OpenUrlService
 
         try
         {
+            if (SpotifyPlaybackLink.TryParse(value, out _)) return true;
             _ = NormalizeInput(value);
             return true;
         }
@@ -179,47 +186,84 @@ public sealed class OpenUrlService
                 "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
                 "<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#000;overflow:hidden}</style>" +
                 "</head><body>" +
-                "<iframe width=\"100%\" height=\"100%\" allow=\"autoplay\"" +
+                "<iframe id=\"sc\" width=\"100%\" height=\"100%\" allow=\"autoplay\"" +
                 " src=\"https://w.soundcloud.com/player/?url=" + Uri.EscapeDataString(uri.AbsoluteUri) +
                 "&amp;auto_play=true&amp;color=%23ff5500&amp;buying=false&amp;sharing=false&amp;download=false" +
                 "&amp;show_artwork=true&amp;show_comments=false&amp;show_user=true&amp;show_reposts=false&amp;show_teaser=false&amp;visual=true\">" +
-                "</iframe></body></html>");
+                "</iframe>" +
+                // auto_play alone is often swallowed by the web view's autoplay policy, leaving the
+                // widget idle forever. Drive it through the Widget API: play on READY, retry until
+                // a PLAY event confirms it actually started.
+                "<script src=\"https://w.soundcloud.com/player/api.js\"></script>" +
+                "<script>(function(){" +
+                "if(!window.SC||!SC.Widget)return;" +
+                "var w=SC.Widget(document.getElementById('sc'));var playing=false,tries=0;" +
+                "function kick(){if(playing||tries++>20)return;w.play();setTimeout(kick,750);}" +
+                "w.bind(SC.Widget.Events.PLAY,function(){playing=true;});" +
+                "w.bind(SC.Widget.Events.READY,kick);" +
+                "})();</script></body></html>");
         }
     }
 
-    private static async Task<RemoteAudioResolveResult> ResolveSunoWithFallbackAsync(
-        Uri uri, CancellationToken cancellationToken)
+    private static async Task<RemoteAudioResolveResult> ResolveUntitledWithFallbackAsync(
+        Uri uri, CancellationToken cancellationToken, bool quickOnly)
     {
         try
         {
-            return await ResolveSunoTrackAsync(uri, cancellationToken);
+            return await ResolveUntitledTrackAsync(uri, cancellationToken, quickOnly);
         }
-        catch (OperationCanceledException) { throw; }
-        catch
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
         {
-            return BuildWidgetFallbackResult(RemoteAudioServiceKind.Suno, "Suno", uri.AbsoluteUri,
-                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
-                "<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#0f0f0f;overflow:hidden;display:flex;align-items:center;justify-content:center}</style>" +
-                "</head><body>" +
-                "<iframe width=\"100%\" height=\"100%\" style=\"border:none\" allow=\"autoplay\"" +
-                " src=\"" + System.Net.WebUtility.HtmlEncode(uri.AbsoluteUri) + "\">" +
-                "</iframe></body></html>");
+            // The normal browser session signs and transfers the playback MP3 back into
+            // the native cache after the page's browser check has completed.
+            LogUntitled($"Native resolve blocked (HTTP {(int?)ex.StatusCode}); caching through embedded browser");
+            return BuildWidgetFallbackResult(RemoteAudioServiceKind.Untitled, "Untitled", uri.AbsoluteUri,
+                // untitled.stream sends X-Frame-Options: SAMEORIGIN, so an iframe renders blank.
+                // The marker tells the embedded surface to navigate the web view to the page itself.
+                NavigateMarkerPrefix + System.Net.WebUtility.HtmlEncode(uri.AbsoluteUri) + "-->");
         }
     }
 
-    private static RemoteAudioResolveResult BuildSpotifyWebViewResult(Uri uri)
+    /// <summary>Embed "html" that is really just a request to navigate the web view straight to a URL.</summary>
+    public const string NavigateMarkerPrefix = "<!--spectralis-navigate:";
+
+    public static bool TryGetNavigateTarget(string html, out Uri target)
     {
-        var embedUrl = uri.AbsoluteUri
-            .Replace("open.spotify.com/", "open.spotify.com/embed/", StringComparison.OrdinalIgnoreCase);
-        var html =
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
-            "<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#191414;overflow:hidden}</style>" +
-            "</head><body>" +
-            "<iframe width=\"100%\" height=\"100%\" style=\"border:none;border-radius:0\" allow=\"autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture\" loading=\"lazy\"" +
-            " src=\"" + System.Net.WebUtility.HtmlEncode(embedUrl) + "\">" +
-            "</iframe></body></html>";
-        return BuildWidgetFallbackResult(RemoteAudioServiceKind.Spotify, "Spotify", uri.AbsoluteUri, html);
+        target = null!;
+        if (!html.StartsWith(NavigateMarkerPrefix, StringComparison.Ordinal) || !html.EndsWith("-->", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var raw = System.Net.WebUtility.HtmlDecode(html[NavigateMarkerPrefix.Length..^3]);
+        return Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            && (target = uri) is not null;
     }
+
+    private static async Task<RemoteAudioResolveResult> ResolveSunoWithFallbackAsync(
+        Uri uri, CancellationToken cancellationToken, bool quickOnly)
+    {
+        try
+        {
+            return await ResolveSunoTrackAsync(uri, cancellationToken, quickOnly);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            SunoClipResolver.LogSuno($"Native guest playback failed: {ex.Message}");
+            var pageUrl = SunoClipResolver.TryExtractClipId(uri.AbsoluteUri, out var clipId)
+                ? $"https://suno.com/song/{clipId}"
+                : uri.AbsoluteUri;
+            return BuildWidgetFallbackResult(RemoteAudioServiceKind.Suno, "Suno", uri.AbsoluteUri,
+                NavigateMarkerPrefix + WebUtility.HtmlEncode(pageUrl) + "-->");
+        }
+    }
+
+    private static RemoteAudioResolveResult BuildSpotifyResult(SpotifyPlaybackLink link) =>
+        new(RemoteAudioServiceKind.Spotify, "Spotify", link.WebUrl.AbsoluteUri,
+            AudioUrl: string.Empty, DownloadExtension: string.Empty, FormatName: "Spotify",
+            Title: null, Artist: null, Album: null, ArtworkUrl: null,
+            Duration: TimeSpan.Zero, RefererUrl: null, ExternalId: link.PlaybackUri);
 
     private static RemoteAudioResolveResult BuildWidgetFallbackResult(
         RemoteAudioServiceKind kind, string label, string sourceUrl, string html) =>
@@ -436,6 +480,7 @@ public sealed class OpenUrlService
         var result = await SafeProcessRunner.RunWithProgressAsync(
             executable,
             [
+                .. YtDlpService.JsRuntimeArguments(),
                 "--no-playlist",
                 "--progress",
                 "--newline",
@@ -460,9 +505,8 @@ public sealed class OpenUrlService
 
         if (result.ExitCode != 0)
         {
-            var stderr = result.Stderr.Trim();
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(stderr) ? $"yt-dlp failed (exit {result.ExitCode})." : stderr);
+            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"yt-dlp download failed (exit {result.ExitCode}):\n{result.Stderr.Trim()}");
+            throw new InvalidOperationException(YtDlpService.DescribeFailure(result.Stderr, result.ExitCode));
         }
 
         var downloadedPath = RemoteAudioCache.FindDownloadedFile(token);
@@ -487,7 +531,7 @@ public sealed class OpenUrlService
     {
         var result = await SafeProcessRunner.RunAsync(
             executable,
-            ["--dump-json", "--no-playlist", "--skip-download", "--", url],
+            [.. YtDlpService.JsRuntimeArguments(), "--dump-json", "--no-playlist", "--skip-download", "--", url],
             YtDlpInfoTimeout,
             maxOutputBytes: 2 * 1024 * 1024,
             cancellationToken);
@@ -529,7 +573,8 @@ public sealed class OpenUrlService
 
     private static async Task<RemoteAudioResolveResult> ResolveUntitledTrackAsync(
         Uri uri,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool quickOnly)
     {
         if (!IsUntitledTrackUri(uri))
         {
@@ -552,11 +597,16 @@ public sealed class OpenUrlService
             throw new InvalidOperationException("Untitled track data did not include an MP3 fallback path.");
         var ownerAuthId = TryGetUntitledString(trackElement, "owner_auth_id", "ownerAuthId");
         var objectPath = ParseUntitledTranscodedObjectPath(fallbackUrl, ownerAuthId);
-        var signedAudioUrl = await FetchUntitledSignedAudioUrlAsync(
+        var signedAudioUrl = quickOnly ? fallbackUrl : await FetchUntitledSignedAudioUrlAsync(
             objectPath.OwnerAuthId,
             objectPath.FileName,
             cancellationToken);
         var sourceUrl = new UriBuilder(uri) { Fragment = "" }.Uri.AbsoluteUri;
+        // A storage-host browser check can happen after signing succeeded. Cache here so
+        // that this failure also reaches the browser fallback rather than the audio engine.
+        var cachedPath = quickOnly ? null : await RemoteAudioCache.DownloadAsync(
+            signedAudioUrl, ".mp3", cancellationToken, requestInitialRange: true, referer: sourceUrl);
+        var durationSeconds = TryGetDouble(trackElement, "duration");
 
         return new RemoteAudioResolveResult(
             RemoteAudioServiceKind.Untitled,
@@ -578,13 +628,16 @@ public sealed class OpenUrlService
                     TryGetUntitledString(trackElement, "image_url", "imageUrl"),
                     TryGetUntitledString(trackElement, "thumbnail_url", "thumbnailUrl")),
                 uri),
-            TimeSpan.Zero,
-            sourceUrl);
+            durationSeconds is > 0 and < 86400 ? TimeSpan.FromSeconds(durationSeconds) : TimeSpan.Zero,
+            sourceUrl,
+            CachedAudioPath: cachedPath,
+            MetadataOnly: quickOnly);
     }
 
     private static async Task<RemoteAudioResolveResult> ResolveSunoTrackAsync(
         Uri uri,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool quickOnly)
     {
         var clip = await SunoClipResolver.ResolveAsync(uri.AbsoluteUri, cancellationToken);
         var audioExtension = NormalizeAudioExtension(
@@ -592,6 +645,11 @@ public sealed class OpenUrlService
                 ? Path.GetExtension(audioUri.AbsolutePath)
                 : null,
             ".m4a");
+        // Modern Suno M4A is whole-file encrypted, even though it has a normal CDN URL.
+        // Only hand a validated clear file to native playback; older MP3 links remain direct.
+        var cachedPath = !quickOnly && audioExtension == ".m4a"
+            ? await RemoteAudioCache.DownloadSunoAsync(clip.Id, new Uri(clip.AudioUrl), cancellationToken)
+            : null;
         return new RemoteAudioResolveResult(
             RemoteAudioServiceKind.Suno,
             "Suno",
@@ -605,7 +663,10 @@ public sealed class OpenUrlService
             FirstNonEmpty(clip.ImageLargeUrl, clip.ImageUrl),
             clip.DurationSeconds is > 0 ? TimeSpan.FromSeconds(clip.DurationSeconds.Value) : TimeSpan.Zero,
             uri.AbsoluteUri,
-            LyricsText: clip.LyricsText);
+            CachedAudioPath: cachedPath,
+            ExternalId: clip.Id,
+            LyricsText: clip.LyricsText,
+            MetadataOnly: quickOnly);
     }
 
     private static bool IsUntitledTrackUri(Uri uri) =>
@@ -643,11 +704,14 @@ public sealed class OpenUrlService
         var requestUrl =
             $"https://untitled.stream/api/storage/buckets/private-transcoded-audio/objects/{objectPath}/signedUrl?durationInSeconds=10800&cacheBufferInSeconds=600";
 
-        using var response = await Http.GetAsync(requestUrl, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+        request.Headers.Referrer = new Uri("https://untitled.stream/");
+        using var response = await Http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException(
-                $"Untitled refused to sign this track (HTTP {(int)response.StatusCode}). It may not be public.");
+            throw new HttpRequestException(
+                $"Untitled refused to sign this track (HTTP {(int)response.StatusCode}). It may not be public.",
+                null, response.StatusCode);
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -841,7 +905,8 @@ public sealed class OpenUrlService
             "creator_name",
             "creatorName",
             "owner_name",
-            "ownerName");
+            "ownerName",
+            "username");
         if (!string.IsNullOrWhiteSpace(direct))
         {
             return direct;

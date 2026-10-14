@@ -406,6 +406,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
         _ = SendAsync(Envelope("caps.set", ("caps", new
         {
             queueAdd = caps.QueueAdd,
+            audioUploads = caps.AudioUploads,
             queueRemove = caps.QueueRemove,
             queueReorder = caps.QueueReorder,
             transport = caps.Transport,
@@ -466,7 +467,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
             ["name"] = _name,
         };
         if (_role == "host" && _sessionKey is not null) dict["key"] = _sessionKey;
-        if (WardAccount.IsConnected && _uri.Host == new Uri(SharedPlayDefaults.CdnBaseUrl).Host) dict["accessToken"] = WardAccount.Token;
+        if (WardAccount.GetSocketToken(_uri) is { } token) dict["accessToken"] = token;
         return JsonSerializer.Serialize(dict, Json);
     }
 

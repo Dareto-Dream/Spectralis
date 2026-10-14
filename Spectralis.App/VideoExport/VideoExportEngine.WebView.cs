@@ -35,7 +35,7 @@ public static partial class VideoExportEngine
         var h = options.Height;
         var fps = options.FrameRate;
 
-        using var audioStream = OpenAudioStream(request.AudioFilePath);
+        using var audioStream = OpenAudioStream(request.AudioFilePath, ct);
         var sampleRate = audioStream.WaveFormat.SampleRate;
         var channels = audioStream.WaveFormat.Channels;
         var durationSeconds = audioStream.TotalTime.TotalSeconds;

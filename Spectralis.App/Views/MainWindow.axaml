@@ -13,10 +13,10 @@
         DragDrop.AllowDrop="True"
         Background="{StaticResource Brush.Bg.Base}">
 
-  <Grid RowDefinitions="36,*,Auto">
+  <Grid x:Name="ShellLayout" RowDefinitions="36,*,Auto">
 
     <!-- ============ Combined title + menu bar ============ -->
-    <Border Grid.Row="0"
+    <Border x:Name="ShellTitleBar" Grid.Row="0"
             Background="{StaticResource Brush.Bg.Overlay}"
             BorderBrush="{StaticResource Brush.Border}"
             BorderThickness="0,0,0,1"
@@ -35,9 +35,11 @@
         <!-- Menu items — clicks handled internally, don't bubble as drags -->
         <Menu Grid.Column="1" Padding="0" VerticalAlignment="Center">
           <MenuItem Header="_File">
-            <MenuItem Header="Open Audio..." InputGesture="Ctrl+O" Click="OnMenuOpenAudio" />
+            <MenuItem Header="Open File..." InputGesture="Ctrl+O" Click="OnMenuOpenAudio" />
             <MenuItem Header="Add to Queue..." InputGesture="Ctrl+Shift+O" Click="OnMenuAddToQueue" />
             <MenuItem Header="Open URL..." InputGesture="Ctrl+L" Click="OnMenuOpenUrl" />
+            <MenuItem Header="Download Song..." Click="OnMenuDownloadSong"
+                      IsEnabled="{Binding NowPlaying.CanDownloadCurrentTrack}" />
             <Separator />
             <MenuItem Header="Export Video..." Click="OnMenuExportVideo" />
             <Separator />
@@ -80,13 +82,11 @@
             <MenuItem Header="Scrobbling Settings..." Click="OnMenuScrobblingSettings" />
           </MenuItem>
           <MenuItem Header="_Playback">
-            <MenuItem Header="{Binding NowPlaying.PlayPauseMenuLabel}"
+            <MenuItem Header="{Binding PlayPauseMenuLabel}"
                       InputGesture="Space"
                       Click="OnMenuPlayPause" />
-            <MenuItem Header="Stop"
-                      Command="{Binding NowPlaying.StopCommand}"
-                      IsEnabled="{Binding NowPlaying.HasTrack}" />
-            <MenuItem Header="{Binding NowPlaying.MuteMenuLabel}"
+            <MenuItem Header="Stop" Click="OnMenuStopPlayback" />
+            <MenuItem Header="{Binding MuteMenuLabel}"
                       InputGesture="M"
                       Click="OnMenuToggleMute" />
             <Separator />
@@ -100,6 +100,14 @@
                       IsEnabled="{Binding NowPlaying.HasNext}" />
           </MenuItem>
           <MenuItem Header="_Tools">
+            <MenuItem Header="Pop out current page" Click="OnPopOutPage" />
+            <MenuItem Header="Fullscreen visualizer" Click="OnFullscreenVisualizer" />
+            <MenuItem Header="DJ tools" Click="OnOpenMix" IsVisible="{Binding Dj.Enabled}" />
+            <MenuItem Header="Load Now Playing into Mix" IsVisible="{Binding Dj.Enabled}">
+              <MenuItem Header="Deck A" Click="OnCurrentToMixA" />
+              <MenuItem Header="Deck B" Click="OnCurrentToMixB" />
+            </MenuItem>
+            <Separator />
             <MenuItem Header="Karaoke Mode..." Click="OnMenuKaraokeMode" />
             <MenuItem Header="Creator">
               <MenuItem Header="Lyrics Timing Studio" InputGesture="Ctrl+Shift+L" Click="OnMenuTimingStudio" />
@@ -164,7 +172,7 @@
 
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
 
-      <Border Grid.Column="0"
+      <Border x:Name="ShellSidebar" Grid.Column="0"
               Background="{StaticResource Brush.Bg.Raised}"
               BorderBrush="{StaticResource Brush.Border}"
               BorderThickness="0,0,1,0">
@@ -313,14 +321,41 @@
         </DockPanel>
       </Border>
 
-      <ContentControl Grid.Column="1" Content="{Binding CurrentContent}"
+      <Grid x:Name="PageArea" Grid.Column="1" RowDefinitions="Auto,*,Auto">
+      <Grid x:Name="PageToolbar" ColumnDefinitions="*,Auto" Margin="14,6">
+        <TextBlock Text="{Binding SelectedSection.Label}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Content="Pop out page" Click="OnPopOutPage" Classes="ghost" ToolTip.Tip="Move this page to another window" />
+      </Grid>
+      <ContentControl x:Name="PageContentHost" Grid.Row="1"
                       HorizontalContentAlignment="Stretch"
                       VerticalContentAlignment="Stretch" />
+      <Grid x:Name="MixDockHost" Grid.Row="2">
+      <Border IsVisible="{Binding ShowDjDock}" Background="{DynamicResource Brush.Bg.Raised}"
+              BorderBrush="{DynamicResource Brush.Signal.Dim}" BorderThickness="0,1,0,0" Padding="12,8">
+        <Grid ColumnDefinitions="Auto,*,140,*,Auto" ColumnSpacing="12">
+          <Button Content="DJ tools" Click="OnOpenMix" Classes="primary" />
+          <StackPanel Grid.Column="1" Spacing="4">
+            <TextBlock Text="{Binding Dj.DeckA.Title}" TextTrimming="CharacterEllipsis" FontSize="12" />
+            <Button Content="{Binding Dj.DeckA.PlayLabel}" Command="{Binding Dj.DeckA.PlayCommand}" IsEnabled="{Binding Dj.DeckA.HasTrack}" FontSize="11" Padding="8,2" />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Text="A          BLEND          B" Classes="muted" FontSize="10" HorizontalAlignment="Center" />
+            <Slider Minimum="-1" Maximum="1" Value="{Binding Dj.Crossfader}" ToolTip.Tip="Blend between the tracks" />
+          </StackPanel>
+          <StackPanel Grid.Column="3" Spacing="4">
+            <TextBlock Text="{Binding Dj.DeckB.Title}" TextTrimming="CharacterEllipsis" FontSize="12" />
+            <Button Content="{Binding Dj.DeckB.PlayLabel}" Command="{Binding Dj.DeckB.PlayCommand}" IsEnabled="{Binding Dj.DeckB.HasTrack}" FontSize="11" Padding="8,2" />
+          </StackPanel>
+          <Button Grid.Column="4" Content="Now Playing" Click="OnMenuNowPlaying" />
+        </Grid>
+      </Border>
+      </Grid>
+      </Grid>
 
     </Grid>
 
     <!-- ============ Status strip ============ -->
-    <Border Grid.Row="2"
+    <Border x:Name="ShellStatus" Grid.Row="2"
             Background="{StaticResource Brush.Bg.Overlay}"
             BorderBrush="{StaticResource Brush.Border}"
             BorderThickness="0,1,0,0">

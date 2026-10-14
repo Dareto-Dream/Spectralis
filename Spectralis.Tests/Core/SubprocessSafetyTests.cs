@@ -116,4 +116,35 @@ public class YtDlpArgumentTests
         // The hostile text never becomes its own argument before the sentinel.
         Assert.DoesNotContain(args.Take(sentinelIndex), arg => arg.Contains("exec"));
     }
+
+    [Fact]
+    public void DescribeFailure_BotCheckBecomesOneReadableLine()
+    {
+        const string stderr =
+            "WARNING: [youtube] kM6rm7HnsPc: Unable to download webpage: HTTP Error 429: Too Many Requests\n" +
+            "WARNING: [youtube] No supported JavaScript runtime could be found.\n" +
+            "ERROR: [youtube] kM6rm7HnsPc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.";
+
+        var message = YtDlpService.DescribeFailure(stderr, 1);
+
+        Assert.Contains("VPN", message);
+        Assert.DoesNotContain("WARNING", message);
+        Assert.DoesNotContain("--cookies", message);
+    }
+
+    [Fact]
+    public void DescribeFailure_KeepsOnlyTheErrorReason()
+    {
+        const string stderr =
+            "WARNING: [youtube] something noisy\n" +
+            "ERROR: [youtube] abc123: Video unavailable. This video is private";
+
+        Assert.Equal("Video unavailable. This video is private", YtDlpService.DescribeFailure(stderr, 1));
+    }
+
+    [Fact]
+    public void DescribeFailure_EmptyStderrFallsBackToExitCode()
+    {
+        Assert.Equal("yt-dlp failed (exit 2).", YtDlpService.DescribeFailure("", 2));
+    }
 }

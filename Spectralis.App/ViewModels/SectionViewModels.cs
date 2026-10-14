@@ -22,18 +22,21 @@ namespace Spectralis.App.ViewModels;
 
 public sealed class SharedPlayRequestedTrackVm : ViewModelBase
 {
-    public SharedPlayRequestedTrackVm(SharedPlayQueueItem item, Action<SharedPlayRequestedTrackVm> onPlay, Action<SharedPlayRequestedTrackVm> onRemove)
+    public SharedPlayRequestedTrackVm(SharedPlayQueueItem item, Action<SharedPlayRequestedTrackVm> onPlay, Action<SharedPlayRequestedTrackVm> onRemove, Action<SharedPlayRequestedTrackVm> onRetry)
     {
         Id = item.Id;
+        Item = item;
         Title = item.Title;
         Artist = item.Artist;
         Url = item.Url;
         AddedBy = item.AddedBy;
         PlayCommand = ReactiveCommand.Create(() => onPlay(this));
         RemoveCommand = ReactiveCommand.Create(() => onRemove(this));
+        RetryCommand = ReactiveCommand.Create(() => onRetry(this));
     }
 
     public string Id { get; }
+    public SharedPlayQueueItem Item { get; }
     public string Title { get; }
     public string? Artist { get; }
     public string? Url { get; }
@@ -41,6 +44,11 @@ public sealed class SharedPlayRequestedTrackVm : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<Unit, Unit> RetryCommand { get; }
+    private bool _canRetry;
+    public bool CanRetry { get => _canRetry; set => this.RaiseAndSetIfChanged(ref _canRetry, value); }
+    private string _receiveStatus = "";
+    public string ReceiveStatus { get => _receiveStatus; set => this.RaiseAndSetIfChanged(ref _receiveStatus, value); }
 }
 
 public sealed class SharedPlayMemberVm : ViewModelBase
@@ -104,6 +112,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         RequestedTracks.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasRequests));
         _controller.StatusChanged += OnStatusChanged;
         _controller.CommandReceived += OnCommandReceived;
+        _controller.RoomQueueChanged += OnRoomQueueChanged;
         _controller.SkipProgressReceived += p => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             SkipProgressText = p is { Votes: > 0 } ? $"Vote-skip {p.Votes}/{p.Required}" : string.Empty);
         _joinRuntime.StatusChanged += OnJoinStatusChanged;
@@ -266,6 +275,12 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         set => UpdateCaps(_capabilities with { VoteSkip = value }, s => s.SharedPlayVoteSkipEnabled = value);
     }
 
+    public bool ListenersCanUploadAudio
+    {
+        get => _capabilities.AudioUploads;
+        set => UpdateCaps(_capabilities with { AudioUploads = value }, s => s.SharedPlayListenersCanUploadAudio = value);
+    }
+
     public int SkipVotesRequired
     {
         get => _capabilities.SkipVotesRequired;
@@ -293,6 +308,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     private void RaiseCapProps()
     {
         this.RaisePropertyChanged(nameof(ListenersCanQueue));
+        this.RaisePropertyChanged(nameof(ListenersCanUploadAudio));
         this.RaisePropertyChanged(nameof(ListenersCanReorder));
         this.RaisePropertyChanged(nameof(ListenersCanRemove));
         this.RaisePropertyChanged(nameof(ListenersCanControlPlayback));
@@ -370,12 +386,18 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             settings.SharedPlayListenersCanReorder ? "everyone" : "host",
             settings.SharedPlayListenersCanControlPlayback ? "everyone" : "host",
             settings.SharedPlayVoteSkipEnabled,
-            Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20));
+            Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20),
+            settings.SharedPlayListenersCanUploadAudio);
+        _controller.SetCapabilities(_capabilities);
         _controller.SetHostDisplayName(string.IsNullOrWhiteSpace(settings.SharedPlayHostName)
             ? Environment.UserName
             : settings.SharedPlayHostName);
         RaiseCapProps();
         ReapplyControllerSettings();
+        // Hosting resumes by itself when it was left on, and a room is created the moment a track plays. The poll that
+        // picks up listener requests, reactions and the listener count used to start only from the Start button, so
+        // after any restart nothing a listener sent ever reached the host.
+        if (_hostingRequested) StartPolling();
         _ = LoadMyRoomAsync();
     }
 
@@ -398,9 +420,11 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         {
             if (_settings is null || _settings.SharedPlayCdnBaseUrl == value) return;
             _settings.SharedPlayCdnBaseUrl = value;
+            ClearAccountRoom();
             AppSettingsStore.Save(_settings);
             ReapplyControllerSettings();
             this.RaisePropertyChanged();
+            _ = LoadMyRoomAsync();
         }
     }
 
@@ -561,7 +585,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             _hostingRequested,
             _settings?.SharedPlayCdnBaseUrl,
             // Signed in with a room: always the permanent room. Signed out: a temporary, link-only one.
-            WardAccount.IsConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
+            WardConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
             _settings?.SharedPlayLiveChannelId ?? string.Empty,
             _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty,
             _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty);
@@ -643,12 +667,31 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         _pollCts.Cancel();
         _pollCts = new CancellationTokenSource();
+        _polling = true;
         _ = PollLoopAsync(_pollCts.Token);
     }
+
+    private int _queuePollPending;
+
+    // The server pushes a "queue" frame whenever the shared queue changes, so a request shows up on the host at once
+    // instead of on the next 5 second poll. Frames can arrive in bursts, so at most one extra poll is queued.
+    private void OnRoomQueueChanged()
+    {
+        if (!_hostingRequested || Interlocked.Exchange(ref _queuePollPending, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            try { await PollOnceAsync(_pollCts.Token); }
+            finally { Interlocked.Exchange(ref _queuePollPending, 0); }
+        });
+    }
+
+    private bool _polling;
+    internal bool IsPolling => _polling;
 
     private void StopPolling()
     {
         _pollCts.Cancel();
+        _polling = false;
         ListenerCount = 0;
         RecentReactionsText = string.Empty;
         RequestedTracks.Clear();
@@ -727,10 +770,10 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         foreach (var item in queue.Items)
         {
             if (existingIds.Contains(item.Id)) continue;
-            RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack));
+            RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack, vm => _ = AcceptRequestedTrackAsync(vm.Item, false)));
 
-            if (!isFirstLoad && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
-                _ = QueueTrackRequested(item.Url);
+            if ((!isFirstLoad || item.SourceKind == "upload") && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
+                _ = AcceptRequestedTrackAsync(item, playNow: false);
         }
 
         foreach (var stale in RequestedTracks.Where(t => !liveIds.Contains(t.Id)).ToList())
@@ -739,8 +782,28 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private void PlayRequestedTrack(SharedPlayRequestedTrackVm item)
     {
-        if (!string.IsNullOrWhiteSpace(item.Url) && PlayTrackRequested is not null)
-            _ = PlayTrackRequested(item.Url);
+        _ = AcceptRequestedTrackAsync(item.Item, playNow: true);
+    }
+
+    private async Task AcceptRequestedTrackAsync(SharedPlayQueueItem item, bool playNow)
+    {
+        var row = RequestedTracks.FirstOrDefault(t => t.Id == item.Id);
+        if (row is not null) { row.CanRetry = false; row.ReceiveStatus = item.SourceKind == "upload" ? "Receiving audio…" : ""; }
+        try
+        {
+            var accept = playNow ? PlayTrackRequested : QueueTrackRequested;
+            if (accept is null || string.IsNullOrWhiteSpace(item.Url)) return;
+            if (item.SourceKind == "upload")
+                await _controller.ReceiveListenerUploadAsync(item, accept, playNow, _pollCts.Token);
+            else await accept(item.Url);
+            if (row is not null) row.ReceiveStatus = item.SourceKind == "upload" ? "Received on this device" : "";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            LastError = $"Could not receive {item.Title}: {ex.Message}";
+            if (row is not null) { row.ReceiveStatus = ex.Message; row.CanRetry = item.SourceKind == "upload"; }
+        }
     }
 
     private void RemoveRequestedTrack(SharedPlayRequestedTrackVm item) => _ = RemoveRequestedTrackAsync(item);
@@ -749,10 +812,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            var current = await _controller.FetchQueueStateAsync(CancellationToken.None);
-            if (current is null) return;
-            var remaining = current.Items.Where(i => i.Id != item.Id).ToArray();
-            await _controller.PublishQueueAsync(current with { Items = remaining, UpdatedAtUtc = DateTimeOffset.UtcNow }, CancellationToken.None);
+            await _controller.RemoveQueueItemAsync(item.Id, CancellationToken.None);
             RequestedTracks.Remove(item);
         }
         catch (Exception ex) { LastError = ex.Message; }
@@ -1853,6 +1913,7 @@ public enum SettingsCategory
 public sealed class SettingsViewModel : ViewModelBase
 {
     private readonly AppSettings _settings;
+    private readonly Action<bool>? _onDjModeChanged;
     private readonly NowPlayingViewModel _nowPlaying;
     private readonly Action<bool>? _setDiscordPresenceEnabled;
     private readonly Action? _onP2wBannerStyleChanged;
@@ -1875,9 +1936,11 @@ public sealed class SettingsViewModel : ViewModelBase
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
         LibraryViewModel? library = null,
-        Action? onP2wBannerStyleChanged = null)
+        Action? onP2wBannerStyleChanged = null,
+        Action<bool>? onDjModeChanged = null)
     {
         _settings = settings;
+        _onDjModeChanged = onDjModeChanged;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
         _onP2wBannerStyleChanged = onP2wBannerStyleChanged;
@@ -1991,6 +2054,9 @@ public sealed class SettingsViewModel : ViewModelBase
             // A room ID/token pair only exists on the backend it was created against.
             _settings.SqRoomId = string.Empty;
             _settings.SqOwnerToken = string.Empty;
+            _settings.SharedPlayLiveChannelId = string.Empty;
+            _settings.SharedPlayLiveChannelOwnerToken = string.Empty;
+            _settings.SharedPlayLiveChannelDisplayName = string.Empty;
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
             this.RaisePropertyChanged(nameof(BackendStatusText));
@@ -1998,7 +2064,7 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     public string BackendStatusText => UseStagingBackend
-        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Restart Spectralis to apply."
+        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Temporary rooms only, without Ward. Restart Spectralis to apply."
         : "Backend: production. Restart Spectralis to apply.";
 
     public ObsEditorViewModel ObsEditor { get; }
@@ -2183,6 +2249,31 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public void RefreshOutputDevices() => _nowPlaying.RefreshOutputDevices();
 
+    public bool DjModeEnabled
+    {
+        get => _settings.DjModeEnabled;
+        set
+        {
+            if (_settings.DjModeEnabled == value) return;
+            _settings.DjModeEnabled = value;
+            AppSettingsStore.Save(_settings);
+            _onDjModeChanged?.Invoke(value);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool DjAiStemSeparationEnabled
+    {
+        get => _settings.DjAiStemSeparationEnabled;
+        set
+        {
+            if (_settings.DjAiStemSeparationEnabled == value) return;
+            _settings.DjAiStemSeparationEnabled = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool GaplessPlayback
     {
         get => _nowPlaying.GaplessPlayback;
@@ -2259,6 +2350,22 @@ public sealed class SettingsViewModel : ViewModelBase
             }
 
             _settings.AutoPlayOnOpen = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool AutoFormatDownloadedSongs
+    {
+        get => _settings.AutoFormatDownloadedSongs;
+        set
+        {
+            if (_settings.AutoFormatDownloadedSongs == value)
+            {
+                return;
+            }
+
+            _settings.AutoFormatDownloadedSongs = value;
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
         }

@@ -62,6 +62,16 @@ public partial class LibraryView : UserControl
         }
     }
 
+    private async void OnMixA(object? sender, RoutedEventArgs e) => await LoadMixAsync(0);
+    private async void OnMixB(object? sender, RoutedEventArgs e) => await LoadMixAsync(1);
+    private async Task LoadMixAsync(int deck)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window { DataContext: MainWindowViewModel shell }) return;
+        var sources = TrackGrid.SelectedItems.OfType<TrackRow>()
+            .Select(row => new Services.DjSource(row.Path, Title: row.Title, Artist: row.Artist)).ToArray();
+        if (sources.Length > 0) await shell.LoadDjSourcesAsync(deck, sources);
+    }
+
     private async void OnContextEditTags(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LibraryViewModel vm ||

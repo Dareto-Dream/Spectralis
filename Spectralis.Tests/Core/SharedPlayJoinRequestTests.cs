@@ -6,6 +6,14 @@ namespace Spectralis.Tests.Core;
 public class SharedPlayJoinRequestTests
 {
     [Fact]
+    public void PublicPlayerInviteUsesTheApiWhileStagingKeepsItsOwnBackend()
+    {
+        Assert.True(SharedPlayJoinRequest.TryParse("https://player.deltavdevs.com/sessions/ABC123", false, out var production));
+        Assert.Equal(SharedPlayDefaults.CdnBaseUrl.TrimEnd('/'), production.CdnBaseUrl?.TrimEnd('/'));
+        Assert.True(SharedPlayJoinRequest.TryParse("https://audioplayer-staging.up.railway.app/spectralis/web-share/?session=ABC123", false, out var staging));
+        Assert.Equal("https://audioplayer-staging.up.railway.app", staging.CdnBaseUrl);
+    }
+    [Fact]
     public void Parse_SpectralisUriWithSessionQuery_ValidRoomCode()
     {
         Assert.True(SharedPlayJoinRequest.TryParse("spectralis://join?session=X7K29Q", false, out var request));

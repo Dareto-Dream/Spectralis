@@ -107,6 +107,21 @@ Dynamic state is under `/shared-play/v2`. A session is one live listening party.
 Join links look like `https://player.deltavdevs.com/sessions/{code}`. The browser listener page is
 served by the backend at `/spectralis/web-share/`.
 
+The browser room uses `?session={code}` (or `?channel={id}` for a permanent room).
+It renders the live queue, roster and permissions from the existing v2 socket; playback stays
+host-synchronized. Audio starts through the explicit **Start listening** button. The visualizer
+can enter fullscreen independently of the rest of the room.
+
+`track.lyrics` contains timed lines `{ timeSeconds, text, words? }`. Enhanced LRC lines carry
+`words: [{ timeSeconds, text }]`, preserving the host parser's timestamps and whitespace.
+Timestamps already include the LRC offset. Older line-only manifests remain valid. The browser
+shows lyric controls only for usable lines, locks to word timing when real word timestamps exist,
+and otherwise locks to line timing. Lyric text never seeks; **Follow lyrics** only resumes scrolling.
+
+Browser checks: `node --test web-share/tests/room-lyrics.test.cjs` and
+`python web-share/tests/room_browser_test.py` (Python Playwright with Chromium; optional
+`CHROMIUM_PATH`). The browser test intercepts all room traffic and does not join a live session.
+
 ---
 
 ## Streamer Queue

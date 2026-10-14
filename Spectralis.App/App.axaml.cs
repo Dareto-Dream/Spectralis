@@ -122,6 +122,7 @@ public partial class App : Application
                 },
                 _externalOpenCts.Token);
             desktop.ShutdownRequested += (_, _) => _externalOpenCts.Cancel();
+            _ = RunStorageCleanupAsync(_externalOpenCts.Token);
 
             // Background auto-update check — non-blocking, 8-second delay to let app settle.
             _ = RunStartupUpdateCheckAsync(viewModel, mainWindow);
@@ -134,6 +135,20 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task RunStorageCleanupAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
+            do
+            {
+                try { await TempStorageCleanup.RunAsync(); }
+                catch (Exception ex) { SpectralisLog.Warn("Temp cleanup skipped: " + ex.Message); }
+            } while (await timer.WaitForNextTickAsync(ct));
+        }
+        catch (OperationCanceledException) { }
     }
 
     private static async Task ShowPostUpdateNoticeAsync(MainWindowViewModel viewModel, MainWindow mainWindow)

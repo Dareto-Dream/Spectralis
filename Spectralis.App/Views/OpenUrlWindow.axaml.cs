@@ -22,9 +22,16 @@ public partial class OpenUrlWindow : Window
         set => UrlTextBox.Text = value;
     }
 
-    public static async Task<string?> PromptAsync(TopLevel topLevel)
+    public static async Task<string?> PromptAsync(TopLevel topLevel, string? deck = null)
     {
         var dialog = new OpenUrlWindow();
+        if (deck is not null)
+        {
+            dialog.Title = dialog.Heading.Text = "Load URL into " + deck;
+            dialog.UrlTextBox.Watermark = "Paste a track link…";
+            dialog.ServicesLabel.Text = "YouTube · SoundCloud · BandLab · Suno · Untitled · direct audio\nSpotify mixing — Coming soon";
+            dialog.Height = 245;
+        }
         try
         {
             if (topLevel.Clipboard is { } clipboard)

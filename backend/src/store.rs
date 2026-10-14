@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -47,6 +48,15 @@ pub struct Store {
     backend: Backend,
 }
 
+/// Short, cross-replica critical sections for a room's queue and upload budget.
+pub struct Lease { store: Arc<Store>, key: String, token: String }
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let (store, key, token) = (self.store.clone(), self.key.clone(), self.token.clone());
+        tokio::spawn(async move { let _ = store.release_lease(&key, &token).await; });
+    }
+}
+
 /// A live subscription to one or more pub/sub channel patterns. Poll `recv()`.
 pub struct Subscription {
     rx: mpsc::Receiver<(String, String)>,
@@ -60,6 +70,42 @@ impl Subscription {
 }
 
 impl Store {
+    pub async fn room_lease(self: &Arc<Self>, code: &str) -> Result<Lease> {
+        let key = format!("sp:lock:{code}");
+        let token = uuid::Uuid::new_v4().to_string();
+        for _ in 0..60 {
+            let acquired = match &self.backend {
+                Backend::Live { redis, .. } => {
+                    let reply: Option<String> = redis::cmd("SET").arg(&key).arg(&token)
+                        .arg("NX").arg("EX").arg(120).query_async(&mut redis.clone()).await?;
+                    reply.is_some()
+                },
+                Backend::Local { json, .. } => {
+                    let mut map = json.lock().unwrap();
+                    if map.get(&key).is_some_and(|(_, expiry)| expiry.is_some_and(|e| e > Instant::now())) { false }
+                    else { map.insert(key.clone(), (Value::String(token.clone()), Some(Instant::now() + Duration::from_secs(120)))); true }
+                }
+            };
+            if acquired { return Ok(Lease { store: self.clone(), key, token }); }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        anyhow::bail!("The room queue is busy. Please try again.")
+    }
+
+    async fn release_lease(&self, key: &str, token: &str) -> Result<()> {
+        match &self.backend {
+            Backend::Live { redis, .. } => {
+                redis::cmd("EVAL").arg("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end")
+                    .arg(1).arg(key).arg(token).query_async::<i64>(&mut redis.clone()).await?;
+            },
+            Backend::Local { json, .. } => {
+                let mut map = json.lock().unwrap();
+                if map.get(key).is_some_and(|(v, _)| v.as_str() == Some(token)) { map.remove(key); }
+            }
+        }
+        Ok(())
+    }
+
     /// Build a `Store` from the environment. Uses Redis + S3 when `REDIS_URL` is
     /// set; otherwise an in-process fallback (never use that in production).
     pub async fn from_env() -> Result<Self> {
@@ -411,7 +457,10 @@ impl Store {
                     keys.push(meta?.location);
                 }
                 for k in keys {
-                    let _ = s3.delete(&k).await;
+                    match s3.delete(&k).await {
+                        Ok(()) | Err(object_store::Error::NotFound { .. }) => {},
+                        Err(error) => return Err(error.into()),
+                    }
                 }
                 Ok(())
             }

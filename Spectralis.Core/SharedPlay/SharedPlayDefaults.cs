@@ -6,6 +6,7 @@ public static class SharedPlayDefaults
 {
     public const string CdnBaseUrl = Spectralis.Core.Platform.SpectralisEndpoints.ApiBase;
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
+    public static bool SupportsWard(Uri backend) => WardCredentialStore.Origin(backend) == CdnBaseUrl;
     public const string ProtocolVersion = "shared-play-v2";
     /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
     public const int SocketEnvelopeVersion = RealtimeProtocolVersion;
@@ -75,14 +76,24 @@ public static class SharedPlayDefaults
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}");
+        return IsProductionPlayer(cdnBaseUri)
+            ? new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}")
+            : AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath), encodedCode, null);
     }
+
+    private static bool IsProductionPlayer(Uri uri) => uri.GetLeftPart(UriPartial.Authority) is CdnBaseUrl or "https://player.deltavdevs.com" || IsLegacyBackend(uri.ToString());
+
+    public static Uri BuildRoomJoinUrl(Uri cdnBaseUri, string roomId) => IsProductionPlayer(cdnBaseUri)
+        ? new Uri($"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(roomId)}")
+        : new Uri(cdnBaseUri, WebSharePlayerPath + "?channel=" + Uri.EscapeDataString(roomId));
 
     public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string roomCode)
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();
         var encodedCode = Uri.EscapeDataString(code);
-        return new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}?source={DiscordActivitySource}");
+        return IsProductionPlayer(cdnBaseUri)
+            ? new Uri($"https://player.deltavdevs.com/sessions/{encodedCode}?source={DiscordActivitySource}")
+            : AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath), encodedCode, DiscordActivitySource);
     }
 
     public static string ConvertToDiscordActivityJoinUrl(string joinUrl)

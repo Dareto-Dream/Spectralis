@@ -11,6 +11,7 @@ public sealed partial class StreamerQueueViewModel
 {
     private ReactiveCommand<Unit,Unit>? _linkWard, _reloadWard, _useWardQueue;
     private bool _wardBusy;
+    public bool WardAvailable => SharedPlayDefaults.SupportsWard(_cdnBaseUri);
     public ObservableCollection<OwnedPlayerRoom> WardQueues { get; } = new();
     private OwnedPlayerRoom? _wardQueue;
     public OwnedPlayerRoom? WardQueue { get => _wardQueue; set=>this.RaiseAndSetIfChanged(ref _wardQueue,value); }
@@ -19,13 +20,13 @@ public sealed partial class StreamerQueueViewModel
         if(_wardBusy)return;
         _wardBusy=true;
         try {
-            if(!WardAccount.IsConnected){StatusText="Approve the Ward connection in your browser.";await WardAccount.ConnectAsync(_cdnBaseUri,CancellationToken.None);}
+            if(!WardAccount.IsConnectedTo(_cdnBaseUri)){StatusText="Approve the Ward connection in your browser.";await WardAccount.ConnectAsync(_cdnBaseUri,CancellationToken.None);}
             if(HasRoom && _settings is not null){
                 await WardAccount.RequestAsync(_cdnBaseUri,$"/player/v1/queues/{RoomId}/claim",HttpMethod.Post,new{ownerToken=_settings.SqOwnerToken});
-                Process.Start(new ProcessStartInfo($"https://player.deltavdevs.com/rooms/{RoomId}/settings"){UseShellExecute=true});
+                Process.Start(new ProcessStartInfo(WardAccount.GetRoomSettingsUrl(_cdnBaseUri,RoomId).ToString()){UseShellExecute=true});
             }
             await LoadWardQueuesAsync();
-            StatusText=$"Connected as {WardAccount.DisplayName}";
+            StatusText=$"Connected as {WardAccount.GetDisplayName(_cdnBaseUri)}";
         } catch(Exception ex){LastError=ex.Message;} finally{_wardBusy=false;}
     });
     public ReactiveCommand<Unit,Unit> RefreshWardQueuesCommand => _reloadWard ??= ReactiveCommand.CreateFromTask(async()=>{try{await LoadWardQueuesAsync();}catch(Exception ex){LastError=ex.Message;}});
@@ -44,7 +45,7 @@ public sealed partial class StreamerQueueViewModel
     });
     private async Task LoadWardQueuesAsync()
     {
-        if(!WardAccount.IsConnected){StatusText="Connect Ward to load your saved queues.";return;}
+        if(!WardAccount.IsConnectedTo(_cdnBaseUri)){WardQueues.Clear();WardQueue=null;StatusText="Connect Ward to load your saved queues.";return;}
         var result=await WardAccount.RequestAsync(_cdnBaseUri,"/player/v1/me/rooms",HttpMethod.Get);
         WardQueues.Clear();
         foreach(var room in result.GetProperty("rooms").EnumerateArray()){
