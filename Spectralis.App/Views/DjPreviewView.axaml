@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels" xmlns:controls="using:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Views.DjPreviewView" x:DataType="vm:DjViewModel">
+  <Border Background="{DynamicResource Brush.Bg.Base}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Padding="14,10">
+    <StackPanel Spacing="10">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="DJ PREVIEW" Classes="muted" FontSize="11" LetterSpacing="1.5" />
+        <TextBlock Grid.Column="1" Text="{Binding TempoDifference}" Classes="data" />
+      </Grid>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
+        <StackPanel Spacing="6" DataContext="{Binding DeckA}" x:DataType="vm:DjDeckViewModel">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <controls:DjWaveform Samples="{Binding Waveform}" Position="{Binding Position}" Duration="{Binding Duration}"
+              Bpm="{Binding Bpm}" BeatOffset="{Binding BeatOffset}" LoopStart="{Binding LoopStart}" LoopEnd="{Binding LoopEnd}"
+              Signal="{DynamicResource Brush.Signal}" Height="48" />
+          <TextBlock Text="{Binding PreviewDetails}" Classes="data" FontSize="11" TextWrapping="Wrap" />
+          <ProgressBar Value="{Binding Peak}" Minimum="0" Maximum="100" Height="4" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="6" DataContext="{Binding DeckB}" x:DataType="vm:DjDeckViewModel">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <controls:DjWaveform Samples="{Binding Waveform}" Position="{Binding Position}" Duration="{Binding Duration}"
+              Bpm="{Binding Bpm}" BeatOffset="{Binding BeatOffset}" LoopStart="{Binding LoopStart}" LoopEnd="{Binding LoopEnd}"
+              Signal="{DynamicResource Brush.Signal}" Height="48" />
+          <TextBlock Text="{Binding PreviewDetails}" Classes="data" FontSize="11" TextWrapping="Wrap" />
+          <ProgressBar Value="{Binding Peak}" Minimum="0" Maximum="100" Height="4" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

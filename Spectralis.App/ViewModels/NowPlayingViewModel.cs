@@ -225,7 +225,7 @@ public sealed record SleepTimerChoice(SleepTimerOption Option, string Label)
     public override string ToString() => Label;
 }
 
-public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
+public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 {
     private readonly AudioEngine _engine;
     private readonly AppSettings _settings;
@@ -1398,6 +1398,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void TogglePlayback()
     {
+        if (IsMixSource) { _mixSource!.TogglePlayback(); return; }
         if (_spotifyState is not null && _spotifyHost is not null)
         {
             _ = _spotifyState.IsPaused ? _spotifyHost.ResumeAsync() : _spotifyHost.PauseAsync();
@@ -1413,6 +1414,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void StopPlayback()
     {
+        if (IsMixSource) { _mixSource!.StopPlayback(); return; }
         ResetPlaybackSession();
     }
 
@@ -1458,6 +1460,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void SeekRelative(double seconds)
     {
+        if (IsMixSource) return;
         if (_spotifyState is not null && _spotifyHost is not null)
         {
             var elapsed = (!_spotifyState.IsPaused ? (Environment.TickCount64 - _spotifyPositionSetAtTick) : 0L) / 1000.0;
@@ -1483,6 +1486,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void ToggleMute()
     {
+        if (IsMixSource) { _mixSource!.ToggleMute(); return; }
         if (VolumePercent > 0.5)
         {
             _volumeBeforeMute = VolumePercent;
@@ -1644,6 +1648,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task AutoAdvanceAsync()
     {
+        if (IsMixSource) return;
         if (_spotifyState is not null && !_queueDrivenSpotifyTrack)
         {
             RefreshFromEngine();
@@ -1894,13 +1899,13 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public bool ShowArtworkSurface => !ShowVisualizer && !ShowYouTubeVideo && !ShowEmbeddedHtml;
+    public bool ShowArtworkSurface => !IsMixSource && !ShowVisualizer && !ShowYouTubeVideo && !ShowEmbeddedHtml;
 
-    public bool ShowVisualizerSurface => ShowVisualizer && !ShowYouTubeVideo && !ShowEmbeddedHtml;
+    public bool ShowVisualizerSurface => IsMixSource && !ShowEmbeddedHtml || ShowVisualizer && !ShowYouTubeVideo && !ShowEmbeddedHtml;
 
     public bool ShowEmbeddedHtmlSurface => ShowEmbeddedHtml;
 
-    public bool ShowVisualizerControls => ShowVisualizer || ShowEmbeddedHtml;
+    public bool ShowVisualizerControls => IsMixSource || ShowVisualizer || ShowEmbeddedHtml;
 
     public bool IsSurfaceVisualizer => ShowVisualizer && !PeakHold && !ShowYouTubeVideo && !ShowEmbeddedHtml;
 
@@ -1995,7 +2000,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// prev/next, and keyboard shortcuts are all blocked while this is true, since the capsule
     /// owns the surface. Does not apply to a user-picked "Special:" installed HTML visualizer —
     /// that's a normal picker choice, not capsule content, and stays switchable.</summary>
-    public bool IsVisualizerLocked => IsAlbumWorldActive || _trackHasEmbeddedSurface;
+    public bool IsVisualizerLocked => !IsMixSource && (IsAlbumWorldActive || _trackHasEmbeddedSurface);
 
     public bool HasEmbeddedModules =>
         _embeddedHtml is not null ||
@@ -2263,6 +2268,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>Local file path of the currently playing track, or null for remote/URL sources.</summary>
     public string? CurrentTrackPath => _engine.CurrentTrack?.SourcePath is { } p && File.Exists(p) ? p : null;
+    public bool DjModeEnabled => _mixSource?.Enabled ?? _settings.DjModeEnabled;
+    public Spectralis.Core.Visualizers.IVisualizerFrameSource? VisualizationSource { get; set; }
+    public void RefreshDjMode() { this.RaisePropertyChanged(nameof(DjModeEnabled)); this.RaisePropertyChanged(nameof(ShowPlaybackSourcePicker)); }
 
     public bool CanDownloadCurrentTrack => _currentRemoteAudio?.IsWebViewFallback() == true
         ? YtDlpService.IsAllowedMediaUrl(_currentRemoteAudio.SourceUrl)
@@ -2345,7 +2353,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public bool IsWidgetFallbackActive =>
         ShowEmbeddedHtml && EmbeddedHtml?.Id is "SoundCloud" or "Suno" or "Untitled" or "Spotify";
 
-    public bool IsNilState => !HasTrack && !IsAlbumWorldActive && !IsWidgetFallbackActive;
+    public bool IsNilState => !IsMixSource && !HasTrack && !IsAlbumWorldActive && !IsWidgetFallbackActive;
 
     /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
     public bool IsOledTheme => _settings.ThemeMode == AppThemeMode.Oled;
@@ -2399,36 +2407,36 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
-    public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive || IsWidgetFallbackActive;
+    public bool HasTrackOrAlbumWorld => IsMixSource || HasTrack || IsAlbumWorldActive || IsWidgetFallbackActive;
 
     public string Title
     {
-        get => _title;
+        get => IsMixSource ? _mixSource!.SessionTitle : _title;
         private set => this.RaiseAndSetIfChanged(ref _title, value);
     }
 
     public string Artist
     {
-        get => _artist;
+        get => IsMixSource ? "Live mix" : _artist;
         private set => this.RaiseAndSetIfChanged(ref _artist, value);
     }
 
     public string Album
     {
-        get => _album;
+        get => IsMixSource ? "" : _album;
         private set => this.RaiseAndSetIfChanged(ref _album, value);
     }
 
     /// <summary>"FLAC / 44.1 kHz / 1024 kbps" style line, rendered in the data face.</summary>
     public string FormatBadge
     {
-        get => _formatBadge;
+        get => IsMixSource ? "LIVE MIX / 48 kHz" : _formatBadge;
         private set => this.RaiseAndSetIfChanged(ref _formatBadge, value);
     }
 
     public byte[]? CoverArtBytes
     {
-        get => _coverArtBytes;
+        get => IsMixSource ? null : _coverArtBytes;
         private set => this.RaiseAndSetIfChanged(ref _coverArtBytes, value);
     }
 
@@ -2446,7 +2454,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public bool IsPlaying
     {
-        get => _isPlaying;
+        get => IsMixSource ? _mixSource!.IsPlaying : _isPlaying;
         private set => this.RaiseAndSetIfChanged(ref _isPlaying, value);
     }
 
@@ -2458,6 +2466,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         get => _positionSeconds;
         set
         {
+            if (IsMixSource) return;
             if (_spotifyState is not null && _spotifyHost is not null)
             {
                 if (Math.Abs(value - _spotifyPositionMs / 1000.0) > 1.0)
@@ -2506,10 +2515,11 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public double VolumePercent
     {
-        get => _volumePercent;
+        get => IsMixSource ? _mixSource!.MasterVolume : _volumePercent;
         set
         {
             var normalized = Math.Clamp(value, 0, 100);
+            if (IsMixSource) { _mixSource!.MasterVolume = normalized; return; }
             if (Math.Abs(_volumePercent - normalized) < 0.01)
             {
                 return;
@@ -2525,7 +2535,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public bool IsMuted => _volumePercent <= 0.5;
+    public bool IsMuted => VolumePercent <= 0.5;
 
     public string MuteMenuLabel => IsMuted ? "Unmute" : "Mute";
 
@@ -2533,7 +2543,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     public string VolumeLabel => IsMuted ? "MUTED" : "VOL";
 
     /// <summary>Playback-menu label parity: Open Audio... / Play / Pause.</summary>
-    public string PlayPauseMenuLabel => !HasTrack ? "Open Audio..." : IsPlaying ? "Pause" : "Play";
+    public string PlayPauseMenuLabel => IsMixSource ? _mixSource!.PlayPauseLabel : !HasTrack ? "Open Audio..." : IsPlaying ? "Pause" : "Play";
 
     public string LoadError
     {
@@ -2549,7 +2559,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public string SourceLabel
     {
-        get => _sourceLabel;
+        get => IsMixSource ? "Mix" : _sourceLabel;
         private set => this.RaiseAndSetIfChanged(ref _sourceLabel, value);
     }
 
@@ -2595,6 +2605,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task ApplySpotifyStateAsync(SpotifyTrackState state)
     {
+        if (IsMixSource)
+        {
+            _spotifyState = state;
+            if (!state.IsPaused && _spotifyHost is not null) await _spotifyHost.PauseAsync();
+            return;
+        }
         // Late player_state_changed event from a pause issued by a since-completed Stop — see
         // _spotifyStopRequested. Applying it would resurrect the session Stop just cleared.
         if (_spotifyStopRequested)
@@ -2860,6 +2876,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task PlaySpotifyAsync()
     {
+        SelectTrackSource();
         if (SpotifyHost is null)
         {
             RemoteStatus = "Spotify playback host is not ready.";
@@ -2883,6 +2900,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// that goes stale as soon as the context advances on Spotify's side.</summary>
     public async Task<bool> PlaySpotifyContextAsync(string contextUri)
     {
+        SelectTrackSource();
         if (SpotifyHost is null)
         {
             RemoteStatus = "Spotify playback host is not ready.";
@@ -2909,6 +2927,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// context-offset jump.</summary>
     public async Task<bool> PlaySpotifyTrackListAsync(IReadOnlyList<string> trackUris)
     {
+        SelectTrackSource();
         if (SpotifyHost is null)
         {
             RemoteStatus = "Spotify playback host is not ready.";
@@ -3021,7 +3040,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsAlbumWorldActive => _pinnedAlbumWorldHtml is not null;
-    public bool IsAlbumWorldShowingWorld => IsAlbumWorldActive && _albumWorldShowingWorld;
+    public bool IsAlbumWorldShowingWorld => !IsMixSource && IsAlbumWorldActive && _albumWorldShowingWorld;
 
     /// <summary>Whether the reticle overlay belongs on screen right now — only while an actual
     /// wgpu-rendered world (not an HTML world map) is the visible surface. The interact
@@ -3555,6 +3574,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>Loads and starts a single local file, replacing the queue with it.</summary>
     public async Task LoadTrackAsync(string path)
     {
+        SelectTrackSource();
         Queue.Clear();
         Queue.Add(path);
         Queue.SetCurrent(0);
@@ -3568,6 +3588,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         bool startPlayback,
         bool ownsTemporaryFile = false)
     {
+        SelectTrackSource();
         Queue.Clear();
         Queue.Add(path);
         Queue.SetCurrent(0);
@@ -3624,6 +3645,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task LoadUrlAsync(string input)
     {
+        SelectTrackSource();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
         _remoteLoadCts = new CancellationTokenSource();
@@ -3665,6 +3687,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task LoadPreResolvedUrlAsync(RemoteAudioResolveResult resolved)
     {
+        SelectTrackSource();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
         _remoteLoadCts = new CancellationTokenSource();
@@ -3838,6 +3861,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task LoadCurrentQueueTrackAsync(string path, bool startPlayback)
     {
+        SelectTrackSource();
         LoadError = string.Empty;
         RemoteStatus = string.Empty;
         // Persist where the outgoing podcast episode left off before its stream is torn down.
@@ -3920,6 +3944,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged(nameof(PlayPauseIconData));
             this.RaisePropertyChanged(nameof(PlayPauseMenuLabel));
         }
+
+        // The paused track must not drive lyrics, podcast timers or world events over a live mix.
+        if (IsMixSource) { CycleVisualizerIfDue(); return; }
 
         double length, position;
         if (_spotifyState is not null)
@@ -4366,7 +4393,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         // untouched by picking a redeemed visualizer, so it's the right thing to stop cycling for.
         if (!AutoCycleVisualizers ||
             !ShowVisualizerControls ||
-            !HasTrack ||
+            !(HasTrack || IsMixSource) ||
             !IsPlaying ||
             IsVisualizerLocked ||
             ShowYouTubeVideo ||
@@ -4437,6 +4464,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (_mixSource is not null) _mixSource.PropertyChanged -= OnMixSourceChanged;
         FlushResume(finished: false);
         _resumeFlushTimer?.Stop();
         _sleepTimer?.Stop();

@@ -17,6 +17,13 @@ public sealed class VisualizerHostControl : Control
 {
     public static readonly StyledProperty<AudioEngine?> EngineProperty =
         AvaloniaProperty.Register<VisualizerHostControl, AudioEngine?>(nameof(Engine));
+    public static readonly StyledProperty<IVisualizerFrameSource?> FrameSourceProperty =
+        AvaloniaProperty.Register<VisualizerHostControl, IVisualizerFrameSource?>(nameof(FrameSource));
+    public IVisualizerFrameSource? FrameSource { get => GetValue(FrameSourceProperty); set => SetValue(FrameSourceProperty, value); }
+    public static readonly StyledProperty<ScriptedVisualizerDefinition?> ScriptDefinitionProperty =
+        AvaloniaProperty.Register<VisualizerHostControl, ScriptedVisualizerDefinition?>(nameof(ScriptDefinition));
+    public ScriptedVisualizerDefinition? ScriptDefinition { get => GetValue(ScriptDefinitionProperty); set => SetValue(ScriptDefinitionProperty, value); }
+    private ScriptVisualizerRenderer? _ownScriptRenderer;
 
     public static readonly StyledProperty<VisualizerMode> ModeProperty =
         AvaloniaProperty.Register<VisualizerHostControl, VisualizerMode>(nameof(Mode), VisualizerMode.MirrorSpectrum);
@@ -44,7 +51,10 @@ public sealed class VisualizerHostControl : Control
         // skips instead of queueing.
         _frameTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, OnFrameTick);
         AttachedToVisualTree += (_, _) => _frameTimer.Start();
-        DetachedFromVisualTree += (_, _) => _frameTimer.Stop();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _frameTimer.Stop(); ReleaseArtwork(); _sceneState.Clear(); _ownScriptRenderer = null;
+        };
     }
 
     public AudioEngine? Engine
@@ -86,22 +96,24 @@ public sealed class VisualizerHostControl : Control
     private void OnFrameTick(object? sender, EventArgs e)
     {
         var engine = Engine;
-        if (engine is null || !IsVisible)
+        var source = FrameSource;
+        if (engine is null && source is null || !IsEffectivelyVisible || TopLevel.GetTopLevel(this) is Window { WindowState: WindowState.Minimized })
         {
             return;
         }
 
-        var hasExternalSource = engine.ExternalVisualizerSource is not null;
-        if (!engine.IsLoaded && !hasExternalSource)
+        var hasExternalSource = engine?.ExternalVisualizerSource is not null;
+        if (!(source?.HasAudio ?? (engine!.IsLoaded || hasExternalSource)))
         {
             // Snap to blank immediately on session reset rather than holding the last frozen frame.
-            _sceneState.Clear();
+            ReleaseArtwork(); _sceneState.Clear();
             InvalidateVisual();
             return;
         }
 
         if (!ReferenceEquals(_decodedArtBytes, AlbumArtBytes))
         {
+            ReleaseArtwork();
             _decodedArtBytes = AlbumArtBytes;
             _sceneState.AlbumArt = AvaloniaVizImage.FromBytes(_decodedArtBytes);
         }
@@ -111,11 +123,17 @@ public sealed class VisualizerHostControl : Control
         _sceneState.Sensitivity = (float)Sensitivity;
         var preferredMode = VisualizerCatalog.GetPreferredMode(Mode, _sceneState.AlbumArt is not null);
         _sceneState.UpdateFrame(
-            engine.GetVisualizerFrame(includeSpectrogram: preferredMode == VisualizerMode.Spectrogram),
-            engine.IsPlaying || hasExternalSource,
-            engine.GetPosition(),
+            source?.GetFrame(includeSpectrogram: preferredMode == VisualizerMode.Spectrogram) ?? engine!.GetVisualizerFrame(includeSpectrogram: preferredMode == VisualizerMode.Spectrogram),
+            source?.IsPlaying ?? (engine!.IsPlaying || hasExternalSource),
+            (float)(source?.PositionSeconds ?? engine!.GetPosition()),
             preferredMode);
         InvalidateVisual();
+    }
+
+    private void ReleaseArtwork()
+    {
+        if (_sceneState.AlbumArt is AvaloniaVizImage { Image: IDisposable bitmap }) bitmap.Dispose();
+        _sceneState.AlbumArt = null; _decodedArtBytes = null;
     }
 
     public override void Render(DrawingContext context)
@@ -125,7 +143,9 @@ public sealed class VisualizerHostControl : Control
             return;
 
         var canvas = new AvaloniaVizCanvas(context);
-        var scripted = ScriptedRenderer;
+        if (!ReferenceEquals(_ownScriptRenderer?.Definition, ScriptDefinition))
+            _ownScriptRenderer = ScriptDefinition is { } scriptDefinition ? new ScriptVisualizerRenderer(scriptDefinition) : null;
+        var scripted = _ownScriptRenderer ?? ScriptedRenderer;
         if (scripted is ScriptVisualizerRenderer svr)
         {
             var scene = _sceneState.CreateScene(svr.Definition.Name);

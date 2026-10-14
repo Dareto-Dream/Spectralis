@@ -117,6 +117,7 @@ public NowPlayingView()
         // would keep painting at whatever size it had when the last panel opened. Watch the
         // host container directly and let the debounced nudge settle it.
         EmbeddedHtmlHost.SizeChanged += (_, _) => ScheduleEmbeddedSurfaceResizeNudge();
+        AttachedToVisualTree += (_, _) => { ApplyYouTubeVideoMode(); ApplyEmbeddedHtmlMode(); };
         VisualizerNameLabel.SizeChanged += (_, _) => ApplyVisualizerLabelDeadZoneAvoidance();
         LyricsSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
         QueueSidebarBorder.SizeChanged += (_, _) => ApplySidebarDeadZoneAvoidance();
@@ -545,6 +546,24 @@ public NowPlayingView()
     }
 
     private QueueItemViewModel? SelectedQueueItem => QueueList.SelectedItem as QueueItemViewModel;
+    private void OnOpenDjTools(object? sender, RoutedEventArgs e) => (DataContext as NowPlayingViewModel)?.OpenDjTools?.Invoke();
+    private void OnFullscreenVisualizer(object? sender, RoutedEventArgs e) => SetVisualizerFullscreen(_viewModel?.IsVisualizerFullscreen != true);
+    public void SetVisualizerFullscreen(bool enabled)
+    {
+        if (_viewModel is null) return;
+        _viewModel.IsVisualizerFullscreen = enabled;
+        Grid.SetColumnSpan(PlayerColumn, enabled ? 8 : 1); PlayerColumn.ZIndex = enabled ? 100 : 0;
+        if (TopLevel.GetTopLevel(this) is PageWindow page) page.SetFullscreen(enabled);
+        else if (TopLevel.GetTopLevel(this) is MainWindow main) main.SetPageFullscreen(enabled);
+        ScheduleEmbeddedSurfaceResizeNudge();
+    }
+    private async void OnQueueMixA(object? sender, RoutedEventArgs e) => await LoadQueueIntoMixAsync(0);
+    private async void OnQueueMixB(object? sender, RoutedEventArgs e) => await LoadQueueIntoMixAsync(1);
+    private async Task LoadQueueIntoMixAsync(int deck)
+    {
+        if (SelectedQueueItem is { } item && TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel shell })
+            await shell.LoadDjSourcesAsync(deck, [new Services.DjSource(item.Path, Title: item.Title, Artist: item.Subtitle)]);
+    }
 
     private async void OnQueueItemDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
     {
@@ -1496,14 +1515,14 @@ public NowPlayingView()
             return string.Empty;
         }
 
-        var frame = _viewModel.Engine.GetVisualizerFrame();
+        var frame = _viewModel.VisualizationSource?.GetFrame() ?? _viewModel.Engine.GetVisualizerFrame();
         return JsonSerializer.Serialize(new
         {
             levels = SampleSpectrum(frame.Spectrum, 32),
             peak = Math.Clamp(frame.PeakLevel, 0f, 1.25f),
             rms = Math.Clamp(frame.RmsLevel, 0f, 1.25f),
             active = _viewModel.IsPlaying,
-            time = _viewModel.PositionSeconds,
+            time = _viewModel.VisualizationSource?.PositionSeconds ?? _viewModel.PositionSeconds,
             trackId = _viewModel.IsAlbumWorldActive ? _viewModel.AlbumWorldCurrentTrackId : string.Empty,
         });
     }

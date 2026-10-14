@@ -6,7 +6,7 @@
       xmlns:design="using:Spectralis.App.Design"
       xmlns:views="using:Spectralis.App.Views"
       x:Class="Spectralis.App.Views.NowPlayingView"
-      x:DataType="vm:NowPlayingViewModel">
+      x:DataType="vm:NowPlayingViewModel" RowDefinitions="Auto,*">
 
   <Grid.Styles>
     <Style Selector="Ellipse.surface-dot">
@@ -55,7 +55,15 @@
   </Grid.Styles>
 
   <!-- ============ Empty state ============ -->
-  <Panel IsVisible="{Binding IsNilState}">
+  <Border IsVisible="{Binding ShowPlaybackSourcePicker}" Padding="16,8" Background="{DynamicResource Brush.Bg.Raised}">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
+      <TextBlock Text="SOURCE" Classes="muted" FontSize="11" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="1" ItemsSource="{Binding PlaybackSources}" SelectedItem="{Binding SelectedPlaybackSource}" MinWidth="130" />
+      <TextBlock Grid.Column="2" Text="{Binding SourceLabel}" Classes="secondary" VerticalAlignment="Center" />
+      <Button Grid.Column="3" Content="DJ tools" Click="OnOpenDjTools" />
+    </Grid>
+  </Border>
+  <Panel Grid.Row="1" IsVisible="{Binding IsNilState}">
     <Border IsHitTestVisible="False" ClipToBounds="True"
             Classes="ambient-grid" Classes.oled="{Binding IsOledTheme}">
       <Border.Background>
@@ -168,10 +176,10 @@
   </Panel>
 
   <!-- ============ Playing state (track or album world) ============ -->
-  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
+  <Grid x:Name="PlayingStateGrid" Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsVisible="{Binding HasTrackOrAlbumWorld}">
 
     <!-- ─── Player column ─────────────────────────────────────────── -->
-    <Grid Grid.Column="0" RowDefinitions="*,Auto">
+    <Grid x:Name="PlayerColumn" Grid.Column="0" RowDefinitions="*,Auto" Background="{DynamicResource Brush.Bg.Base}">
 
       <!-- Artwork and visualizer span both rows so the controls bar overlays them — safe for
            these two since they're plain Avalonia-rendered content (Image / VisualizerHostControl),
@@ -196,6 +204,7 @@
 
         <Panel x:Name="VisualizerSurfacePanel" IsVisible="{Binding ShowVisualizerSurface}">
           <controls:VisualizerHostControl Engine="{Binding Engine}"
+                                          FrameSource="{Binding VisualizationSource}"
                                           Mode="{Binding SelectedVisualizerMode}"
                                           AlbumArtBytes="{Binding CoverArtBytes}"
                                           ShowPeaks="{Binding PeakHold}"
@@ -203,14 +212,16 @@
                                           ScriptedRenderer="{Binding ScriptedVisualizerOverride}" />
           <TextBlock x:Name="VisualizerNameLabel"
                      Text="{Binding SelectedVisualizer.Label}"
+                     IsVisible="{Binding !IsVisualizerFullscreen}"
                      HorizontalAlignment="Left" VerticalAlignment="Bottom"
                      Margin="8,0,0,6" FontSize="10" LetterSpacing="0.5"
                      Opacity="0.30" Foreground="{StaticResource Brush.Ink.Secondary}"
                      IsHitTestVisible="False" />
         </Panel>
 
-        <!-- Gradient vignette for overlay modes — not hit-testable -->
-        <Border VerticalAlignment="Bottom" Height="200" IsHitTestVisible="False">
+        <!-- Playback contrast belongs to the controls, not the fullscreen visualizer. -->
+        <Border VerticalAlignment="Bottom" Height="200" IsHitTestVisible="False"
+                IsVisible="{Binding !IsVisualizerFullscreen}">
           <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
               <GradientStop Color="Transparent" Offset="0" />
@@ -415,7 +426,8 @@
       </Button>
 
       <!-- Controls bar — hidden when an album world is the conductor -->
-      <StackPanel Grid.Row="1" IsVisible="{Binding !IsAlbumWorldShowingWorld}">
+      <Border Grid.Row="1" IsVisible="{Binding !IsVisualizerFullscreen}">
+      <StackPanel IsVisible="{Binding !IsAlbumWorldShowingWorld}">
 
         <!-- Track identity + viz controls -->
         <Grid ColumnDefinitions="*,Auto" Margin="16,0,16,4">
@@ -452,6 +464,7 @@
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
                       VerticalAlignment="Bottom" Margin="12,0,0,4"
                       IsVisible="{Binding ShowVisualizerControls}">
+            <Button Classes="ghost" Content="Fullscreen" Click="OnFullscreenVisualizer" ToolTip.Tip="Fullscreen visualizer (F11); Esc returns to the page" />
             <Button Classes="ghost" Content="‹"
                     Command="{Binding PreviousVisualizerCommand}"
                     IsEnabled="{Binding !IsVisualizerLocked}"
@@ -474,7 +487,7 @@
         </Grid>
 
         <!-- Progress bar -->
-        <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,0">
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,2,16,0" IsVisible="{Binding IsTrackSource}">
           <TextBlock Grid.Column="0" Classes="data" Text="{Binding PositionText}"
                      MinWidth="48" TextAlignment="Right" VerticalAlignment="Center"
                      Margin="0,0,10,0"
@@ -610,11 +623,11 @@
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
             <ToggleButton Classes="ghost" Width="34" Height="34" Padding="0"
-                          IsChecked="{Binding Shuffle}" ToolTip.Tip="Shuffle">
+                          IsChecked="{Binding Shuffle}" IsVisible="{Binding IsTrackSource}" ToolTip.Tip="Shuffle">
               <PathIcon Data="{x:Static design:IconData.Shuffle}" Width="16" Height="16" />
             </ToggleButton>
             <Button Classes="ghost" Width="34" Height="34" Padding="0"
-                    Command="{Binding PreviousCommand}"
+                    Command="{Binding PreviousCommand}" IsVisible="{Binding IsTrackSource}"
                     IsEnabled="{Binding HasPrevious}" ToolTip.Tip="Previous">
               <PathIcon Data="{x:Static design:IconData.Previous}" Width="16" Height="16" />
             </Button>
@@ -624,13 +637,13 @@
               <PathIcon Data="{Binding PlayPauseIconData}" Width="18" Height="18" />
             </Button>
             <Button Classes="ghost" Width="34" Height="34" Padding="0"
-                    Command="{Binding NextCommand}"
+                    Command="{Binding NextCommand}" IsVisible="{Binding IsTrackSource}"
                     IsEnabled="{Binding HasNext}"
                     ToolTip.Tip="Next">
               <PathIcon Data="{x:Static design:IconData.Next}" Width="16" Height="16" />
             </Button>
             <Button Classes="ghost" Width="34" Height="34" Padding="0"
-                    Click="OnCycleRepeat" ToolTip.Tip="Repeat: off / all / one">
+                    Click="OnCycleRepeat" IsVisible="{Binding IsTrackSource}" ToolTip.Tip="Repeat: off / all / one">
               <PathIcon Data="{Binding RepeatIconData}" Width="16" Height="16" />
             </Button>
           </StackPanel>
@@ -712,7 +725,7 @@
         </Grid>
 
       </StackPanel>
-
+      </Border>
     </Grid>
     <!-- ─── END Player column ─────────────────────────────────────── -->
 
@@ -871,7 +884,7 @@
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="16,0,16,10">
-          <ToggleButton Classes="ghost" IsChecked="{Binding Shuffle}" ToolTip.Tip="Shuffle">
+          <ToggleButton Classes="ghost" IsChecked="{Binding Shuffle}" IsVisible="{Binding IsTrackSource}" ToolTip.Tip="Shuffle">
             <PathIcon Data="{x:Static design:IconData.Shuffle}" Width="15" Height="15" />
           </ToggleButton>
           <Button Classes="ghost" Click="OnCycleRepeat" ToolTip.Tip="Repeat mode">
@@ -904,6 +917,10 @@
           <ListBox.ContextMenu>
             <ContextMenu>
               <MenuItem Header="Play" Click="OnQueuePlay" />
+              <MenuItem Header="Load into Mix" IsVisible="{Binding DjModeEnabled}">
+                <MenuItem Header="Deck A" Click="OnQueueMixA" />
+                <MenuItem Header="Deck B" Click="OnQueueMixB" />
+              </MenuItem>
               <MenuItem Header="Play Next" Click="OnQueuePlayNext" />
               <Separator />
               <MenuItem Header="Move Up" Click="OnQueueMoveUp" />

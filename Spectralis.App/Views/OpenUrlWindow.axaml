@@ -10,11 +10,11 @@
         Background="{StaticResource Brush.Bg.Base}">
 
   <StackPanel Margin="20" Spacing="12">
-    <TextBlock Classes="heading" Text="Open URL" />
+    <TextBlock x:Name="Heading" Classes="heading" Text="Open URL" />
     <TextBox x:Name="UrlTextBox"
              Watermark="Paste a track or playlist link…"
              KeyDown="OnUrlTextBoxKeyDown" />
-    <TextBlock Text="SPOTIFY · SOUNDCLOUD · BANDLAB · YOUTUBE · SUNO · UNTITLED · direct audio"
+    <TextBlock x:Name="ServicesLabel" Text="SPOTIFY · SOUNDCLOUD · BANDLAB · YOUTUBE · SUNO · UNTITLED · direct audio"
                Classes="data"
                Foreground="{StaticResource Brush.Ink.Muted}"
                FontSize="10"

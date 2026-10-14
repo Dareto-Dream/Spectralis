@@ -1877,6 +1877,7 @@ public enum SettingsCategory
 public sealed class SettingsViewModel : ViewModelBase
 {
     private readonly AppSettings _settings;
+    private readonly Action<bool>? _onDjModeChanged;
     private readonly NowPlayingViewModel _nowPlaying;
     private readonly Action<bool>? _setDiscordPresenceEnabled;
     private readonly Action? _onP2wBannerStyleChanged;
@@ -1899,9 +1900,11 @@ public sealed class SettingsViewModel : ViewModelBase
         Action<bool>? setDiscordPresenceEnabled = null,
         ObsEditorViewModel? obsEditor = null,
         LibraryViewModel? library = null,
-        Action? onP2wBannerStyleChanged = null)
+        Action? onP2wBannerStyleChanged = null,
+        Action<bool>? onDjModeChanged = null)
     {
         _settings = settings;
+        _onDjModeChanged = onDjModeChanged;
         _nowPlaying = nowPlaying;
         _setDiscordPresenceEnabled = setDiscordPresenceEnabled;
         _onP2wBannerStyleChanged = onP2wBannerStyleChanged;
@@ -2206,6 +2209,31 @@ public sealed class SettingsViewModel : ViewModelBase
     public string OutputDeviceStatus => _nowPlaying.OutputDeviceStatus;
 
     public void RefreshOutputDevices() => _nowPlaying.RefreshOutputDevices();
+
+    public bool DjModeEnabled
+    {
+        get => _settings.DjModeEnabled;
+        set
+        {
+            if (_settings.DjModeEnabled == value) return;
+            _settings.DjModeEnabled = value;
+            AppSettingsStore.Save(_settings);
+            _onDjModeChanged?.Invoke(value);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    public bool DjAiStemSeparationEnabled
+    {
+        get => _settings.DjAiStemSeparationEnabled;
+        set
+        {
+            if (_settings.DjAiStemSeparationEnabled == value) return;
+            _settings.DjAiStemSeparationEnabled = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
 
     public bool GaplessPlayback
     {

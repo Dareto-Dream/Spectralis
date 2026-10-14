@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using Spectralis.App.Services;
+using Spectralis.App.ViewModels;
 using Spectralis.Core.Audio.Dj;
 using Spectralis.Core.Integrations;
 using Xunit;
@@ -22,6 +24,10 @@ public sealed class DjTrackLoaderTests : IDisposable
         Assert.Equal(new[] { vocals, drums }, inputs.Select(i => i.Path));
         Assert.Equal(new[] { "Song - Lead Vocals", "Song - Drums" }, inputs.Select(i => i.Name));
         Assert.All(inputs, input => Assert.Equal(0, input.AudioStreamIndex));
+        using var vm = ViewModel();
+        await vm.DeckA.LoadFilesAsync([vocals, drums]);
+        Assert.Equal(inputs.Select(i => i.Name), vm.DeckA.Stems.Select(s => s.Name));
+        Assert.Contains("stem set", vm.DeckA.Title);
     }
 
     [Fact]
@@ -30,6 +36,10 @@ public sealed class DjTrackLoaderTests : IDisposable
         var path = await Container("Ordinary song.m4a", ["SoundHandler"]);
         var input = Assert.Single(await DjTrackLoader.ResolveAsync([path]));
         Assert.Equal("Ordinary song", input.Name); Assert.Equal(0, input.AudioStreamIndex);
+        using var vm = ViewModel();
+        await vm.DeckA.LoadFilesAsync([path]);
+        Assert.True(vm.DeckA.HasTrack); Assert.Single(vm.DeckA.Stems);
+        Assert.DoesNotContain("stem set", vm.DeckA.Title);
     }
 
     [Fact]
@@ -40,6 +50,16 @@ public sealed class DjTrackLoaderTests : IDisposable
         var inputs = await DjTrackLoader.ResolveAsync([path]);
         Assert.Equal(names.Skip(1), inputs.Select(i => i.Name));
         Assert.Equal(new[] { 1, 2, 3 }, inputs.Select(i => i.AudioStreamIndex));
+        using var vm = ViewModel();
+        await vm.DeckA.LoadFilesAsync([path]);
+        Assert.Equal(names.Skip(1), vm.DeckA.Stems.Select(s => s.Name));
+        vm.Mixer.Crossfader = -1; vm.Mixer.MasterVolume = 1;
+        vm.Mixer.Transport(0, DjTransport.PlayPause);
+        var samples = new float[4800]; vm.Mixer.Read(samples, 0, samples.Length);
+        Assert.InRange(samples[^1], .0899f, .0901f); // .02 + .03 + .04, no master
+        vm.Mixer.SetStem(0, 0, 1, false, true);
+        vm.Mixer.Read(samples, 0, samples.Length);
+        Assert.InRange(samples[^1], .0199f, .0201f);
     }
 
     [Fact]
@@ -60,6 +80,8 @@ public sealed class DjTrackLoaderTests : IDisposable
         var inputs = await DjTrackLoader.ResolveAsync([path]);
         Assert.Equal(names, inputs.Select(i => i.Name));
         Assert.Equal(new[] { 1, 2, 3, 4 }, inputs.Select(i => i.AudioStreamIndex));
+        using var vm = ViewModel(); await vm.DeckA.LoadFilesAsync([path]);
+        Assert.Equal(names, vm.DeckA.Stems.Select(s => s.Name));
     }
 
     [Fact]
@@ -146,6 +168,9 @@ public sealed class DjTrackLoaderTests : IDisposable
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DjTrackLoader.ResolveAsync(["unused.m4a"], cancellation.Token));
     }
+
+    private DjViewModel ViewModel() => new(new() { DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()),
+        cues: new DjCueStore(Path.Combine(_directory, "cues.json")), saveSettings: () => { });
 
     private async Task<string> Container(string name, string[] streamNames)
     {

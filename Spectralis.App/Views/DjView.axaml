@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels" xmlns:views="using:Spectralis.App.Views" xmlns:controls="using:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Views.DjView" x:DataType="vm:DjViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,16,20,24" Spacing="12" MinWidth="740">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4">
+          <TextBlock Text="DJ tools" Classes="heading" FontSize="26" />
+          <TextBlock Text="Mix here. Now Playing carries the music and visuals for the room." Classes="secondary" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+          <Button Content="{Binding RecordingLabel}" Click="OnRecording" HorizontalAlignment="Right" />
+          <TextBlock Text="F1 / F2: deck play · Space: play / pause mix" Classes="muted" FontSize="12" />
+        </StackPanel>
+      </Grid>
+      <views:DjPreviewView />
+      <Button Content="Show mix in Now Playing" Click="OnShowNowPlaying" HorizontalAlignment="Left" />
+      <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1" Padding="0,12">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,*" ColumnSpacing="12">
+          <TextBlock Text="A" FontFamily="{StaticResource Font.Data}" FontSize="24" VerticalAlignment="Center" />
+          <Slider Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding Crossfader}" ToolTip.Tip="Equal-power crossfader" />
+          <TextBlock Grid.Column="2" Text="B" FontFamily="{StaticResource Font.Data}" FontSize="24" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="3" Text="MASTER" Classes="muted" FontSize="11" VerticalAlignment="Center" Margin="16,0,0,0" />
+          <StackPanel Grid.Column="4" MinWidth="130">
+            <Slider Minimum="0" Maximum="100" Value="{Binding MasterVolume}" />
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding MasterPeak}" Height="4" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <TextBlock Text="Master is clipping — lower deck trim or master level" IsVisible="{Binding Clipping}" Foreground="{DynamicResource Brush.Error}" />
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+        <views:DjDeckView DataContext="{Binding DeckA}" />
+        <views:DjDeckView Grid.Column="1" DataContext="{Binding DeckB}" />
+      </Grid>
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="secondary" />
+      <WrapPanel>
+        <Button Content="Browse library" Click="OnBrowseLibrary" Margin="0,0,8,4" />
+        <Button Content="Now Playing &#8594; A" Click="OnCurrentA" Margin="0,0,8,4" />
+        <Button Content="Now Playing &#8594; B" Click="OnCurrentB" Margin="0,0,8,4" />
+        <TextBlock Text="Spotify mixing &#8212; Coming soon" Classes="muted" VerticalAlignment="Center" Margin="6,0,0,4" />
+      </WrapPanel>
+      <Expander Header="Outputs &amp; headphones" HorizontalAlignment="Stretch">
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="18" Margin="0,12,0,0">
+          <StackPanel Spacing="8">
+            <TextBlock Text="MASTER OUTPUT" Classes="muted" FontSize="11" />
+            <ComboBox ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding MasterDevice}" HorizontalAlignment="Stretch">
+              <ComboBox.ItemTemplate><DataTemplate x:CompileBindings="False"><TextBlock Text="{Binding FriendlyName}" /></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Content="Refresh devices" Click="OnRefreshDevices" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="8">
+            <TextBlock Text="HEADPHONES · PRE-FADER" Classes="muted" FontSize="11" />
+            <ComboBox ItemsSource="{Binding CueDevices}" SelectedItem="{Binding HeadphoneDevice}" HorizontalAlignment="Stretch">
+              <ComboBox.ItemTemplate><DataTemplate x:CompileBindings="False"><TextBlock Text="{Binding FriendlyName}" /></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <Slider Minimum="0" Maximum="100" Value="{Binding CueVolume}" />
+            <TextBlock Classes="muted" FontSize="12" Text="Choose a separate audio device for headphone cueing." TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Expander>
+      <Expander Header="Local AI stem separation" IsVisible="{Binding AiEnabled}" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="10" Margin="0,12,0,0">
+          <TextBlock Text="Separate vocals, drums, bass and other instruments on this computer. Installation downloads the optional Python runtime, CPU inference tools and model weights. Prepared stems never need this download." TextWrapping="Wrap" Classes="secondary" />
+          <WrapPanel>
+            <Button Content="Install / repair AI tools…" Click="OnInstallAi" Margin="0,0,8,8" />
+            <Button Content="Separate into deck A…" Click="OnSeparateA" Margin="0,0,8,8" />
+            <Button Content="Separate into deck B…" Click="OnSeparateB" Margin="0,0,8,8" />
+            <Button Content="Cancel AI task" Click="OnCancelAi" Margin="0,0,8,8" />
+            <Button Content="Remove AI tools" Click="OnRemoveAi" Margin="0,0,0,8" />
+          </WrapPanel>
+        </StackPanel>
+      </Expander>
+      <Expander Header="Choose from your library or queue" HorizontalAlignment="Stretch"><StackPanel Spacing="8">
+      <ComboBox ItemsSource="{Binding BrowserSources}" SelectedItem="{Binding BrowserSource}" />
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBox Watermark="Search tracks" Text="{Binding Search}" />
+        <Button Grid.Column="1" Content="Load A" Click="OnLibraryA" />
+        <Button Grid.Column="2" Content="Load B" Click="OnLibraryB" />
+      </Grid>
+      <ListBox ItemsSource="{Binding LibraryTracks}" SelectedItem="{Binding SelectedTrack}" MaxHeight="180" MinHeight="80">
+        <ListBox.ItemTemplate><DataTemplate x:DataType="vm:DjLibraryTrack">
+          <Grid ColumnDefinitions="*,*,70" ColumnSpacing="12">
+            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="{Binding Artist}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Text="{Binding Bpm}" Classes="data" HorizontalAlignment="Right" />
+          </Grid>
+        </DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      </StackPanel></Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

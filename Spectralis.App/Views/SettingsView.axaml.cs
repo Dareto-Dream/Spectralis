@@ -109,6 +109,14 @@ public partial class SettingsView : UserControl
         }
     }
 
+    private async void OnCleanupTemp(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button) button.IsEnabled = false;
+        try { CleanupResult.Text = (await TempStorageCleanup.RunAsync()).ToString(); }
+        catch (Exception ex) { CleanupResult.Text = "Cleanup skipped: " + ex.Message; }
+        finally { if (sender is Button finished) finished.IsEnabled = true; }
+    }
+
     private void OnOpenAbout(object? sender, RoutedEventArgs e) =>
         ShowUtilityWindow(new AboutWindow());
 

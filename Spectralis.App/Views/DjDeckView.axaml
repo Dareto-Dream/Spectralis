@@ -1,0 +1,112 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels" xmlns:controls="using:Spectralis.App.Controls"
+             x:Class="Spectralis.App.Views.DjDeckView" x:DataType="vm:DjDeckViewModel" DragDrop.AllowDrop="True">
+  <Border Background="{DynamicResource Brush.Bg.Raised}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Padding="18">
+    <StackPanel Spacing="8">
+      <Grid ColumnDefinitions="*,Auto">
+        <RadioButton Content="{Binding Label}" IsChecked="{Binding IsSelected}" Foreground="{DynamicResource Brush.Signal}" FontWeight="Bold" ToolTip.Tip="Select this deck for Open Audio and Open URL" />
+        <TextBlock Grid.Column="1" Classes="data" Text="{Binding SourceLabel}" />
+      </Grid>
+      <StackPanel Spacing="3" MinHeight="44">
+        <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Artist}" Classes="secondary" FontSize="12" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <WrapPanel>
+        <Button Content="Load audio…" Click="OnLoadFiles" IsEnabled="{Binding CanLoad}" Margin="0,0,0,6"
+                ToolTip.Tip="Choose a track, a file with embedded stems, or several aligned stem files. The deck detects them automatically." />
+        <Button Content="Load URL" Click="OnLoadUrl" IsEnabled="{Binding CanLoad}" Margin="6,0,0,6" />
+        <Button Content="Cancel" Click="OnCancelLoad" IsVisible="{Binding Busy}" Margin="6,0,0,6" />
+      </WrapPanel>
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding Busy}" Height="3" />
+      <controls:DjWaveform Samples="{Binding Waveform}" Position="{Binding Position}" Duration="{Binding Duration}"
+                           Bpm="{Binding Bpm}" BeatOffset="{Binding BeatOffset}" LoopStart="{Binding LoopStart}" LoopEnd="{Binding LoopEnd}"
+                           Signal="{DynamicResource Brush.Signal}" Height="52" Cursor="Hand" ToolTip.Tip="Click to seek" />
+      <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+        <TextBlock Classes="data" Text="{Binding TimeText}" FontSize="15" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasTrack}">
+          <TextBlock Text="{Binding EffectiveBpm, StringFormat={}{0:0.0}}" FontFamily="{StaticResource Font.Data}" FontSize="18" FontWeight="Bold" />
+          <TextBlock Text="BPM" Classes="muted" FontSize="11" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+        </StackPanel>
+      </Grid>
+      <Slider Minimum="0" Maximum="{Binding Duration}" Value="{Binding Position, Mode=TwoWay}" IsEnabled="{Binding HasTrack}" />
+      <WrapPanel>
+        <Button Content="{Binding PlayLabel}" Classes="primary" Command="{Binding PlayCommand}" IsEnabled="{Binding HasTrack}" MinWidth="72" Margin="0,0,6,6" />
+        <Button Content="Stop" Command="{Binding StopCommand}" IsEnabled="{Binding HasTrack}" Margin="0,0,6,6" />
+        <Button Content="Match tempo" Command="{Binding SyncCommand}" IsEnabled="{Binding HasTrack}" Margin="0,0,0,6" ToolTip.Tip="Match this deck's tempo and beat phase to the other deck" />
+      </WrapPanel>
+      <Expander Header="More controls" HorizontalAlignment="Stretch"><StackPanel Spacing="10" Margin="0,8,0,0">
+      <WrapPanel>
+        <Button Content="Cue" Command="{Binding CueCommand}" Margin="0,0,6,6" ToolTip.Tip="Pause and return to the cue point" />
+        <Button Content="Set cue" Command="{Binding SetCueCommand}" Margin="0,0,6,6" />
+        <TextBlock Text="{Binding Key}" Classes="data" Margin="8,0,0,6" VerticalAlignment="Center" />
+      </WrapPanel>
+      <ItemsControl ItemsSource="{Binding HotCues}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:DjHotCueViewModel">
+            <Button Content="{Binding Label}" Command="{Binding TriggerCommand}" Margin="0,0,4,0" FontSize="12" HorizontalContentAlignment="Center" ToolTip.Tip="Click to set or jump. Right-click to clear.">
+              <Button.ContextMenu><ContextMenu><MenuItem Header="Clear cue" Command="{Binding ClearCommand}" /></ContextMenu></Button.ContextMenu>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <TextBlock Text="TEMPO" Classes="muted" FontSize="11" VerticalAlignment="Center" />
+        <Slider Grid.Column="1" Minimum="-50" Maximum="50" Value="{Binding TempoPercent}" />
+        <NumericUpDown Grid.Column="2" Width="98" Minimum="-50" Maximum="50" Increment="0.1" FormatString="0.0'%'" Value="{Binding TempoPercent}" />
+      </Grid>
+      <WrapPanel>
+        <CheckBox Content="Key lock" IsChecked="{Binding KeyLock}" Margin="0,0,12,0" />
+        <CheckBox Content="Quantize" IsChecked="{Binding Quantize}" Margin="0,0,12,0" />
+        <CheckBox Content="Headphone cue" IsChecked="{Binding HeadphoneCue}" />
+      </WrapPanel>
+      <WrapPanel>
+        <Button Content="−4 beats" Command="{Binding JumpBackCommand}" Margin="0,0,6,6" />
+        <Button Content="+4 beats" Command="{Binding JumpForwardCommand}" Margin="0,0,6,6" />
+        <Button Content="Nudge −" Command="{Binding NudgeBackCommand}" Margin="0,0,6,6" />
+        <Button Content="Nudge +" Command="{Binding NudgeForwardCommand}" Margin="0,0,0,6" />
+      </WrapPanel>
+      <Separator />
+      <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LOOP" Classes="muted" FontSize="11" LetterSpacing="1" /><TextBlock Grid.Column="1" Text="{Binding LoopText}" Classes="data" FontSize="11" /></Grid>
+      <WrapPanel>
+        <ComboBox ItemsSource="{Binding LoopOptions}" SelectedItem="{Binding LoopBeats}" Width="65" Margin="0,0,6,6" />
+        <Button Content="Beat loop" Command="{Binding BeatLoopCommand}" Margin="0,0,6,6" />
+        <Button Content="½" Command="{Binding HalfLoopCommand}" Margin="0,0,6,6" />
+        <Button Content="2×" Command="{Binding DoubleLoopCommand}" Margin="0,0,6,6" />
+        <Button Content="In" Command="{Binding LoopInCommand}" Margin="0,0,6,6" />
+        <Button Content="Out" Command="{Binding LoopOutCommand}" Margin="0,0,6,6" />
+        <Button Content="On / off" Command="{Binding LoopToggleCommand}" Margin="0,0,0,6" />
+      </WrapPanel>
+      <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="6">
+        <TextBlock Text="LOW" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Column="1" Minimum="-60" Maximum="12" Value="{Binding LowDb}" ToolTip.Tip="{Binding LowDb, StringFormat={}{0:0.0} dB}" />
+        <TextBlock Grid.Column="2" Text="TRIM" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Column="3" Minimum="-24" Maximum="12" Value="{Binding GainDb}" />
+        <TextBlock Grid.Row="1" Text="MID" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Row="1" Grid.Column="1" Minimum="-60" Maximum="12" Value="{Binding MidDb}" />
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="FILTER" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Row="1" Grid.Column="3" Minimum="-1" Maximum="1" Value="{Binding Filter}" ToolTip.Tip="Left: low-pass · center: off · right: high-pass" />
+        <TextBlock Grid.Row="2" Text="HIGH" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Row="2" Grid.Column="1" Minimum="-60" Maximum="12" Value="{Binding HighDb}" />
+        <TextBlock Grid.Row="2" Grid.Column="2" Text="LEVEL" Classes="muted" VerticalAlignment="Center" FontSize="11" /><Slider Grid.Row="2" Grid.Column="3" Minimum="0" Maximum="100" Value="{Binding Fader}" />
+      </Grid>
+      <ProgressBar Minimum="0" Maximum="100" Value="{Binding Peak}" Height="4" />
+      </StackPanel></Expander>
+      <Expander Header="Stems &amp; grid" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="10" Margin="0,8,0,0">
+          <ItemsControl ItemsSource="{Binding Stems}">
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:DjStemViewModel">
+              <Grid ColumnDefinitions="100,*,Auto,Auto" ColumnSpacing="6" Margin="0,3">
+                <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <Slider Grid.Column="1" Minimum="0" Maximum="150" Value="{Binding Volume}" />
+                <CheckBox Grid.Column="2" Content="Mute" IsChecked="{Binding Muted}" />
+                <CheckBox Grid.Column="3" Content="Solo" IsChecked="{Binding Solo}" />
+              </Grid>
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <WrapPanel>
+            <TextBlock Text="Grid BPM" VerticalAlignment="Center" Margin="0,0,6,6" />
+            <NumericUpDown Minimum="30" Maximum="300" Increment="0.1" FormatString="0.0" Value="{Binding Bpm}" Width="110" Margin="0,0,8,6" />
+            <Button Content="Set downbeat here" Command="{Binding SetDownbeatCommand}" Margin="0,0,6,6" />
+            <Button Content="Reset mixer" Command="{Binding ResetMixerCommand}" Margin="0,0,0,6" />
+          </WrapPanel>
+        </StackPanel>
+      </Expander>
+    </StackPanel>
+  </Border>
+</UserControl>
