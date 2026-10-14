@@ -214,24 +214,6 @@
             <ol class="queue-list" id="queueList">
               <li class="queue-empty">No queued tracks yet</li>
             </ol>
-            <form
-              class="queue-add-form"
-              id="queueAddForm"
-              autocomplete="off"
-              hidden
-            >
-              <label class="sr-only" for="queueUrlInput">Track link</label>
-              <input
-                id="queueUrlInput"
-                type="url"
-                required
-                spellcheck="false"
-                placeholder="Paste a track link"
-              />
-              <button class="primary" type="submit">
-                Put something on <span aria-hidden="true">+</span>
-              </button>
-            </form>
             <p class="queue-hint" id="queueHint">
               The host is getting the queue ready.
             </p>
@@ -418,13 +400,23 @@
       <p id="settingsStatus" role="status"></p>
     </dialog>
     <dialog id="libraryDialog" aria-labelledby="libraryHeading">
-      <div class="dialog-head"><h2 id="libraryHeading">Your files</h2><button type="button" data-close-dialog aria-label="Close your files">×</button></div>
-      <p>Saved in this browser, not on our servers. Only “Add to queue” sends a temporary copy to the room. Clearing site data removes your library.</p>
+      <div class="dialog-head"><h2 id="libraryHeading">Put something on</h2><button type="button" data-close-dialog aria-label="Close music picker">&times;</button></div>
       <div class="library-account-row"><p id="libraryAccount"></p><button id="librarySignIn" type="button" hidden>Sign in with Ward</button><button id="librarySignOut" type="button" hidden>Sign out</button></div>
-      <div class="library-tools"><button class="primary" id="libraryImport" type="button">Import audio files +</button><span id="librarySummary"></span></div>
-      <input id="libraryFiles" type="file" accept=".mp3,.m4a,.wav,.flac,.ogg,.opus,.aac,.aif,.aiff" multiple hidden />
-      <ul id="libraryList" class="library-list"></ul>
-      <audio id="libraryPreview" controls hidden></audio>
+      <section id="libraryCollection" hidden>
+        <div class="library-tabs" role="group" aria-label="Your music"><button id="libraryAll" type="button" aria-pressed="true">Your library</button><button id="libraryRecent" type="button" aria-pressed="false">Recently put on</button></div>
+        <p class="library-storage-note">Saved in this browser for your account. Only queued audio is uploaded. Clearing site data removes your library.</p>
+        <div class="library-tools"><button class="primary" id="libraryImport" type="button">Add audio files +</button><button id="libraryClearRecent" type="button" hidden>Clear recent</button><span id="librarySummary"></span></div>
+        <button id="libraryRecover" type="button" hidden>Recover files saved before account libraries</button>
+        <input id="libraryFiles" type="file" accept=".mp3,.m4a,.wav,.flac,.ogg,.opus,.aac,.aif,.aiff" multiple hidden />
+        <ul id="libraryList" class="library-list"></ul>
+        <audio id="libraryPreview" controls hidden></audio>
+      </section>
+      <form id="queueAddForm" class="library-link-form" autocomplete="off">
+        <label for="queueUrlInput">Track link</label>
+        <div class="library-link-input"><input id="queueUrlInput" type="text" inputmode="url" required spellcheck="false" placeholder="Paste a track link" /><button id="libraryQueueLink" class="primary" type="submit">Add to queue</button></div>
+        <div id="librarySaveOptions" class="library-save-options" hidden><input id="libraryLinkTitle" aria-label="Link title (optional)" placeholder="Track title (optional)" maxlength="240" /><button id="librarySaveLink" type="button">Save link to library</button></div>
+        <p id="libraryLinkHint" class="queue-hint"></p>
+      </form>
       <p id="libraryStatus" role="status"></p>
     </dialog>
     <audio id="sharedAudio" preload="metadata" crossorigin="anonymous"></audio>

@@ -1,8 +1,12 @@
 # Shared Play listener files
 
-The browser library uses IndexedDB (`spectralis-local-audio`), with separate metadata and Blob stores. Importing and removing files does not contact the backend. Files belong to the current browser/site, survive reload and sign-out, and disappear when site data is cleared. Imports are deduplicated by SHA-256. The limit is 64 MiB per file and 512 MiB per browser library.
+"Put something on" is the single room music picker. Guests can submit links when the host allows requests. A verified account unlocks audio importing, saved links, and the last 50 accepted picks in "Recently put on". Recent picks record accepted requests, not proof of playback; rejected requests and unacknowledged co-DJ socket requests are not recorded. Saved links and recent picks can be queued again; unsaved recent links can be saved into the library.
 
-Adding a file to a room requires a server-verified Ward identity and room admission. A host session key alone does not qualify. Development and staging keep Ward disabled, so they support local importing and listening but reject uploads. `GET /shared-play/v2/config` exposes `accountsEnabled` without starting sign-in.
+The browser library uses IndexedDB (`spectralis-local-audio`, version 2), with separate metadata, Blob and recent stores. Library entries and history are scoped to the verified account subject. Guests do not read or display the library. Sign-out hides it; signing back into the same account restores it. Nothing syncs to other browsers/devices. Clearing site data removes the library. Existing unowned version 1 files are retained and can be explicitly recovered by a signed-in user; they are never silently assigned to an account.
+
+Importing, saving links, removing files and clearing recent picks do not contact the backend. Files are deduplicated by SHA-256 within each account. The limit is 64 MiB per file and 512 MiB across the browser's libraries. Deleting a file also removes its recent pick; clearing history leaves saved files and links intact. Removing a library item does not remove requests already sent to a room.
+
+Adding a file to a room requires a server-verified Ward identity and room admission. A host session key alone does not qualify. Development and staging keep Ward disabled: guests can listen and submit links, but cannot open account libraries or upload audio. `GET /shared-play/v2/config` exposes `accountsEnabled` without starting sign-in.
 
 `audioUploads` is an independent boolean room capability, defaulting to true. It is separate from link requests (`queueAdd`). Hosts persist the setting locally, send `roomCapabilities` with session creation, and change it through authenticated `caps.set` messages. Both the manifest and socket report the current value.
 
@@ -27,5 +31,6 @@ Validation:
 - `dotnet test Spectralis.Tests/Spectralis.Tests.csproj --filter "FullyQualifiedName~SharedPlay"`
 - `python web-share/tests/room_upload_backend_test.py` after `cargo build --manifest-path backend/Cargo.toml` (real local backend, isolated Ward stub and Chromium; no live account)
 - `python web-share/tests/room_browser_test.py`
+- `python web-share/tests/local_library_test.py` (real IndexedDB migration, account isolation and recent-pick retention)
 
 The public Player repo uses the same IndexedDB implementation at `public/local-library.js`; keep that copy identical to `web-share/local-library.js` when changing the storage format.

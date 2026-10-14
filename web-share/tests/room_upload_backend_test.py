@@ -86,14 +86,9 @@ with tempfile.TemporaryFile() as log:
             page.goto(base+"/spectralis/web-share/?session="+code)
             expect(page.locator("#openAppButton")).to_be_visible()
             page.locator("#libraryButton").click()
-            page.locator("#libraryFiles").set_input_files({"name":"A song.wav","mimeType":"audio/wav","buffer":audio})
-            expect(page.locator("#libraryList strong")).to_have_text("A song")
-            expect(page.get_by_role("button",name="Add to queue",exact=True)).to_be_disabled()
-            assert not uploads, "Import must not upload audio"
-            # Duplicate import is a single local track, and the Blob survives a page reload.
-            page.locator("#libraryFiles").set_input_files({"name":"A song.wav","mimeType":"audio/wav","buffer":audio})
-            expect(page.locator("#libraryStatus")).to_contain_text("Nothing was uploaded")
-            expect(page.locator("#libraryList strong")).to_have_count(1)
+            expect(page.locator("#libraryCollection")).to_be_hidden()
+            expect(page.locator("#librarySaveOptions")).to_be_hidden()
+            assert not uploads
             # Exercise the real device-connect API; only the account site's page is a local fixture.
             page.context.route("https://player.deltavdevs.com/connect/**", lambda route: route.fulfill(content_type="text/html",body="<h1>Isolated test account approval</h1>"))
             with page.expect_popup() as opened:
@@ -103,11 +98,18 @@ with tempfile.TemporaryFile() as log:
             request("/player/v1/connect/"+popup.url.rsplit("/",1)[1]+"/approve","POST",{}, {"Authorization":"Bearer "+TOKEN})
             expect(page.locator("#libraryAccount")).to_contain_text("Test listener")
             popup.close()
+            page.locator("#libraryFiles").set_input_files({"name":"A song.wav","mimeType":"audio/wav","buffer":audio})
+            expect(page.locator("#libraryList strong")).to_have_text("A song")
+            assert not uploads, "Import must not upload audio"
+            # Duplicate import is a single local track, and the Blob survives a page reload.
+            page.locator("#libraryFiles").set_input_files({"name":"A song.wav","mimeType":"audio/wav","buffer":audio})
+            expect(page.locator("#libraryStatus")).to_contain_text("Nothing was uploaded")
+            expect(page.locator("#libraryList strong")).to_have_count(1)
             page.reload(); page.locator("#libraryButton").click()
             expect(page.locator("#libraryAccount")).to_contain_text("Test listener")
             expect(page.locator("#libraryList strong")).to_have_count(1)
             assert not uploads
-            page.get_by_role("button",name="Add to queue",exact=True).click()
+            page.locator("#libraryList").get_by_role("button",name="Add to queue",exact=True).click()
             expect(page.locator("#libraryStatus")).to_contain_text("was added to the queue")
             assert len(uploads) == 1
             assert uploads[0].headers["authorization"].startswith("Bearer sp_app_")
@@ -125,19 +127,48 @@ with tempfile.TemporaryFile() as log:
                 ws.onmessage=e=>{if(JSON.parse(e.data).t==='welcome')resolve()};ws.onerror=reject;
             })""", {"url":base.replace("http:","ws:")+path+"/socket","key":created["sessionKey"]})
             page.evaluate("testHost.send(JSON.stringify({v:2,t:'caps.set',caps:{audioUploads:false}}))")
-            expect(page.get_by_role("button",name="Add to queue",exact=True)).to_be_disabled()
+            expect(page.locator("#libraryList").get_by_role("button",name="Add to queue",exact=True)).to_be_disabled()
             rejected(path+"/uploads","POST",b"",{"Authorization":"Bearer "+TOKEN},403)
             rejected(path+"/queue/items/"+item["id"],"DELETE",None,{"Authorization":"Bearer "+TOKEN},403)
             # Removing the received request does not remove its browser-library original.
             request(path+"/queue/items/"+item["id"],"DELETE",None,host)
             assert not request(path+"/queue")["items"]
-            assert page.evaluate("async () => (await LocalAudioLibrary.file((await LocalAudioLibrary.list())[0].id)).size") == len(audio)
+            assert page.evaluate("async () => { const db=LocalAudioLibrary.forAccount('test-user'); return (await db.file((await db.list())[0].id)).size }") == len(audio)
             snapshots = Path(tempfile.gettempdir())/"spectralis-upload-check"; snapshots.mkdir(exist_ok=True)
             for width in [1440,390]:
                 page.set_viewport_size({"width":width,"height":900}); page.screenshot(path=str(snapshots/f"library-{width}.png"))
                 assert page.evaluate("document.querySelector('#libraryDialog').scrollWidth <= document.querySelector('#libraryDialog').clientWidth+1")
             page.get_by_role("button",name="Remove",exact=True).click()
             expect(page.locator("#libraryList strong")).to_have_count(0)
+            # Saved links never upload or queue anything until explicitly requested.
+            page.locator("#queueUrlInput").fill("https://example.com/late-night.mp3")
+            page.locator("#libraryLinkTitle").fill("Late night")
+            page.locator("#librarySaveLink").click()
+            expect(page.locator("#libraryList strong")).to_have_text("Late night")
+            assert not request(path+"/queue")["items"]
+            page.reload(); page.locator("#libraryButton").click()
+            expect(page.locator("#libraryList strong")).to_have_text("Late night")
+            page.locator("#libraryList").get_by_role("button",name="Add to queue",exact=True).click()
+            expect(page.locator("#libraryStatus")).to_contain_text("was added to the queue")
+            queued_link = request(path+"/queue")["items"][0]
+            assert queued_link["url"] == "https://example.com/late-night.mp3"
+            page.locator("#libraryRecent").click()
+            expect(page.locator("#libraryList strong")).to_have_text("Late night")
+            # Repeating a pick moves it to the front without duplicating history.
+            page.locator("#libraryList").get_by_role("button",name="Add to queue",exact=True).click()
+            expect(page.locator("#libraryStatus")).to_contain_text("was added to the queue")
+            expect(page.locator("#libraryList strong")).to_have_count(1)
+            assert page.evaluate("async () => (await LocalAudioLibrary.forAccount('another-user').list()).length") == 0
+            assert page.evaluate("async () => (await LocalAudioLibrary.forAccount('another-user').recent()).length") == 0
+            page.locator("#librarySignOut").click()
+            expect(page.locator("#libraryCollection")).to_be_hidden()
+            expect(page.locator("#librarySaveOptions")).to_be_hidden()
+            expect(page.locator("#libraryList strong")).to_have_count(0)
+            # Guests retain the one permitted action: adding links.
+            page.locator("#queueUrlInput").fill("https://example.com/guest.mp3")
+            page.locator("#libraryQueueLink").click()
+            expect(page.locator("#libraryStatus")).to_contain_text("was added to the queue")
+            assert len(uploads) == 1
             assert not page_errors, page_errors
             browser.close()
         request(path+"/end","POST",{},host)

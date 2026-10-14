@@ -106,6 +106,12 @@ try:
           };
         })();""")
         page.goto(created["joinUrl"])
+        page.get_by_role("button", name="Put something on").click()
+        expect(page.locator("#libraryCollection")).to_be_hidden()
+        expect(page.locator("#librarySaveOptions")).to_be_hidden()
+        expect(page.locator("#librarySignIn")).to_be_hidden()
+        expect(page.locator("#queueUrlInput")).to_be_visible()
+        page.get_by_role("button", name="Close music picker").click()
         expect(page.locator("#trackTitle")).to_have_text("Development playback check")
         expect(page.locator("#lyricsTiming")).to_have_text("Word timed")
         expect(page.locator("#statusLine")).to_have_text("Synced.")

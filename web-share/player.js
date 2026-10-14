@@ -150,7 +150,8 @@
     applyExternalConfig();
     library = window.RoomLibrary({
       baseUrl: config.cdnBaseUrl,
-      room: function () { return { code: runtime.activeRoomCode, allowUploads: !!runtime.session && !!runtime.caps && runtime.caps.audioUploads }; },
+      room: function () { return { code: runtime.activeRoomCode, allowLinks: !!runtime.session && !!runtime.caps && capAllows(runtime.caps.queueAdd), allowUploads: !!runtime.session && !!runtime.caps && runtime.caps.audioUploads }; },
+      addLink: addQueueLink,
       onQueue: function (queue) { runtime.queue = queue; renderQueue(queue); },
       onAuth: function () {
         if (runtime.channelId && !runtime.session) {
@@ -216,13 +217,6 @@
         sendReaction(stringOrEmpty(btn.getAttribute("data-reaction"))).catch(function (err) {
           setStatus(err.message || "Reaction could not be sent.");
         });
-      });
-    });
-
-    el.queueAddForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      addQueueLink().catch(function (err) {
-        setStatus(err.message || "Queue link could not be added.");
       });
     });
 
@@ -374,7 +368,6 @@
 
   function updateRoomPermissions() {
     var canAdd = Boolean(runtime.session && runtime.caps && capAllows(runtime.caps.queueAdd));
-    el.queueAddForm.hidden = !canAdd;
     el.queueHint.textContent = canAdd ? "Share a favourite with the room." : runtime.session ? "The host controls who can add tracks." : "Waiting for the host.";
     el.hostSettings.hidden = runtime.role !== "host";
     el.permissionsSummary.textContent = "Your role: " + (runtime.role === "codj" ? "co-DJ" : runtime.role === "host" ? "host" : "listener") + ". " + (canControlTransport() ? "You can control playback." : "Playback follows the host.");
@@ -1344,24 +1337,26 @@
     preloadUpcomingQueueTracks();
   }
 
-  async function addQueueLink() {
+  async function addQueueLink(value, title) {
     if (!runtime.caps || !capAllows(runtime.caps.queueAdd)) throw new Error("The host has not enabled adding tracks for you.");
-    var value = stringOrEmpty(el.queueUrlInput.value).trim();
+    value = stringOrEmpty(value).trim();
     if (!value) return;
     var parsed = new URL(value);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("Paste an http or https track link.");
+    if (!["https:", "http:", "spotify:"].includes(parsed.protocol)) throw new Error("Paste an http, https or Spotify track link.");
 
     var item = buildQueueLinkItem(value);
-    if (socketSend({ t: "queue.add", item: { url: item.url, title: item.title, sourceKind: item.sourceKind } })) {
-      el.queueUrlInput.value = "";
-      setStatus("Request sent to room queue.");
-      return;
+    if (title) item.title = title;
+    // The HTTP endpoint confirms queue acceptance. Restricted requests still use their socket role.
+    if ((runtime.role === "codj" || runtime.role === "host") && runtime.caps.queueAdd !== "everyone") {
+      if (!socketSend({ t: "queue.add", item: item })) throw new Error("Reconnect to the room and try again.");
+      return { confirmed: false };
     }
 
     if (!runtime.session || !runtime.session.queueUrl) throw new Error("Load a room first.");
     var itemsUrl = runtime.session.queueUrl.replace(/\/queue(?:\?.*)?$/, "/queue/items");
     var response = await fetch(itemsUrl, {
       method: "POST",
+      signal: AbortSignal.timeout(15000),
       cache: "no-store",
       credentials: "omit",
       headers: library.headers(itemsUrl, { "accept": "application/json", "content-type": "application/json" }),
@@ -1369,10 +1364,9 @@
     });
 
     if (!response.ok) throw new Error("Queue update failed with HTTP " + response.status + ".");
-    el.queueUrlInput.value = "";
     runtime.queue = normalizeQueue(await response.json());
     renderQueue(runtime.queue);
-    setStatus("Request sent to room queue.");
+    return { confirmed: true };
   }
 
   function normalizeQueue(payload) {

@@ -90,6 +90,10 @@ class Room:
             route.fulfill(json=self.manifest())
         elif path.endswith("/state"):
             route.fulfill(json=self.state_envelope())
+        elif path.endswith("/queue/items"):
+            item = route.request.post_data_json["item"]
+            self.sent.append({"t": "http.queue.add", "item": item})
+            route.fulfill(json=self.queue)
         elif path.endswith("/queue"):
             route.fulfill(json=self.queue)
         elif path.endswith("/presence"):
@@ -145,7 +149,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1440, "height": 960}, reduced_motion="reduce")
     room = Room(page)
     page.goto(BASE + "/?session=ABC123")
-    expect(page.locator("#queueAddForm")).to_be_visible()
+    expect(page.locator("#libraryButton")).to_be_visible()
     expect(page.locator("#lyricsTiming")).to_have_text("Word timed")
     expect(page.locator(".lyric-word.is-active")).to_have_text("there")
     assert page.locator("#lyricsPanel button, #lyricsPanel a, [data-timing-mode]").count() == 0
@@ -163,10 +167,14 @@ with sync_playwright() as p:
     page.locator("#followLyrics").click()
     expect(page.locator("#followLyrics")).to_be_hidden()
     assert page.locator("#sharedAudio").evaluate("a => a.currentTime") == before
+    page.locator("#libraryButton").click()
+    expect(page.locator("#libraryCollection")).to_be_hidden()
+    expect(page.locator("#librarySaveOptions")).to_be_hidden()
     page.locator("#queueUrlInput").fill("https://example.com/song.mp3")
-    page.locator("#queueAddForm button").click()
+    page.locator("#libraryQueueLink").click()
     page.wait_for_timeout(60)
-    assert any(m["t"] == "queue.add" and m["item"]["url"] == "https://example.com/song.mp3" for m in room.sent)
+    assert any(m["t"] == "http.queue.add" and m["item"]["url"] == "https://example.com/song.mp3" for m in room.sent)
+    page.get_by_role("button", name="Close music picker").click()
     page.locator("#voteSkipButton").click()
     page.locator('[data-reaction="love"]').click()
     page.wait_for_timeout(60)
