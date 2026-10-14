@@ -2,6 +2,11 @@
 use super::*;
 use axum::{extract::Request, middleware::Next};
 
+/// Development and staging only host temporary, link-only rooms.
+pub fn ward_enabled_for(environment: &str) -> bool { environment.eq_ignore_ascii_case("production") }
+
+fn ward_disabled() -> AppError { AppError::forbidden("Development uses temporary rooms only. Ward sign-in is disabled.") }
+
 fn token_hash(token: &str) -> String { bytes_to_hex(&Sha256::digest(token.as_bytes())) }
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::AUTHORIZATION)?.to_str().ok()?.strip_prefix("Bearer ").filter(|v| !v.is_empty())
@@ -9,6 +14,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 
 pub async fn identity(state: &AppState, headers: &HeaderMap) -> Result<Value, AppError> {
     let token = bearer(headers).ok_or_else(|| AppError::unauthorized("Sign in with Ward to do that."))?;
+    if !state.ward_enabled { return Err(ward_disabled()); }
     if token.starts_with("sp_app_") {
         return read_json_opt(state, &format!("player:device:{}", token_hash(token))).await
             .ok_or_else(|| AppError::unauthorized("Reconnect your Ward account."));
@@ -27,7 +33,7 @@ pub async fn identity(state: &AppState, headers: &HeaderMap) -> Result<Value, Ap
 }
 
 pub async fn optional_subject(state: &AppState, headers: &HeaderMap) -> Result<Option<String>, AppError> {
-    if bearer(headers).is_none() { return Ok(None); }
+    if !state.ward_enabled || bearer(headers).is_none() { return Ok(None); }
     Ok(Some(ward_subject(state, headers).await?))
 }
 
@@ -67,6 +73,9 @@ pub async fn session_access(state: &AppState, code: &str, headers: &HeaderMap) -
 
 async fn guard(state: &AppState, uri: &axum::http::Uri, method: &str, headers: &HeaderMap) -> Result<(), AppError> {
     let path = uri.path();
+    if !state.ward_enabled && (path.starts_with("/player/v1/") || path == "/shared-play/v2/channels" || path.starts_with("/shared-play/v2/channels/")) {
+        return Err(ward_disabled());
+    }
     if let Some(rest) = path.strip_prefix("/shared-play/v2/sessions/") {
         let (raw_code, tail) = rest.split_once('/').unwrap_or((rest, ""));
         let code = clean_room_code(raw_code)?;
@@ -204,6 +213,7 @@ pub async fn end_session(State(state): State<AppState>, AxumPath(code): AxumPath
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>,AppError> { Ok(Json(identity(&state,&headers).await?)) }
 
 pub async fn start_link(State(state): State<AppState>) -> Result<Json<Value>,AppError> {
+    if !state.ward_enabled { return Err(ward_disabled()); }
     let code = bytes_to_hex(&rand::thread_rng().gen::<[u8;16]>());
     let secret = bytes_to_hex(&rand::thread_rng().gen::<[u8;32]>());
     state.store.put_json(&format!("player:link:{code}"),&json!({"secretHash":token_hash(&secret)}),Some(std::time::Duration::from_secs(600))).await.map_err(AppError::internal)?;
@@ -301,9 +311,40 @@ pub async fn get_image(State(state):State<AppState>,AxumPath((id,kind)):AxumPath
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_production_has_ward_accounts() {
+        assert!(ward_enabled_for("production"));
+        for environment in ["staging", "development", "dev", "preview", ""] { assert!(!ward_enabled_for(environment)); }
+    }
+
+    #[tokio::test]
+    async fn development_has_temp_rooms_without_ward_but_still_requires_host_proof() {
+        let mut state = state().await;
+        state.ward_enabled = false;
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer leftover-production-token"));
+        assert!(optional_subject(&state, &headers).await.unwrap().is_none());
+        assert!(identity(&state, &headers).await.is_err());
+        assert!(start_link(State(state.clone())).await.is_err());
+        for path in ["/player/v1/connect", "/player/v1/rooms", "/shared-play/v2/channels/room-test"] {
+            assert!(guard(&state, &path.parse().unwrap(), "POST", &headers).await.is_err());
+        }
+        write_json(&state, &sess_key("DEV123", "manifest"), &json!({
+            "sessionKey":"abcdefgh12345678", "track":{"displayName":"Dev song", "hasLyrics":true,
+                "lyrics":[{"timeSeconds":0,"text":"Keep the lyrics"}]}
+        })).await.unwrap();
+        let uri = "/shared-play/v2/sessions/DEV123/state".parse().unwrap();
+        assert!(guard(&state, &uri, "GET", &headers).await.is_ok());
+        assert!(guard(&state, &uri, "POST", &headers).await.is_err());
+        headers.insert("x-session-key", HeaderValue::from_static("abcdefgh12345678"));
+        assert!(guard(&state, &uri, "POST", &headers).await.is_ok());
+        let manifest = read_session_payload(&state, &HeaderMap::new(), "DEV123").await.unwrap();
+        assert_eq!(manifest["session"]["track"]["lyrics"][0]["text"], "Keep the lyrics");
+    }
+
     async fn state() -> AppState {
         std::env::remove_var("REDIS_URL");
-        AppState {store:Arc::new(store::Store::from_env().await.unwrap()),rooms:collab::Rooms::default(),sq_rooms:collab::Rooms::default(),web_share_root:Arc::new(PathBuf::from("web-share")),public_base_url:None,stripe_secret_key:None,stripe_webhook_secret:None,stripe_connect_client_id:None,stripe_publishable_key:None,ward_issuer:Arc::new("http://127.0.0.1:1".into())}
+        AppState {store:Arc::new(store::Store::from_env().await.unwrap()),rooms:collab::Rooms::default(),sq_rooms:collab::Rooms::default(),web_share_root:Arc::new(PathBuf::from("web-share")),public_base_url:None,stripe_secret_key:None,stripe_webhook_secret:None,stripe_connect_client_id:None,stripe_publishable_key:None,ward_issuer:Arc::new("http://127.0.0.1:1".into()), ward_enabled: true}
     }
     async fn user(state:&AppState,subject:&str)->HeaderMap {
         let token=format!("sp_app_{subject}");

@@ -61,6 +61,7 @@ struct AppState {
     stripe_connect_client_id: Option<Arc<String>>,
     stripe_publishable_key: Option<Arc<String>>,
     ward_issuer: Arc<String>,
+    ward_enabled: bool,
 }
 
 /// TTL applied to every Redis session key, refreshed on activity.
@@ -110,6 +111,8 @@ async fn main() -> Result<()> {
     let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").ok().map(Arc::new);
     let stripe_connect_client_id = env::var("STRIPE_CONNECT_CLIENT_ID").ok().map(Arc::new);
     let stripe_publishable_key = env::var("STRIPE_PUBLISHABLE_KEY").ok().map(Arc::new);
+    let environment = env::var("SPECTRALIS_ENVIRONMENT").or_else(|_| env::var("RAILWAY_ENVIRONMENT_NAME")).unwrap_or_else(|_| "development".into());
+    let ward_enabled = player::ward_enabled_for(&environment);
     let ward_issuer = Arc::new(env::var("WARD_ISSUER").unwrap_or_else(|_| "https://ward.deltavdevs.com".to_string()).trim_end_matches('/').to_string());
 
     let store = Arc::new(store::Store::from_env().await?);
@@ -125,6 +128,7 @@ async fn main() -> Result<()> {
         stripe_connect_client_id,
         stripe_publishable_key,
         ward_issuer,
+        ward_enabled,
     };
 
     collab::spawn_replica_fanout(state.clone());
@@ -388,7 +392,8 @@ async fn create_session(
     }
 
     let base = base_url(&state, &headers);
-    let join_url = format!("https://player.deltavdevs.com/sessions/{room_code}");
+    let join_url = if state.ward_enabled { format!("https://player.deltavdevs.com/sessions/{room_code}") }
+        else { format!("{base}/spectralis/web-share/?session={room_code}") };
     let state_url = format!("{base}/shared-play/v2/sessions/{room_code}/state");
     let queue_url = format!("{base}/shared-play/v2/sessions/{room_code}/queue");
     let presence_url = format!("{base}/shared-play/v2/sessions/{room_code}/presence");
@@ -655,7 +660,7 @@ async fn read_session_payload(
         .and_then(|e| e.get("track").cloned())
         .or_else(|| manifest.get("track").cloned())
         .unwrap_or_else(|| json!({}));
-    if !headers.contains_key("x-session-key") && player::optional_subject(state,headers).await?.is_none() { track = media::basic_track(&track); }
+    if state.ward_enabled && !headers.contains_key("x-session-key") && player::optional_subject(state,headers).await?.is_none() { track = media::basic_track(&track); }
     let package = active_track
         .as_ref()
         .and_then(|e| e.get("package").cloned())
@@ -748,7 +753,7 @@ async fn read_state_payload(
     let manifest = read_json(state, &sess_key(&room_code, "manifest")).await?;
     let base = base_url(state, headers);
     enrich_with_active_track(&mut payload, &manifest, &base, &room_code);
-    if !headers.contains_key("x-session-key") && player::optional_subject(state,headers).await?.is_none() {
+    if state.ward_enabled && !headers.contains_key("x-session-key") && player::optional_subject(state,headers).await?.is_none() {
         if let Some(track) = payload.get_mut("track") { *track = media::basic_track(track); }
     }
     Ok(payload)

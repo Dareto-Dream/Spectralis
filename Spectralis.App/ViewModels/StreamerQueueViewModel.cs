@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using ReactiveUI;
 using Spectralis.App.Services;
 using Spectralis.Core.Metadata;
+using Spectralis.Core.SharedPlay;
 using Spectralis.Core.StreamerQueue;
 
 namespace Spectralis.App.ViewModels;
@@ -497,8 +498,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     public void ApplySettings(AppSettings settings)
     {
         _settings = settings;
-        if (!string.IsNullOrWhiteSpace(settings.SqCdnBaseUrl))
-            _cdnBaseUri = new Uri(settings.SqCdnBaseUrl);
+        _cdnBaseUri = new Uri(SharedPlayDefaults.NormalizeCdnBaseUrl(settings.SqCdnBaseUrl));
+        this.RaisePropertyChanged(nameof(WardAvailable));
 
         if (!string.IsNullOrWhiteSpace(settings.SqRoomId) && !string.IsNullOrWhiteSpace(settings.SqOwnerToken))
         {

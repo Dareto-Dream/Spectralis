@@ -17,7 +17,7 @@ public sealed class SharedPlayCdnClient : IDisposable
     private readonly HttpClient httpClient;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> sessionKeys = new();
 
-    private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct)
+    private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
     {
         WardAccount.Authorize(request);
         var parts = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -29,7 +29,7 @@ public sealed class SharedPlayCdnClient : IDisposable
             request.Headers.Remove("x-session-key");
             request.Headers.TryAddWithoutValidation("x-session-key", key);
         }
-        return httpClient.SendAsync(request, ct);
+        return httpClient.SendAsync(request, completion, ct);
     }
 
     public SharedPlayCdnClient()
@@ -238,7 +238,8 @@ public sealed class SharedPlayCdnClient : IDisposable
     {
         EnsureHttps(packageUrl, "Shared Play package URL");
 
-        using var response = await httpClient.GetAsync(packageUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, packageUrl);
+        using var response = await SendAuthorizedAsync(request, cancellationToken, HttpCompletionOption.ResponseHeadersRead);
         await EnsureSuccessAsync(response, "Shared Play package download", cancellationToken);
 
         var contentLength = response.Content.Headers.ContentLength;

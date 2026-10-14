@@ -30,8 +30,9 @@ public sealed partial class SharedPlayViewModel
 
     public string AccountStatus { get => _accountStatus; private set => this.RaiseAndSetIfChanged(ref _accountStatus, value); }
     public bool AccountBusy { get => _accountBusy; private set => this.RaiseAndSetIfChanged(ref _accountBusy, value); }
-    public bool WardConnected => WardAccount.IsConnected;
-    public string WardName => WardAccount.DisplayName ?? "Ward account";
+    public bool WardConnected => WardAccount.IsConnectedTo(PlayerBase);
+    public bool WardAvailable => SharedPlayDefaults.SupportsWard(PlayerBase);
+    public string WardName => WardAccount.GetDisplayName(PlayerBase) ?? "Ward account";
 
     public PlayerRoom? MyRoom
     {
@@ -46,7 +47,7 @@ public sealed partial class SharedPlayViewModel
     public bool HasRoom => MyRoom is not null;
     public bool CanCopyRoomLink => HasRoom && !IsHosting;
     public string RoomName => MyRoom?.Name ?? string.Empty;
-    public string RoomLink => MyRoom is null ? string.Empty : $"https://player.deltavdevs.com/rooms/{MyRoom.Id}";
+    public string RoomLink => MyRoom is null ? string.Empty : SharedPlayDefaults.BuildRoomJoinUrl(PlayerBase, MyRoom.Id).ToString();
 
     /// <summary>Two-way for the "listed in the room finder" switch.</summary>
     public bool IsRoomPublic
@@ -58,7 +59,8 @@ public sealed partial class SharedPlayViewModel
     public string ModeTitle => WardConnected ? "Your room" : "Temporary room";
 
     public string ModeText =>
-        !WardConnected ? "Private and link-only. It ends when you stop and is never listed. Sign in with Ward for a permanent room."
+        !WardAvailable ? "Development uses temporary rooms only. Share the invite link to listen together; the room ends when you stop."
+        : !WardConnected ? "Private and link-only. It ends when you stop and is never listed. Sign in with Ward for a permanent room."
         : MyRoom is null ? "Your permanent room is created the first time you start."
         : MyRoom.IsPublic ? "Permanent and public. Anyone can find it in the room finder."
         : "Permanent and private. Only people with your link can join.";
@@ -73,6 +75,7 @@ public sealed partial class SharedPlayViewModel
         this.RaisePropertyChanged(nameof(ModeTitle));
         this.RaisePropertyChanged(nameof(ModeText));
         this.RaisePropertyChanged(nameof(WardConnected));
+        this.RaisePropertyChanged(nameof(WardAvailable));
         this.RaisePropertyChanged(nameof(WardName));
         this.RaisePropertyChanged(nameof(ShareLink));
     }
@@ -92,7 +95,7 @@ public sealed partial class SharedPlayViewModel
     {
         try
         {
-            await WardAccount.DisconnectAsync();
+            await WardAccount.DisconnectAsync(PlayerBase);
             MyRoom = null;
             LiveChannelId = string.Empty;
             LiveChannelDisplayName = string.Empty;
@@ -105,7 +108,9 @@ public sealed partial class SharedPlayViewModel
 
     public ReactiveCommand<Unit, Unit> ManageRoomCommand => _manageRoom ??= ReactiveCommand.Create(() =>
     {
-        if (MyRoom is not null) Process.Start(new ProcessStartInfo($"{RoomLink}/settings") { UseShellExecute = true });
+        if (MyRoom is null) return;
+        try { Process.Start(new ProcessStartInfo(WardAccount.GetRoomSettingsUrl(PlayerBase, MyRoom.Id).ToString()) { UseShellExecute = true }); }
+        catch (Exception ex) { AccountStatus = ex.Message; }
     });
 
     public ReactiveCommand<Unit, Unit> CopyRoomLinkCommand => _copyRoomLink ??= ReactiveCommand.Create(() =>
@@ -137,10 +142,12 @@ public sealed partial class SharedPlayViewModel
     /// <summary>Reads this account's permanent room, if it has one, and points hosting at it.</summary>
     private async Task LoadMyRoomAsync()
     {
-        if (!WardAccount.IsConnected) { MyRoom = null; RaiseModeProps(); return; }
+        if (!WardConnected) { ClearAccountRoom(); return; }
+        var backend = PlayerBase;
         try
         {
-            var response = await WardAccount.RequestAsync(PlayerBase, "/player/v1/me/room", HttpMethod.Get);
+            var response = await WardAccount.RequestAsync(backend, "/player/v1/me/room", HttpMethod.Get);
+            if (backend != PlayerBase || !WardConnected) return;
             var room = response.GetProperty("room");
             if (room.ValueKind == JsonValueKind.Object)
             {
@@ -158,7 +165,17 @@ public sealed partial class SharedPlayViewModel
             }
             AccountStatus = string.Empty;
         }
-        catch (Exception ex) { AccountStatus = ex.Message; }
+        catch (Exception ex) { if (backend != PlayerBase) return; ClearAccountRoom(); AccountStatus = ex.Message; }
+        ReapplyControllerSettings();
+        RaiseModeProps();
+    }
+
+    private void ClearAccountRoom()
+    {
+        MyRoom = null;
+        LiveChannelId = string.Empty;
+        LiveChannelDisplayName = string.Empty;
+        LiveChannelOwnerToken = string.Empty;
         ReapplyControllerSettings();
         RaiseModeProps();
     }
@@ -166,14 +183,14 @@ public sealed partial class SharedPlayViewModel
     /// <summary>Signed in: make sure the permanent room exists before a party starts. Signed out: nothing to do.</summary>
     private async Task EnsureRoomAsync()
     {
-        if (!WardAccount.IsConnected) return;
+        if (!WardAccount.IsConnectedTo(PlayerBase)) return;
         if (MyRoom is null) await LoadMyRoomAsync();
-        if (MyRoom is not null || !WardAccount.IsConnected) return;
+        if (MyRoom is not null || !WardAccount.IsConnectedTo(PlayerBase)) return;
         try
         {
             await WardAccount.RequestAsync(PlayerBase, "/player/v1/rooms", HttpMethod.Post, new
             {
-                name = $"{WardAccount.DisplayName ?? "My"}'s room",
+                name = $"{WardAccount.GetDisplayName(PlayerBase) ?? "My"}'s room",
                 kind = "channel",
                 security = "anyone",
                 tags = Array.Empty<string>(),

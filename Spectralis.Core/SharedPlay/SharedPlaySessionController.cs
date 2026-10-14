@@ -107,8 +107,10 @@ public sealed class SharedPlaySessionController : IDisposable
         lock (statusLock)
         {
             enabled = enableSharedPlay;
-            cdnBaseUri = new Uri($"{SharedPlayDefaults.NormalizeCdnBaseUrl(cdnBaseUrl)}/");
-            liveChannelEnabled = enableLiveChannel;
+            var nextBackend = new Uri($"{SharedPlayDefaults.NormalizeCdnBaseUrl(cdnBaseUrl)}/");
+            var backendChanged = cdnBaseUri != nextBackend;
+            cdnBaseUri = nextBackend;
+            liveChannelEnabled = enableLiveChannel && SharedPlayDefaults.SupportsWard(cdnBaseUri);
             liveChannelId = channelId;
             liveChannelOwnerToken = channelOwnerToken;
             liveChannelDisplayName = channelDisplayName;
@@ -116,7 +118,7 @@ public sealed class SharedPlaySessionController : IDisposable
                 ? $"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(liveChannelId)}"
                 : null;
 
-            if (!enabled)
+            if (!enabled || backendChanged)
             {
                 oldCancellation = cancellation;
                 cancellation = new CancellationTokenSource();
@@ -750,7 +752,7 @@ public sealed class SharedPlaySessionController : IDisposable
             descriptor = activeTrackDescriptor;
         }
 
-        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || !WardAccount.IsConnected)
+        if (!channelEnabled || string.IsNullOrWhiteSpace(channelId) || !WardAccount.IsConnectedTo(GetCdnBaseUri()))
             return;
 
         descriptor ??= new SharedPlayTrackDescriptor(

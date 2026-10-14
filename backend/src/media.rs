@@ -30,7 +30,7 @@ pub fn guest_package(bytes: Bytes) -> Result<Bytes,AppError> {
 
 pub async fn package(state: &AppState, headers: &HeaderMap, code: &str, track_key: &str) -> Result<Response,AppError> {
     let key = sess_blob_key(code,&format!("tracks/{track_key}.zip"));
-    let trusted = headers.contains_key("x-session-key") || player::optional_subject(state,headers).await?.is_some();
+    let trusted = !state.ward_enabled || headers.contains_key("x-session-key") || player::optional_subject(state,headers).await?.is_some();
     if trusted { return send_blob(state,&key,Some("application/vnd.spectralis.shared-play+zip")).await; }
     let public_key = sess_blob_key(code,&format!("tracks/{track_key}.audio.zip"));
     if !state.store.blob_exists(&public_key).await.map_err(AppError::internal)? {

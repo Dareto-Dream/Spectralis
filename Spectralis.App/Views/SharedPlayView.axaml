@@ -66,10 +66,10 @@
           <TextBox Text="{Binding ShareLink}" IsReadOnly="True"
                    IsVisible="{Binding ShareLink, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-          <Separator />
+          <Separator IsVisible="{Binding WardAvailable}" />
 
           <!-- Account -->
-          <Grid ColumnDefinitions="*,Auto,Auto">
+          <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding WardAvailable}">
             <TextBlock Classes="secondary" VerticalAlignment="Center" Text="Not signed in" IsVisible="{Binding !WardConnected}" />
             <TextBlock Classes="secondary" VerticalAlignment="Center" Text="{Binding WardName, StringFormat='Signed in as {0}'}" IsVisible="{Binding WardConnected}" />
             <Button Grid.Column="1" Content="Sign in with Ward" Command="{Binding ConnectWardCommand}" IsEnabled="{Binding !AccountBusy}"

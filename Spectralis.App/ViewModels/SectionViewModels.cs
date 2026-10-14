@@ -403,9 +403,11 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         {
             if (_settings is null || _settings.SharedPlayCdnBaseUrl == value) return;
             _settings.SharedPlayCdnBaseUrl = value;
+            ClearAccountRoom();
             AppSettingsStore.Save(_settings);
             ReapplyControllerSettings();
             this.RaisePropertyChanged();
+            _ = LoadMyRoomAsync();
         }
     }
 
@@ -566,7 +568,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             _hostingRequested,
             _settings?.SharedPlayCdnBaseUrl,
             // Signed in with a room: always the permanent room. Signed out: a temporary, link-only one.
-            WardAccount.IsConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
+            WardConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
             _settings?.SharedPlayLiveChannelId ?? string.Empty,
             _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty,
             _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty);
@@ -2018,6 +2020,9 @@ public sealed class SettingsViewModel : ViewModelBase
             // A room ID/token pair only exists on the backend it was created against.
             _settings.SqRoomId = string.Empty;
             _settings.SqOwnerToken = string.Empty;
+            _settings.SharedPlayLiveChannelId = string.Empty;
+            _settings.SharedPlayLiveChannelOwnerToken = string.Empty;
+            _settings.SharedPlayLiveChannelDisplayName = string.Empty;
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
             this.RaisePropertyChanged(nameof(BackendStatusText));
@@ -2025,7 +2030,7 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     public string BackendStatusText => UseStagingBackend
-        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Restart Spectralis to apply."
+        ? "Backend: STAGING (audioplayer-staging.up.railway.app). Temporary rooms only, without Ward. Restart Spectralis to apply."
         : "Backend: production. Restart Spectralis to apply.";
 
     public ObsEditorViewModel ObsEditor { get; }
