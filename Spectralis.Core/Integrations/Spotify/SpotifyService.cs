@@ -17,11 +17,20 @@ public sealed class SpotifyService : IDisposable
     private static readonly HttpClient Http = Spectralis.Core.Diagnostics.NetworkClients.Create("spotify");
 
     private SpotifyTokenStore tokens;
+    private readonly HttpClient _playbackHttp = Http;
 
     public SpotifyService()
     {
         tokens = SpotifyTokenStore.Load();
     }
+
+    internal SpotifyService(SpotifyTokenStore tokenStore, HttpClient playbackHttp)
+    {
+        tokens = tokenStore;
+        _playbackHttp = playbackHttp;
+    }
+
+    public void ReloadAccount() => tokens = SpotifyTokenStore.Load();
 
     public bool IsLinked => !string.IsNullOrEmpty(tokens.RefreshToken);
     public string? AccountDisplayName => tokens.AccountDisplayName;
@@ -100,11 +109,11 @@ public sealed class SpotifyService : IDisposable
         return tokens.AccessToken;
     }
 
-    public async Task<bool> TransferPlaybackAsync(string deviceId, string clientId)
+    public async Task<bool> TransferPlaybackAsync(string deviceId, string clientId, bool play = true)
     {
         var token = await GetFreshAccessTokenAsync(clientId);
         if (token is null) return false;
-        var body = JsonSerializer.Serialize(new { device_ids = new[] { deviceId }, play = true });
+        var body = JsonSerializer.Serialize(new { device_ids = new[] { deviceId }, play });
         return await SendApiAsync(HttpMethod.Put, "/me/player", token, body);
     }
 
@@ -504,14 +513,14 @@ public sealed class SpotifyService : IDisposable
         return results;
     }
 
-    private static async Task<bool> SendApiAsync(HttpMethod method, string path, string token, string json)
+    private async Task<bool> SendApiAsync(HttpMethod method, string path, string token, string json)
     {
         try
         {
             using var req = new HttpRequestMessage(method, ApiBase + path);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var response = await Http.SendAsync(req);
+            using var response = await _playbackHttp.SendAsync(req);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();

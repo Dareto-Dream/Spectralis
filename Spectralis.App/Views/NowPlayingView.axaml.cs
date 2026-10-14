@@ -30,6 +30,8 @@ public partial class NowPlayingView : Grid
     private string _loadedYouTubeVideoId = string.Empty;
     private Control? _embeddedControl;
     private IWebViewHost? _embeddedHost;
+    private UntitledBrowserCacheSession? _untitledCacheSession;
+    private DispatcherTimer? _untitledCacheProbeTimer;
     private WebViewHostService? _embeddedService;
     // Persistent WebView2 host for capsule HTML (Windows only). Created once and reused
     // across track changes so WebView2 never needs to re-initialize (~400ms) and the HWND
@@ -940,15 +942,18 @@ public NowPlayingView()
             return;
         }
 
+        var contextKey = context.Id == "Untitled"
+            ? context.Id + ":" + HashShort(Encoding.UTF8.GetString(context.HtmlBytes))
+            : context.Id;
         if (_embeddedControl is not null &&
-            string.Equals(_loadedEmbeddedHtmlId, context.Id, StringComparison.Ordinal))
+            string.Equals(_loadedEmbeddedHtmlId, contextKey, StringComparison.Ordinal))
         {
             return;
         }
 
         StopEmbeddedHtmlMode();
 
-        _loadedEmbeddedHtmlId = context.Id;
+        _loadedEmbeddedHtmlId = contextKey;
 
 #if WINDOWS
         if (OperatingSystem.IsWindows())
@@ -1113,10 +1118,36 @@ public NowPlayingView()
         _loadedWasmWorldId = null;
     }
 
+    // True while the embedded surface is a live third-party page (see OpenUrlService.TryGetNavigateTarget)
+    // rather than our own HTML: it redirects through browser checks, so a "failed" navigation
+    // is normal there and must not tear the surface down; and it has no spectral frame bridge.
+    private bool _embeddedIsExternalPage;
+
     private void NavigateEmbeddedHtmlDocument(EmbeddedHtmlContext context, string document, bool isAlbumWorld)
     {
+        _embeddedIsExternalPage = false;
         if (_embeddedHost is null)
         {
+            return;
+        }
+
+        if (context.HtmlBytes.Length < 2048 &&
+            Spectralis.App.Services.OpenUrlService.TryGetNavigateTarget(Encoding.UTF8.GetString(context.HtmlBytes), out var pageUri))
+        {
+            _embeddedIsExternalPage = true;
+            if (context.Id == "Untitled" && pageUri.Host == "untitled.stream")
+            {
+                _untitledCacheSession = new UntitledBrowserCacheSession(_embeddedHost, pageUri);
+                _untitledCacheSession.Completed += OnUntitledCacheCompleted;
+                _untitledCacheSession.Failed += OnUntitledCacheFailed;
+                _untitledCacheProbeTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
+                    (_, _) =>
+                    {
+                        if (_untitledCacheSession is { } session) _ = StartUntitledCacheAsync(session);
+                    });
+                _untitledCacheProbeTimer.Start();
+            }
+            _embeddedHost.Navigate(pageUri);
             return;
         }
 
@@ -1292,6 +1323,12 @@ public NowPlayingView()
 
     private void OnEmbeddedNavigationFailed(object? sender, EventArgs e)
     {
+        if (_embeddedIsExternalPage)
+        {
+            SpectralisLog.Warn("Embedded external page reported a failed navigation; keeping it (redirects/browser checks are expected).");
+            return;
+        }
+
         SpectralisLog.Warn("Embedded HTML navigation failed; falling back to visualizer.");
         StopEmbeddedHtmlMode();
         if (_viewModel is not null)
@@ -1303,6 +1340,13 @@ public NowPlayingView()
 
     private void OnEmbeddedNavigationCompleted(object? sender, EventArgs e)
     {
+        if (_embeddedIsExternalPage)
+        {
+            if (_untitledCacheSession is { } session)
+                _ = StartUntitledCacheAsync(session);
+            return;
+        }
+
         _embeddedFramePushTimer?.Stop();
         _lastPushedTime = double.MinValue;
         _lastPushedActive = false;
@@ -1325,6 +1369,38 @@ public NowPlayingView()
         // If this is an album world HTML, send the initial state so the map can populate.
         if (_viewModel is { IsAlbumWorldShowingWorld: true, AlbumWorldReadyJson: { } readyJson } && _embeddedService is not null)
             _ = _embeddedService.SendReadyAsync(readyJson);
+    }
+
+    private async Task StartUntitledCacheAsync(UntitledBrowserCacheSession session)
+    {
+        try { await session.StartAsync(); }
+        catch (Exception ex) { OnUntitledCacheFailed(session, ex.Message); }
+    }
+
+    private void OnUntitledCacheCompleted(object? sender, RemoteAudioResolveResult result)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (!ReferenceEquals(sender, _untitledCacheSession) || _viewModel is not { } vm)
+            {
+                RemoteAudioCache.TryDelete(result.CachedAudioPath);
+                return;
+            }
+            // Stop the browser's player before native playback takes ownership of the file.
+            _embeddedHost?.NavigateToString("<!doctype html><html></html>");
+            vm.UseArtworkSurface();
+            await vm.LoadPreResolvedUrlAsync(result);
+        });
+    }
+
+    private void OnUntitledCacheFailed(object? sender, string message)
+    {
+        AppLogPaths.AppendTimestamped(OpenUrlService.UntitledLogPath, $"Browser audio cache failed: {message}");
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (ReferenceEquals(sender, _untitledCacheSession) && _viewModel is { } vm)
+                vm.ReportUntitledBrowserCacheError();
+        });
     }
 
     private void OnEmbeddedFramePushTick(object? sender, EventArgs e)
@@ -1475,6 +1551,15 @@ public NowPlayingView()
             _embeddedHost.NavigationFailed -= OnEmbeddedNavigationFailed;
             if (_embeddedHost is CefGlueWebViewHost cefHost)
                 cefHost.FrameJsonProvider = null;
+        }
+        if (_untitledCacheSession is not null)
+        {
+            _untitledCacheProbeTimer?.Stop();
+            _untitledCacheProbeTimer = null;
+            _untitledCacheSession.Completed -= OnUntitledCacheCompleted;
+            _untitledCacheSession.Failed -= OnUntitledCacheFailed;
+            _untitledCacheSession.Dispose();
+            _untitledCacheSession = null;
         }
 
         // Keep the persistent WV2 host in the visual tree across track changes and

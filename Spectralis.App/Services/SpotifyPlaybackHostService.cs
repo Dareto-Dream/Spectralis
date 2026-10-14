@@ -43,6 +43,7 @@ public sealed class SpotifyPlaybackHostService
     private bool _navigated;
     private string? _statusMessage;
     private bool _initError;
+    private readonly SemaphoreSlim _deviceInitialization = new(1, 1);
 
     public SpotifyPlaybackHostService(IWebViewHost host, SpotifyService spotify, Func<string> resolveClientId)
     {
@@ -125,6 +126,39 @@ public sealed class SpotifyPlaybackHostService
         AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayUriAsync({uri}): result={played}");
         if (played)
             _statusMessage = "Spotify playback requested";
+        return played;
+    }
+
+    /// <summary>Link opens first select this SDK device without resuming the user's old track,
+    /// then request the exact track or context from the linked Spotify account.</summary>
+    public async Task<bool> PlayLinkAsync(string uri, CancellationToken cancellationToken = default)
+    {
+        if (!SpotifyPlaybackLink.TryParse(uri, out var link))
+        {
+            _statusMessage = "Invalid Spotify playback link";
+            return false;
+        }
+        if (!await EnsureDeviceReadyAsync(cancellationToken)) return false;
+        cancellationToken.ThrowIfCancellationRequested();
+        await _host.ExecuteScriptAsync("window.spotifyActivate && window.spotifyActivate()");
+        var deviceId = _deviceId!;
+        var clientId = _resolveClientId();
+        if (!await _spotify.TransferPlaybackAsync(deviceId, clientId, play: false))
+        {
+            _statusMessage = "Spotify transfer failed. Check your linked account and Premium subscription.";
+            return false;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        var played = await _spotify.PlayUriAsync(link.PlaybackUri, clientId, deviceId);
+        if (played)
+        {
+            // The Web API can advance Spotify's clock without starting the local SDK
+            // renderer. Match the normal Play Spotify flow after selecting the target.
+            await Task.Delay(500, cancellationToken);
+            await _host.ExecuteScriptAsync("window.spotifyResume && window.spotifyResume()");
+        }
+        _statusMessage = played ? "Spotify playback requested" : "Spotify could not start the requested song or album.";
+        AppLogPaths.AppendTimestamped(SpotifyLogPath, $"PlayLinkAsync({link.PlaybackUri}): result={played}");
         return played;
     }
 
@@ -226,7 +260,14 @@ public sealed class SpotifyPlaybackHostService
         return true;
     }
 
-    public async Task<bool> EnsureDeviceReadyAsync()
+    public async Task<bool> EnsureDeviceReadyAsync(CancellationToken cancellationToken = default)
+    {
+        await _deviceInitialization.WaitAsync(cancellationToken);
+        try { return await InitializeDeviceAsync(cancellationToken); }
+        finally { _deviceInitialization.Release(); }
+    }
+
+    private async Task<bool> InitializeDeviceAsync(CancellationToken cancellationToken)
     {
         if (_deviceId is not null)
             return true;
@@ -245,8 +286,8 @@ public sealed class SpotifyPlaybackHostService
         if (_deviceId is not null)
             return true;
 
-        // Navigation may have already set an error — don't overwrite it
-        if (_statusMessage is not null)
+        // Only an initialization failure is terminal; waiting/offline status can recover.
+        if (_initError)
             return false;
 
         _statusMessage = "Waiting for Spotify player...";
@@ -257,10 +298,10 @@ public sealed class SpotifyPlaybackHostService
                 return true;
             if (_initError)
                 return false;
-            await Task.Delay(DeviceReadyPollInterval);
+            await Task.Delay(DeviceReadyPollInterval, cancellationToken);
         }
 
-        _statusMessage ??= "Spotify is not ready yet. Try again in a few seconds.";
+        _statusMessage = "Spotify is not ready yet. Try again in a few seconds.";
         return _deviceId is not null;
     }
 
@@ -271,14 +312,18 @@ public sealed class SpotifyPlaybackHostService
         var clientId = _resolveClientId();
         if (string.IsNullOrEmpty(clientId))
         {
+            _initError = true;
             _statusMessage = "No Spotify client ID — add one in Settings → Integrations";
             AppLogPaths.AppendTimestamped(SpotifyLogPath, "Navigate: no client ID configured");
             return;
         }
 
+        // Settings links/unlinks through a different service instance.
+        _spotify.ReloadAccount();
         var token = await _spotify.GetFreshAccessTokenAsync(clientId);
         if (token is null)
         {
+            _initError = true;
             _statusMessage = "Spotify token expired — re-link in Settings → Integrations";
             AppLogPaths.AppendTimestamped(SpotifyLogPath, "Navigate: token expired or missing");
             return;

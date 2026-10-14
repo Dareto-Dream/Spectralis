@@ -38,6 +38,8 @@
             <MenuItem Header="Open Audio..." InputGesture="Ctrl+O" Click="OnMenuOpenAudio" />
             <MenuItem Header="Add to Queue..." InputGesture="Ctrl+Shift+O" Click="OnMenuAddToQueue" />
             <MenuItem Header="Open URL..." InputGesture="Ctrl+L" Click="OnMenuOpenUrl" />
+            <MenuItem Header="Download Song..." Click="OnMenuDownloadSong"
+                      IsEnabled="{Binding NowPlaying.CanDownloadCurrentTrack}" />
             <Separator />
             <MenuItem Header="Export Video..." Click="OnMenuExportVideo" />
             <Separator />

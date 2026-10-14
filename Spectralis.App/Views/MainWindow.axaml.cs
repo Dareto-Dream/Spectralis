@@ -222,7 +222,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// Creates the hidden Spotify Web Playback SDK host once per window. Must live in the
     /// visual tree (SpotifyHostSlot) for WebView2Host's native control to initialize, but
-    /// nothing actually connects to Spotify until the user clicks "Play Spotify".
+    /// connects on demand when the user opens a Spotify link or clicks "Play Spotify".
     /// </summary>
     private void InitializeSpotifyPlaybackHost(MainWindowViewModel vm)
     {
@@ -901,6 +901,53 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             await OpenUrlAsync(vm);
+        }
+    }
+
+    private async void OnMenuDownloadSong(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            !vm.NowPlaying.CanDownloadCurrentTrack ||
+            TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose a folder for the downloaded song",
+            AllowMultiple = false,
+        });
+        var destinationFolder = folders.FirstOrDefault()?.TryGetLocalPath();
+        var sourcePath = vm.NowPlaying.CurrentTrackPath;
+        if (string.IsNullOrWhiteSpace(destinationFolder))
+            return;
+
+        var remote = vm.NowPlaying.CurrentRemoteAudio;
+        var autoFormat = remote is not null && vm.AppSettings.AutoFormatDownloadedSongs;
+        var coverArt = vm.NowPlaying.CoverArtBytes;
+        if (autoFormat && coverArt is null)
+        {
+            coverArt = await OpenUrlService.TryFetchArtworkBytesAsync(remote?.ArtworkUrl, CancellationToken.None);
+        }
+
+        try
+        {
+            var title = string.IsNullOrWhiteSpace(remote?.Title) ? vm.NowPlaying.Title : remote.Title;
+            var artist = string.IsNullOrWhiteSpace(remote?.Artist) ? vm.NowPlaying.Artist : remote.Artist;
+            var album = string.IsNullOrWhiteSpace(remote?.Album) ? vm.NowPlaying.Album : remote.Album;
+            var savedPath = sourcePath is not null && remote?.IsWebViewFallback() != true
+                ? await SongDownloadService.SaveAsync(sourcePath, destinationFolder, autoFormat, title, artist, album, coverArt)
+                : remote is not null
+                    ? await SongDownloadService.DownloadFromUrlAsync(remote.SourceUrl, destinationFolder, autoFormat,
+                        title, artist, album, coverArt)
+                    : throw new InvalidOperationException("The current song is no longer available to download.");
+            await MessageWindow.ShowAsync(this, "Song downloaded",
+                autoFormat ? $"Saved an MP3 with track tags and cover art when available:\n{savedPath}" : $"Saved the audio file:\n{savedPath}");
+        }
+        catch (Exception ex)
+        {
+            await MessageWindow.ShowAsync(this, "Download failed", ex.Message);
         }
     }
 

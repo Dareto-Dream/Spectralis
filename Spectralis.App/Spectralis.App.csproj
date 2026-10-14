@@ -124,6 +124,10 @@
     <WgpuHostDll Condition="'$(SpectralisHelperOs)' == 'osx'">libwgpu_host.dylib</WgpuHostDll>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\untitled-cache.js" />
+  </ItemGroup>
+
   <Target Name="BuildWgpuHost" BeforeTargets="Build" Condition="Exists('..\wgpu-host\Cargo.toml')">
     <Exec Command="cargo build --release --manifest-path &quot;$(MSBuildProjectDirectory)\..\wgpu-host\Cargo.toml&quot;" ContinueOnError="true" />
   </Target>

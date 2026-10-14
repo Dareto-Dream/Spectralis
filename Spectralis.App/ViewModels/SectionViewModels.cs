@@ -2288,6 +2288,22 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool AutoFormatDownloadedSongs
+    {
+        get => _settings.AutoFormatDownloadedSongs;
+        set
+        {
+            if (_settings.AutoFormatDownloadedSongs == value)
+            {
+                return;
+            }
+
+            _settings.AutoFormatDownloadedSongs = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public bool QueueByDefault
     {
         get => _settings.QueueByDefault;

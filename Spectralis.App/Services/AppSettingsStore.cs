@@ -54,6 +54,8 @@ public sealed class AppSettings
     public MidiPlaybackInstrument MidiInstrument { get; set; } = MidiPlaybackInstrument.AcousticGrandPiano;
     public int DefaultVolume { get; set; } = 85;
     public bool AutoPlayOnOpen { get; set; } = true;
+    /// <summary>Convert downloaded remote tracks to MP3 and embed the available tags and cover art.</summary>
+    public bool AutoFormatDownloadedSongs { get; set; } = true;
     public bool QueueByDefault { get; set; }
     public bool RememberWindowPlacement { get; set; } = true;
     public bool PreserveSession { get; set; } = true;
@@ -167,6 +169,7 @@ public sealed class AppSettings
             MidiInstrument = MidiInstrument,
             DefaultVolume = DefaultVolume,
             AutoPlayOnOpen = AutoPlayOnOpen,
+            AutoFormatDownloadedSongs = AutoFormatDownloadedSongs,
             QueueByDefault = QueueByDefault,
             RememberWindowPlacement = RememberWindowPlacement,
             PreserveSession = PreserveSession,

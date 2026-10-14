@@ -125,7 +125,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -198,6 +198,15 @@
             <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380"
                        FontSize="{StaticResource FontSize.UI.Small}"
                        Text="Captures Spotify's audio, runs it through the effects chain, and re-plays it while muting the original. Adds ~150 ms latency. Takes effect on the next Spotify track." />
+          </StackPanel>
+
+          <TextBlock Grid.Row="12" Grid.Column="0" Classes="secondary" Text="Downloaded songs" VerticalAlignment="Top" Margin="0,4,0,0" />
+          <StackPanel Grid.Row="12" Grid.Column="1" Spacing="2" HorizontalAlignment="Left">
+            <CheckBox IsChecked="{Binding AutoFormatDownloadedSongs}"
+                      Content="Auto-format downloaded songs" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="420"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="Convert to MP3 and embed the available title, artist, album, and cover art. Turn off to keep the source audio format." />
           </StackPanel>
         </Grid>
       </StackPanel>

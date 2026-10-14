@@ -18,6 +18,7 @@ using Spectralis.Core.Metadata;
 using Spectralis.Core.Podcasts;
 using Spectralis.Core.Scrobbling;
 using Spectralis.Core.ContentWarnings;
+using Spectralis.Core.Integrations;
 using Spectralis.Core.Integrations.Spotify;
 using Spectralis.Core.Playlists;
 using Spectralis.Core.Visualizers;
@@ -230,6 +231,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     private readonly AppSettings _settings;
     private readonly IDisposable? _positionPoll;
     private readonly OpenUrlService _openUrlService;
+    private RemoteAudioResolveResult? _currentRemoteAudio;
     private readonly SpotifyService _spotify = new();
     private readonly bool _persistSettings;
     private readonly EffectChain _effectChain;
@@ -2262,6 +2264,21 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     /// <summary>Local file path of the currently playing track, or null for remote/URL sources.</summary>
     public string? CurrentTrackPath => _engine.CurrentTrack?.SourcePath is { } p && File.Exists(p) ? p : null;
 
+    public bool CanDownloadCurrentTrack => _currentRemoteAudio?.IsWebViewFallback() == true
+        ? YtDlpService.IsAllowedMediaUrl(_currentRemoteAudio.SourceUrl)
+        : CurrentTrackPath is not null;
+
+    public RemoteAudioResolveResult? CurrentRemoteAudio
+    {
+        get => _currentRemoteAudio;
+        private set
+        {
+            if (ReferenceEquals(_currentRemoteAudio, value)) return;
+            this.RaiseAndSetIfChanged(ref _currentRemoteAudio, value);
+            this.RaisePropertyChanged(nameof(CanDownloadCurrentTrack));
+        }
+    }
+
     public bool ShowLyrics
     {
         get => _showLyrics;
@@ -2321,7 +2338,14 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>True when there is nothing to show — no track and no album world map.</summary>
-    public bool IsNilState => !HasTrack && !IsAlbumWorldActive;
+    /// <summary>
+    /// A widget fallback (SoundCloud/Suno/Untitled page) has no engine track, so HasTrack stays
+    /// false; without this the empty state covers the web view that is actually playing it.
+    /// </summary>
+    public bool IsWidgetFallbackActive =>
+        ShowEmbeddedHtml && EmbeddedHtml?.Id is "SoundCloud" or "Suno" or "Untitled" or "Spotify";
+
+    public bool IsNilState => !HasTrack && !IsAlbumWorldActive && !IsWidgetFallbackActive;
 
     /// <summary>OLED users chose true black on purpose — decorative backdrops back off there.</summary>
     public bool IsOledTheme => _settings.ThemeMode == AppThemeMode.Oled;
@@ -2375,7 +2399,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>True when the playing-state panel should be visible (track or world map present).</summary>
-    public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive;
+    public bool HasTrackOrAlbumWorld => HasTrack || IsAlbumWorldActive || IsWidgetFallbackActive;
 
     public string Title
     {
@@ -3654,15 +3678,52 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
         await LoadResolvedAsync(resolved, cancellationToken);
     }
 
+    internal void ReportUntitledBrowserCacheError() =>
+        RemoteStatus = "Waiting for Untitled audio. Caching will retry after the browser check completes.";
+
     private async Task LoadResolvedAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
     {
         string? cachedPath = null;
         ResetPositionDisplay();
         try
         {
-            // WebView widget fallback: embed the platform player directly (SoundCloud, Suno, Spotify).
+            if (resolved.Kind == RemoteAudioServiceKind.Spotify)
+            {
+                if (SpotifyHost is null)
+                    throw new InvalidOperationException("Spotify playback host is not ready on this platform.");
+                if (!Spectralis.Core.Integrations.Spotify.SpotifyPlaybackLink.TryParse(
+                        resolved.ExternalId ?? resolved.SourceUrl, out var spotifyLink))
+                    throw new InvalidOperationException("Invalid Spotify playback link.");
+
+                _spotifyStopRequested = true;
+                if (_spotifyState is not null) await SpotifyHost.StopAsync();
+                _spotifyState = null;
+                StopSpotifyLoopback();
+                FlushResume(finished: false);
+                _engine.Unload();
+                ApplyTrack(null);
+                ApplyLyrics(null);
+                ApplyChapters(ChapterList.Empty);
+                var previousCachedAudioPath = _remoteAudioTempPath;
+                _remoteAudioTempPath = null;
+                RemoteAudioCache.TryDelete(previousCachedAudioPath);
+                UseArtworkSurface();
+                _queueDrivenSpotifyTrack = false;
+                _spotifyContextUri = spotifyLink.IsContext ? spotifyLink.PlaybackUri : null;
+                cancellationToken.ThrowIfCancellationRequested();
+                _spotifyStopRequested = false;
+                SourceLabel = "Spotify";
+                RemoteStatus = "Connecting to Spotify...";
+                if (!await SpotifyHost.PlayLinkAsync(spotifyLink.PlaybackUri, cancellationToken))
+                    throw new InvalidOperationException(SpotifyHost.StatusMessage ?? "Spotify playback failed.");
+                RemoteStatus = "Spotify playback requested";
+                return;
+            }
+
+            // WebView fallback: embed the platform player or complete browser verification.
             if (resolved.IsWebViewFallback())
             {
+                CurrentRemoteAudio = resolved;
                 StopSpotifyPlayback();
                 var htmlBytes = System.Text.Encoding.UTF8.GetBytes(resolved.WebViewEmbedHtml!);
                 EmbeddedHtml = new EmbeddedHtmlContext(
@@ -3672,7 +3733,9 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
                     null,
                     null);
                 UseEmbeddedHtmlSurface();
-                RemoteStatus = $"Playing {resolved.ServiceLabel} via embedded widget.";
+                RemoteStatus = resolved.Kind == RemoteAudioServiceKind.Untitled
+                    ? "Preparing Untitled audio in the browser..."
+                    : $"Playing {resolved.ServiceLabel} via embedded widget.";
                 SourceLabel = resolved.ServiceLabel;
                 IsOpeningRemote = false;
                 return;
@@ -3719,6 +3782,7 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
             _engine.Load(cachedPath, trackInfo);
             var oldRemotePath = _remoteAudioTempPath;
             _remoteAudioTempPath = cachedPath;
+            CurrentRemoteAudio = resolved;
             cachedPath = null;
             RemoteAudioCache.TryDelete(oldRemotePath);
 
@@ -4049,6 +4113,12 @@ public sealed class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private void ApplyTrack(TrackInfo? track)
     {
+        if (track is null || !string.Equals(track.SourcePath, _remoteAudioTempPath, StringComparison.OrdinalIgnoreCase))
+        {
+            CurrentRemoteAudio = null;
+        }
+        this.RaisePropertyChanged(nameof(CanDownloadCurrentTrack));
+
         var wasSpotify = _spotifyState is not null;
         StopSpotifyPlayback();
         _spotifyArtCts?.Cancel();
