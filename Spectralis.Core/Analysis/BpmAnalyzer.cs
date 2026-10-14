@@ -1,4 +1,5 @@
 using NAudio.Wave;
+using Spectralis.Core.Audio;
 
 namespace Spectralis.Core.Analysis;
 
@@ -17,7 +18,8 @@ public static class BpmAnalyzer
         {
             ct.ThrowIfCancellationRequested();
 
-            using var reader = new AudioFileReader(filePath);
+            using var reader = AudioStreamFactory.Open(filePath, cancellationToken: ct);
+            var samples = reader.ToSampleProvider();
             var sampleRate = reader.WaveFormat.SampleRate;
             var channels = reader.WaveFormat.Channels;
             var maxSamples = AnalyzeSeconds * sampleRate * channels;
@@ -28,7 +30,7 @@ public static class BpmAnalyzer
             while (totalRead < maxSamples)
             {
                 ct.ThrowIfCancellationRequested();
-                var read = reader.Read(tmp, 0, Math.Min(tmp.Length, maxSamples - totalRead));
+                var read = samples.Read(tmp, 0, Math.Min(tmp.Length, maxSamples - totalRead));
                 if (read == 0)
                 {
                     break;

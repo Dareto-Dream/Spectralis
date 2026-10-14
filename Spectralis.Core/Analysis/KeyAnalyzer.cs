@@ -1,5 +1,6 @@
 using NAudio.Dsp;
 using NAudio.Wave;
+using Spectralis.Core.Audio;
 
 namespace Spectralis.Core.Analysis;
 
@@ -20,16 +21,25 @@ public static class KeyAnalyzer
     private const int MaxSeconds = 30;
 
     /// <summary>Reads the first 30 seconds of a file as mono and estimates its key.</summary>
-    public static string AnalyzeFile(string path)
+    public static string AnalyzeFile(string path, CancellationToken ct = default)
     {
         try
         {
-            using var reader = new AudioFileReader(path);
+            using var reader = AudioStreamFactory.Open(path, cancellationToken: ct);
+            var samples = reader.ToSampleProvider();
             var sr = reader.WaveFormat.SampleRate;
             var ch = reader.WaveFormat.Channels;
-            var maxRead = Math.Min(MaxSeconds * sr * ch, (int)(reader.Length / sizeof(float)));
+            var maxRead = (int)Math.Min((long)MaxSeconds * sr * ch,
+                reader.Length / reader.WaveFormat.BlockAlign * ch);
             var raw = new float[maxRead];
-            var totalRead = reader.Read(raw, 0, maxRead);
+            var totalRead = 0;
+            while (totalRead < maxRead)
+            {
+                ct.ThrowIfCancellationRequested();
+                var read = samples.Read(raw, totalRead, Math.Min(4096, maxRead - totalRead));
+                if (read == 0) break;
+                totalRead += read;
+            }
 
             var monoLen = totalRead / ch;
             var mono = new float[monoLen];
@@ -46,6 +56,7 @@ public static class KeyAnalyzer
 
             return Analyze(mono, sr);
         }
+        catch (OperationCanceledException) { throw; }
         catch
         {
             return "";

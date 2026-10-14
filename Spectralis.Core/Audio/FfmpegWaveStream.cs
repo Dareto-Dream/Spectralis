@@ -1,21 +1,13 @@
-using System.Diagnostics;
+using System.Globalization;
 using NAudio.Wave;
 using Spectralis.Core.Integrations;
 
 namespace Spectralis.Core.Audio;
 
 /// <summary>
-/// Decodes any container ffmpeg understands into a playable <see cref="WaveStream"/>,
-/// standing in for <c>MediaFoundationReader</c> off Windows. Media Foundation is a
-/// Windows component, so on Linux/macOS everything without a direct NAudio reader —
-/// m4a and webm especially, which is exactly what yt-dlp hands back for YouTube —
-/// had nothing that could open it.
-///
-/// Decodes up front to a temporary WAV rather than streaming ffmpeg's stdout, because
-/// <see cref="WaveStream"/> has to report an accurate <see cref="Length"/> and support
-/// arbitrary seeks for the scrubber; a pipe can do neither without re-launching ffmpeg
-/// on every seek. Tracks are already fully downloaded before playback, and decoding
-/// runs far faster than realtime, so the wait is short.
+/// Decodes a selected audio track to a temporary float WAV. The result supports
+/// accurate duration and random seeks for playback, analysis and stem mixing,
+/// without reducing lossless M4A to 16-bit or restarting FFmpeg on every seek.
 /// </summary>
 public sealed class FfmpegWaveStream : WaveStream
 {
@@ -28,6 +20,8 @@ public sealed class FfmpegWaveStream : WaveStream
         _reader = reader;
         _tempPath = tempPath;
     }
+
+    internal string DecodedPath => _tempPath;
 
     public override WaveFormat WaveFormat => _reader.WaveFormat;
     public override long Length => _reader.Length;
@@ -44,65 +38,52 @@ public sealed class FfmpegWaveStream : WaveStream
     /// Runs ffmpeg over <paramref name="path"/> and opens the result. Throws if ffmpeg
     /// is missing or can't decode the input.
     /// </summary>
-    public static FfmpegWaveStream Open(string path, TimeSpan? timeout = null)
+    public static FfmpegWaveStream Open(
+        string path, TimeSpan? timeout = null, int audioStreamIndex = 0,
+        CancellationToken cancellationToken = default) =>
+        // Playback still has a synchronous load API. Run the async process helper
+        // without capturing the UI context while that API waits for the decoder.
+        Task.Run(() => OpenAsync(path, timeout, audioStreamIndex, cancellationToken))
+            .GetAwaiter().GetResult();
+
+    public static async Task<FfmpegWaveStream> OpenAsync(
+        string path, TimeSpan? timeout = null, int audioStreamIndex = 0,
+        CancellationToken cancellationToken = default, int? sampleRate = null, int? channels = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentOutOfRangeException.ThrowIfNegative(audioStreamIndex);
         var ffmpeg = FfmpegLocator.FindExecutable()
             ?? throw new FileNotFoundException(
-                "FFmpeg not found. Place 'ffmpeg' in the Spectralis application folder, " +
+                "FFmpeg not found. Place FFmpeg in the Spectralis application folder, " +
                 "or install FFmpeg and add it to your system PATH.");
 
         var tempPath = Path.Combine(
             Path.GetTempPath(), $"spectralis-decode-{Guid.NewGuid():N}.wav");
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = ffmpeg,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        psi.ArgumentList.Add("-hide_banner");
-        psi.ArgumentList.Add("-loglevel");
-        psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-nostdin");
-        psi.ArgumentList.Add("-i");
-        psi.ArgumentList.Add(path);
-        psi.ArgumentList.Add("-vn");
-        // 16-bit PCM keeps the temp file half the size of float32 for no audible
-        // difference; NAudio converts to float downstream anyway.
-        psi.ArgumentList.Add("-acodec");
-        psi.ArgumentList.Add("pcm_s16le");
-        psi.ArgumentList.Add("-y");
-        psi.ArgumentList.Add(tempPath);
-
         try
         {
-            using var process = Process.Start(psi)
-                ?? throw new InvalidOperationException("ffmpeg did not start.");
-
-            var stderr = process.StandardError.ReadToEnd();
-            if (!process.WaitForExit((int)(timeout ?? TimeSpan.FromMinutes(5)).TotalMilliseconds))
-            {
-                try { process.Kill(entireProcessTree: true); } catch { }
-                throw new TimeoutException("ffmpeg timed out decoding the track.");
-            }
-
-            if (process.ExitCode != 0)
-            {
+            var arguments = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-i", path,
+                "-map", "0:a:" + audioStreamIndex.ToString(CultureInfo.InvariantCulture), "-vn", "-acodec", "pcm_f32le" };
+            if (sampleRate is { } rate) { ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rate); arguments.AddRange(["-ar", rate.ToString(CultureInfo.InvariantCulture)]); }
+            if (channels is { } count) { ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count); arguments.AddRange(["-ac", count.ToString(CultureInfo.InvariantCulture)]); }
+            arguments.AddRange(["-y", tempPath]);
+            var result = await SafeProcessRunner.RunAsync(ffmpeg, arguments,
+                timeout ?? TimeSpan.FromMinutes(5), cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result.TimedOut)
+                throw new TimeoutException("FFmpeg timed out decoding the track.");
+            if (!result.Succeeded)
                 throw new InvalidOperationException(
-                    $"ffmpeg could not decode this file (exit {process.ExitCode}). {stderr.Trim()}");
-            }
-        }
-        catch
-        {
-            TryDelete(tempPath);
-            throw;
-        }
+                    $"FFmpeg could not decode audio track {audioStreamIndex} (exit {result.ExitCode}). {result.Stderr.Trim()}");
 
-        try
-        {
-            return new FfmpegWaveStream(new WaveFileReader(tempPath), tempPath);
+            var reader = new WaveFileReader(tempPath);
+            if (reader.Length == 0)
+            {
+                reader.Dispose();
+                throw new NotSupportedException("FFmpeg found no decodable audio in the selected track.");
+            }
+            return new FfmpegWaveStream(reader, tempPath);
         }
         catch
         {

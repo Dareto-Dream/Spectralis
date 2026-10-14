@@ -1,7 +1,5 @@
-using NAudio.Vorbis;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using NLayer.NAudioSupport;
 using Spectralis.Core.Audio.Midi;
 using Spectralis.Core.Common;
 using Spectralis.Core.Platform;
@@ -806,86 +804,14 @@ public sealed class AudioEngine : IDisposable
     private WaveStream OpenPlaybackStream(string path, out string formatName)
     {
         var extension = Path.GetExtension(path).ToLowerInvariant();
-
-        try
+        formatName = FormatLabel.FromExtension(path);
+        if (extension is ".mid" or ".midi" or ".kar")
         {
-            switch (extension)
-            {
-                case ".mid":
-                case ".midi":
-                case ".kar":
-                    formatName = "MIDI";
-                    return new MidiPlaybackStream(path, MidiSoundFontLocator.ResolveDefaultSoundFontPath(), _midiInstrument);
-                case ".wav":
-                    formatName = "WAV";
-                    return new WaveFileReader(path);
-                case ".mp3":
-                    formatName = "MP3";
-                    // Mp3FileReader's default frame decompressor calls into Windows' ACM
-                    // codec (msacm32.dll), which doesn't exist on Linux/macOS. NLayer is a
-                    // pure managed MP3 decoder, so it works the same on every platform.
-                    return new Mp3FileReaderBase(path, wf => new Mp3FrameDecompressor(wf));
-                case ".aif":
-                case ".aifc":
-                case ".aiff":
-                    formatName = "AIFF";
-                    return new AiffFileReader(path);
-                case ".ogg":
-                case ".oga":
-                    formatName = "Ogg Vorbis";
-                    return new VorbisWaveReader(path);
-            }
-        }
-        catch (Exception directReaderException)
-        {
-            throw new NotSupportedException("The selected audio file could not be decoded by its direct reader.", directReaderException);
+            formatName = "MIDI";
+            return new MidiPlaybackStream(path, MidiSoundFontLocator.ResolveDefaultSoundFontPath(), _midiInstrument);
         }
 
-        // Media Foundation is a Windows component. Off Windows the bundled ffmpeg is
-        // the general-purpose decoder — without it nothing here could open the m4a and
-        // webm that yt-dlp returns for YouTube.
-        if (!OperatingSystem.IsWindows())
-        {
-            try
-            {
-                formatName = GetContainerLabel(extension, "FFmpeg");
-                return FfmpegWaveStream.Open(path);
-            }
-            catch (Exception ffmpegException)
-            {
-                try
-                {
-                    formatName = GetContainerLabel(extension, "NAudio fallback");
-                    return new AudioFileReader(path);
-                }
-                catch (Exception fallbackException)
-                {
-                    throw new NotSupportedException(
-                        "The selected audio file could not be opened. Playing this format needs the bundled FFmpeg, which is missing or could not decode it.",
-                        new AggregateException(ffmpegException, fallbackException));
-                }
-            }
-        }
-
-        try
-        {
-            formatName = GetContainerLabel(extension, "Windows codec");
-            return new MediaFoundationReader(path);
-        }
-        catch (Exception mediaFoundationException)
-        {
-            try
-            {
-                formatName = GetContainerLabel(extension, "NAudio fallback");
-                return new AudioFileReader(path);
-            }
-            catch (Exception fallbackException)
-            {
-                throw new NotSupportedException(
-                    "The selected audio file could not be opened. This app supports many common formats directly and additional formats through installed system codecs.",
-                    new AggregateException(mediaFoundationException, fallbackException));
-            }
-        }
+        return AudioStreamFactory.Open(path);
     }
 
     private static string GetContainerLabel(string extension, string fallbackLabel) =>

@@ -49,6 +49,7 @@
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('osx'))">osx</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('linux'))">linux</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And '$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">win</SpectralisHelperOs>
+    <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">osx</SpectralisHelperOs>
     <SpectralisHelperOs Condition="'$(SpectralisHelperOs)' == ''">linux</SpectralisHelperOs>
   </PropertyGroup>
