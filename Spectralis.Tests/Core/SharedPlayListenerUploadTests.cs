@@ -88,6 +88,15 @@ public class SharedPlayListenerUploadTests
     }
 
     [Fact]
+    public void ServerRoomCodeCannotBecomeAFilesystemPath()
+    {
+        var item = Item(Guid.NewGuid().ToString());
+        var bad = Session with { RoomCode = "C:folder" };
+        item = item with { Url = item.Url!.Replace("ABC123", "C:folder") };
+        Assert.Throws<InvalidOperationException>(() => SharedPlayListenerUploads.ValidateUrl(bad, item));
+    }
+
+    [Fact]
     public void AudioUploadsDefaultOnAndHostOptOutRoundTrips()
     {
         using var empty = JsonDocument.Parse("{}"); using var disabled = JsonDocument.Parse("{\"audioUploads\":false}");

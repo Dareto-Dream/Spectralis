@@ -1725,7 +1725,11 @@ fn normalize_queue_item(payload: Value) -> Result<Value, AppError> {
 
     let title = item.get("title").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).unwrap_or(url);
     let source_kind = item.get("sourceKind").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).unwrap_or("url");
-    if source_kind.eq_ignore_ascii_case("upload") || url.to_ascii_lowercase().contains("/uploads/") {
+    let reserved_upload_url = reqwest::Url::parse(url).is_ok_and(|u| {
+        let path = u.path().to_ascii_lowercase();
+        path.starts_with("/shared-play/v2/sessions/") && path.contains("/uploads/")
+    });
+    if source_kind.eq_ignore_ascii_case("upload") || reserved_upload_url {
         return Err(AppError::bad_request("Use the audio upload action to add a local file."));
     }
     let id = item

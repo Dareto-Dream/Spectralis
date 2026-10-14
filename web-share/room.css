@@ -968,3 +968,27 @@ legend {
   padding: 3px 6px;
   color: var(--signal);
 }
+
+.library-open { width: 100%; padding: 14px 0; border-top: 1px solid var(--line); text-align: left; display: flex; justify-content: space-between; color: var(--signal); }
+#libraryDialog { width: min(760px, calc(100vw - 32px)); max-height: 86dvh; }
+.library-account-row, .library-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0; }
+.library-account-row p { margin: 0; }
+.library-account-row button { flex-shrink: 0; }
+.library-tools span { color: var(--muted); font-size: 12px; }
+.library-list { list-style: none; padding: 0; margin: 0; }
+.library-list li { padding: 18px 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.library-list li > div:first-child { min-width: 0; }
+.library-list strong, .library-list span { display: block; overflow-wrap: anywhere; }
+.library-list strong { font-size: 16px; font-weight: 500; }
+.library-list span { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.library-track-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.library-track-actions button { font-size: 11px; padding: 7px; }
+.library-track-actions button:nth-child(2) { color: var(--signal); }
+#libraryPreview { width: 100%; margin-top: 16px; }
+dialog .upload-permission { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+dialog .upload-permission input { width: auto; accent-color: var(--signal); }
+@media (max-width: 640px) {
+  .library-list li { align-items: flex-start; flex-direction: column; }
+  .library-account-row { align-items: flex-start; flex-direction: column; }
+  .room-actions .open-app { width: auto; height: auto; max-width: 90px; font-size: 11px; }
+}

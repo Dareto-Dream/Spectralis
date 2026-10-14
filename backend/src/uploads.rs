@@ -662,5 +662,6 @@ mod tests {
         )
         .is_err());
         assert!(normalize_queue_item(json!({"url":"https://music.test/song"})).is_ok());
+        assert!(normalize_queue_item(json!({"url":"https://music.test/uploads/album/song.mp3"})).is_ok());
     }
 }

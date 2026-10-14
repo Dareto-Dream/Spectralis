@@ -37,7 +37,8 @@ public sealed class SharedPlayListenerUploads : IDisposable
 
     internal static Uri ValidateUrl(SharedPlayRoomSession session, SharedPlayQueueItem item)
     {
-        if (item.SourceKind != "upload" || !Guid.TryParseExact(item.SourceId, "D", out _) ||
+        if (SharedPlayDefaults.NormalizeRoomCode(session.RoomCode) != session.RoomCode ||
+            item.SourceKind != "upload" || !Guid.TryParseExact(item.SourceId, "D", out _) ||
             !Uri.TryCreate(item.Url, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps ||
             url.GetLeftPart(UriPartial.Authority) != session.StateUrl.GetLeftPart(UriPartial.Authority) ||
             !string.IsNullOrEmpty(url.UserInfo) || !string.IsNullOrEmpty(url.Query) || !string.IsNullOrEmpty(url.Fragment) ||

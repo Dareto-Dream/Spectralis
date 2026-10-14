@@ -85,7 +85,7 @@
     "lyricsTab", "lyricsTiming", "lyricsLines", "followLyrics", "visualizerPanel", "fullscreenButton", "playIcon",
     "listenButton", "queueHint", "inviteButton", "inviteDialog", "inviteLink", "inviteStatus",
     "settingsButton", "settingsDialog", "nameForm", "listenerName", "settingsStatus",
-    "permissionsSummary", "hostSettings", "queuePermission", "transportPermission"].forEach(function (id) {
+    "permissionsSummary", "hostSettings", "queuePermission", "transportPermission", "audioUploadPermission"].forEach(function (id) {
     el[id] = document.getElementById(id);
   });
 
@@ -143,12 +143,20 @@
     userActivated:         false
   };
 
+  var library;
   init();
 
-  function init() {
+  async function init() {
     applyExternalConfig();
+    library = window.RoomLibrary({
+      baseUrl: config.cdnBaseUrl,
+      room: function () { return { code: runtime.activeRoomCode, allowUploads: !!runtime.session && !!runtime.caps && runtime.caps.audioUploads }; },
+      onQueue: function (queue) { runtime.queue = queue; renderQueue(queue); },
+      onAuth: function () { if (runtime.activeRoomCode) loadSession(runtime.activeRoomCode); }
+    });
     bindEvents();
     drawMeter();
+    await library.init();
 
     var params = new URLSearchParams(window.location.search);
     var channelId = cleanChannelId(stringOrEmpty(params.get("channel")));
@@ -352,6 +360,10 @@
       });
     });
     el.discArt.addEventListener("error", function () { el.discArt.hidden = true; });
+    el.audioUploadPermission.addEventListener("change", function () {
+      if (runtime.role !== "host") return;
+      el.settingsStatus.textContent = socketSend({ t: "caps.set", caps: { audioUploads: el.audioUploadPermission.checked } }) ? "Permission update requested." : "Reconnecting…";
+    });
   }
 
   function updateRoomPermissions() {
@@ -363,7 +375,9 @@
     if (runtime.caps) {
       el.queuePermission.value = runtime.caps.queueAdd;
       el.transportPermission.value = runtime.caps.transport;
+      el.audioUploadPermission.checked = runtime.caps.audioUploads;
     }
+    if (library) library.refresh();
   }
 
   // ─── Room code helpers ────────────────────────────────────────────────────
@@ -458,13 +472,16 @@
     try {
       var payload = await fetchJson(v2Url("sessions/" + encodeURIComponent(roomCode)));
       runtime.session = normalizeSession(roomCode, payload);
+      applyCaps((payload.session || payload).capabilities || {});
       if (!runtime.channelId) el.roomTitle.textContent = runtime.session.roomName || "Listening room";
       runtime.activeTrackId = runtime.session.trackId;
       renderTrack(runtime.session.track);
+      // Queue and permission updates must work while a track is still preparing,
+      // or when this browser cannot decode the current track.
+      connectRoomSocket();
       await prepareAudio(runtime.session);
       await refreshQueueState();
       await refreshPlaybackState();
-      connectRoomSocket();
       setDotState("live");
       setStatus(runtime.hostStateAvailable ? "Synced." : "Waiting for host to start…");
       updateReactionButtons();
@@ -875,6 +892,7 @@
       cancelSocketFallback();
       socketSend({
         t: "hello",
+        accessToken: library.token(),
         proto: ENVELOPE_V,
         client: { kind: "web", version: String(config.clientVersion || "") },
         features: CLIENT_FEATURES,
@@ -1065,6 +1083,7 @@
   function applyCaps(caps) {
     runtime.caps = {
       queueAdd: caps.queueAdd || "everyone",
+      audioUploads: caps.audioUploads !== false,
       queueRemove: caps.queueRemove || "host",
       queueReorder: caps.queueReorder || "host",
       transport: caps.transport || "host",
@@ -1339,7 +1358,7 @@
       method: "POST",
       cache: "no-store",
       credentials: "omit",
-      headers: { "accept": "application/json", "content-type": "application/json" },
+      headers: library.headers(itemsUrl, { "accept": "application/json", "content-type": "application/json" }),
       body: JSON.stringify({ item: item })
     });
 
@@ -1532,7 +1551,7 @@
   async function extractAudioObjectUrlFromPackage(packageUrl) {
     var startedAt = performance.now();
     try {
-      var response = await fetch(packageUrl, { cache: "no-store", credentials: "omit" });
+      var response = await fetch(packageUrl, { cache: "no-store", credentials: "omit", headers: library.headers(packageUrl) });
       if (!response.ok) {
         var httpErr = new Error("Package download failed with HTTP " + response.status + ".");
         httpErr.handledHttp = true;
@@ -2009,7 +2028,7 @@
   async function fetchJson(url) {
     var startedAt = performance.now();
     try {
-      var response = await fetch(url, { cache: "no-store", credentials: "omit", headers: { "accept": "application/json" } });
+      var response = await fetch(url, { cache: "no-store", credentials: "omit", headers: library.headers(url, { "accept": "application/json" }) });
       var elapsedMs = performance.now() - startedAt;
       if (!response.ok) {
         var httpErr = new Error("Request failed with HTTP " + response.status + ".");
@@ -2037,7 +2056,7 @@
         method: "POST",
         cache: "no-store",
         credentials: "omit",
-        headers: { "accept": "application/json", "content-type": "application/json" },
+        headers: library.headers(url, { "accept": "application/json", "content-type": "application/json" }),
         body: JSON.stringify(payload || {})
       });
       var elapsedMs = performance.now() - startedAt;

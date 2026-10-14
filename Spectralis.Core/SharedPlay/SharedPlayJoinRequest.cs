@@ -53,6 +53,9 @@ public sealed record SharedPlayJoinRequest(string RoomCode, string? CdnBaseUrl)
         if (string.IsNullOrWhiteSpace(roomCode))
             return false;
 
+        // The public Player is a frontend; its session links use the production API.
+        if (uri.Scheme == "https" && uri.GetLeftPart(UriPartial.Authority) == "https://player.deltavdevs.com")
+            fallbackCdnBaseUrl = SharedPlayDefaults.CdnBaseUrl;
         var cdnBaseUrl = NormalizeCdnBaseUrl(FirstQueryValue(query, CdnQueryKeys)) ?? fallbackCdnBaseUrl;
         request = new SharedPlayJoinRequest(roomCode, cdnBaseUrl);
         return true;

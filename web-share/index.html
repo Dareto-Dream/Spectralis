@@ -107,6 +107,7 @@
           </div>
         </div>
         <div class="room-actions">
+          <button id="openAppButton" class="open-app" type="button">Open in Spectralis</button>
           <button
             id="settingsButton"
             class="icon-btn"
@@ -234,6 +235,7 @@
             <p class="queue-hint" id="queueHint">
               The host is getting the queue ready.
             </p>
+            <button id="libraryButton" class="library-open" type="button">Choose from your files <span aria-hidden="true">↗</span></button>
           </section>
         </div>
         <section class="room-company" aria-label="In the room">
@@ -399,7 +401,7 @@
       <p id="permissionsSummary"></p>
       <fieldset id="hostSettings" hidden>
         <legend>Who can control the room?</legend>
-        <label for="queuePermission">Add tracks</label
+        <label for="queuePermission">Add links</label
         ><select id="queuePermission">
           <option value="everyone">Everyone</option>
           <option value="codj">Co-DJs and host</option>
@@ -411,12 +413,24 @@
           <option value="codj">Co-DJs and host</option>
           <option value="host">Host only</option>
         </select>
+        <label class="upload-permission"><input id="audioUploadPermission" type="checkbox" checked /> Allow signed-in listeners to upload audio</label>
       </fieldset>
       <p id="settingsStatus" role="status"></p>
-      <button id="openAppButton" type="button">Open in Spectralis</button>
+    </dialog>
+    <dialog id="libraryDialog" aria-labelledby="libraryHeading">
+      <div class="dialog-head"><h2 id="libraryHeading">Your files</h2><button type="button" data-close-dialog aria-label="Close your files">×</button></div>
+      <p>Saved in this browser, not on our servers. Only “Add to queue” sends a temporary copy to the room. Clearing site data removes your library.</p>
+      <div class="library-account-row"><p id="libraryAccount"></p><button id="librarySignIn" type="button" hidden>Sign in with Ward</button><button id="librarySignOut" type="button" hidden>Sign out</button></div>
+      <div class="library-tools"><button class="primary" id="libraryImport" type="button">Import audio files +</button><span id="librarySummary"></span></div>
+      <input id="libraryFiles" type="file" accept=".mp3,.m4a,.wav,.flac,.ogg,.opus,.aac,.aif,.aiff" multiple hidden />
+      <ul id="libraryList" class="library-list"></ul>
+      <audio id="libraryPreview" controls hidden></audio>
+      <p id="libraryStatus" role="status"></p>
     </dialog>
     <audio id="sharedAudio" preload="metadata" crossorigin="anonymous"></audio>
     <script src="./room-lyrics.js" defer></script>
+    <script src="./local-library.js" defer></script>
+    <script src="./room-library.js" defer></script>
     <script src="./player.js" defer></script>
   </body>
 </html>

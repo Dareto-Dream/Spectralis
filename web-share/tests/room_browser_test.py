@@ -77,7 +77,9 @@ class Room:
 
     def http(self, route):
         path = urlparse(route.request.url).path
-        if path.endswith("/sessions/ABC123"):
+        if path == "/shared-play/v2/config":
+            route.fulfill(json={"accountsEnabled": False})
+        elif path.endswith("/sessions/ABC123"):
             route.fulfill(json=self.manifest())
         elif path.endswith("/state"):
             route.fulfill(json=self.state_envelope())
