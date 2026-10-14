@@ -24,6 +24,7 @@ public sealed class AudioEngine : IDisposable
 
     private readonly IAudioDeviceEnumerator _deviceEnumerator;
     private readonly int _latencyMs;
+    private readonly Func<string, WaveStream>? _streamFactory;
 
     private WaveStream? _playbackStream;
     private IAudioDevice? _device;
@@ -35,7 +36,7 @@ public sealed class AudioEngine : IDisposable
     private float _volume = 0.85f;
     private double _playbackRate = 1.0;
     private IEffectChainBuilder? _effectChain;
-    private bool _suppressStopEvents;
+    private volatile bool _suppressStopEvents;
 
     // Gapless: pre-opened stream for the next track so Load() can skip the cold-open delay.
     private WaveStream? _preparedStream;
@@ -56,6 +57,9 @@ public sealed class AudioEngine : IDisposable
         _deviceEnumerator = deviceEnumerator ?? AudioDeviceEnumeratorFactory.Create();
         _latencyMs = latencyMs;
     }
+
+    internal AudioEngine(IAudioDeviceEnumerator deviceEnumerator, Func<string, WaveStream> streamFactory)
+        : this(deviceEnumerator) => _streamFactory = streamFactory;
 
     /// <summary>The platform backend used to list and open output devices.</summary>
     public IAudioDeviceEnumerator DeviceEnumerator => _deviceEnumerator;
@@ -241,11 +245,11 @@ public sealed class AudioEngine : IDisposable
 
             _suppressStopEvents = true;
             _device.Stop();
-            _suppressStopEvents = false;
 
-            _playbackStream.Dispose();
+            // Keep callbacks suppressed through decoder disposal and output reinitialization.
+            // Stop() may queue its notification instead of delivering it synchronously.
+            Interlocked.Exchange(ref _playbackStream, nextStream)?.Dispose();
             Interlocked.Exchange(ref _outgoingStream, null)?.Dispose();
-            _playbackStream = nextStream;
             CurrentTrack = BuildTrackInfo(nextPath, nextStream, string.Empty, providedInfo);
 
             // Re-wire the speed/resample/effect chain and visualizer onto the new stream.
@@ -270,7 +274,10 @@ public sealed class AudioEngine : IDisposable
         }
         catch
         {
-            nextStream.Dispose();
+            // Init can fail after the new reader was installed. Never leave a disposed
+            // reader published as the current track while the caller falls back to Load.
+            if (ReferenceEquals(_playbackStream, nextStream)) DisposePlayback(toIdle: false);
+            else nextStream.Dispose();
             return false;
         }
         finally
@@ -529,16 +536,14 @@ public sealed class AudioEngine : IDisposable
         _suppressStopEvents = true;
         try
         {
-            _device?.Stop();
-            _device?.Dispose();
+            DisposeOutputDevice();
         }
         finally
         {
             _suppressStopEvents = false;
         }
 
-        _playbackStream.Dispose();
-        _device = null;
+        Interlocked.Exchange(ref _playbackStream, null)?.Dispose();
         _visualizer = null;
 
         _playbackStream = OpenPlaybackStream(trackInfo.SourcePath, out var formatName);
@@ -594,8 +599,7 @@ public sealed class AudioEngine : IDisposable
             return;
         }
 
-        _device?.Dispose();
-        _device = null;
+        DisposeOutputDevice();
 
         _playbackStream.CurrentTime = currentPosition;
 
@@ -751,11 +755,24 @@ public sealed class AudioEngine : IDisposable
             return;
         }
 
-        // Natural end of stream: the device drained after the source returned 0.
-        if (StateMachine.State == PlaybackState.Playing &&
-            _playbackStream is not null &&
-            _playbackStream.TotalTime > TimeSpan.Zero &&
-            _playbackStream.CurrentTime >= _playbackStream.TotalTime - TimeSpan.FromMilliseconds(250))
+        // A callback already in flight can overlap a load/unload on another thread.
+        // Snapshot one reader, and recheck ownership before acting on its position.
+        var stream = _playbackStream;
+        if (StateMachine.State != PlaybackState.Playing || stream is null) return;
+        bool ended;
+        try
+        {
+            var duration = stream.TotalTime;
+            ended = duration > TimeSpan.Zero && stream.CurrentTime >= duration - TimeSpan.FromMilliseconds(250);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Vorbis invalidates even Length on disposal. A retired reader ending is
+            // not a reason to advance the replacement track or crash the callback thread.
+            return;
+        }
+        if (ended && !_suppressStopEvents && ReferenceEquals(sender, _device) &&
+            ReferenceEquals(stream, _playbackStream) && _device?.IsPlaying == false)
         {
             StateMachine.TryTransitionTo(PlaybackState.Stopped);
             TrackEnded?.Invoke(this, EventArgs.Empty);
@@ -811,7 +828,7 @@ public sealed class AudioEngine : IDisposable
             return new MidiPlaybackStream(path, MidiSoundFontLocator.ResolveDefaultSoundFontPath(), _midiInstrument);
         }
 
-        return AudioStreamFactory.Open(path);
+        return _streamFactory?.Invoke(path) ?? AudioStreamFactory.Open(path);
     }
 
     private static string GetContainerLabel(string extension, string fallbackLabel) =>
@@ -847,39 +864,46 @@ public sealed class AudioEngine : IDisposable
         }
         catch
         {
-            _device?.Dispose();
-            _device = null;
+            DisposeOutputDevice();
             StateMachine.TryTransitionTo(PlaybackState.Error, "Audio device recovery failed.");
             DeviceRecoveryFailed?.Invoke(this, EventArgs.Empty);
         }
     }
 
+    private void DisposeOutputDevice()
+    {
+        // Retire identity and handlers before Stop/Dispose can deliver a final callback.
+        var device = Interlocked.Exchange(ref _device, null);
+        if (device is null) return;
+        device.PlaybackStopped -= OnDevicePlaybackStopped;
+        try { device.Stop(); }
+        finally { device.Dispose(); }
+    }
+
     private void DisposePlayback(bool toIdle = true)
     {
+        var wasSuppressed = _suppressStopEvents;
         _suppressStopEvents = true;
         try
         {
-            _device?.Stop();
-            _device?.Dispose();
+            DisposeOutputDevice();
+            Interlocked.Exchange(ref _playbackStream, null)?.Dispose();
+            Interlocked.Exchange(ref _outgoingStream, null)?.Dispose();
+            if (_transition is not null)
+            {
+                _transition.Transitioning -= OnChainTransitioning;
+                _transition.OutgoingFinished -= OnChainOutgoingFinished;
+                _transition = null;
+            }
+            _transitionedPath = null;
+            _visualizer = null;
+            _fade = null;
+            CurrentTrack = null;
         }
         finally
         {
-            _suppressStopEvents = false;
+            _suppressStopEvents = wasSuppressed;
         }
-
-        _playbackStream?.Dispose();
-        Interlocked.Exchange(ref _outgoingStream, null)?.Dispose();
-        if (_transition is not null)
-        {
-            _transition.Transitioning -= OnChainTransitioning;
-            _transition.OutgoingFinished -= OnChainOutgoingFinished;
-            _transition = null;
-        }
-        _transitionedPath = null;
-        _device = null;
-        _playbackStream = null;
-        _visualizer = null;
-        CurrentTrack = null;
     }
 
     /// <summary>Adapts an NAudio sample provider to the device-facing source interface.</summary>

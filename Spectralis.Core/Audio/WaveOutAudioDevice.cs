@@ -58,8 +58,7 @@ public sealed class WaveOutAudioDevice : IAudioDevice
             _output.DeviceNumber = deviceNumber;
         }
 
-        _output.PlaybackStopped += (_, e) =>
-            PlaybackStopped?.Invoke(this, new AudioDeviceStoppedEventArgs(e.Exception));
+        _output.PlaybackStopped += OnOutputPlaybackStopped;
         _output.Init(_provider);
     }
 
@@ -69,10 +68,22 @@ public sealed class WaveOutAudioDevice : IAudioDevice
 
     public void Dispose() => DisposeOutput();
 
+    private void OnOutputPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        // Init reuses this wrapper with a fresh WaveOutEvent. A queued notification
+        // from the old output must not masquerade as the new track stopping.
+        if (!ReferenceEquals(sender, Volatile.Read(ref _output))) return;
+        PlaybackStopped?.Invoke(this, new AudioDeviceStoppedEventArgs(e.Exception));
+    }
+
     private void DisposeOutput()
     {
-        _output?.Dispose();
-        _output = null;
+        var output = Interlocked.Exchange(ref _output, null);
+        if (output is not null)
+        {
+            output.PlaybackStopped -= OnOutputPlaybackStopped;
+            output.Dispose();
+        }
         _provider = null;
     }
 
