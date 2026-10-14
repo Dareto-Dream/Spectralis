@@ -22,7 +22,7 @@ export default function Setup() {
             </div>
             <div className="dl-hero__stat">
               <span className="dl-hero__stat-n">macOS</span>
-              <span className="dl-hero__stat-l">.pkg · New in v6</span>
+              <span className="dl-hero__stat-l">.pkg · v6.0.0 LTS</span>
             </div>
             <div className="dl-hero__stat">
               <span className="dl-hero__stat-n">Linux</span>
@@ -91,7 +91,7 @@ export default function Setup() {
               <h2 className="dl-card__title">macOS</h2>
               <p className="dl-card__platform-sub">11 Big Sur or newer</p>
             </div>
-            <span className="dl-card__badge dl-card__badge--new">New in v6</span>
+            <span className="dl-card__badge dl-card__badge--new">v6.0.0 LTS</span>
           </div>
 
           <div className="dl-card__file">
@@ -124,8 +124,8 @@ export default function Setup() {
               <p className="dl-note__body">M1 through M4 Macs take the Apple Silicon build; 2020-and-earlier Intel Macs take the Intel build. Not sure? Check <code>Apple menu → About This Mac</code>.</p>
             </div>
             <div className="dl-note">
-              <span className="dl-note__label">Auto-updates</span>
-              <p className="dl-note__body">Like Windows, macOS runs on Velopack and applies delta patches on launch, so there's no re-installer to chase.</p>
+              <span className="dl-note__label">Release support</span>
+              <p className="dl-note__body">macOS remains on the 6.0.0 LTS release. Version 7.1.0 is available for Windows and Linux.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Gatekeeper</span>

@@ -17,7 +17,7 @@ export const FEATURES = [
   { num: '09', icon: Shield,     title: 'Creator Trust',          body: 'Unknown creator keys trigger a one-time trust prompt. Revoked keys are always rejected. Capabilities are intersection-enforced against the CDN.' },
 ]
 
-export const APP_VERSION = '6.0.0'
+export const APP_VERSION = '7.1.0'
 
 // Also feeds the FAQPage schema on /setup, so keep answers plain text.
 export const FAQ = [
