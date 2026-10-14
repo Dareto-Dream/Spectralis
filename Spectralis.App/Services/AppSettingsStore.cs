@@ -110,6 +110,7 @@ public sealed class AppSettings
     public string SharedPlayHostName { get; set; } = string.Empty;
     // Default collaborative-room capabilities for a freshly hosted room.
     public bool SharedPlayListenersCanQueue { get; set; } = true;
+    public bool SharedPlayListenersCanUploadAudio { get; set; } = true;
     public bool SharedPlayListenersCanReorder { get; set; }
     public bool SharedPlayListenersCanRemove { get; set; }
     public bool SharedPlayListenersCanControlPlayback { get; set; }
@@ -221,6 +222,7 @@ public sealed class AppSettings
             SharedPlayLiveChannelDisplayName = SharedPlayLiveChannelDisplayName,
             SharedPlayHostName = SharedPlayHostName,
             SharedPlayListenersCanQueue = SharedPlayListenersCanQueue,
+            SharedPlayListenersCanUploadAudio = SharedPlayListenersCanUploadAudio,
             SharedPlayListenersCanReorder = SharedPlayListenersCanReorder,
             SharedPlayListenersCanRemove = SharedPlayListenersCanRemove,
             SharedPlayListenersCanControlPlayback = SharedPlayListenersCanControlPlayback,

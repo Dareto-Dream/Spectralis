@@ -16,11 +16,14 @@ public sealed class SharedPlayUploadHeadersTests
         public string[] PutKeyValues { get; private set; } = [];
         public string[] PutContentTypes { get; private set; } = [];
         public bool PutAskedToContinue { get; private set; }
+        public bool? CreatedAudioUploads { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (request.Method == HttpMethod.Post)
             {
+                using var created = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                CreatedAudioUploads = created.RootElement.GetProperty("roomCapabilities").GetProperty("audioUploads").GetBoolean();
                 var json = $$$"""
                     {"roomCode":"ABC123","sessionKey":"{{{Key}}}","trackId":"t1","expiresAtUtc":"2030-01-01T00:00:00Z",
                      "uploads":[{"name":"spectralis-package","method":"PUT","uploadUrl":"https://api.example.test/shared-play/v2/sessions/ABC123/package",
@@ -57,13 +60,14 @@ public sealed class SharedPlayUploadHeadersTests
                 new Uri("https://api.example.test"),
                 Package(path),
                 new SharedPlayPlaybackSnapshot(false, 0, 1, "test", DateTimeOffset.UtcNow),
-                CancellationToken.None);
+                CancellationToken.None, SharedPlayCapabilities.Default with { AudioUploads = false });
 
             // Sent twice, the backend reads it as "key, key", glues the halves together and refuses the host upload.
             Assert.Equal([Key], backend.PutKeyValues);
             Assert.Equal(["application/vnd.spectralis.shared-play+zip"], backend.PutContentTypes);
             // A refusal then comes back as its real status and message, not "Error while copying content to a stream".
             Assert.True(backend.PutAskedToContinue);
+            Assert.False(backend.CreatedAudioUploads);
         }
         finally { File.Delete(path); }
     }

@@ -11,6 +11,7 @@ public sealed class SharedPlaySessionController : IDisposable
 
     private readonly SharedPlayCacheStore cacheStore;
     private readonly SharedPlayCdnClient cdnClient;
+    private readonly SharedPlayListenerUploads listenerUploads;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object statusLock = new();
 
@@ -72,6 +73,7 @@ public sealed class SharedPlaySessionController : IDisposable
     {
         this.cacheStore = cacheStore;
         this.cdnClient = cdnClient;
+        listenerUploads = new SharedPlayListenerUploads(cdnClient);
     }
 
     public event EventHandler? StatusChanged;
@@ -174,6 +176,15 @@ public sealed class SharedPlaySessionController : IDisposable
 
         return await cdnClient.FetchQueueStateAsync(activeSession.QueueUrl, cancellationToken);
     }
+
+    public Task ReceiveListenerUploadAsync(SharedPlayQueueItem item, Func<string, Task> accept, bool playNow, CancellationToken ct)
+    {
+        var active = GetSession() ?? throw new InvalidOperationException("This room has ended.");
+        return listenerUploads.ReceiveAsync(active, item, accept, playNow, ct);
+    }
+
+    public Task RemoveQueueItemAsync(string id, CancellationToken ct) =>
+        GetSession() is { } active ? cdnClient.RemoveQueueItemAsync(active, id, ct) : Task.CompletedTask;
 
     public async Task<SharedPlayPresenceSnapshot?> FetchPresenceAsync(CancellationToken cancellationToken)
     {
@@ -497,12 +508,15 @@ public sealed class SharedPlaySessionController : IDisposable
         socket.Dispose();
         lock (statusLock)
         {
-            capabilities = SharedPlayCapabilities.Default;
             members = Array.Empty<SharedPlayMember>();
         }
     }
 
-    public void SetCapabilities(SharedPlayCapabilities caps) => roomSocket?.SetCaps(caps);
+    public void SetCapabilities(SharedPlayCapabilities caps)
+    {
+        lock (statusLock) capabilities = caps;
+        roomSocket?.SetCaps(caps);
+    }
     public void SetMemberRole(string clientId, SharedPlayRole role) => roomSocket?.SetMemberRole(clientId, role);
     public void KickMember(string clientId) => roomSocket?.KickMember(clientId);
 
@@ -517,7 +531,7 @@ public sealed class SharedPlaySessionController : IDisposable
             Log($"Creating session for '{track.DisplayTitle}' ({track.SourcePath}) via {GetCdnBaseUri()}");
             var package = await cacheStore.CreateOrGetPackageAsync(track, cancellationToken);
             Log($"Package ready: {package.PackagePath} ({package.PackageBytes} bytes)");
-            var newSession = await cdnClient.CreateSessionAndUploadAsync(cdnBaseUri, package, playback, cancellationToken);
+            var newSession = await cdnClient.CreateSessionAndUploadAsync(cdnBaseUri, package, playback, cancellationToken, Capabilities);
             Log($"Session ready: Room {newSession.DisplayCode} — {newSession.JoinUrl}");
 
             lock (statusLock)
@@ -910,6 +924,7 @@ public sealed class SharedPlaySessionController : IDisposable
     {
         CloseRoomSocket();
         cancellation.Cancel();
+        listenerUploads.Dispose();
         cancellation.Dispose();
         operationGate.Dispose();
         cdnClient.Dispose();

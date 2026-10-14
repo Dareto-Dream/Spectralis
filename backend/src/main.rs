@@ -7,6 +7,7 @@ mod rooms;
 mod sq_realtime;
 mod sq_webhooks;
 mod store;
+mod uploads;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -132,14 +133,18 @@ async fn main() -> Result<()> {
     };
 
     collab::spawn_replica_fanout(state.clone());
+    uploads::spawn_gc(state.clone());
 
     let app = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/shared-play/v2/config", get(|State(state): State<AppState>| async move { Json(json!({"accountsEnabled":state.ward_enabled})) }))
         .route("/player.js", get(player_js))
         .route("/styles.css", get(styles_css))
         .route("/room.css", get(room_css))
         .route("/room-lyrics.js", get(room_lyrics_js))
+        .route("/local-library.js", get(|State(state): State<AppState>| async move { send_file(state.web_share_root.join("local-library.js"), None).await }))
+        .route("/room-library.js", get(|State(state): State<AppState>| async move { send_file(state.web_share_root.join("room-library.js"), None).await }))
         .route("/spectralis/web-share", get(web_share_redirect))
         .route("/spectralis/web-share/", get(index))
         .route("/spectralis/web-share/index.html", get(index))
@@ -184,6 +189,9 @@ async fn main() -> Result<()> {
         .route("/player/v1/rooms/:id/members", get(player::members))
         .route("/player/v1/rooms/:id/members/:subject", put(player::decide))
         .route("/shared-play/v2/sessions/:code/end", post(player::end_session))
+        .route("/shared-play/v2/sessions/:code/uploads", post(uploads::post_upload).layer(DefaultBodyLimit::max(uploads::MAX_BYTES + 4096)))
+        .route("/shared-play/v2/sessions/:code/uploads/:id/audio/:filename", get(uploads::get_audio))
+        .route("/shared-play/v2/sessions/:code/uploads/:id/received", post(uploads::received))
         .route("/shared-play/v2/sessions", post(create_session))
         .route("/shared-play/v2/sessions/:code/package", put(upload_package))
         .route("/shared-play/v2/sessions/:code/tracks", post(register_track))
@@ -206,6 +214,7 @@ async fn main() -> Result<()> {
             get(get_queue).post(post_queue),
         )
         .route("/shared-play/v2/sessions/:code/queue/items", post(post_queue_item))
+        .route("/shared-play/v2/sessions/:code/queue/items/:id", delete(delete_queue_item))
         .route(
             "/shared-play/v2/sessions/:code/socket",
             get(collab::ws_handler),
@@ -386,6 +395,9 @@ async fn create_session(
     });
     upsert_active_track(&mut manifest, &track_id_text, track, package);
     write_json(&state, &sess_key(&room_code, "manifest"), &manifest).await?;
+    let caps = collab::Caps::from_json(payload.get("roomCapabilities").unwrap_or(&Value::Null));
+    write_json(&state, &sess_key(&room_code, "room:caps"), &caps.to_json()).await?;
+    uploads::register_session(&state, &room_code).await?;
 
     if let Some(playback) = playback {
         write_playback_state(&state, &room_code, playback).await?;
@@ -679,6 +691,8 @@ async fn read_session_payload(
     let join_url = format!("{base}/spectralis/web-share/?session={room_code}");
 
     let mut session = json!({
+        "accountUploadsAvailable": state.ward_enabled,
+        "capabilities": collab::load_caps(state, &room_code).await.to_json(),
         "protocolVersion": PROTOCOL_VERSION,
         "roomCode": &room_code,
         "displayCode": display_room_code(&room_code),
@@ -806,7 +820,9 @@ async fn post_queue(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
     let room_code = touch_session(&state, &code).await?;
+    let _lease = state.store.room_lease(&room_code).await.map_err(AppError::internal)?;
     let mut queue = normalize_queue_payload(&room_code, payload);
+    uploads::prune(&state, &room_code, &mut queue, false).await?;
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_json(&state, &sess_key(&room_code, "queue"), &queue).await?;
     let _ = collab::broadcast_queue(&state, &room_code, &queue).await;
@@ -819,6 +835,7 @@ async fn post_queue_item(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
     let room_code = touch_session(&state, &code).await?;
+    let _lease = state.store.room_lease(&room_code).await.map_err(AppError::internal)?;
     let queue_key = sess_key(&room_code, "queue");
     let mut queue = read_json_opt(&state, &queue_key)
         .await
@@ -846,6 +863,18 @@ async fn post_queue_item(
     queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
     write_json(&state, &queue_key, &queue).await?;
     let _ = collab::broadcast_queue(&state, &room_code, &queue).await;
+    Ok(Json(queue))
+}
+
+async fn delete_queue_item(State(state): State<AppState>, AxumPath((code, id)): AxumPath<(String, String)>) -> Result<Json<Value>, AppError> {
+    let code = touch_session(&state, &code).await?;
+    let _lease = state.store.room_lease(&code).await.map_err(AppError::internal)?;
+    let mut queue = read_json_opt(&state, &sess_key(&code, "queue")).await.unwrap_or_else(|| empty_queue(&code));
+    if let Some(items) = queue["items"].as_array_mut() { items.retain(|item| item["id"].as_str() != Some(&id)); }
+    uploads::prune(&state, &code, &mut queue, false).await?;
+    queue["updatedAtUtc"] = json!(Utc::now().to_rfc3339());
+    write_json(&state, &sess_key(&code, "queue"), &queue).await?;
+    let _ = collab::broadcast_queue(&state, &code, &queue).await;
     Ok(Json(queue))
 }
 
@@ -1696,6 +1725,9 @@ fn normalize_queue_item(payload: Value) -> Result<Value, AppError> {
 
     let title = item.get("title").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).unwrap_or(url);
     let source_kind = item.get("sourceKind").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).unwrap_or("url");
+    if source_kind.eq_ignore_ascii_case("upload") || url.to_ascii_lowercase().contains("/uploads/") {
+        return Err(AppError::bad_request("Use the audio upload action to add a local file."));
+    }
     let id = item
         .get("id")
         .and_then(Value::as_str)

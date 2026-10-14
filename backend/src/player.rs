@@ -82,7 +82,9 @@ async fn guard(state: &AppState, uri: &axum::http::Uri, method: &str, headers: &
         // The socket authenticates inside its first frame, never in a logged URL.
         if tail == "socket" { return Ok(()); }
         session_access(state, &code, headers).await?;
+        if method == "POST" && tail == "uploads" { crate::uploads::authorize(state, &code, headers).await?; }
         let host_write = (method == "POST" && matches!(tail, "state" | "queue" | "tracks" | "end"))
+            || (method == "DELETE" && tail.starts_with("queue/items/"))
             || (method == "PUT" && tail.ends_with("package")) || tail.ends_with("/activate");
         if host_write {
             validate_session_key(state, &code, headers.get("x-session-key")
@@ -207,6 +209,7 @@ pub async fn end_session(State(state): State<AppState>, AxumPath(code): AxumPath
     let mut manifest = read_json(&state,&key).await?;
     manifest["ended"] = json!(true);
     write_json(&state,&key,&manifest).await?;
+    crate::uploads::collect_room(&state, &clean_room_code(&code)?).await?;
     Ok(Json(json!({"ok":true})))
 }
 

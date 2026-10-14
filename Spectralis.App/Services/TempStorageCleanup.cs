@@ -54,7 +54,7 @@ public static class TempStorageCleanup
             foreach (var file in Directory.EnumerateFiles(tempRoot, "spectralis-decode-*.wav"))
                 if (Regex.IsMatch(Path.GetFileName(file), @"^spectralis-decode-[a-fA-F0-9]{32}\.wav$") && File.GetLastWriteTimeUtc(file) < olderThan)
                     Add(DeleteFile(tempRoot, file));
-            foreach (var relative in new[] { "Spectralis/dj-separation", "Spectralis/dj-download", "Spectralis/song-download", "spectralis/video-export", "Spectralis/install-staging" })
+            foreach (var relative in new[] { "Spectralis/dj-separation", "Spectralis/dj-download", "Spectralis/song-download", "spectralis/video-export", "Spectralis/install-staging", "Spectralis/shared-play-uploads" })
             {
                 var root = Path.Combine(tempRoot, relative);
                 if (!IsSafeDescendant(tempRoot, root)) continue;

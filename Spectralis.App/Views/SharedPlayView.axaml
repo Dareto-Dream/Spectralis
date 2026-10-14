@@ -94,7 +94,8 @@
       <StackPanel IsVisible="{Binding IsHosting}" Spacing="4">
         <Expander Header="What listeners can do" HorizontalContentAlignment="Left">
           <StackPanel Spacing="2" Margin="0,4,0,0">
-            <CheckBox Content="Add to the queue" IsChecked="{Binding ListenersCanQueue}" />
+            <CheckBox Content="Add links to the queue" IsChecked="{Binding ListenersCanQueue}" />
+            <CheckBox Content="Upload audio (signed-in listeners only)" IsChecked="{Binding ListenersCanUploadAudio}" IsVisible="{Binding WardAvailable}" />
             <CheckBox Content="Reorder the queue" IsChecked="{Binding ListenersCanReorder}" />
             <CheckBox Content="Remove tracks" IsChecked="{Binding ListenersCanRemove}" />
             <CheckBox Content="Control playback (play, pause, seek, skip)" IsChecked="{Binding ListenersCanControlPlayback}" />
@@ -147,15 +148,17 @@
           <ItemsControl ItemsSource="{Binding RequestedTracks}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SharedPlayRequestedTrackVm">
-                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
-                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,2">
+                  <StackPanel Spacing="3" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}" />
                     <TextBlock Classes="secondary" Text="{Binding Artist}"
                                IsVisible="{Binding Artist, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Classes="secondary" Text="{Binding ReceiveStatus}" TextWrapping="Wrap" IsVisible="{Binding ReceiveStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
                   <Button Grid.Column="1" Content="Play" Command="{Binding PlayCommand}"
                           Classes="secondary" Margin="0,0,4,0" />
-                  <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}"
+                  <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}" Margin="0,0,4,0" />
+                  <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}"
                           Classes="destructive" />
                 </Grid>
               </DataTemplate>

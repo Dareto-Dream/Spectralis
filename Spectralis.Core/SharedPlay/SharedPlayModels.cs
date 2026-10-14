@@ -37,7 +37,8 @@ public sealed record SharedPlayCapabilities(
     string QueueReorder,
     string Transport,
     bool VoteSkip,
-    int SkipVotesRequired)
+    int SkipVotesRequired,
+    bool AudioUploads = true)
 {
     public static readonly SharedPlayCapabilities Default =
         new("everyone", "host", "host", "host", true, 3);
@@ -57,7 +58,9 @@ public sealed record SharedPlayCapabilities(
             el.TryGetProperty("voteSkip", out var vs) && vs.ValueKind is JsonValueKind.True or JsonValueKind.False
                 ? vs.GetBoolean() : d.VoteSkip,
             el.TryGetProperty("skipVotesRequired", out var sv) && sv.TryGetInt32(out var n)
-                ? Math.Clamp(n, 1, 20) : d.SkipVotesRequired);
+                ? Math.Clamp(n, 1, 20) : d.SkipVotesRequired,
+            el.TryGetProperty("audioUploads", out var au) && au.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? au.GetBoolean() : d.AudioUploads);
     }
 }
 

@@ -704,6 +704,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// </summary>
     private async Task PlayStreamerQueueTrackAsync(string url)
     {
+        if (Path.IsPathFullyQualified(url) && File.Exists(url))
+        {
+            await NowPlaying.PlayQueueAsync([url], 0);
+            return;
+        }
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
         if (CapsulesViewModel.IsPackageExtension(extension))
         {
@@ -720,6 +725,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <see cref="PlayStreamerQueueTrackAsync"/>, which replaces and plays immediately).</summary>
     private async Task QueueStreamerRequestTrackAsync(string url)
     {
+        if (Path.IsPathFullyQualified(url) && File.Exists(url))
+        {
+            await NowPlaying.QueueFilesAsync([url], playIfQueueWasEmpty: false);
+            return;
+        }
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
         if (CapsulesViewModel.IsPackageExtension(extension))
         {

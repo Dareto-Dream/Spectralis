@@ -85,6 +85,7 @@ pub fn allows(cap: &str, role: Role) -> bool {
 /// Room capabilities. Stored as a JSON object at `sp:sess:<code>:room:caps`.
 #[derive(Clone, Debug)]
 pub struct Caps {
+    pub audio_uploads: bool,
     pub queue_add: String,
     pub queue_remove: String,
     pub queue_reorder: String,
@@ -96,6 +97,7 @@ pub struct Caps {
 impl Default for Caps {
     fn default() -> Self {
         Caps {
+            audio_uploads: true,
             queue_add: "everyone".into(),
             queue_remove: "host".into(),
             queue_reorder: "host".into(),
@@ -107,7 +109,7 @@ impl Default for Caps {
 }
 
 impl Caps {
-    fn from_json(v: &Value) -> Caps {
+    pub(crate) fn from_json(v: &Value) -> Caps {
         let d = Caps::default();
         let s = |k: &str, dflt: &str| {
             v.get(k)
@@ -116,6 +118,7 @@ impl Caps {
                 .unwrap_or_else(|| dflt.to_string())
         };
         Caps {
+            audio_uploads: v.get("audioUploads").and_then(Value::as_bool).unwrap_or(d.audio_uploads),
             queue_add: s("queueAdd", &d.queue_add),
             queue_remove: s("queueRemove", &d.queue_remove),
             queue_reorder: s("queueReorder", &d.queue_reorder),
@@ -129,9 +132,10 @@ impl Caps {
         }
     }
 
-    fn to_json(&self) -> Value {
+    pub(crate) fn to_json(&self) -> Value {
         json!({
             "queueAdd": self.queue_add,
+            "audioUploads": self.audio_uploads,
             "queueRemove": self.queue_remove,
             "queueReorder": self.queue_reorder,
             "transport": self.transport,
@@ -143,6 +147,7 @@ impl Caps {
     /// Apply a partial `caps.set` payload, keeping unknown/invalid fields.
     fn merged_with(&self, patch: &Value) -> Caps {
         let mut next = self.clone();
+        if let Some(v) = patch.get("audioUploads").and_then(Value::as_bool) { next.audio_uploads = v; }
         if let Some(v) = patch.get("queueAdd").and_then(Value::as_str) {
             next.queue_add = sanitize_cap(v);
         }
@@ -274,7 +279,7 @@ fn cmd_channel(code: &str) -> String {
     format!("sp:cmd:{code}")
 }
 
-async fn load_caps(state: &AppState, code: &str) -> Caps {
+pub(crate) async fn load_caps(state: &AppState, code: &str) -> Caps {
     match state.store.get_json(&caps_key(code)).await {
         Ok(Some(v)) => Caps::from_json(&v),
         _ => Caps::default(),
@@ -764,12 +769,19 @@ async fn handle_client_msg(state: &AppState, ctx: &mut ConnCtx, v: Value) {
 
         "queue.publish" if ctx.role == Role::Host => {
             if let Some(queue) = v.get("queue").cloned() {
+                let Ok(_lease) = state.store.room_lease(&ctx.code).await else { return; };
+                let mut queue = crate::normalize_queue_payload(&ctx.code, queue);
+                if crate::uploads::prune(state, &ctx.code, &mut queue, false).await.is_err() { return; }
                 let _ = crate::write_json(state, &sess_key(&ctx.code, "queue"), &queue).await;
                 let _ = broadcast_queue(state, &ctx.code, &queue).await;
             }
         }
 
         "caps.set" if ctx.role == Role::Host => {
+            let Ok(_lease) = state.store.room_lease(&ctx.code).await else {
+                send_err(ctx, state, "busy", "The room is busy. Try changing this setting again.").await;
+                return;
+            };
             let patch = v.get("caps").cloned().unwrap_or(Value::Null);
             let next = ctx.caps.merged_with(&patch);
             save_caps(state, &ctx.code, &next).await;

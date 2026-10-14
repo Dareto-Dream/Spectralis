@@ -406,6 +406,7 @@ public sealed class SharedPlayRoomSocket : IDisposable
         _ = SendAsync(Envelope("caps.set", ("caps", new
         {
             queueAdd = caps.QueueAdd,
+            audioUploads = caps.AudioUploads,
             queueRemove = caps.QueueRemove,
             queueReorder = caps.QueueReorder,
             transport = caps.Transport,

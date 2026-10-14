@@ -22,18 +22,21 @@ namespace Spectralis.App.ViewModels;
 
 public sealed class SharedPlayRequestedTrackVm : ViewModelBase
 {
-    public SharedPlayRequestedTrackVm(SharedPlayQueueItem item, Action<SharedPlayRequestedTrackVm> onPlay, Action<SharedPlayRequestedTrackVm> onRemove)
+    public SharedPlayRequestedTrackVm(SharedPlayQueueItem item, Action<SharedPlayRequestedTrackVm> onPlay, Action<SharedPlayRequestedTrackVm> onRemove, Action<SharedPlayRequestedTrackVm> onRetry)
     {
         Id = item.Id;
+        Item = item;
         Title = item.Title;
         Artist = item.Artist;
         Url = item.Url;
         AddedBy = item.AddedBy;
         PlayCommand = ReactiveCommand.Create(() => onPlay(this));
         RemoveCommand = ReactiveCommand.Create(() => onRemove(this));
+        RetryCommand = ReactiveCommand.Create(() => onRetry(this));
     }
 
     public string Id { get; }
+    public SharedPlayQueueItem Item { get; }
     public string Title { get; }
     public string? Artist { get; }
     public string? Url { get; }
@@ -41,6 +44,11 @@ public sealed class SharedPlayRequestedTrackVm : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<Unit, Unit> RetryCommand { get; }
+    private bool _canRetry;
+    public bool CanRetry { get => _canRetry; set => this.RaiseAndSetIfChanged(ref _canRetry, value); }
+    private string _receiveStatus = "";
+    public string ReceiveStatus { get => _receiveStatus; set => this.RaiseAndSetIfChanged(ref _receiveStatus, value); }
 }
 
 public sealed class SharedPlayMemberVm : ViewModelBase
@@ -267,6 +275,12 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         set => UpdateCaps(_capabilities with { VoteSkip = value }, s => s.SharedPlayVoteSkipEnabled = value);
     }
 
+    public bool ListenersCanUploadAudio
+    {
+        get => _capabilities.AudioUploads;
+        set => UpdateCaps(_capabilities with { AudioUploads = value }, s => s.SharedPlayListenersCanUploadAudio = value);
+    }
+
     public int SkipVotesRequired
     {
         get => _capabilities.SkipVotesRequired;
@@ -294,6 +308,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     private void RaiseCapProps()
     {
         this.RaisePropertyChanged(nameof(ListenersCanQueue));
+        this.RaisePropertyChanged(nameof(ListenersCanUploadAudio));
         this.RaisePropertyChanged(nameof(ListenersCanReorder));
         this.RaisePropertyChanged(nameof(ListenersCanRemove));
         this.RaisePropertyChanged(nameof(ListenersCanControlPlayback));
@@ -371,7 +386,9 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             settings.SharedPlayListenersCanReorder ? "everyone" : "host",
             settings.SharedPlayListenersCanControlPlayback ? "everyone" : "host",
             settings.SharedPlayVoteSkipEnabled,
-            Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20));
+            Math.Clamp(settings.SharedPlaySkipVotesRequired, 1, 20),
+            settings.SharedPlayListenersCanUploadAudio);
+        _controller.SetCapabilities(_capabilities);
         _controller.SetHostDisplayName(string.IsNullOrWhiteSpace(settings.SharedPlayHostName)
             ? Environment.UserName
             : settings.SharedPlayHostName);
@@ -753,10 +770,10 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         foreach (var item in queue.Items)
         {
             if (existingIds.Contains(item.Id)) continue;
-            RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack));
+            RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack, vm => _ = AcceptRequestedTrackAsync(vm.Item, false)));
 
-            if (!isFirstLoad && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
-                _ = QueueTrackRequested(item.Url);
+            if ((!isFirstLoad || item.SourceKind == "upload") && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
+                _ = AcceptRequestedTrackAsync(item, playNow: false);
         }
 
         foreach (var stale in RequestedTracks.Where(t => !liveIds.Contains(t.Id)).ToList())
@@ -765,8 +782,28 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private void PlayRequestedTrack(SharedPlayRequestedTrackVm item)
     {
-        if (!string.IsNullOrWhiteSpace(item.Url) && PlayTrackRequested is not null)
-            _ = PlayTrackRequested(item.Url);
+        _ = AcceptRequestedTrackAsync(item.Item, playNow: true);
+    }
+
+    private async Task AcceptRequestedTrackAsync(SharedPlayQueueItem item, bool playNow)
+    {
+        var row = RequestedTracks.FirstOrDefault(t => t.Id == item.Id);
+        if (row is not null) { row.CanRetry = false; row.ReceiveStatus = item.SourceKind == "upload" ? "Receiving audio…" : ""; }
+        try
+        {
+            var accept = playNow ? PlayTrackRequested : QueueTrackRequested;
+            if (accept is null || string.IsNullOrWhiteSpace(item.Url)) return;
+            if (item.SourceKind == "upload")
+                await _controller.ReceiveListenerUploadAsync(item, accept, playNow, _pollCts.Token);
+            else await accept(item.Url);
+            if (row is not null) row.ReceiveStatus = item.SourceKind == "upload" ? "Received on this device" : "";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            LastError = $"Could not receive {item.Title}: {ex.Message}";
+            if (row is not null) { row.ReceiveStatus = ex.Message; row.CanRetry = item.SourceKind == "upload"; }
+        }
     }
 
     private void RemoveRequestedTrack(SharedPlayRequestedTrackVm item) => _ = RemoveRequestedTrackAsync(item);
@@ -775,10 +812,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            var current = await _controller.FetchQueueStateAsync(CancellationToken.None);
-            if (current is null) return;
-            var remaining = current.Items.Where(i => i.Id != item.Id).ToArray();
-            await _controller.PublishQueueAsync(current with { Items = remaining, UpdatedAtUtc = DateTimeOffset.UtcNow }, CancellationToken.None);
+            await _controller.RemoveQueueItemAsync(item.Id, CancellationToken.None);
             RequestedTracks.Remove(item);
         }
         catch (Exception ex) { LastError = ex.Message; }
