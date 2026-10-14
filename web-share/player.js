@@ -555,7 +555,8 @@
   // ─── Session normalization ────────────────────────────────────────────────
 
   function normalizeSession(roomCode, payload) {
-    var src = payload || {};
+    // The HTTP API wraps its full manifest in `session`; older hosts send it flat.
+    var src = payload && payload.session || payload || {};
     var track = src.track || {};
     var trackId = stringOrEmpty(src.trackId || src.activeTrackId || track.trackId);
     var stateUrl = firstUrl(src.stateUrl) || v2Url("sessions/" + encodeURIComponent(roomCode) + "/state");
@@ -1028,7 +1029,8 @@
       runtime.activeTrackId = newTrackId;
       if (runtime.session) runtime.session.trackId = newTrackId;
     }
-    var playback = findPlaybackPayload({ playback: playbackPayload }) || playbackPayload;
+    // Both welcome.state and state.playback can contain the backend's state envelope.
+    var playback = findPlaybackPayload(playbackPayload);
     if (!hasPlaybackFields(playback)) {
       runtime.hostStateAvailable = false;
       runtime.lastPlayback = null;

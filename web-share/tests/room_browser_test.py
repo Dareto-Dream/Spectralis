@@ -62,19 +62,25 @@ class Room:
         return {"trackId": self.track_id, "isPlaying": self.playing, "positionSeconds": 6.2, "durationSeconds": 30, "hostClockUtc": "2099-01-01T00:00:00Z"}
 
     def manifest(self):
-        return {"roomCode": "ABC123", "roomName": "Kitchen disco", "trackId": self.track_id,
+        return {"session": {"roomCode": "ABC123", "roomName": "Kitchen disco", "trackId": self.track_id,
                 "track": {"displayName": "Meteor Shower", "artist": "DeltaWave", "album": "Room test", "formatName": "WAV", "durationSeconds": 30, "hasLyrics": True, "lyrics": self.lines},
                 "browserAudioUrl": None if self.package else BASE + "/audio.wav",
                 "packageUrl": BASE + "/track.zip" if self.package else None,
                 "albumArtUrl": None if self.package else BASE + "/cover.png",
-                "playback": self.playback()}
+                "playback": self.playback()}}
+
+    def state_envelope(self):
+        # Match write_playback_state and the welcome snapshot in backend/src/collab.rs.
+        return {"protocolVersion": "shared-play-v2", "roomCode": "ABC123",
+                "trackId": self.track_id, "activeTrackId": self.track_id,
+                "playback": self.playback(), "state": self.playback()}
 
     def http(self, route):
         path = urlparse(route.request.url).path
         if path.endswith("/sessions/ABC123"):
             route.fulfill(json=self.manifest())
         elif path.endswith("/state"):
-            route.fulfill(json={"playback": self.playback()})
+            route.fulfill(json=self.state_envelope())
         elif path.endswith("/queue"):
             route.fulfill(json=self.queue)
         elif path.endswith("/presence"):
@@ -110,7 +116,7 @@ class Room:
             if msg["t"] == "hello":
                 ws.send(json.dumps({"t": "welcome", "v": 2, "you": {"role": self.role}, "caps": self.caps,
                                     "roster": [{"clientId": msg["clientId"], "name": msg["name"], "role": self.role}, {"clientId": "host", "name": "Alex", "role": "host", "isHost": True}],
-                                    "queue": self.queue, "state": self.playback()}))
+                                    "queue": self.queue, "state": self.state_envelope()}))
         ws.on_message(receive)
 
     def send(self, msg):
@@ -118,7 +124,7 @@ class Room:
 
     def switch(self, name, lines, package=False):
         self.track_id, self.lines, self.package = name, lines, package
-        self.send({"t": "state", "playback": self.playback()})
+        self.send({"t": "state", "playback": self.state_envelope()})
         self.page.wait_for_function("document.querySelector('#sharedAudio').readyState >= 1 && document.querySelector('#statusLine').textContent === 'Next track ready.'")
 
 
@@ -224,8 +230,21 @@ with sync_playwright() as p:
         page.screenshot(path=str(screenshots / f"room-{width}.png"), full_page=True)
     # Explicit user activation starts audio; normal lyric interaction never did.
     room.playing = True
-    room.send({"t": "state", "playback": room.playback()})
+    room.send({"t": "state", "playback": room.state_envelope()})
     page.locator("#listenButton").click()
+    page.wait_for_function("!document.querySelector('#sharedAudio').paused")
+    expect(page.locator("#statusLine")).to_have_text("Synced.")
+    before = page.locator("#sharedAudio").evaluate("a => a.currentTime")
+    page.wait_for_function("before => document.querySelector('#sharedAudio').currentTime > before + 0.1", arg=before)
+    # A reconnect must retain playback even when the welcome snapshot is wrapped.
+    room.send({"t": "welcome", "state": room.state_envelope()})
+    expect(page.locator("#statusLine")).to_have_text("Synced.")
+    room.playing = False
+    room.send({"t": "state", "playback": room.state_envelope()})
+    page.wait_for_function("document.querySelector('#sharedAudio').paused")
+    # Older hosts still send a bare playback snapshot.
+    room.playing = True
+    room.send({"t": "state", "playback": room.playback()})
     page.wait_for_function("!document.querySelector('#sharedAudio').paused")
     room.send({"t": "kicked"})
     expect(page.locator("#lyricsTab")).to_be_hidden()
