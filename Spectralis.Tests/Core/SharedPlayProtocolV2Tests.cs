@@ -13,6 +13,8 @@ public sealed class SharedPlayProtocolV2Tests
         private readonly Channel<string> _inbound = Channel.CreateUnbounded<string>();
         public readonly List<string> Sent = [];
         public readonly TaskCompletionSource Connected = new();
+        public readonly TaskCompletionSource FirstSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource SecondSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public WebSocketState State { get; private set; } = WebSocketState.None;
 
@@ -25,7 +27,10 @@ public sealed class SharedPlayProtocolV2Tests
 
         public Task SendTextAsync(string text, CancellationToken ct)
         {
-            lock (Sent) Sent.Add(text);
+            int count;
+            lock (Sent) { Sent.Add(text); count = Sent.Count; }
+            FirstSent.TrySetResult();
+            if (count >= 2) SecondSent.TrySetResult();
             return Task.CompletedTask;
         }
 
@@ -59,7 +64,7 @@ public sealed class SharedPlayProtocolV2Tests
         var (socket, transport, _) = Create();
         socket.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
+        await transport.FirstSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         string hello;
         lock (transport.Sent) hello = transport.Sent[0];
@@ -80,6 +85,8 @@ public sealed class SharedPlayProtocolV2Tests
     public async Task Welcome_records_the_features_the_server_agreed_to()
     {
         var (socket, transport, _) = Create();
+        var welcomed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        socket.Welcomed += (_, _, _) => welcomed.TrySetResult();
         socket.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -87,7 +94,7 @@ public sealed class SharedPlayProtocolV2Tests
         {"v":2,"t":"welcome","proto":2,"features":["roster","commands"],
          "you":{"clientId":"client-1","role":"follower"},"caps":{},"roster":[]}
         """);
-        await Task.Delay(80);
+        await welcomed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(["roster", "commands"], socket.NegotiatedFeatures);
         await socket.StopAsync();
@@ -99,7 +106,8 @@ public sealed class SharedPlayProtocolV2Tests
         var (socket, transport, connects) = Create();
         string? message = null;
         var raised = 0;
-        socket.UpdateRequiredReceived += m => { message = m; raised++; };
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        socket.UpdateRequiredReceived += m => { message = m; raised++; received.TrySetResult(); };
         socket.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -107,6 +115,7 @@ public sealed class SharedPlayProtocolV2Tests
         transport.Inject(frame);
         transport.Inject(frame);
         transport.CloseFromServer();
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         // Longer than the first backoff step (500ms): a reconnecting client would have connected again.
         await Task.Delay(900);
 
@@ -128,7 +137,7 @@ public sealed class SharedPlayProtocolV2Tests
 
         transport.Inject("""{"v":2,"t":"error","code":"room_full","message":"Room is full"}""");
         transport.CloseFromServer();
-        await Task.Delay(900);
+        await transport.SecondSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.False(socket.UpdateRequired);
         Assert.True(connects() >= 2);
