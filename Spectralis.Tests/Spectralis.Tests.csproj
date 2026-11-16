@@ -21,6 +21,8 @@
     <ProjectReference Include="..\Spectralis.Core\Spectralis.Core.csproj" />
     <ProjectReference Include="..\Spectralis.App\Spectralis.App.csproj" />
     <ProjectReference Include="..\Spectralis.Installer\Updater\Spectralis.Updater.csproj" />
+    <ProjectReference Include="ProcessProbe\Spectralis.ProcessProbe.csproj" ReferenceOutputAssembly="false" />
+    <Compile Remove="ProcessProbe\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -49,4 +51,10 @@
     </Content>
   </ItemGroup>
 
+  <Target Name="CopyProcessProbe" AfterTargets="Build">
+    <ItemGroup>
+      <ProcessProbeFile Include="$(MSBuildProjectDirectory)/ProcessProbe/bin/$(Configuration)/net8.0/Spectralis.ProcessProbe.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ProcessProbeFile)" DestinationFolder="$(TargetDir)ProcessProbe" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

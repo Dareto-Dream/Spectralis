@@ -60,6 +60,7 @@ public sealed class SharedPlayRoomSocketTests
         private readonly Channel<string> _inbound = Channel.CreateUnbounded<string>();
         public readonly List<string> Sent = new();
         public readonly TaskCompletionSource Connected = new();
+        public readonly TaskCompletionSource FirstSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public WebSocketState State { get; private set; } = WebSocketState.None;
 
@@ -73,6 +74,7 @@ public sealed class SharedPlayRoomSocketTests
         public Task SendTextAsync(string text, CancellationToken ct)
         {
             lock (Sent) Sent.Add(text);
+            FirstSent.TrySetResult();
             return Task.CompletedTask;
         }
 
@@ -96,7 +98,7 @@ public sealed class SharedPlayRoomSocketTests
             transportFactory: () => transport);
         socket.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
+        await transport.FirstSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
         return (socket, transport);
     }
 
