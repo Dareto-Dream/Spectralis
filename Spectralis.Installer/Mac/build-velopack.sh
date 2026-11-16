@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Velopack packaging for macOS. Runs on a macOS host with the .NET SDK and the
-# vpk tool (restored from .config/dotnet-tools.json). Produces osx-arm64 and
-# osx-x64 channel feeds under releases-velopack/ for VelopackUpdateService
-# (separate channels per arch; no universal binary needed).
+# vpk tool (restored from .config/dotnet-tools.json). Produces the osx-x64 feed.
+# CEF's pinned redistribution is Intel-only; Apple Silicon uses Rosetta.
 #
 #   ./Spectralis.Installer/Mac/build-velopack.sh <version>
 #
@@ -48,13 +47,21 @@ if [[ -n "${SPECTRALIS_NOTARY_PROFILE:-}" ]]; then
   sign_args+=(--notaryProfile "$SPECTRALIS_NOTARY_PROFILE")
 fi
 
-for RID in osx-arm64 osx-x64; do
+bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh"
+cargo build --release --manifest-path "$REPO_ROOT/wgpu-host/Cargo.toml"
+
+for RID in osx-x64; do
   CHANNEL="$RID"
   PUBLISH_DIR="$REPO_ROOT/publish-velopack-$RID"
   rm -rf "$PUBLISH_DIR"
 
-  # The explicit -r overrides the csproj's OSX default of osx-x64, so an
-  # osx-arm64 pass really does come out arm64.
+  dotnet publish "$REPO_ROOT/Spectralis.Installer/Updater/Spectralis.Updater.csproj" \
+    -c Release -r "$RID" --self-contained true \
+    /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true \
+    /p:IncludeNativeLibrariesForSelfExtract=true -o "$REPO_ROOT/output/updater/$RID"
+  "$REPO_ROOT/output/updater/$RID/UpdateSpectralis" --version
+
+  # Keep the application, CEF and the recovery executable on the same architecture.
   dotnet publish "$APP_PROJECT" \
     -c Release \
     -f net8.0 \
@@ -65,16 +72,14 @@ for RID in osx-arm64 osx-x64; do
     /p:SPECTRALIS_DISCORD_CLIENT_ID="$SPECTRALIS_DISCORD_CLIENT_ID" \
     -o "$PUBLISH_DIR"
 
-  # CefGlue's pinned CEF redist ships osx64 only, so an osx-arm64 publish comes
-  # out with no libcef.dylib and a dead in-app browser (same reason build-dmg.sh
-  # is x64-only). Hard-fail if x64 is missing it; only warn for arm64.
+  # Missing CEF would leave the in-app browser unusable even though publishing succeeded.
   if [[ ! -f "$PUBLISH_DIR/libcef.dylib" ]]; then
-    if [[ "$RID" == "osx-x64" ]]; then
-      echo "error: libcef.dylib missing from $RID publish output; the CEF redist did not restore." >&2
-      exit 1
-    fi
-    echo "warning: [$RID] libcef.dylib absent - in-app browser is disabled in this build (CEF has no arm64 redist)." >&2
+    echo "error: libcef.dylib missing from $RID publish output; the CEF redist did not restore." >&2
+    exit 1
   fi
+  test -f "$PUBLISH_DIR/Updater/UpdateSpectralis" || { echo "Recovery updater missing" >&2; exit 1; }
+  test -f "$PUBLISH_DIR/libwgpu_host.dylib" || { echo "Native visualizer missing" >&2; exit 1; }
+  chmod +x "$PUBLISH_DIR/Updater/UpdateSpectralis"
 
   rm -f "$RELEASE_DIR/Spectralis-$VERSION-$CHANNEL-full.nupkg" \
         "$RELEASE_DIR/releases.$CHANNEL.json"

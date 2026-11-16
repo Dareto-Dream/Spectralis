@@ -6,6 +6,34 @@ namespace Spectralis.Tests.App;
 public sealed class RecoveryUpdaterTests
 {
     [Fact]
+    public void MacRecoveryLauncherLivesOutsideTheManagedAppAndQuotesItsPaths()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        var root = Path.Combine(Path.GetTempPath(), "spectralis-mac-launcher-" + Guid.NewGuid().ToString("N"));
+        var persistent = Path.Combine(root, "user's updater");
+        var applications = Path.Combine(root, "Applications");
+        Directory.CreateDirectory(persistent);
+        try
+        {
+            var target = Path.Combine(persistent, "UpdateSpectralis");
+            RecoveryUpdater.CreateMacLauncher(target, persistent, applications);
+            var contents = Path.Combine(applications, "Update Spectralis.app", "Contents");
+            var launcher = Path.Combine(contents, "MacOS", "launcher");
+            var command = Path.Combine(persistent, "Update Spectralis.command");
+            Assert.Contains("com.deltavdevs.spectralis.updater", File.ReadAllText(Path.Combine(contents, "Info.plist")));
+            Assert.True(File.GetUnixFileMode(launcher).HasFlag(UnixFileMode.UserExecute));
+            foreach (var script in new[] { launcher, command })
+            {
+                using var syntax = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/bin/sh")
+                    { UseShellExecute = false, ArgumentList = { "-n", script } })!;
+                syntax.WaitForExit();
+                Assert.Equal(0, syntax.ExitCode);
+            }
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task DecliningTheWarningDoesNotPrepareDownloadOrChangePreferences()
     {
         var settings = new AppSettings();

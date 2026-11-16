@@ -286,6 +286,12 @@ export function releaseEntry({ version, date, files = [], repoUrl = REPO_URL }) 
       portable: '',
     };
   }
+  if (has('releases.osx-x64.json')) {
+    platforms['osx-x64'] = {
+      installer: has('Spectralis-osx-x64-Setup.pkg') ? `${base}/Spectralis-osx-x64-Setup.pkg` : '',
+      portable: has('Spectralis-osx-x64-Portable.zip') ? `${base}/Spectralis-osx-x64-Portable.zip` : '',
+    };
+  }
   return {
     version,
     channel: v.pre ? 'beta' : 'stable',

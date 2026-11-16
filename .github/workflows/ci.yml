@@ -85,6 +85,47 @@ jobs:
           path: '**/tests.trx'
           retention-days: 7
 
+  macos:
+    name: macOS tests
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-macos-x64-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-macos-x64-
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            wgpu-host/target
+          key: cargo-macos-x64-${{ hashFiles('wgpu-host/Cargo.lock') }}
+          restore-keys: cargo-macos-x64-
+      - name: Fetch native media helpers
+        run: bash Spectralis.Installer/Mac/fetch-helpers.sh
+      - name: Build native visualizer before project evaluation
+        run: cargo build --release --manifest-path wgpu-host/Cargo.toml
+      - name: Test
+        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance" --logger "trx;LogFileName=macos-tests.trx"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: macos-test-results
+          path: '**/macos-tests.trx'
+          retention-days: 7
+
   site:
     name: Website
     needs: changes

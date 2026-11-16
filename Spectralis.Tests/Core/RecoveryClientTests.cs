@@ -11,6 +11,19 @@ public sealed class RecoveryClientTests
     private const string Installer = "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.2/Spectralis-win-x64-Setup.exe";
 
     [Fact]
+    public void MacRecoverySelectsItsStablePkgInstaller()
+    {
+        const string url = "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.3/Spectralis-osx-x64-Setup.pkg";
+        var json = """
+            [{"version":"7.1.3","channel":"stable","platforms":{"osx-x64":{"installer":"$URL"}}}]
+            """.Replace("$URL", url);
+        Assert.Equal(url, RecoveryClient.SelectLatest(json, "osx-x64").Installer.AbsoluteUri);
+        Assert.True(RecoveryClient.IsTrustedInstaller(new Uri(url), "osx-x64"));
+        Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(url.Replace(".pkg", ".zip")), "osx-x64"));
+        Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(url), "win-x64"));
+    }
+
+    [Fact]
     public void RecoveryAlwaysChoosesTheNewestStableBuildWithAValidInstaller()
     {
         var json = """

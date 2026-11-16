@@ -7,8 +7,9 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        if (args is ["--version"]) { Console.WriteLine("Update Spectralis 1.0"); return 0; }
         var checkOnly = args is ["--check"];
-        if (args.Length > 0 && !checkOnly) { Console.Error.WriteLine("Usage: UpdateSpectralis [--check]"); return 1; }
+        if (args.Length > 0 && !checkOnly) { Console.Error.WriteLine("Usage: UpdateSpectralis [--check|--version]"); return 1; }
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(15));
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
         string? temporaryDirectory = null;
@@ -16,7 +17,8 @@ internal static class Program
         try
         {
             Console.WriteLine("Update Spectralis\n");
-            var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" : throw new PlatformNotSupportedException();
+            var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" :
+                OperatingSystem.IsMacOS() ? "osx-x64" : throw new PlatformNotSupportedException();
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(12) };
             var client = new RecoveryClient(http);
             var release = await client.FindLatestAsync(rid, cancellation.Token);
@@ -46,7 +48,8 @@ internal static class Program
             }
             temporaryDirectory = Path.Combine(Path.GetTempPath(), "spectralis-updater-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temporaryDirectory);
-            var download = Path.Combine(temporaryDirectory, rid == "win-x64" ? "Spectralis-Setup.exe" : "Spectralis.AppImage");
+            var download = Path.Combine(temporaryDirectory, rid == "win-x64" ? "Spectralis-Setup.exe" :
+                rid == "osx-x64" ? "Spectralis-Setup.pkg" : "Spectralis.AppImage");
             var lastProgress = Stopwatch.StartNew();
             var progress = new Progress<long>(bytes =>
             {
@@ -60,6 +63,14 @@ internal static class Program
             if (OperatingSystem.IsWindows())
             {
                 var installer = Process.Start(new ProcessStartInfo(download) { UseShellExecute = true })
+                    ?? throw new InvalidOperationException("The installer could not start.");
+                await installer.WaitForExitAsync();
+                if (installer.ExitCode != 0) throw new InvalidOperationException("The installer did not finish. You can run this updater again.");
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                using var installer = Process.Start(new ProcessStartInfo("/usr/bin/open")
+                    { UseShellExecute = false, ArgumentList = { "-W", download } })
                     ?? throw new InvalidOperationException("The installer could not start.");
                 await installer.WaitForExitAsync();
                 if (installer.ExitCode != 0) throw new InvalidOperationException("The installer did not finish. You can run this updater again.");
