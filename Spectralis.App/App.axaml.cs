@@ -124,6 +124,9 @@ public partial class App : Application
             desktop.ShutdownRequested += (_, _) => _externalOpenCts.Cancel();
             _ = RunStorageCleanupAsync(_externalOpenCts.Token);
 
+            // Beta features read as off until this runs; see BetaFeatures.
+            BetaFeatures.Apply(AppSettingsStore.Load());
+
             // Background auto-update check — non-blocking, 8-second delay to let app settle.
             _ = RunStartupUpdateCheckAsync(viewModel, mainWindow);
 
@@ -183,6 +186,10 @@ public partial class App : Application
         viewModel.Settings.ApplyUpdateFeedResult(feedResult);
 
         if (!checkResult.UpdateAvailable) return;
+        // The user installed this exact version on purpose (Install another version). Leave them
+        // on it; "Check for updates" in Settings is how they move on when they want to.
+        if (!string.IsNullOrWhiteSpace(settings.HeldVersion) &&
+            Spectralis.Core.Platform.ReleaseVersion.Compare(settings.HeldVersion, svc.CurrentVersion) == 0) return;
         if (!string.IsNullOrWhiteSpace(viewModel.Settings.IgnoredUpdateVersion) &&
             string.Equals(viewModel.Settings.IgnoredUpdateVersion, checkResult.LatestVersion, StringComparison.OrdinalIgnoreCase)) return;
 

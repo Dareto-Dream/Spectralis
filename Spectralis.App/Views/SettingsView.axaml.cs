@@ -109,6 +109,20 @@ public partial class SettingsView : UserControl
         }
     }
 
+    private async void OnInstallAnotherVersion(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel vm) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var chosen = await VersionPickerWindow.ShowAsync(owner, vm.IsBetaChannel);
+        if (chosen is null) return;
+
+        // Recorded before the install restarts the app, so the next launch knows this version
+        // was picked on purpose and doesn't immediately offer to update away from it.
+        vm.HoldVersion(chosen.Version);
+        await UpdateProgressWindow.RunAsync(owner, chosen);
+    }
+
     private async void OnCleanupTemp(object? sender, RoutedEventArgs e)
     {
         if (sender is Button button) button.IsEnabled = false;

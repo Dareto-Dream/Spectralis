@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Spectralis.App.Views.VersionPickerWindow"
+        Title="Install another version"
+        Icon="/Assets/icon.png"
+        WindowStartupLocation="CenterOwner"
+        Width="520" Height="520"
+        MinWidth="420" MinHeight="380"
+        Background="{StaticResource Brush.Bg.Base}">
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="24" RowSpacing="12">
+    <StackPanel Grid.Row="0" Spacing="6">
+      <TextBlock Classes="heading" Text="Install another version" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Pick a release to switch to. Spectralis downloads it, restarts into it, and then stays on it until you choose Check for updates. Your library, playlists and settings are kept." />
+    </StackPanel>
+
+    <ListBox Grid.Row="1" x:Name="VersionList" SelectionMode="Single" SelectionChanged="OnSelectionChanged" />
+
+    <TextBlock Grid.Row="2" x:Name="StatusLabel" Classes="secondary" TextWrapping="Wrap" Text="Loading releases…" />
+
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
+      <Button Grid.Column="0" x:Name="NotesButton" Classes="ghost" Content="Release notes" Click="OnOpenNotes" IsEnabled="False" />
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+        <Button Classes="ghost" Content="Cancel" Click="OnCancel" />
+        <Button x:Name="InstallButton" Classes="primary" Content="Install" Click="OnInstall" IsEnabled="False" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

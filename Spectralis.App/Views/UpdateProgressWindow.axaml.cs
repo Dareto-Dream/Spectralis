@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Spectralis.App.Services;
+using Spectralis.Core.Platform;
 
 namespace Spectralis.App.Views;
 
@@ -23,7 +24,17 @@ public partial class UpdateProgressWindow : Window
         await win.WaitForCloseAsync();
     }
 
-    private async Task DownloadAsync(string version)
+    /// <summary>Installs one specific release (the version picker), newer or older than this one.</summary>
+    public static async Task RunAsync(Window owner, ReleaseInfo release)
+    {
+        var win = new UpdateProgressWindow();
+        win.Heading.Text = $"Installing Spectralis {release.Label}…";
+        win.Show(owner);
+        _ = win.DownloadAsync(release.Version, release);
+        await win.WaitForCloseAsync();
+    }
+
+    private async Task DownloadAsync(string version, ReleaseInfo? release = null)
     {
         var svc = new VelopackUpdateService();
         var progress = new Progress<double>(p =>
@@ -38,8 +49,11 @@ public partial class UpdateProgressWindow : Window
 
         try
         {
-            await svc.DownloadAndApplyAsync(progress, _cts.Token);
-            // DownloadAndApplyAsync calls ApplyUpdatesAndRestart — app will exit.
+            if (release is null)
+                await svc.DownloadAndApplyAsync(progress, _cts.Token);
+            else
+                await svc.InstallVersionAsync(release, progress, _cts.Token);
+            // Both end in ApplyUpdatesAndRestart — app will exit.
             _applyPending = true;
         }
         catch (OperationCanceledException)

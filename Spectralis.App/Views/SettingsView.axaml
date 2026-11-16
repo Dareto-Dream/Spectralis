@@ -315,17 +315,45 @@
           <CheckBox Grid.Row="1" Grid.Column="1"
                     IsChecked="{Binding EnableAutoUpdates}"
                     HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Update channel" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4" HorizontalAlignment="Left">
+            <ComboBox ItemsSource="{Binding UpdateChannelOptions}"
+                      SelectedItem="{Binding SelectedUpdateChannel}"
+                      MinWidth="180" HorizontalAlignment="Left" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380"
+                       FontSize="{StaticResource FontSize.UI.Small}"
+                       Text="{Binding UpdateChannelHint}" />
+          </StackPanel>
         </Grid>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Status" VerticalAlignment="Center" />
         <StackPanel Spacing="8">
-          <Button Content="Check for updates"
-                  Click="OnCheckForUpdates"
-                  Classes="primary"
-                  HorizontalAlignment="Left" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Check for updates"
+                    Click="OnCheckForUpdates"
+                    Classes="primary" />
+            <Button Content="Install another version..."
+                    Click="OnInstallAnotherVersion"
+                    ToolTip.Tip="Go back to an older release, or pick a specific one." />
+          </StackPanel>
           <TextBlock Classes="data"
                      Text="{Binding UpdateStatus}"
                      TextWrapping="Wrap" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Beta features: opt-in previews, only offered on the beta channel or in a beta build. -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+        <StackPanel Spacing="8" IsVisible="{Binding BetaFeaturesAvailable}">
+          <TextBlock Classes="heading" Text="Beta features" />
+          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="560"
+                     Text="Unfinished features you can try early. Each one is off until you turn it on, and may change or go away." />
+          <CheckBox IsChecked="{Binding SpotifyMatchupEnabled}"
+                    Content="Spotify matchup" />
+          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="560"
+                     FontSize="{StaticResource FontSize.UI.Small}"
+                     Text="Plays Spotify tracks without the Spotify player: Spectralis finds the same recording on YouTube, keeps a copy on this computer, and plays that. Works without Premium, with the visualizer, effects and EQ. Lyrics still come from Spotify. A track it can't match confidently falls back to the normal Spotify player." />
         </StackPanel>
       </StackPanel>
 
