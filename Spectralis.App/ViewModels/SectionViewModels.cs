@@ -2804,8 +2804,8 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool BetaFeaturesAvailable => BetaFeatures.Available(_settings);
 
     public string UpdateChannelHint => IsBetaChannel
-        ? "You get preview builds as they are made, and every stable release too. Betas can break. Switch back to Stable any time; you stay on your current build until a newer stable release arrives, or pick one under Install another version."
-        : "You get finished releases only.";
+        ? "Preview builds and stable releases. May be unstable."
+        : "Stable releases only.";
 
     public bool SpotifyMatchupEnabled
     {

@@ -335,7 +335,7 @@
                     Classes="primary" />
             <Button Content="Install another version..."
                     Click="OnInstallAnotherVersion"
-                    ToolTip.Tip="Go back to an older release, or pick a specific one." />
+                    ToolTip.Tip="Choose a release to install." />
           </StackPanel>
           <TextBlock Classes="data"
                      Text="{Binding UpdateStatus}"
@@ -347,13 +347,13 @@
       <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
         <StackPanel Spacing="8" IsVisible="{Binding BetaFeaturesAvailable}">
           <TextBlock Classes="heading" Text="Beta features" />
-          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="560"
-                     Text="Unfinished features you can try early. Each one is off until you turn it on, and may change or go away." />
+          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left"
+                     Text="Experimental features. Off by default." />
           <CheckBox IsChecked="{Binding SpotifyMatchupEnabled}"
                     Content="Spotify matchup" />
-          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="560"
+          <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left"
                      FontSize="{StaticResource FontSize.UI.Small}"
-                     Text="Plays Spotify tracks without the Spotify player: Spectralis finds the same recording on YouTube, keeps a copy on this computer, and plays that. Works without Premium, with the visualizer, effects and EQ. Lyrics still come from Spotify. A track it can't match confidently falls back to the normal Spotify player." />
+                     Text="Play Spotify tracks via YouTube, without Premium." />
         </StackPanel>
       </StackPanel>
 
