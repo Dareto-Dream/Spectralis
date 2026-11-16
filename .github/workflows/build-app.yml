@@ -156,6 +156,11 @@ jobs:
           pkgutil --expand-full dist/Spectralis-osx-x64-Setup.pkg output/macos-package-check
           find output/macos-package-check -path '*/Updater/UpdateSpectralis' -print -quit | grep -q .
           find output/macos-package-check -name libcef.dylib -print -quit | grep -q .
+          python3 Spectralis.Installer/verify-unix-metadata.py macos output/macos-package-check \
+            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns
+          unzip -q dist/Spectralis-osx-x64-Portable.zip -d output/macos-portable-check
+          python3 Spectralis.Installer/verify-unix-metadata.py macos output/macos-portable-check \
+            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns
           echo "::notice::macOS packages are unsigned unless signing identities are supplied to the packaging script."
       - uses: actions/upload-artifact@v4
         with:
@@ -220,6 +225,16 @@ jobs:
             [ -f "dist/$required" ] || { echo "::error::Build did not produce $required"; exit 1; }
           done
           ls -la dist
+
+      - name: Check Linux app identity and icon
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p output/linux-package-check
+          chmod +x dist/Spectralis-linux-x64.AppImage
+          (cd output/linux-package-check && ../../dist/Spectralis-linux-x64.AppImage --appimage-extract > /dev/null)
+          python3 Spectralis.Installer/verify-unix-metadata.py linux output/linux-package-check/squashfs-root \
+            --version "$VERSION" --expected-icon Assets/icon.png
 
       - uses: actions/upload-artifact@v4
         with:

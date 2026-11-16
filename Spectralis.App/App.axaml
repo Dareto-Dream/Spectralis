@@ -2,7 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:app="using:Spectralis.App"
              x:Class="Spectralis.App.App"
+             Name="Spectralis"
              RequestedThemeVariant="Dark">
+
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="About Spectralis" Click="OnNativeAbout" />
+    </NativeMenu>
+  </NativeMenu.Menu>
 
   <Application.DataTemplates>
     <app:ViewLocator />

@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Platform;
 using Avalonia.Threading;
 
 namespace Spectralis.App.Views;
@@ -21,6 +22,8 @@ public sealed class PageWindow : Window
 
     public PageWindow(string title)
     {
+        using (var icon = AssetLoader.Open(new Uri("avares://Spectralis.App/Assets/icon.png")))
+            Icon = new WindowIcon(icon);
         Title = title + " — Spectralis"; Width = 1200; Height = 800; MinWidth = 640; MinHeight = 420;
         Background = Avalonia.Media.Brushes.Black;
         var dock = new Button { Content = "Return to app" }; dock.Click += (_, _) => Close();

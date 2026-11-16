@@ -18,6 +18,12 @@ public partial class App : Application
     private static bool s_exceptionLoggingInstalled;
     private readonly CancellationTokenSource _externalOpenCts = new();
 
+    private async void OnNativeAbout(object? sender, EventArgs e)
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { } owner })
+            await new AboutWindow().ShowDialog(owner);
+    }
+
     public override void Initialize()
     {
         InstallExceptionLogging();

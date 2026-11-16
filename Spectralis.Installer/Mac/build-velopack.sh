@@ -49,6 +49,7 @@ fi
 
 bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh"
 cargo build --release --manifest-path "$REPO_ROOT/wgpu-host/Cargo.toml"
+bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$REPO_ROOT/output/app-metadata/macos"
 
 for RID in osx-x64; do
   CHANNEL="$RID"
@@ -91,7 +92,8 @@ for RID in osx-x64; do
     --mainExe "Spectralis.App" \
     --packTitle "Spectralis" \
     --packAuthors "DeltaV Devs" \
-    --bundleId "com.deltavdevs.spectralis" \
+    --icon "$REPO_ROOT/output/app-metadata/macos/Spectralis.icns" \
+    --plist "$REPO_ROOT/output/app-metadata/macos/Info.plist" \
     --channel "$CHANNEL" \
     ${sign_args[@]+"${sign_args[@]}"} \
     -o "$RELEASE_DIR"
