@@ -13,8 +13,11 @@ PUBLISH_DIR="$REPO_ROOT/publish-velopack-linux"
 RELEASE_DIR="$REPO_ROOT/releases-velopack"
 CHANNEL="linux-x64"
 
+# Use the portable runtime pack so recovery does not depend on the build host's newer libc.
 dotnet publish "$REPO_ROOT/Spectralis.Installer/Updater/Spectralis.Updater.csproj" \
-  -c Release -r linux-x64 /p:PublishAot=true -o "$REPO_ROOT/output/updater/linux-x64"
+  -c Release -r linux-x64 --self-contained true \
+  /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true \
+  /p:IncludeNativeLibrariesForSelfExtract=true -o "$REPO_ROOT/output/updater/linux-x64"
 
 for required in SPECTRALIS_SPOTIFY_CLIENT_ID SPECTRALIS_DISCORD_CLIENT_ID; do
   if [[ -z "${!required:-}" ]]; then

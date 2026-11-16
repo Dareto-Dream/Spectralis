@@ -135,8 +135,6 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang zlib1g-dev
           chmod +x Spectralis.Installer/Linux/build-velopack.sh yt-dlp ffmpeg
           ./Spectralis.Installer/Linux/build-velopack.sh "$VERSION"
 
