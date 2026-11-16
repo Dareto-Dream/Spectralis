@@ -12,7 +12,7 @@
     <StackPanel Grid.Row="0" Spacing="6">
       <TextBlock Classes="heading" Text="Install another version" />
       <TextBlock Classes="secondary" TextWrapping="Wrap"
-                 Text="Pick a release to switch to. Spectralis downloads it, restarts into it, and then stays on it until you choose Check for updates. Your library, playlists and settings are kept." />
+                 Text="Choose a release to install. Spectralis will restart." />
     </StackPanel>
 
     <ListBox Grid.Row="1" x:Name="VersionList" SelectionMode="Single" SelectionChanged="OnSelectionChanged" />

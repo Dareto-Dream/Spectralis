@@ -9,6 +9,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Core", "Spectral
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Tests", "Spectralis.Tests\Spectralis.Tests.csproj", "{E977179B-1477-4A48-A076-902093F7A56A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Spectralis.Installer", "Spectralis.Installer", "{335CDA8D-138F-9BC6-17FF-B80E2B49DFF8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Updater", "Updater", "{559B944F-2F14-5F8F-FBB3-FA4D6D98AE74}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectralis.Updater", "Spectralis.Installer\Updater\Spectralis.Updater.csproj", "{D1F31226-8149-4BA9-9147-1EBFE01CA90E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,11 +61,25 @@ Global
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x64.Build.0 = Release|Any CPU
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x86.ActiveCfg = Release|Any CPU
 		{E977179B-1477-4A48-A076-902093F7A56A}.Release|x86.Build.0 = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|x64.Build.0 = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Debug|x86.Build.0 = Debug|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|x64.ActiveCfg = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|x64.Build.0 = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|x86.ActiveCfg = Release|Any CPU
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{559B944F-2F14-5F8F-FBB3-FA4D6D98AE74} = {335CDA8D-138F-9BC6-17FF-B80E2B49DFF8}
+		{D1F31226-8149-4BA9-9147-1EBFE01CA90E} = {559B944F-2F14-5F8F-FBB3-FA4D6D98AE74}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {E88B8677-56DF-4226-8F10-92B8005BA546}

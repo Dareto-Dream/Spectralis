@@ -127,6 +127,10 @@ public partial class App : Application
             // Beta features read as off until this runs; see BetaFeatures.
             BetaFeatures.Apply(AppSettingsStore.Load());
 
+            // Keep recovery outside the versioned install before any automatic or chosen update.
+            try { RecoveryUpdater.EnsureInstalled(); }
+            catch (Exception ex) { SpectralisLog.Warn("Recovery updater setup skipped: " + ex.Message); }
+
             // Background auto-update check — non-blocking, 8-second delay to let app settle.
             _ = RunStartupUpdateCheckAsync(viewModel, mainWindow);
 

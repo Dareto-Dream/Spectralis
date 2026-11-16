@@ -29,8 +29,16 @@ foreach ($required in @("SPECTRALIS_SPOTIFY_CLIENT_ID", "SPECTRALIS_DISCORD_CLIE
 Remove-Item $publishDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
+$updaterProject = Join-Path $repoRoot "Spectralis.Installer\Updater\Spectralis.Updater.csproj"
+$updaterDir = Join-Path $repoRoot "output\updater\win-x64"
+dotnet publish $updaterProject -c Release -r win-x64 /p:PublishAot=true -o $updaterDir
+Assert-LastExitCode "recovery updater publish"
+
 dotnet publish $appProject -c Release -f net8.0-windows10.0.19041.0 -r win-x64 --self-contained true -o $publishDir "/p:Version=$Version"
 Assert-LastExitCode "dotnet publish"
+if (-not (Test-Path (Join-Path $publishDir "Updater\UpdateSpectralis.exe"))) {
+    throw "Publish output is missing the recovery updater."
+}
 
 $publishedExePath = Join-Path $publishDir "Spectralis.App.exe"
 if (-not (Test-Path $publishedExePath)) { throw "Publish output missing: $publishedExePath" }

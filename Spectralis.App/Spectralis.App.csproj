@@ -76,6 +76,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis.exe"
+             Link="Updater\UpdateSpectralis.exe" CopyToOutputDirectory="PreserveNewest"
+             Condition="'$(SpectralisHelperOs)' == 'win' And Exists('..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis.exe')" />
+    <Content Include="..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis"
+             Link="Updater\UpdateSpectralis" CopyToOutputDirectory="PreserveNewest"
+             Condition="'$(SpectralisHelperOs)' == 'linux' And Exists('..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis')" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Shared runtime assets from the repo root: SoundFont for MIDI/KAR
          playback, helper executables for stream resolution. -->
     <AvaloniaResource Include="..\Assets\icon.png" Link="Assets\icon.png" />

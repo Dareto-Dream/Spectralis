@@ -117,7 +117,31 @@ public partial class SettingsView : UserControl
         var chosen = await VersionPickerWindow.ShowAsync(owner, vm.IsBetaChannel);
         if (chosen is null) return;
 
-        await UpdateProgressWindow.RunAsync(owner, chosen, () => vm.HoldVersion(chosen.Version));
+        try
+        {
+            await VersionInstallFlow.RunAsync(chosen.Version, DiagnosticsSnapshot.CurrentVersion,
+                () => VersionPickerWindow.ConfirmDowngradeAsync(owner, chosen.Version),
+                () => RecoveryUpdater.EnsureInstalled(),
+                ready => UpdateProgressWindow.RunAsync(owner, chosen, ready),
+                () => vm.HoldVersion(chosen.Version));
+        }
+        catch (Exception ex)
+        {
+            SpectralisLog.Warn("Could not prepare recovery updater: " + ex.Message);
+            await MessageWindow.ShowAsync(owner, "Downgrade canceled",
+                "The recovery updater could not be prepared. Make sure Spectralis can write to your user folder and try again.");
+        }
+    }
+
+    private async void OnShowRecoveryUpdater(object? sender, RoutedEventArgs e)
+    {
+        try { RecoveryUpdater.ShowFolder(); }
+        catch (Exception ex) when (TopLevel.GetTopLevel(this) is Window)
+        {
+            SpectralisLog.Warn("Could not open recovery updater: " + ex.Message);
+            await MessageWindow.ShowAsync((Window)TopLevel.GetTopLevel(this)!, "Updater unavailable",
+                "The recovery updater could not be opened. Reinstall the latest Spectralis release and try again.");
+        }
     }
 
     private async void OnCleanupTemp(object? sender, RoutedEventArgs e)
