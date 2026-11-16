@@ -20,6 +20,17 @@ public enum P2wBannerStyle
 
 public sealed class AppSettings
 {
+    public void HoldVersion(string version, string currentVersion)
+    {
+        HeldVersion = version;
+        if (Spectralis.Core.Platform.ReleaseVersion.Compare(version, currentVersion) < 0)
+        {
+            // Older builds don't know HeldVersion, but they do understand these two settings.
+            EnableAutoUpdates = false;
+            IgnoredUpdateVersion = currentVersion;
+        }
+    }
+
     public AppThemeMode ThemeMode { get; set; } = AppThemeMode.Dark;
     public AppThemeAccent ThemeAccent { get; set; } = AppThemeAccent.Amber;
     public bool UseEmbeddedTrackThemes { get; set; } = true;

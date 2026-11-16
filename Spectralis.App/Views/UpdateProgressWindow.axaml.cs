@@ -25,16 +25,16 @@ public partial class UpdateProgressWindow : Window
     }
 
     /// <summary>Installs one specific release (the version picker), newer or older than this one.</summary>
-    public static async Task RunAsync(Window owner, ReleaseInfo release)
+    public static async Task RunAsync(Window owner, ReleaseInfo release, Action? beforeRestart = null)
     {
         var win = new UpdateProgressWindow();
         win.Heading.Text = $"Installing Spectralis {release.Label}…";
         win.Show(owner);
-        _ = win.DownloadAsync(release.Version, release);
+        _ = win.DownloadAsync(release.Version, release, beforeRestart);
         await win.WaitForCloseAsync();
     }
 
-    private async Task DownloadAsync(string version, ReleaseInfo? release = null)
+    private async Task DownloadAsync(string version, ReleaseInfo? release = null, Action? beforeRestart = null)
     {
         var svc = new VelopackUpdateService();
         var progress = new Progress<double>(p =>
@@ -52,7 +52,7 @@ public partial class UpdateProgressWindow : Window
             if (release is null)
                 await svc.DownloadAndApplyAsync(progress, _cts.Token);
             else
-                await svc.InstallVersionAsync(release, progress, _cts.Token);
+                await svc.InstallVersionAsync(release, progress, _cts.Token, beforeRestart);
             // Both end in ApplyUpdatesAndRestart — app will exit.
             _applyPending = true;
         }

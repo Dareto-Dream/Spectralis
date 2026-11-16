@@ -210,7 +210,8 @@ public sealed class VelopackUpdateService : IUpdateService
     /// Installs one specific release from the index, whether it is newer or older than what is
     /// running, and restarts into it. Velopack only steps down a version when told it may.
     /// </summary>
-    public async Task InstallVersionAsync(ReleaseInfo release, IProgress<double>? progress, CancellationToken ct)
+    public async Task InstallVersionAsync(ReleaseInfo release, IProgress<double>? progress, CancellationToken ct,
+        Action? beforeRestart = null)
     {
         if (!ReleaseIndex.IsTrustedFeedBase(release.FeedBase))
         {
@@ -242,16 +243,20 @@ public sealed class VelopackUpdateService : IUpdateService
             throw new InvalidOperationException($"Asked for {release.Version} but the download offers {offered}.");
         }
 
-        await DownloadAndRestartAsync(new UpdatePlan(manager, update, release.FeedBase), progress, ct);
+        await DownloadAndRestartAsync(new UpdatePlan(manager, update, release.FeedBase), progress, ct, beforeRestart);
     }
 
-    private static async Task DownloadAndRestartAsync(UpdatePlan plan, IProgress<double>? progress, CancellationToken ct)
+    private static async Task DownloadAndRestartAsync(UpdatePlan plan, IProgress<double>? progress, CancellationToken ct,
+        Action? beforeRestart = null)
     {
         var target = plan.Update.TargetFullRelease;
         LogUpdate($"Downloading update: {target.Version}");
         await Spectralis.Core.Diagnostics.NetworkLog.TrackAsync(
             "updater", "DOWNLOAD", $"{plan.Source}/{target.FileName}",
             () => plan.Manager.DownloadUpdatesAsync(plan.Update, progress == null ? null : p => progress.Report(p / 100.0), false, ct));
+        ct.ThrowIfCancellationRequested();
+        // Save a chosen version only once its download succeeded; cancel/failure keeps preferences.
+        beforeRestart?.Invoke();
         LogUpdate("Download complete. Applying and restarting.");
         plan.Manager.ApplyUpdatesAndRestart(plan.Update);
     }
