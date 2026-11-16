@@ -56,6 +56,45 @@ public sealed class OpenUrlService
     public static string UntitledLogPath => AppLogPaths.For("untitled.log");
     public static string YouTubeLogPath => AppLogPaths.For("youtube.log");
 
+    /// <summary>Recognizes supported clipboard sources without requests, redirects or helper processes.</summary>
+    public static bool TryCreateClipboardPreview(string input, out RemoteAudioResolveResult preview)
+    {
+        preview = null!;
+        if (SpotifyPlaybackLink.TryParse(input, out var spotify))
+        {
+            preview = BuildSpotifyResult(spotify) with { MetadataOnly = true };
+            return true;
+        }
+        Uri uri;
+        try { uri = NormalizeInput(input); }
+        catch { return false; }
+        var kind = DetectTarget(uri);
+        if (kind is RemoteAudioServiceKind.Generic or RemoteAudioServiceKind.Spotify) return false;
+        if (kind == RemoteAudioServiceKind.YouTube &&
+            !YouTubeVideoIdPattern.IsMatch(ExtractYouTubeVideoId(uri) ?? "")) return false;
+        preview = new RemoteAudioResolveResult(kind, ServiceLabel(kind), uri.AbsoluteUri,
+            "", "", ServiceLabel(kind), null, null, null, null, TimeSpan.Zero, uri.AbsoluteUri,
+            MetadataOnly: true);
+        return true;
+    }
+
+    internal static string ClipboardLinkIdentity(RemoteAudioResolveResult preview)
+    {
+        var uri = new Uri(preview.SourceUrl);
+        if (preview.Kind == RemoteAudioServiceKind.YouTube)
+            return "youtube:" + ExtractYouTubeVideoId(uri);
+        if (SpotifyPlaybackLink.TryParse(preview.SourceUrl, out var spotify)) return spotify.PlaybackUri;
+        var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Where(part =>
+        {
+            var key = Uri.UnescapeDataString(part.Split('=')[0]);
+            return !key.StartsWith("utm_", StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("fbclid", StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("gclid", StringComparison.OrdinalIgnoreCase) &&
+                !(preview.Kind != RemoteAudioServiceKind.DirectAudio && key.Equals("si", StringComparison.OrdinalIgnoreCase));
+        });
+        return new UriBuilder(uri) { Fragment = "", Query = string.Join('&', query) }.Uri.AbsoluteUri;
+    }
+
     public async Task<RemoteAudioResolveResult> ResolveAsync(string input, CancellationToken cancellationToken, bool quickOnly = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -303,29 +342,27 @@ public sealed class OpenUrlService
             return RemoteAudioServiceKind.Untitled;
         }
 
-        if (host.Contains("soundcloud.com", StringComparison.Ordinal))
+        if (IsSourceHost(host, "soundcloud.com"))
         {
             return RemoteAudioServiceKind.SoundCloud;
         }
 
-        if (host.Contains("youtube.com", StringComparison.Ordinal) ||
-            host.Contains("youtu.be", StringComparison.Ordinal))
+        if (IsSourceHost(host, "youtube.com") || IsSourceHost(host, "youtu.be"))
         {
             return RemoteAudioServiceKind.YouTube;
         }
 
-        if (host.Contains("bandlab.com", StringComparison.Ordinal))
+        if (IsSourceHost(host, "bandlab.com"))
         {
             return RemoteAudioServiceKind.BandLab;
         }
 
-        if (host.Contains("suno.com", StringComparison.Ordinal) ||
-            host.Contains("suno.ai", StringComparison.Ordinal))
+        if (IsSourceHost(host, "suno.com") || IsSourceHost(host, "suno.ai"))
         {
             return RemoteAudioServiceKind.Suno;
         }
 
-        if (host.Contains("spotify.com", StringComparison.Ordinal) ||
+        if (IsSourceHost(host, "spotify.com") ||
             uri.Scheme.Equals("spotify", StringComparison.OrdinalIgnoreCase))
         {
             return RemoteAudioServiceKind.Spotify;
@@ -333,6 +370,10 @@ public sealed class OpenUrlService
 
         return RemoteAudioServiceKind.Generic;
     }
+
+    private static bool IsSourceHost(string host, string domain) =>
+        host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSunoCdnUri(Uri uri) =>
         (uri.Host.Equals("d2lwuy8qc234o3.cloudfront.net", StringComparison.OrdinalIgnoreCase) ||

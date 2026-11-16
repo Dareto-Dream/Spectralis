@@ -642,10 +642,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Shows the clipboard toast for a link that has already been validated (quick
-    /// metadata-only resolve — see MainWindow's clipboard monitor). <paramref name="resolved"/>
-    /// is reused on Play when it's already fully playback-ready (MetadataOnly == false);
-    /// otherwise Play falls back to a full resolve.
+    /// Shows a recognized media link immediately. Metadata and artwork arrive afterward;
+    /// Play only reuses a result that is already fully playback-ready.
     /// </summary>
     public void ShowClipboardUrlToast(string url, RemoteAudioResolveResult resolved, byte[]? artwork)
     {
@@ -666,6 +664,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         _pendingClipboardResolved = null;
         ClipboardToastArtwork = null;
         ClipboardToastVisible = false;
+    }
+
+    public bool UpdateClipboardUrlToast(string url, RemoteAudioResolveResult resolved, byte[]? artwork)
+    {
+        if (!ClipboardToastVisible || !string.Equals(_pendingClipboardUrl, url, StringComparison.Ordinal)) return false;
+        _pendingClipboardResolved = resolved;
+        if (!string.IsNullOrWhiteSpace(resolved.Title))
+            ClipboardToastSubtitle = FormatResolvedClipboardSubtitle(resolved.Title, resolved.Artist);
+        if (artwork is { Length: > 0 }) ClipboardToastArtwork = artwork;
+        return true;
     }
 
     public void DismissClipboardToastIfExpired(TimeSpan lifetime)
