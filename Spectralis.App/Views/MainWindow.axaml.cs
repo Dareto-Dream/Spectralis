@@ -42,7 +42,7 @@ public partial class MainWindow : Window
         _clipboardPreview = new ClipboardLinkPreview(
             (url, preview) => { if (DataContext is MainWindowViewModel vm) vm.ShowClipboardUrlToast(url, preview, null); },
             (url, resolved, art) => DataContext is MainWindowViewModel vm && vm.UpdateClipboardUrlToast(url, resolved, art),
-            (url, token) => _clipboardUrlResolver.ResolveAsync(url, token, quickOnly: true),
+            _clipboardUrlResolver.ResolveClipboardMetadataAsync,
             OpenUrlService.TryFetchArtworkBytesAsync,
             error => SpectralisLog.Warn($"Clipboard preview metadata: {error.Message}"));
         _mixTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background,
