@@ -2827,8 +2827,9 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Remembers a version the user chose on purpose so the startup check leaves it alone.</summary>
     public void HoldVersion(string version)
     {
-        _settings.HeldVersion = version;
+        _settings.HoldVersion(version, DiagnosticsSnapshot.CurrentVersion);
         AppSettingsStore.Save(_settings);
+        this.RaisePropertyChanged(nameof(EnableAutoUpdates));
     }
 
     private void RefreshUpdateStatus(string? overrideStatus = null)

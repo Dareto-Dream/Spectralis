@@ -117,10 +117,7 @@ public partial class SettingsView : UserControl
         var chosen = await VersionPickerWindow.ShowAsync(owner, vm.IsBetaChannel);
         if (chosen is null) return;
 
-        // Recorded before the install restarts the app, so the next launch knows this version
-        // was picked on purpose and doesn't immediately offer to update away from it.
-        vm.HoldVersion(chosen.Version);
-        await UpdateProgressWindow.RunAsync(owner, chosen);
+        await UpdateProgressWindow.RunAsync(owner, chosen, () => vm.HoldVersion(chosen.Version));
     }
 
     private async void OnCleanupTemp(object? sender, RoutedEventArgs e)
