@@ -307,8 +307,9 @@ public sealed class ObsOverlayServer : IDisposable
         disposed = true;
         cts.Cancel();
         cts.Dispose();
-        try { if (listener.IsListening) listener.Stop(); } catch { }
-        listener.Close();
+        // Unix HttpListener can rebind prefixes when Close follows Stop, or when
+        // closing an unstarted listener. Abort releases resources once in both states.
+        listener.Abort();
     }
 
     private sealed class SseClient(StreamWriter writer) : IDisposable
