@@ -81,9 +81,12 @@ public sealed class OpenUrlService
             preview = BuildSpotifyResult(spotify) with { MetadataOnly = true };
             return true;
         }
-        Uri uri;
-        try { uri = NormalizeInput(input); }
-        catch { return false; }
+        // Manual URL entry also accepts raw video/clip IDs. Clipboard monitoring
+        // must not mistake an ordinary eleven-letter word or UUID for a link.
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        var candidate = input.Trim();
+        if (!candidate.Contains("://", StringComparison.Ordinal)) candidate = "https://" + candidate;
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
         var kind = DetectTarget(uri);
         if (kind is RemoteAudioServiceKind.Generic or RemoteAudioServiceKind.Spotify) return false;
         if (kind == RemoteAudioServiceKind.YouTube &&

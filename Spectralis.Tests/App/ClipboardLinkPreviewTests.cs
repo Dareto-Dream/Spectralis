@@ -35,6 +35,10 @@ public class ClipboardLinkPreviewTests
     [InlineData("https://youtube.com/@channel")]
     [InlineData("file:///Users/me/song.mp3")]
     [InlineData("not a link")]
+    [InlineData("Application")]
+    [InlineData("helloWorld1")]
+    [InlineData("WmdAk2zyQkU")]
+    [InlineData("8ee05968-fb92-400b-b445-9aa50726b89c")]
     public void IgnoresOrdinaryLinksAndLookalikeHosts(string input) =>
         Assert.False(OpenUrlService.TryCreateClipboardPreview(input, out _));
 
