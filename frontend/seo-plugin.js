@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
+import { versionDefine } from './build-version.js'
 
 const START = '<!--seo:start-->'
 const END = '<!--seo:end-->'
@@ -48,7 +49,7 @@ export default function seoPrerender() {
     },
     async closeBundle() {
       const server = await createServer({
-        root, configFile: false, plugins: [react()], appType: 'custom', logLevel: 'silent',
+        root, configFile: false, plugins: [react()], appType: 'custom', logLevel: 'silent', define: await versionDefine(),
         server: { middlewareMode: true }, optimizeDeps: { noDiscovery: true, include: [] },
       })
       try {

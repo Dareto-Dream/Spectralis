@@ -1,15 +1,34 @@
 import { Link } from 'react-router-dom'
 import { Download, Terminal, Apple, GitFork, ArrowUpRight } from 'lucide-react'
-import { FAQ, APP_VERSION, DOWNLOAD_BASE } from '../data/site.jsx'
+import { FAQ, APP_VERSION, DOWNLOAD_BASE, RELEASES_PAGE_URL } from '../data/site.jsx'
+import { useReleases } from '../lib/useReleases.js'
+
+const PLATFORM_LABELS = { 'win-x64': 'Windows', 'linux-x64': 'Linux' }
+
+function ReleaseDownloads({ release }) {
+  return Object.entries(PLATFORM_LABELS)
+    .filter(([rid]) => release.downloads[rid])
+    .map(([rid, label]) => (
+      <a key={rid} href={release.downloads[rid]} className="dl-versions__link">
+        <Download size={13} />
+        {label}
+      </a>
+    ))
+}
 
 export default function Setup() {
+  // Current version, older versions and the newest beta all come from the release index, which
+  // the release pipeline updates on every merge. Until it loads, the build-time version shows.
+  const { latest, older, beta } = useReleases()
+  const version = latest?.version ?? APP_VERSION
+
   return (
     <main className="dl-page">
       <div className="dl-hero">
         <div className="dl-hero__inner">
           <div className="dl-hero__head">
             <div className="dl-hero__version-row">
-              <span className="dl-hero__v">v{APP_VERSION}</span>
+              <span className="dl-hero__v">v{version}</span>
               <span className="dl-hero__v-badge">Latest</span>
             </div>
             <h1 className="dl-hero__title">Setup & Requirements</h1>
@@ -125,7 +144,7 @@ export default function Setup() {
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Release support</span>
-              <p className="dl-note__body">macOS remains on the 6.0.0 LTS release. Version 7.1.0 is available for Windows and Linux.</p>
+              <p className="dl-note__body">macOS remains on the 6.0.0 LTS release. Version {version} is available for Windows and Linux.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Gatekeeper</span>
@@ -192,6 +211,59 @@ export default function Setup() {
             </ol>
           </div>
         </div>
+      </div>
+
+      <div className="dl-requirements" id="versions">
+        <h2 className="dl-requirements__title">Other versions</h2>
+
+        {beta && (
+          <div className="dl-versions__beta">
+            <div>
+              <p className="dl-versions__beta-title">
+                Beta <span className="dl-versions__tag">v{beta.version}</span>
+              </p>
+              <p className="dl-versions__beta-body">
+                Early builds with features that are not finished. They can break. Already have Spectralis? Switch
+                to the Beta channel under Settings, Updates instead of reinstalling.
+              </p>
+            </div>
+            <div className="dl-versions__links">
+              <ReleaseDownloads release={beta} />
+            </div>
+          </div>
+        )}
+
+        {older.length > 0 ? (
+          <table className="dl-versions">
+            <tbody>
+              {older.map(release => (
+                <tr key={release.version}>
+                  <td className="dl-versions__v">v{release.version}</td>
+                  <td className="dl-versions__date">{release.date}</td>
+                  <td className="dl-versions__links">
+                    <ReleaseDownloads release={release} />
+                    {release.notesUrl && (
+                      <a href={release.notesUrl} target="_blank" rel="noreferrer" className="dl-versions__link dl-versions__link--quiet">
+                        Notes
+                        <ArrowUpRight size={12} />
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="dl-versions__empty">
+            Need an older release? Every version is kept on{' '}
+            <a href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">GitHub Releases</a>.
+          </p>
+        )}
+
+        <p className="dl-versions__hint">
+          Inside the app you can switch to any of these under Settings, Updates, Install another version. Your library
+          and settings are kept.
+        </p>
       </div>
 
       <div className="dl-requirements" id="requirements">
