@@ -44,16 +44,18 @@ public class ClipboardLinkPreviewTests
         OpenUrlService.TryCreateClipboardPreview(YouTube, out var preview);
         var metadata = new TaskCompletionSource<RemoteAudioResolveResult>();
         var artwork = new TaskCompletionSource<byte[]?>();
+        var fetchingArtwork = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var events = new List<string>();
         using var monitor = new ClipboardLinkPreview((_, _) => events.Add("show"),
             (_, result, bytes) => { events.Add(bytes is null ? "metadata" : "artwork"); return true; },
             (_, _) => { events.Add("resolve"); return metadata.Task; },
-            (_, _) => { events.Add("fetch-art"); return artwork.Task; }, _ => Assert.Fail());
+            (_, _) => { events.Add("fetch-art"); fetchingArtwork.TrySetResult(); return artwork.Task; }, _ => Assert.Fail());
         var pending = monitor.ObserveAsync(YouTube);
         Assert.Equal(new[] { "show", "resolve" }, events);
         await monitor.ObserveAsync(YouTube);
         Assert.Equal(2, events.Count);
         metadata.SetResult(preview with { Title = "Track", ArtworkUrl = "https://images.example.test/art.jpg" });
+        await fetchingArtwork.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(new[] { "show", "resolve", "metadata", "fetch-art" }, events);
         artwork.SetResult([1, 2, 3]);
         await pending;
@@ -107,6 +109,9 @@ public class ClipboardLinkPreviewTests
         Assert.Single(shown);
         await monitor.ObserveAsync("Listen to " + SoundCloud + " for something else.");
         Assert.Equal(2, shown.Count);
+        await monitor.ObserveAsync(string.Join(' ', Enumerable.Repeat("https://example.com/news", 25)) +
+            " a song: https://suno.com/song/8ee05968-fb92-400b-b445-9aa50726b89c");
+        Assert.Equal(3, shown.Count);
     }
 
     [Fact]

@@ -33,7 +33,7 @@ internal sealed class ClipboardLinkPreview : IDisposable
         // Prefer a whole copied URL, but also recognize a supported URL in a message.
         var wholeLink = text.Trim().Any(char.IsWhiteSpace) ? Array.Empty<string>() : new[] { text.Trim() };
         foreach (var candidate in wholeLink.Concat(Links.Matches(text).Select(match =>
-                     match.Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\''))).Take(16))
+                     match.Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\''))))
         {
             if (!OpenUrlService.TryCreateClipboardPreview(candidate, out var preview)) continue;
             if (!_shownLinks.Add(OpenUrlService.ClipboardLinkIdentity(preview))) continue;
