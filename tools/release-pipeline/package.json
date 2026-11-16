@@ -1,0 +1,13 @@
+{
+  "name": "spectralis-release-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Version planning, changelog generation and release index updates for the Spectralis release pipeline.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"./*.test.mjs\""
+  }
+}

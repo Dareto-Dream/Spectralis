@@ -347,7 +347,11 @@ public sealed class PlaylistsViewModel : ViewModelBase
             // own device queue, which the Queue panel mirrors via a live query on every track
             // change (see NowPlayingViewModel.RefreshSpotifyQueueAsync) instead of a one-time
             // snapshot that goes stale the moment things advance or the user edits it elsewhere.
-            if (playlist.Items.Count > 0 && playlist.Items.All(i => i.SpotifyTrackUri is not null))
+            //
+            // Not with Spotify matchup on (beta): there the tracks are played by Spectralis itself
+            // from matched audio, so they go into Spectralis's own Queue like local files do.
+            if (!BetaFeatures.SpotifyMatchup &&
+                playlist.Items.Count > 0 && playlist.Items.All(i => i.SpotifyTrackUri is not null))
             {
                 // Actually synced from/linked to a real Spotify playlist — context_uri play keeps
                 // Spotify's own "Playing from: <playlist>" context, which a bare track list can't.

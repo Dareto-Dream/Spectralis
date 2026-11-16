@@ -55,6 +55,7 @@ admin routes below.
 |---|---|
 | `GET /spectralis/v1/warnings` | Notices the app shows on start. |
 | `GET /spectralis/v1/changelog` | Releases for the website changelog, newest first. |
+| `GET /spectralis/v1/releases` | Release index: every published version and where to download it. |
 | `GET /spectralis/v1/community` | People shown in the website's community bar. |
 | `GET /spectralis/v1/community/avatars/{slug}` | An avatar image. |
 | `GET /spectralis/v1/creators/{fingerprint}` | A verified creator and what their capsules may do, or `404` if the key isn't registered. |
@@ -139,7 +140,8 @@ All under `/spectralis/v1/admin`, all `Authorization: Bearer <SPECTRALIS_ADMIN_T
 
 | Route | Purpose |
 |---|---|
-| `PUT /warnings`, `/changelog`, `/community` | Replace a whole list. |
+| `PUT /warnings`, `/changelog`, `/releases`, `/community` | Replace a whole list. |
+| `GET`/`POST /backups`, `GET /backups/{name}` | List, take and download backend backups. |
 | `PUT /community/avatars/{slug}` | Upload an avatar. |
 | `GET /creators`, `PUT/DELETE /creators/{fingerprint}`, `PUT /creators/{fingerprint}/avatar` | Verified creators. |
 | `POST /rooms/wipe` | One-off: delete every permanent room and hand back a backup. See [rooms.md](rooms.md). |

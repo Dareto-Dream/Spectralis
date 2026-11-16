@@ -68,6 +68,47 @@ each.
 
 ---
 
+The release pipeline adds the entry for each stable release from the pull request description; see
+[release workflow](../.github/workflows/release.yml).
+
+---
+
+## Release index
+
+`GET /spectralis/v1/releases` returns every published version, newest first: where its installers
+and its update feed are. The website builds its "Other versions" list from it, and the app uses it
+to install a chosen version and to follow the beta channel.
+
+```json
+[
+  {
+    "version": "7.1.1",
+    "channel": "stable",
+    "date": "2026-11-15",
+    "tag": "v7.1.1",
+    "feedBase": "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.1",
+    "notesUrl": "https://github.com/Dareto-Dream/Spectralis/releases/tag/v7.1.1",
+    "platforms": {
+      "win-x64": { "installer": "…/Spectralis-win-x64-Setup.exe", "portable": "…/Spectralis-win-x64-Portable.zip" },
+      "linux-x64": { "installer": "…/Spectralis-linux-x64.AppImage", "portable": "" }
+    }
+  }
+]
+```
+
+| Field | Rules |
+|---|---|
+| `version` | Required, unique. `7.1.1` or a pre-release such as `7.1.1-beta.4`. |
+| `channel` | `stable` (default) or `beta`. |
+| `feedBase` | Required, `https`. The folder holding `releases.<rid>.json` and the packages for that version. |
+| `platforms` | Runtime id to `installer` / `portable` links, each `https` or empty. |
+
+Up to 200 entries. The app and the website both ignore an entry whose links are not on GitHub
+Releases for this repository or on the release CDN, so the index can't be used to point a download
+somewhere else. Written by `tools/release-pipeline/cli.mjs publish-content`, not by hand.
+
+---
+
 ## Community
 
 `GET /spectralis/v1/community` returns `{ name, subtitle, avatar }` entries for the community bar.
@@ -141,7 +182,7 @@ Everything below is `PUT` with `Authorization: Bearer <SPECTRALIS_ADMIN_TOKEN>` 
 `/spectralis/v1/admin`. A request that fails validation is refused with a plain message and changes
 nothing; the published list stays as it was.
 
-- `PUT /warnings`, `/changelog`, `/community`: the whole list, replaced in one go.
+- `PUT /warnings`, `/changelog`, `/releases`, `/community`: the whole list, replaced in one go.
 - `PUT /community/avatars/{slug}`: image bytes. `slug` is lowercase letters, numbers and dashes.
 - `PUT /creators/{fingerprint}`: `displayName`, optional `profileUrl`, `keyId`, `status`,
   `allowedCapabilities`. The server sets `updatedAtUtc`, keeps `createdAtUtc`, and stamps
@@ -177,3 +218,19 @@ node tools/content-import/import.mjs --source Y:/spectralis --api https://spectr
 ```
 
 Without `--apply` it only validates what it would send.
+
+---
+
+## Backups
+
+The server snapshots what can't be rebuilt (everything above, permanent rooms and their members)
+once a day into its own bucket under `backups/`, and keeps the newest fourteen. Sessions and other
+keys that expire on their own are left out. Code is in `backend/src/backup.rs`.
+
+All three routes need the admin token:
+
+- `GET /spectralis/v1/admin/backups`: what is kept, newest first.
+- `POST /spectralis/v1/admin/backups`: take one now. A second one on the same day replaces the first.
+- `GET /spectralis/v1/admin/backups/{name}`: download a snapshot, `{ schema, takenAt, keys }`.
+
+A snapshot holds room owner tokens. Treat a downloaded one as a secret.

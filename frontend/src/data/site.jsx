@@ -17,7 +17,11 @@ export const FEATURES = [
   { num: '09', icon: Shield,     title: 'Creator Trust',          body: 'Unknown creator keys trigger a one-time trust prompt. Revoked keys are always rejected. Capabilities are intersection-enforced against the CDN.' },
 ]
 
-export const APP_VERSION = '7.1.0'
+// The newest stable release. Filled in at build time from the release index (build-version.js);
+// the literal is only the fallback for a build that couldn't reach the backend. Pages that show
+// it also refresh it in the browser through useReleases(), so it is never edited by hand.
+/* global __APP_VERSION__ */
+export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '7.1.0'
 
 // Also feeds the FAQPage schema on /setup, so keep answers plain text.
 export const FAQ = [
@@ -60,6 +64,7 @@ export const API_BASE = 'https://spectralis-api.deltavdevs.com'
 export const DOWNLOAD_BASE = 'https://spectralis-cdn.deltavdevs.com'
 
 export const CHANGELOG_URL = `${API_BASE}/spectralis/v1/changelog`
+export const RELEASES_PAGE_URL = 'https://github.com/Dareto-Dream/Spectralis/releases'
 export const COMMUNITY_URL = `${API_BASE}/spectralis/v1/community`
 
 // Backend the Streamer Queue dashboard talks to by default (same one the desktop app uses).

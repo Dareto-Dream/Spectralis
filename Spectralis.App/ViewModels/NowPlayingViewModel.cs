@@ -231,6 +231,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     private readonly AppSettings _settings;
     private readonly IDisposable? _positionPoll;
     private readonly OpenUrlService _openUrlService;
+    private readonly SpotifyMatchupService _spotifyMatchup;
     private RemoteAudioResolveResult? _currentRemoteAudio;
     private readonly SpotifyService _spotify = new();
     private readonly bool _persistSettings;
@@ -425,9 +426,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         AppSettings? settings = null,
         bool enablePositionPolling = true,
         EffectChain? effectChain = null,
-        LibraryDatabase? library = null)
+        LibraryDatabase? library = null,
+        SpotifyMatchupService? spotifyMatchup = null)
     {
         _engine = engine;
+        _spotifyMatchup = spotifyMatchup ?? new SpotifyMatchupService();
         _library = library;
         _settings = settings is null
             ? new AppSettings()
@@ -1605,7 +1608,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         SyncQueueCurrent();
         if (pathOrUrl.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
         {
-            await LoadSpotifyQueueTrackAsync(pathOrUrl, startPlayback);
+            // Spotify matchup (beta) plays the track itself from matched audio; anything it can't
+            // match with confidence goes to the Spotify player exactly as before.
+            if (!await TryLoadMatchedSpotifyQueueTrackAsync(pathOrUrl, startPlayback))
+            {
+                await LoadSpotifyQueueTrackAsync(pathOrUrl, startPlayback);
+            }
         }
         else if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -1644,6 +1652,123 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         RemoteStatus = "Connecting to Spotify...";
         var started = await _spotifyHost.PlayUriAsync(trackUri);
         RemoteStatus = started ? "Spotify playback requested" : _spotifyHost.StatusMessage ?? "Spotify playback failed";
+    }
+
+    /// <summary>
+    /// Spotify matchup (beta): loads a queued "spotify:track:..." entry as ordinary local audio
+    /// found on YouTube, so it plays through Spectralis's own engine (visualizer, effects, gapless
+    /// queueing) without the Spotify player. Returns false when the feature is off or no upload
+    /// could be matched, and the caller then uses the Spotify player.
+    /// </summary>
+    private async Task<bool> TryLoadMatchedSpotifyQueueTrackAsync(string trackUri, bool startPlayback)
+    {
+        if (!BetaFeatures.SpotifyMatchup || SpotifyMatchup.TrackIdFromUri(trackUri) is not { } trackId)
+        {
+            return false;
+        }
+
+        SelectTrackSource();
+        _remoteLoadCts?.Cancel();
+        _remoteLoadCts?.Dispose();
+        _remoteLoadCts = new CancellationTokenSource();
+        var cancellationToken = _remoteLoadCts.Token;
+        LoadError = string.Empty;
+        IsOpeningRemote = true;
+        RemoteStatus = "Matching Spotify track...";
+
+        RemoteAudioResolveResult? matched;
+        try
+        {
+            // The playlist row already knows the title and artist; that covers a track whose
+            // public page can't be read.
+            var known = _queueTrackMetadata.TryGetValue(trackUri, out var meta) && !string.IsNullOrWhiteSpace(meta.Title)
+                ? new SpotifyTrackFacts(trackId, meta.Title, meta.Subtitle ?? string.Empty, 0)
+                : null;
+            matched = await _spotifyMatchup.ResolveAsync(trackId, known, status => RemoteStatus = status, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            RemoteStatus = string.Empty;
+            IsOpeningRemote = false;
+            return true; // superseded by a newer load; nothing to fall back to
+        }
+        catch (Exception ex)
+        {
+            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            matched = null;
+        }
+
+        if (matched is null)
+        {
+            RemoteStatus = string.Empty;
+            IsOpeningRemote = false;
+            return false;
+        }
+
+        _queueDrivenSpotifyTrack = false;
+        await LoadResolvedAsync(matched, cancellationToken, startPlayback);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Spotify matchup (beta) for a link that was opened directly. A track becomes matched local
+    /// audio; an album or playlist is unrolled into the Queue so each track is matched as it comes
+    /// up. Returns the matched result to play, or null to carry on with the Spotify player;
+    /// <paramref name="queued"/> is true when the Queue took over and there is nothing more to do.
+    /// </summary>
+    private async Task<(RemoteAudioResolveResult? Matched, bool Queued)> TryMatchSpotifyLinkAsync(
+        RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
+    {
+        if (!BetaFeatures.SpotifyMatchup ||
+            !SpotifyPlaybackLink.TryParse(resolved.ExternalId ?? resolved.SourceUrl, out var link))
+        {
+            return (null, false);
+        }
+
+        try
+        {
+            if (SpotifyMatchup.TrackIdFromUri(link.PlaybackUri) is { } trackId)
+            {
+                RemoteStatus = "Matching Spotify track...";
+                var matched = await _spotifyMatchup.ResolveAsync(trackId, null, status => RemoteStatus = status, cancellationToken);
+                return (matched, false);
+            }
+
+            RemoteStatus = "Reading the track list...";
+            var tracks = await _spotifyMatchup.FetchContextTracksAsync(link, cancellationToken);
+            if (tracks.Count == 0)
+            {
+                return (null, false);
+            }
+
+            SetQueueTrackMetadata(tracks
+                .GroupBy(static t => t.Uri)
+                .ToDictionary(static g => g.Key, static g => (g.First().Title, g.First().Artist)));
+            await PlayQueueAsync(tracks.Select(static t => t.Uri).ToList(), 0);
+            return (null, true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            return (null, false);
+        }
+    }
+
+    /// <summary>Synced lyrics for a matched track still come from Spotify, keyed by its track id.</summary>
+    private async Task LoadMatchupLyricsAsync(string trackId)
+    {
+        _spotifyLyricsCts?.Cancel();
+        var cts = _spotifyLyricsCts = new CancellationTokenSource();
+        var lyrics = await SpotifyLyricsService.FetchAsync(trackId, cts.Token);
+        if (!cts.IsCancellationRequested && lyrics is not null)
+        {
+            ApplyLyrics(lyrics);
+        }
     }
 
     private async Task AutoAdvanceAsync()
@@ -3705,13 +3830,36 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     internal void ReportUntitledBrowserCacheError() =>
         RemoteStatus = "Waiting for Untitled audio. Caching will retry after the browser check completes.";
 
-    private async Task LoadResolvedAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
+    private async Task LoadResolvedAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken, bool? startPlayback = null)
     {
         string? cachedPath = null;
         ResetPositionDisplay();
         try
         {
-            if (resolved.Kind == RemoteAudioServiceKind.Spotify)
+            // Spotify matchup (beta) swaps a Spotify link for matched local audio, which then
+            // loads through the ordinary cached-audio path below.
+            if (resolved.Kind == RemoteAudioServiceKind.Spotify && !SpotifyMatchupService.IsMatchupResult(resolved))
+            {
+                var (matched, queued) = await TryMatchSpotifyLinkAsync(resolved, cancellationToken);
+                if (queued)
+                {
+                    return;
+                }
+
+                if (matched is not null)
+                {
+                    resolved = matched;
+                }
+            }
+
+            var isMatchup = SpotifyMatchupService.IsMatchupResult(resolved);
+            if (isMatchup)
+            {
+                // The Spotify player may still be holding the previous track.
+                StopSpotifyPlayback();
+            }
+
+            if (resolved.Kind == RemoteAudioServiceKind.Spotify && !isMatchup)
             {
                 if (SpotifyHost is null)
                     throw new InvalidOperationException("Spotify playback host is not ready on this platform.");
@@ -3803,6 +3951,19 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 CoverArtMimeType = metadata.CoverArt is not null ? metadata.CoverArtMimeType : null,
             };
 
+            if (isMatchup)
+            {
+                // The file is a YouTube download; its tags (if any) describe the upload. What the
+                // listener asked for is the Spotify track, so that is what gets shown.
+                trackInfo = trackInfo with
+                {
+                    Title = FirstNonEmpty(resolved.Title, trackInfo.Title),
+                    Artist = FirstNonEmpty(resolved.Artist, trackInfo.Artist),
+                    Album = FirstNonEmpty(resolved.Album, trackInfo.Album),
+                };
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
             _engine.Load(cachedPath, trackInfo);
             var oldRemotePath = _remoteAudioTempPath;
             _remoteAudioTempPath = cachedPath;
@@ -3810,7 +3971,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             cachedPath = null;
             RemoteAudioCache.TryDelete(oldRemotePath);
 
-            if (_settings.AutoPlayOnOpen)
+            if (startPlayback ?? _settings.AutoPlayOnOpen)
             {
                 _engine.Play();
             }
@@ -3829,6 +3990,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 ? LrcParser.ParsePlainText(resolved.LyricsText, resolved.ServiceLabel)
                 : null;
             ApplyLyrics(remoteLyrics);
+            if (isMatchup && SpotifyMatchup.TrackIdFromUri(resolved.ExternalId) is { } matchedTrackId)
+            {
+                _ = LoadMatchupLyricsAsync(matchedTrackId);
+            }
+
             _reactiveRuntime.Load(null);
             IsReactiveActive = false;
             ReactiveSectionLabel = string.Empty;

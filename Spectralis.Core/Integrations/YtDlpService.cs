@@ -93,6 +93,65 @@ public static class YtDlpService
         $"ytsearch1:{query}",
     ];
 
+    /// <summary>
+    /// A flat search: one JSON object per result with its id, title, channel and length, and no
+    /// per-video page fetches, so several candidates cost about one request. Used by Spotify
+    /// matchup to choose the right upload instead of trusting whatever ranks first.
+    /// </summary>
+    public static string[] BuildCandidateSearchArguments(string query, int count) =>
+    [
+        .. JsRuntimeArguments(),
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--",
+        $"ytsearch{Math.Clamp(count, 1, 10)}:{OneLine(query)}",
+    ];
+
+    /// <summary>A search phrase is one line: a line break in it must not reach the command line.</summary>
+    private static string OneLine(string text) =>
+        string.Join(' ', (text ?? string.Empty).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+
+    /// <summary>Parses the output of <see cref="BuildCandidateSearchArguments"/>; lines that aren't a video are skipped.</summary>
+    public static IReadOnlyList<(string Id, string Title, string Channel, double DurationSeconds)> ParseCandidateSearch(string stdout)
+    {
+        var results = new List<(string, string, string, double)>();
+        foreach (var line in (stdout ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!line.StartsWith('{'))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                string Text(string name) =>
+                    root.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
+
+                var id = Text("id");
+                var title = Text("title");
+                // YouTube ids are 11 url-safe characters; anything else is a channel or playlist row.
+                if (id.Length != 11 || !id.All(static c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || title.Length == 0)
+                {
+                    continue;
+                }
+
+                var channel = Text("channel");
+                if (channel.Length == 0) channel = Text("uploader");
+                var duration = root.TryGetProperty("duration", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.Number ? d.GetDouble() : 0;
+                results.Add((id, title, channel, duration));
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // a truncated line: ignore it and keep the rest
+            }
+        }
+
+        return results;
+    }
+
     public static async Task<string> GetStreamUrlAsync(string executable, string videoUrl, CancellationToken ct)
     {
         var result = await SafeProcessRunner.RunAsync(

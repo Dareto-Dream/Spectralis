@@ -2771,6 +2771,66 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public string? IgnoredUpdateVersion => _settings.IgnoredUpdateVersion;
 
+    public IReadOnlyList<SelectionOption<string>> UpdateChannelOptions { get; } =
+    [
+        new("Stable", VelopackUpdateService.StableChannel),
+        new("Beta (early builds)", VelopackUpdateService.BetaChannel),
+    ];
+
+    public SelectionOption<string> SelectedUpdateChannel
+    {
+        get => UpdateChannelOptions.First(o => o.Value == (IsBetaChannel ? VelopackUpdateService.BetaChannel : VelopackUpdateService.StableChannel));
+        set
+        {
+            if (value is null || value.Value == _settings.UpdateChannel)
+            {
+                return;
+            }
+
+            _settings.UpdateChannel = value.Value;
+            AppSettingsStore.Save(_settings);
+            SpectralisLog.Info($"Update channel set to {value.Value}.");
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(IsBetaChannel));
+            this.RaisePropertyChanged(nameof(BetaFeaturesAvailable));
+            this.RaisePropertyChanged(nameof(UpdateChannelHint));
+            BetaFeatures.Apply(_settings);
+        }
+    }
+
+    public bool IsBetaChannel => VelopackUpdateService.IsBetaChannel(_settings.UpdateChannel);
+
+    /// <summary>Beta features show up for people on the beta channel and in beta builds themselves.</summary>
+    public bool BetaFeaturesAvailable => BetaFeatures.Available(_settings);
+
+    public string UpdateChannelHint => IsBetaChannel
+        ? "You get preview builds as they are made, and every stable release too. Betas can break. Switch back to Stable any time; you stay on your current build until a newer stable release arrives, or pick one under Install another version."
+        : "You get finished releases only.";
+
+    public bool SpotifyMatchupEnabled
+    {
+        get => _settings.SpotifyMatchupEnabled;
+        set
+        {
+            if (_settings.SpotifyMatchupEnabled == value)
+            {
+                return;
+            }
+
+            _settings.SpotifyMatchupEnabled = value;
+            AppSettingsStore.Save(_settings);
+            this.RaisePropertyChanged();
+            BetaFeatures.Apply(_settings);
+        }
+    }
+
+    /// <summary>Remembers a version the user chose on purpose so the startup check leaves it alone.</summary>
+    public void HoldVersion(string version)
+    {
+        _settings.HeldVersion = version;
+        AppSettingsStore.Save(_settings);
+    }
+
     private void RefreshUpdateStatus(string? overrideStatus = null)
     {
         if (!string.IsNullOrWhiteSpace(overrideStatus))

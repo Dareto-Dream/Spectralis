@@ -12,7 +12,7 @@
   <Grid RowDefinitions="*,Auto" Margin="28,22,28,20">
 
     <StackPanel Grid.Row="0" Spacing="12">
-      <TextBlock Classes="heading" Text="Downloading update…" />
+      <TextBlock x:Name="Heading" Classes="heading" Text="Downloading update…" />
       <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="1" Value="0" IsIndeterminate="True" />
       <TextBlock x:Name="StatusLabel" Classes="secondary" Text="Preparing…" />
     </StackPanel>

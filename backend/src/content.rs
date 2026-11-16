@@ -19,6 +19,7 @@ use crate::{AppError, AppState};
 const KEY_WARNINGS: &str = "content:warnings";
 const KEY_CHANGELOG: &str = "content:changelog";
 const KEY_COMMUNITY: &str = "content:community";
+const KEY_RELEASES: &str = "content:releases";
 const CREATOR_PREFIX: &str = "content:creator:";
 
 pub const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
@@ -272,6 +273,85 @@ pub fn validate_changelog(value: &Value) -> Result<Value, String> {
     Ok(Value::Array(out))
 }
 
+/// The release index: one row per published version, saying where its installers and its update
+/// feed are. The website lists older versions from it and the app installs a chosen version (or
+/// follows the beta channel) through `feedBase`. Written by the release pipeline, not by hand.
+pub fn validate_releases(value: &Value) -> Result<Value, String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in items(value, "The release index", 200)? {
+        let o = object(item, "release")?;
+        let version = text(o, "version", 40, true)?.unwrap();
+        if !valid_release_version(&version) {
+            return Err(format!("\"{version}\" is not a release version."));
+        }
+        if !seen.insert(version.clone()) {
+            return Err(format!("Version {version} is listed twice."));
+        }
+        let channel = text(o, "channel", 10, false)?.unwrap_or_else(|| "stable".to_string());
+        if channel != "stable" && channel != "beta" {
+            return Err("channel must be stable or beta.".to_string());
+        }
+        let link = |key: &str, required: bool| -> Result<String, String> {
+            let url = text(o, key, 300, required)?.unwrap_or_default();
+            if !url.is_empty() && !valid_https_url(&url) {
+                return Err(format!("{key} must be an https link."));
+            }
+            Ok(url)
+        };
+        let mut platforms = Map::new();
+        match o.get("platforms") {
+            None | Some(Value::Null) => {}
+            Some(Value::Object(map)) => {
+                if map.len() > 8 {
+                    return Err("A release can list at most 8 platforms.".to_string());
+                }
+                for (rid, files) in map {
+                    if rid.is_empty()
+                        || rid.len() > 20
+                        || !rid.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                    {
+                        return Err(format!("\"{rid}\" is not a platform id."));
+                    }
+                    let fo = object(files, "platform")?;
+                    let mut clean = Map::new();
+                    for key in ["installer", "portable"] {
+                        let url = text(fo, key, 300, false)?.unwrap_or_default();
+                        if !url.is_empty() && !valid_https_url(&url) {
+                            return Err(format!("{key} must be an https link."));
+                        }
+                        clean.insert(key.to_string(), json!(url));
+                    }
+                    platforms.insert(rid.clone(), Value::Object(clean));
+                }
+            }
+            Some(_) => return Err("\"platforms\" must be an object.".to_string()),
+        }
+        out.push(json!({
+            "version": version,
+            "channel": channel,
+            "date": text(o, "date", 40, false)?.unwrap_or_default(),
+            "tag": text(o, "tag", 60, false)?.unwrap_or_default(),
+            "feedBase": link("feedBase", true)?,
+            "notesUrl": link("notesUrl", false)?,
+            "platforms": platforms,
+        }));
+    }
+    Ok(Value::Array(out))
+}
+
+/// `7.1.0` or `7.1.1-beta.4`: three numbers and an optional dotted pre-release.
+fn valid_release_version(s: &str) -> bool {
+    let (core, pre) = match s.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (s, None),
+    };
+    let parts: Vec<&str> = core.split('.').collect();
+    parts.len() == 3
+        && parts.iter().all(|p| !p.is_empty() && p.len() <= 6 && p.chars().all(|c| c.is_ascii_digit()))
+        && pre.map_or(true, |p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '.'))
+}
+
 pub fn validate_community(value: &Value) -> Result<Value, String> {
     let mut out = Vec::new();
     for item in items(value, "The community list", 100)? {
@@ -417,6 +497,10 @@ pub async fn get_changelog(State(state): State<AppState>) -> Result<Response, Ap
     Ok(cached_json(read_list(&state, KEY_CHANGELOG).await?, FEED_CACHE))
 }
 
+pub async fn get_releases(State(state): State<AppState>) -> Result<Response, AppError> {
+    Ok(cached_json(read_list(&state, KEY_RELEASES).await?, FEED_CACHE))
+}
+
 pub async fn get_community(State(state): State<AppState>) -> Result<Response, AppError> {
     Ok(cached_json(read_list(&state, KEY_COMMUNITY).await?, FEED_CACHE))
 }
@@ -491,6 +575,16 @@ pub async fn put_changelog(
     require_admin(&headers)?;
     let clean = validate_changelog(&body).map_err(|m| AppError::bad_request(&m))?;
     write_list(&state, KEY_CHANGELOG, &clean).await
+}
+
+pub async fn put_releases(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers)?;
+    let clean = validate_releases(&body).map_err(|m| AppError::bad_request(&m))?;
+    write_list(&state, KEY_RELEASES, &clean).await
 }
 
 pub async fn put_community(
@@ -723,6 +817,28 @@ mod tests {
     fn a_range_label_from_the_legacy_changelog_is_accepted() {
         let out = validate_changelog(&json!([{ "version": "4.0.x - 4.1.x", "label": "Early builds" }])).unwrap();
         assert_eq!(out[0]["version"], "4.0.x - 4.1.x");
+    }
+
+    #[test]
+    fn the_release_index_round_trips_and_refuses_bad_rows() {
+        let row = json!({
+            "version": "7.1.1-beta.4", "channel": "beta", "date": "2026-11-15", "tag": "v7.1.1-beta.4",
+            "feedBase": "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.1-beta.4",
+            "notesUrl": "https://github.com/Dareto-Dream/Spectralis/releases/tag/v7.1.1-beta.4",
+            "platforms": { "win-x64": { "installer": "https://example.com/Setup.exe", "portable": "" } }
+        });
+        let out = validate_releases(&json!([row.clone()])).unwrap();
+        assert_eq!(out[0], row);
+
+        let base = "https://example.com/r";
+        assert_eq!(validate_releases(&json!([{ "version": "7.1.0", "feedBase": base }])).unwrap()[0]["channel"], "stable");
+        assert!(validate_releases(&json!([{ "version": "7.1", "feedBase": base }])).is_err());
+        assert!(validate_releases(&json!([{ "version": "7.1.0-", "feedBase": base }])).is_err());
+        assert!(validate_releases(&json!([{ "version": "7.1.0" }])).is_err(), "feedBase is required");
+        assert!(validate_releases(&json!([{ "version": "7.1.0", "feedBase": "http://example.com/r" }])).is_err());
+        assert!(validate_releases(&json!([{ "version": "7.1.0", "feedBase": base, "channel": "nightly" }])).is_err());
+        assert!(validate_releases(&json!([{ "version": "7.1.0", "feedBase": base }, { "version": "7.1.0", "feedBase": base }])).is_err());
+        assert!(validate_releases(&json!([{ "version": "7.1.0", "feedBase": base, "platforms": { "win-x64": { "installer": "javascript:alert(1)" } } }])).is_err());
     }
 
     #[test]

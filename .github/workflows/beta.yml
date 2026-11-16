@@ -1,0 +1,92 @@
+name: Beta
+
+# Every push to staging that changes the app becomes a beta build: the next patch version with a
+# -beta.<n> suffix, published as a GitHub pre-release and listed in the release index. People who
+# picked the Beta channel in Settings get it on their next update check; nobody else does.
+# Betas never go to the R2 CDN, and only the newest few are kept.
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - Spectralis.App/**
+      - Spectralis.Core/**
+      - Spectralis.Installer/**
+      - Assets/**
+      - wgpu-host/**
+      - Directory.Build.props
+      - Directory.Build.targets
+      - global.json
+      - .config/dotnet-tools.json
+      - legal.html
+      - docs/legal/**
+      - ffmpeg
+      - ffmpeg.exe
+      - yt-dlp
+      - yt-dlp.exe
+  workflow_dispatch:
+
+concurrency:
+  group: beta
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check publishing credentials
+        env:
+          SPECTRALIS_ADMIN_TOKEN: ${{ secrets.SPECTRALIS_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$SPECTRALIS_ADMIN_TOKEN" ]; then
+            echo "::error::Missing Actions secret: SPECTRALIS_ADMIN_TOKEN"
+            exit 1
+          fi
+
+      - name: Decide
+        id: plan
+        run: node tools/release-pipeline/cli.mjs plan-beta --build "$GITHUB_RUN_NUMBER"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 7
+
+  build:
+    name: Build
+    needs: [plan, validate]
+    uses: ./.github/workflows/build-app.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+    secrets:
+      SPECTRALIS_SPOTIFY_CLIENT_ID: ${{ secrets.SPECTRALIS_SPOTIFY_CLIENT_ID }}
+      SPECTRALIS_DISCORD_CLIENT_ID: ${{ secrets.SPECTRALIS_DISCORD_CLIENT_ID }}
+
+  publish:
+    name: Publish
+    needs: [plan, build]
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      channel: beta
+      notes-artifact: release-notes
+    secrets: inherit

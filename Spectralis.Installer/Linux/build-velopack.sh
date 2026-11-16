@@ -49,19 +49,27 @@ rm -f "$RELEASE_DIR/Spectralis-$VERSION-$CHANNEL-full.nupkg" \
 
 export DOTNET_ROLL_FORWARD=LatestMajor
 
-# vpk's NuGet package lacks DotnetToolSettings.xml on Linux so dotnet tool install fails.
-# Instead, run vpk.dll directly from the Windows NuGet cache via DrvFS.
-# The VPK_DLL env var is set by build-velopack-linux.ps1; fall back to a global install
-# if the script is ever run outside WSL on a native Linux machine.
+# Three ways to reach vpk, in order:
+#   1. VPK_DLL, set by build-velopack-linux.ps1 when building through WSL: vpk.dll straight out
+#      of the Windows NuGet cache, because a tool restore against that cache fails under DrvFS.
+#   2. The repo's tool manifest (.config/dotnet-tools.json), which is what CI uses on a real
+#      Linux runner. Same pinned version as the Velopack package the app references.
+#   3. A global install, pinned to that version too, for a bare Linux machine.
+VPK_VERSION="0.0.915"
 if [[ -n "${VPK_DLL:-}" && -f "$VPK_DLL" ]]; then
     VPK_CMD="dotnet $VPK_DLL"
+elif (cd "$REPO_ROOT" && dotnet tool restore >/dev/null 2>&1 && dotnet vpk --help >/dev/null 2>&1); then
+    VPK_CMD="dotnet vpk"
 else
     export PATH="$PATH:$HOME/.dotnet/tools"
     if ! command -v vpk &>/dev/null; then
-        dotnet tool install --global vpk
+        dotnet tool install --global vpk --version "$VPK_VERSION"
     fi
     VPK_CMD="vpk"
 fi
+
+# `dotnet vpk` resolves through the tool manifest, which is found from the working directory.
+cd "$REPO_ROOT"
 
 $VPK_CMD pack \
   --packId "Spectralis" \

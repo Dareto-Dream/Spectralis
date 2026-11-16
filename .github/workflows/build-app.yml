@@ -1,0 +1,162 @@
+name: Build app
+
+# Builds the Windows and Linux Velopack packages for one version. Called by the stable and beta
+# release workflows; it publishes nothing itself, it only hands back two artifacts.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (7.1.1 or 7.1.1-beta.4)
+        required: true
+        type: string
+      seed-previous:
+        description: Download the current stable release first so Velopack can build a delta against it
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SPECTRALIS_SPOTIFY_CLIENT_ID:
+        required: true
+      SPECTRALIS_DISCORD_CLIENT_ID:
+        required: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CDN_BASE: https://spectralis-cdn.deltavdevs.com
+
+jobs:
+  windows:
+    name: Windows (win-x64)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      SPECTRALIS_SPOTIFY_CLIENT_ID: ${{ secrets.SPECTRALIS_SPOTIFY_CLIENT_ID }}
+      SPECTRALIS_DISCORD_CLIENT_ID: ${{ secrets.SPECTRALIS_DISCORD_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-windows-
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      # Without the previous full package in the output folder vpk has nothing to diff against and
+      # ships a full download only. Never fatal: a missing delta just means a bigger update.
+      - name: Fetch previous release for delta
+        if: inputs.seed-previous
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path releases-velopack | Out-Null
+          $env:DOTNET_ROLL_FORWARD = "LatestMajor"
+          dotnet vpk download http --url $env:CDN_BASE --channel win-x64 -o releases-velopack
+
+      - name: Build
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: ./Spectralis.Installer/Windows/build-velopack.ps1 -Version $env:VERSION -Channel win-x64
+
+      - name: Collect this version's files
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $v = $env:VERSION
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $names = @(
+            "releases.win-x64.json", "assets.win-x64.json", "RELEASES-win-x64",
+            "Spectralis-$v-win-x64-full.nupkg", "Spectralis-$v-win-x64-delta.nupkg",
+            "Spectralis-win-x64-Setup.exe", "Spectralis-win-x64-Portable.zip"
+          )
+          foreach ($name in $names) {
+            $path = Join-Path releases-velopack $name
+            if (Test-Path $path) { Copy-Item $path dist/ }
+          }
+          foreach ($required in @("releases.win-x64.json", "Spectralis-$v-win-x64-full.nupkg", "Spectralis-win-x64-Setup.exe")) {
+            if (-not (Test-Path (Join-Path dist $required))) { throw "Build did not produce $required" }
+          }
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-win-x64
+          path: dist/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  linux:
+    name: Linux (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SPECTRALIS_SPOTIFY_CLIENT_ID: ${{ secrets.SPECTRALIS_SPOTIFY_CLIENT_ID }}
+      SPECTRALIS_DISCORD_CLIENT_ID: ${{ secrets.SPECTRALIS_DISCORD_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-linux-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-linux-
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Fetch previous release for delta
+        if: inputs.seed-previous
+        continue-on-error: true
+        run: |
+          mkdir -p releases-velopack
+          DOTNET_ROLL_FORWARD=LatestMajor dotnet vpk download http --url "$CDN_BASE" --channel linux-x64 -o releases-velopack
+
+      - name: Build
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          chmod +x Spectralis.Installer/Linux/build-velopack.sh yt-dlp ffmpeg
+          ./Spectralis.Installer/Linux/build-velopack.sh "$VERSION"
+
+      - name: Collect this version's files
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          v="$VERSION"
+          mkdir -p dist
+          for name in releases.linux-x64.json assets.linux-x64.json RELEASES-linux-x64 \
+                      "Spectralis-$v-linux-x64-full.nupkg" "Spectralis-$v-linux-x64-delta.nupkg" \
+                      Spectralis-linux-x64.AppImage; do
+            if [ -f "releases-velopack/$name" ]; then cp "releases-velopack/$name" dist/; fi
+          done
+          for required in releases.linux-x64.json "Spectralis-$v-linux-x64-full.nupkg" Spectralis-linux-x64.AppImage; do
+            [ -f "dist/$required" ] || { echo "::error::Build did not produce $required"; exit 1; }
+          done
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          path: dist/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error

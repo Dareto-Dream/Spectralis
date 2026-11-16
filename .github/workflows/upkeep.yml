@@ -1,0 +1,91 @@
+name: Upkeep
+
+# Weekly housekeeping, and on demand from the Actions tab:
+#
+#   - Storage: measures the R2 release bucket against its budget. Over budget fails the job, which
+#     emails the repo owner. This is a fourth check on top of the upload tool, the janitor Worker
+#     and the Cloudflare billing alert; it writes nothing.
+#   - Backups: asks the backend for a fresh snapshot and checks the daily ones are actually
+#     landing. Snapshots stay in the backend's own bucket because they hold room owner tokens;
+#     only public content is saved here as an artifact.
+
+on:
+  schedule:
+    - cron: '23 9 * * 1'   # Mondays 09:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  API_BASE: https://spectralis-api.deltavdevs.com
+
+jobs:
+  storage:
+    name: CDN storage budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Measure the bucket
+        working-directory: tools/r2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          npm ci --silent
+          node usage.mjs
+
+  backups:
+    name: Backups
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Take a snapshot and check the recent ones
+        env:
+          SPECTRALIS_ADMIN_TOKEN: ${{ secrets.SPECTRALIS_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $SPECTRALIS_ADMIN_TOKEN"
+          # Inspect the last automatic snapshot BEFORE creating today's manual one. Otherwise
+          # the check masks a stopped daily job by refreshing its own evidence every week.
+          previous=$(curl -fsS -H "$auth" "$API_BASE/spectralis/v1/admin/backups")
+          newest=$(echo "$previous" | jq -r '.backups[0].takenAt // empty')
+          stale=false
+          if [ -n "$newest" ] && [ "$(( $(date +%s) - $(date -d "$newest" +%s) ))" -gt 172800 ]; then
+            echo "::error::The most recent daily backup is over 48 hours old."
+            stale=true
+          fi
+          curl -fsS -X POST -H "$auth" "$API_BASE/spectralis/v1/admin/backups" | jq '.backup | {name, takenAt, keys, bytes}'
+          list=$(curl -fsS -H "$auth" "$API_BASE/spectralis/v1/admin/backups")
+          count=$(echo "$list" | jq '.backups | length')
+          {
+            echo "### Backend backups"
+            echo
+            echo "$count kept (limit $(echo "$list" | jq '.keep'))."
+            echo
+            echo '```'
+            echo "$list" | jq -r '.backups[] | "\(.name)  \(.keys) keys  \(.bytes) bytes"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$stale" = true ]; then exit 1; fi
+
+      # Nothing secret in these: they are the same lists the public endpoints serve.
+      - name: Save public content
+        run: |
+          mkdir content
+          for name in changelog releases warnings community; do
+            curl -fsS "$API_BASE/spectralis/v1/$name" -o "content/$name.json" || echo "::warning::could not fetch $name"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-content-${{ github.run_number }}
+          path: content/
+          retention-days: 90

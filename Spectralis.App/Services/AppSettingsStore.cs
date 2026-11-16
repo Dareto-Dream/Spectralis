@@ -97,6 +97,15 @@ public sealed class AppSettings
     public string ListenBrainzUsername { get; set; } = string.Empty;
     public string LastSeenAppVersion { get; set; } = string.Empty;
     public string IgnoredUpdateVersion { get; set; } = string.Empty;
+    /// <summary>"stable" or "beta". Beta also gets every stable release; it just gets previews first.</summary>
+    public string UpdateChannel { get; set; } = "stable";
+    /// <summary>Set when the user installs a specific version on purpose (see the version picker):
+    /// while the running version still matches it, the startup check stays quiet instead of
+    /// immediately offering to undo their choice. Checking by hand still works.</summary>
+    public string HeldVersion { get; set; } = string.Empty;
+    /// <summary>Beta feature: play Spotify tracks from a matched YouTube upload instead of the
+    /// Spotify player (so it works without Premium). Only honoured while beta features are on.</summary>
+    public bool SpotifyMatchupEnabled { get; set; }
     public string SpotifyCustomClientId { get; set; } = string.Empty;
     /// <summary>Opt-out: when Spotify is linked, mirror the user's Spotify playlists into the Playlists page.</summary>
     public bool ImportSpotifyPlaylists { get; set; } = true;
@@ -241,6 +250,9 @@ public sealed class AppSettings
             PodcastSkipForwardSeconds = PodcastSkipForwardSeconds,
             SleepTimerDefaultMinutes = SleepTimerDefaultMinutes,
             PodcastModeManual = PodcastModeManual,
+            UpdateChannel = UpdateChannel,
+            HeldVersion = HeldVersion,
+            SpotifyMatchupEnabled = SpotifyMatchupEnabled,
         };
 }
 
