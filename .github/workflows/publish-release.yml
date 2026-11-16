@@ -35,6 +35,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  macos-smoke:
+    name: Check published macOS updater
+    needs: publish
+    if: inputs.channel == 'stable'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Run the published standalone updater
+        run: |
+          mkdir -p macos-smoke
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern UpdateSpectralis-osx-x64 --dir macos-smoke
+          chmod +x macos-smoke/UpdateSpectralis-osx-x64
+          macos-smoke/UpdateSpectralis-osx-x64 --version
+          for attempt in 1 2 3 4; do
+            if macos-smoke/UpdateSpectralis-osx-x64 --check > macos-smoke/result.txt 2>&1 && \
+               grep -Fq "Latest stable release: $VERSION" macos-smoke/result.txt; then
+              cat macos-smoke/result.txt
+              exit 0
+            fi
+            sleep 10
+          done
+          cat macos-smoke/result.txt
+          exit 1
+
   publish:
     name: Publish ${{ inputs.version }}
     runs-on: ubuntu-latest
