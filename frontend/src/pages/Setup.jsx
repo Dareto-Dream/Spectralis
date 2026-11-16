@@ -1,329 +1,196 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Terminal, Apple, GitFork, ArrowUpRight } from 'lucide-react'
-import { FAQ, APP_VERSION, DOWNLOAD_BASE, RELEASES_PAGE_URL } from '../data/site.jsx'
+import { Download, ArrowUpRight, ChevronDown } from 'lucide-react'
+import { FAQ, APP_VERSION, DOWNLOAD_BASE, CHANGELOG_URL, RELEASES_PAGE_URL } from '../data/site.jsx'
 import { useReleases } from '../lib/useReleases.js'
+import { compareVersions, parseVersion } from '../lib/releases.js'
+import './Setup.css'
 
-const PLATFORM_LABELS = { 'win-x64': 'Windows', 'linux-x64': 'Linux', 'osx-x64': 'macOS' }
+const PLATFORM_LABELS = { 'win-x64': 'Windows', 'osx-x64': 'macOS', 'linux-x64': 'Linux' }
 
 function ReleaseDownloads({ release }) {
   return Object.entries(PLATFORM_LABELS)
     .filter(([rid]) => release.downloads[rid])
     .map(([rid, label]) => (
-      <a key={rid} href={release.downloads[rid]} className="dl-versions__link">
-        <Download size={13} />
-        {label}
+      <a key={rid} href={release.downloads[rid]} aria-label={`Download Spectralis ${release.version} for ${label}`}>
+        {label}<Download size={13} aria-hidden="true" />
       </a>
     ))
 }
 
+function LatestChangelog({ latest }) {
+  const [feed, setFeed] = useState(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch(CHANGELOG_URL, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error(String(response.status))
+        return response.json()
+      })
+      .then(data => {
+        if (!Array.isArray(data)) throw new Error('Invalid changelog')
+        if (!controller.signal.aborted) setFeed(data)
+      })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true) })
+    return () => controller.abort()
+  }, [])
+
+  const releases = feed?.filter(release => {
+    const version = parseVersion(release?.version)
+    return version && !version.pre && typeof release.summary === 'string' && Array.isArray(release.groups)
+  }).sort((a, b) => compareVersions(b.version, a.version))
+  // Match the installer when its catalog has loaded; never put older notes under a newer version.
+  const release = latest
+    ? releases?.find(item => compareVersions(item.version, latest.version) === 0)
+    : releases?.[0]
+
+  return (
+    <section className="setup-section setup-changelog" id="changelog" aria-labelledby="changelog-heading">
+      <div className="setup-section__heading">
+        <h2 id="changelog-heading">Latest changelog</h2>
+        <a href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">
+          All release notes<ArrowUpRight size={14} aria-hidden="true" />
+        </a>
+      </div>
+      <div className="setup-changelog__body" aria-live="polite">
+        {!failed && feed === null && <p role="status">Loading release notes…</p>}
+        {(failed || (feed !== null && !release)) && (
+          <p>Release notes couldn’t be loaded. <a href={latest?.notesUrl || RELEASES_PAGE_URL} target="_blank" rel="noreferrer">Read them on GitHub</a>.</p>
+        )}
+        {release && (
+          <article>
+            <h3 className="setup-changelog__title">v{release.version}{release.label && <span>{release.label}</span>}</h3>
+            <p className="setup-changelog__summary">{release.summary}</p>
+            {release.groups.filter(group => group && typeof group.title === 'string').map((group, index) => (
+              <section className="setup-changelog__group" key={`${group.title}-${index}`}>
+                <h4>{group.title}</h4>
+                <ul>
+                  {Array.isArray(group.bullets) && group.bullets.filter(item => typeof item === 'string').map((item, i) => <li key={i}>{item}</li>)}
+                </ul>
+              </section>
+            ))}
+          </article>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function PlatformDownload({ id, name, requirements, href, format, children, notes }) {
+  return (
+    <section className="setup-platform" id={id} aria-labelledby={`${id}-heading`}>
+      <div className="setup-platform__name">
+        <h2 id={`${id}-heading`}>{name}</h2>
+        <p>{requirements}</p>
+      </div>
+      <div className="setup-platform__info">
+        <p>{children}</p>
+        <details className="setup-install">
+          <summary>Installation notes<ChevronDown size={14} aria-hidden="true" /></summary>
+          <div>{notes}</div>
+        </details>
+      </div>
+      <a href={href} className="setup-download" aria-label={`Download Spectralis for ${name}`}>
+        <Download size={17} aria-hidden="true" />Download <span>{format}</span>
+      </a>
+    </section>
+  )
+}
+
 export default function Setup() {
-  // Current version, older versions and the newest beta all come from the release index, which
-  // the release pipeline updates on every merge. Until it loads, the build-time version shows.
   const { latest, older, beta } = useReleases()
   const version = latest?.version ?? APP_VERSION
 
   return (
-    <main className="dl-page">
-      <div className="dl-hero">
-        <div className="dl-hero__inner">
-          <div className="dl-hero__head">
-            <div className="dl-hero__version-row">
-              <span className="dl-hero__v">v{version}</span>
-              <span className="dl-hero__v-badge">Latest</span>
-            </div>
-            <h1 className="dl-hero__title">Setup & Requirements</h1>
-            <p className="dl-hero__sub">Free · No sign-in required · Self-contained</p>
-          </div>
-          <div className="dl-hero__meta">
-            <div className="dl-hero__stat">
-              <span className="dl-hero__stat-n">Windows</span>
-              <span className="dl-hero__stat-l">Velopack installer</span>
-            </div>
-            <div className="dl-hero__stat">
-              <span className="dl-hero__stat-n">macOS</span>
-              <span className="dl-hero__stat-l">.pkg · Intel / Rosetta</span>
-            </div>
-            <div className="dl-hero__stat">
-              <span className="dl-hero__stat-n">Linux</span>
-              <span className="dl-hero__stat-l">AppImage · x86_64</span>
-            </div>
-          </div>
+    <main className="setup-page">
+      <header className="setup-header">
+        <h1>Download Spectralis</h1>
+        <p>Free. No account needed.</p>
+        <div className="setup-header__release">
+          <span>Version {version}</span>
+          {latest?.date && <time dateTime={latest.date}>{latest.date}</time>}
+          <a href="#changelog">What’s changed</a>
         </div>
+      </header>
+
+      <div className="setup-platforms" id="requirements">
+        <PlatformDownload
+          id="windows" name="Windows" requirements="Windows 10 or 11 · 64-bit"
+          href={latest?.downloads['win-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-win-x64-Setup.exe`}
+          format=".exe"
+          notes={<p>Run <code>Setup.exe</code>. Spectralis installs to <code>%LocalAppData%\Spectralis</code> and opens when it’s ready. The .NET runtime and WebView2 are bundled.</p>}
+        >
+          Run the installer. No administrator access needed.
+        </PlatformDownload>
+        <PlatformDownload
+          id="macos" name="macOS" requirements="macOS 11+ · Intel / Rosetta 2"
+          href={latest?.downloads['osx-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
+          format=".pkg"
+          notes={<><p>Open the <code>.pkg</code> and follow the installer. The app goes in <code>/Applications</code>. Apple Silicon Macs use Rosetta 2; macOS offers to install it if needed.</p><p>If macOS blocks the unsigned installer, try opening it first, then go to <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</p></>}
+        >
+          Intel build; Apple Silicon uses Rosetta 2. The installer is unsigned and not notarized.
+        </PlatformDownload>
+        <PlatformDownload
+          id="linux" name="Linux" requirements="x86_64 · AppImage"
+          href={latest?.downloads['linux-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-linux-x64.AppImage`}
+          format=".AppImage"
+          notes={<><p>Run <code>chmod +x Spectralis-linux-x64.AppImage</code>, then double-click the file or launch it from your terminal. Requires glibc 2.17 or newer.</p><p>If FUSE is unavailable, launch with <code>--appimage-extract-and-run</code>. AppImageLauncher is optional for adding it to your app menu.</p></>}
+        >
+          Make the file executable, then open it. No root access needed.
+        </PlatformDownload>
       </div>
+      <p className="setup-updates">Already installed? Manage updates in the app under Settings → Updates.</p>
 
-      <div className="dl-platforms">
+      <LatestChangelog latest={latest} />
 
-        {/* Windows */}
-        <div className="dl-card dl-card--windows" id="windows">
-          <div className="dl-card__header">
-            <div className="dl-card__icon">
-              <Download size={18} />
+      <section className="setup-section" id="versions" aria-labelledby="versions-heading">
+        <div className="setup-section__heading"><h2 id="versions-heading">Other versions</h2></div>
+        <div className="setup-versions">
+          {beta && (
+            <div className="setup-beta">
+              <h3>Beta {beta.version}</h3>
+              <p>Preview builds can break. You can also switch to the Beta channel in Settings → Updates.</p>
+              <div className="setup-version-links"><ReleaseDownloads release={beta} /></div>
             </div>
-            <div className="dl-card__header-text">
-              <h2 className="dl-card__title">Windows</h2>
-              <p className="dl-card__platform-sub">10 / 11 · x64</p>
-            </div>
-            <span className="dl-card__badge">Recommended</span>
-          </div>
-
-          <div className="dl-card__file">
-            <span className="dl-card__filename">Spectralis-win-x64-Setup.exe</span>
-            <span className="dl-card__filetype">Velopack installer</span>
-          </div>
-
-          <a
-            href={`${DOWNLOAD_BASE}/Spectralis-win-x64-Setup.exe`}
-            className="btn btn--primary btn--lg dl-card__btn"
-          >
-            <Download size={16} />
-            Download for Windows
-          </a>
-
-          <div className="dl-card__notes">
-            <div className="dl-note">
-              <span className="dl-note__label">Auto-updates</span>
-              <p className="dl-note__body">Velopack checks for updates on launch and applies delta patches silently, so there's no re-installer to run.</p>
-            </div>
-            <div className="dl-note">
-              <span className="dl-note__label">Install path</span>
-              <p className="dl-note__body">Installs to <code>%LocalAppData%\Spectralis</code> and doesn't need admin rights.</p>
-            </div>
-          </div>
-
-          <div className="dl-card__steps">
-            <p className="dl-steps__label">To install</p>
-            <ol className="dl-steps">
-              <li>Run <code>Setup.exe</code></li>
-              <li>Spectralis launches automatically after install</li>
-              <li>Future updates apply on next launch</li>
-            </ol>
-          </div>
+          )}
+          <details className="setup-archive">
+            <summary>Older releases<ChevronDown size={17} aria-hidden="true" /></summary>
+            {older.length > 0 ? (
+              <ul className="setup-version-list" aria-label="Older releases">
+                {older.map(release => (
+                  <li key={release.version}>
+                    <div className="setup-version-list__version">v{release.version}<time dateTime={release.date}>{release.date}</time></div>
+                    <div className="setup-version-links">
+                      <ReleaseDownloads release={release} />
+                      {release.notesUrl && <a href={release.notesUrl} target="_blank" rel="noreferrer">Notes<ArrowUpRight size={13} aria-hidden="true" /></a>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : <p>Older downloads are available on <a href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">GitHub Releases</a>.</p>}
+            <p className="setup-versions__hint">You can also install an older version in Settings → Updates. The app warns you before turning off automatic updates and keeps the separate Update Spectralis tool available to get you back to the latest release.</p>
+          </details>
         </div>
+      </section>
 
-        {/* macOS */}
-        <div className="dl-card dl-card--macos" id="macos">
-          <div className="dl-card__header">
-            <div className="dl-card__icon">
-              <Apple size={18} />
-            </div>
-            <div className="dl-card__header-text">
-              <h2 className="dl-card__title">macOS</h2>
-              <p className="dl-card__platform-sub">11 Big Sur or newer</p>
-            </div>
-            <span className="dl-card__badge dl-card__badge--new">v{version}</span>
-          </div>
-
-          <div className="dl-card__file">
-            <span className="dl-card__filename">Spectralis-osx-x64-Setup.pkg</span>
-            <span className="dl-card__filetype">.pkg installer · Intel / Rosetta</span>
-          </div>
-
-          <div className="dl-card__arch">
-            <a
-              href={latest?.downloads['osx-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
-              className="btn btn--primary dl-card__arch-btn"
-            >
-              <Download size={16} />
-              Download for macOS
-              <span className="dl-card__arch-tag">x64</span>
-            </a>
-          </div>
-
-          <div className="dl-card__notes">
-            <div className="dl-note">
-              <span className="dl-note__label">Which one?</span>
-              <p className="dl-note__body">Runs on Intel Macs. Apple Silicon Macs use Rosetta 2; macOS offers to install it when needed.</p>
-            </div>
-            <div className="dl-note">
-              <span className="dl-note__label">Release support</span>
-              <p className="dl-note__body">Built and published with Windows and Linux, including beta releases and version history.</p>
-            </div>
-            <div className="dl-note">
-              <span className="dl-note__label">Gatekeeper</span>
-              <p className="dl-note__body">Not yet signed or notarized. If macOS blocks the installer, use <code>System Settings → Privacy &amp; Security → Open Anyway</code> after trying to open it.</p>
-            </div>
-          </div>
-
-          <div className="dl-card__steps">
-            <p className="dl-steps__label">To install</p>
-            <ol className="dl-steps">
-              <li>Open the <code>.pkg</code> and follow the installer</li>
-              <li>Spectralis installs to <code>/Applications</code></li>
-              <li>Future updates apply on next launch</li>
-            </ol>
-          </div>
-        </div>
-
-        {/* Linux */}
-        <div className="dl-card dl-card--linux" id="linux">
-          <div className="dl-card__header">
-            <div className="dl-card__icon">
-              <Terminal size={18} />
-            </div>
-            <div className="dl-card__header-text">
-              <h2 className="dl-card__title">Linux</h2>
-              <p className="dl-card__platform-sub">x86_64 · AppImage</p>
-            </div>
-          </div>
-
-          <div className="dl-card__file">
-            <span className="dl-card__filename">Spectralis-linux-x64.AppImage</span>
-            <span className="dl-card__filetype">Self-contained · No install required</span>
-          </div>
-
-          <a
-            href={`${DOWNLOAD_BASE}/Spectralis-linux-x64.AppImage`}
-            className="btn btn--primary btn--lg dl-card__btn"
-          >
-            <Download size={16} />
-            Download AppImage
-          </a>
-
-          <div className="dl-card__notes">
-            <div className="dl-note">
-              <span className="dl-note__label">Self-contained</span>
-              <p className="dl-note__body">Everything it needs is bundled in, so it runs without installing dependencies or needing root access.</p>
-            </div>
-            <div className="dl-note">
-              <span className="dl-note__label">Auto-updates</span>
-              <p className="dl-note__body">Velopack checks on launch and applies delta patches in place, same as Windows and macOS — no need to re-download the AppImage.</p>
-            </div>
-            <div className="dl-note">
-              <span className="dl-note__label">FUSE</span>
-              <p className="dl-note__body">Most distros include FUSE. If not, run with <code>--appimage-extract-and-run</code> as a fallback.</p>
-            </div>
-          </div>
-
-          <div className="dl-card__steps">
-            <p className="dl-steps__label">To run</p>
-            <ol className="dl-steps">
-              <li><code>chmod +x Spectralis-linux-x64.AppImage</code></li>
-              <li>Double-click or run from terminal</li>
-              <li>Optional: use AppImageLauncher for system integration</li>
-            </ol>
-          </div>
-        </div>
-      </div>
-
-      <div className="dl-requirements" id="versions">
-        <h2 className="dl-requirements__title">Other versions</h2>
-
-        {beta && (
-          <div className="dl-versions__beta">
-            <div>
-              <p className="dl-versions__beta-title">
-                Beta <span className="dl-versions__tag">v{beta.version}</span>
-              </p>
-              <p className="dl-versions__beta-body">
-                Early builds with features that are not finished. They can break. Already have Spectralis? Switch
-                to the Beta channel under Settings, Updates instead of reinstalling.
-              </p>
-            </div>
-            <div className="dl-versions__links">
-              <ReleaseDownloads release={beta} />
-            </div>
-          </div>
-        )}
-
-        {older.length > 0 ? (
-          <table className="dl-versions">
-            <tbody>
-              {older.map(release => (
-                <tr key={release.version}>
-                  <td className="dl-versions__v">v{release.version}</td>
-                  <td className="dl-versions__date">{release.date}</td>
-                  <td className="dl-versions__links">
-                    <ReleaseDownloads release={release} />
-                    {release.notesUrl && (
-                      <a href={release.notesUrl} target="_blank" rel="noreferrer" className="dl-versions__link dl-versions__link--quiet">
-                        Notes
-                        <ArrowUpRight size={12} />
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="dl-versions__empty">
-            Need an older release? Every version is kept on{' '}
-            <a href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">GitHub Releases</a>.
-          </p>
-        )}
-
-        <p className="dl-versions__hint">
-          Inside the app you can switch to any of these under Settings, Updates, Install another version. Your library
-          and settings are kept.
-        </p>
-      </div>
-
-      <div className="dl-requirements" id="requirements">
-        <h2 className="dl-requirements__title">System requirements</h2>
-        <div className="dl-req-grid">
-          <div className="dl-req-col">
-            <h3>Windows</h3>
-            <table className="dl-req-table">
-              <tbody>
-                <tr><td>OS</td><td>Windows 10 or 11 (64-bit)</td></tr>
-                <tr><td>Runtime</td><td>.NET 8 (bundled)</td></tr>
-                <tr><td>Display</td><td>WebView2 (bundled)</td></tr>
-                <tr><td>Arch</td><td>x64</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="dl-req-col">
-            <h3>macOS</h3>
-            <table className="dl-req-table">
-              <tbody>
-                <tr><td>OS</td><td>macOS 11 Big Sur or newer</td></tr>
-                <tr><td>Runtime</td><td>.NET 8 (bundled)</td></tr>
-                <tr><td>Chip</td><td>Apple Silicon or Intel</td></tr>
-                <tr><td>Arch</td><td>x64 · Rosetta 2 on Apple Silicon</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="dl-req-col">
-            <h3>Linux</h3>
-            <table className="dl-req-table">
-              <tbody>
-                <tr><td>OS</td><td>Any modern x86_64 Linux distro</td></tr>
-                <tr><td>libc</td><td>glibc 2.17 or newer</td></tr>
-                <tr><td>FUSE</td><td>libfuse2 (optional)</td></tr>
-                <tr><td>Arch</td><td>x86_64</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="dl-faq" id="faq">
-        <h2 className="dl-requirements__title">Frequently asked questions</h2>
-        <div className="dl-faq__list">
+      <section className="setup-section" id="faq" aria-labelledby="faq-heading">
+        <div className="setup-section__heading"><h2 id="faq-heading">Questions</h2></div>
+        <div className="setup-questions">
           {FAQ.map(({ q, a }) => (
-            <details className="dl-faq__item" key={q}>
-              <summary className="dl-faq__q">{q}</summary>
-              <p className="dl-faq__a">{a}</p>
+            <details key={q}>
+              <summary>{q}<ChevronDown size={17} aria-hidden="true" /></summary>
+              <p>{a}</p>
             </details>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="dl-footer-links">
-        <Link to="/" className="btn btn--ghost">
-          ← Back to home
-        </Link>
-        <a
-          href="https://github.com/dareto-dream/spectralis"
-          target="_blank"
-          rel="noreferrer"
-          className="btn btn--ghost"
-        >
-          <GitFork size={14} />
-          View source on GitHub
-          <ArrowUpRight size={13} />
-        </a>
-      </div>
+      <footer className="setup-footer">
+        <Link to="/">Back to home</Link>
+        <a href="https://github.com/Dareto-Dream/Spectralis" target="_blank" rel="noreferrer">Source on GitHub<ArrowUpRight size={14} aria-hidden="true" /></a>
+      </footer>
     </main>
   )
 }
