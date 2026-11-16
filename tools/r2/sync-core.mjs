@@ -81,10 +81,9 @@ export async function runSync({ storage, files, readFeed, budgetBytes, keepVersi
 
   if (plan.deleteBefore.length) await storage.remove(plan.deleteBefore);
 
-  // Packages first, feeds last: a client that reads the feed must always find the files it names.
+  // Follow the budgeted serial order exactly; it already puts feeds last. Do not parallelize.
   const byKey = new Map(wanted.map((f) => [f.key, f]));
-  const ordered = [...plan.upload].sort((a, b) => Number(classify(a.key).kind === 'feed') - Number(classify(b.key).kind === 'feed'));
-  for (const item of ordered) {
+  for (const item of plan.upload) {
     const file = byKey.get(item.key);
     if (classify(item.key).kind === 'feed') {
       const bytes = Buffer.from(pruneFeed(await readFeed(item.key), plan.keptVersions), 'utf8');

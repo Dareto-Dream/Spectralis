@@ -20,6 +20,27 @@ const feeds = () => [
 ];
 const total = (items) => items.reduce((n, o) => n + o.size, 0);
 
+test('native Mac releases keep both CDN versions inside the existing five GB budget', () => {
+  const packages = version => [...release(version, { win: 355 * MB, linux: 316 * MB }),
+    pkg(version, 'osx-x64', 'full', 390 * MB), pkg(version, 'osx-arm64', 'full', 370 * MB)];
+  const installers = [
+    { key: 'Spectralis-win-x64-Setup.exe', size: 358 * MB },
+    { key: 'Spectralis-linux-x64.AppImage', size: 317 * MB },
+    { key: 'Spectralis-osx-x64-Setup.pkg', size: 390 * MB },
+    { key: 'Spectralis-osx-arm64-Setup.pkg', size: 370 * MB },
+  ];
+  const existing = [...['7.1.4', '7.1.5'].flatMap(packages), ...installers,
+    { key: 'visualizers/manifest.json', size: 80 * MB }, ...feeds()];
+  const incoming = [...packages('7.1.6'), ...installers, ...feeds()];
+  const plan = planSync({ existing, incoming });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.keptVersions, ['7.1.6', '7.1.5']);
+  assert.ok(plan.deleteBefore.length > 0);
+  assert.ok(plan.peakBytes <= DEFAULT_BUDGET_BYTES);
+  assert.ok(plan.finalBytes <= DEFAULT_BUDGET_BYTES);
+  assert.ok([...plan.deleteBefore, ...plan.deleteAfter].every(key => key.includes('7.1.4')));
+});
+
 test('three-platform releases fit the unchanged budget with current and previous CDN retention', () => {
   const packages = (version) => [...release(version, { win: 355 * MB, linux: 316 * MB }),
     pkg(version, 'osx-x64', 'full', 316 * MB)];
@@ -196,19 +217,25 @@ test('property: any plan that says ok really stays within budget at its peak and
   for (let round = 0; round < 600; round++) {
     const versionsExisting = Array.from({ length: Math.floor(rand() * 12) }, (_, i) => `${5 + Math.floor(i / 4)}.${i % 4}.${Math.floor(rand() * 3)}`);
     const sizeOf = () => Math.floor(rand() * 900 * MB) + 1;
+    const candidates = version => [...release(version, { win: sizeOf(), linux: sizeOf(), delta: sizeOf() / 50 }),
+      pkg(version, 'osx-x64', 'full', sizeOf()), pkg(version, 'osx-arm64', 'full', sizeOf())];
     const existing = [
       ...new Map(
-        versionsExisting.flatMap((v) => release(v, { win: sizeOf(), linux: sizeOf(), delta: sizeOf() / 50 })).map((o) => [o.key, o]),
+        versionsExisting.flatMap(candidates).map((o) => [o.key, o]),
       ).values(),
       ...(rand() < 0.5 ? feeds() : []),
       ...(rand() < 0.3 ? [{ key: 'stray.bin', size: sizeOf() }] : []),
+      ...(rand() < 0.5 ? [{ key: 'Spectralis-osx-arm64-Setup.pkg', size: sizeOf() },
+        { key: 'Spectralis-osx-x64-Setup.pkg', size: sizeOf() }] : []),
     ];
     const incomingVersions = Array.from({ length: 1 + Math.floor(rand() * 3) }, () => `${6 + Math.floor(rand() * 3)}.${Math.floor(rand() * 5)}.0`);
     const incoming = [
       ...new Map(
-        incomingVersions.flatMap((v) => release(v, { win: sizeOf(), linux: sizeOf(), delta: sizeOf() / 50 })).map((o) => [o.key, o]),
+        incomingVersions.flatMap(candidates).map((o) => [o.key, o]),
       ).values(),
       ...feeds(),
+      { key: 'Spectralis-osx-arm64-Setup.pkg', size: sizeOf() },
+      { key: 'Spectralis-osx-x64-Setup.pkg', size: sizeOf() },
     ];
     const budgetBytes = Math.floor(rand() * 12 * GB); // deliberately includes budgets above the maximum
     const keepVersions = 1 + Math.floor(rand() * 6);
@@ -230,9 +257,12 @@ test('property: any plan that says ok really stays within budget at its peak and
     // Independent simulation: replay the plan against a model of the bucket and track the worst moment.
     const bucket = new Map(existing.map((o) => [o.key, o.size]));
     for (const key of plan.deleteBefore) bucket.delete(key);
-    const afterEarlyDeletes = [...bucket.values()].reduce((n, s) => n + s, 0);
-    const simulatedPeak = afterEarlyDeletes + plan.upload.reduce((n, o) => n + o.size, 0); // every upload in flight at once
-    for (const o of plan.upload) bucket.set(o.key, o.size);
+    let simulatedPeak = [...bucket.values()].reduce((n, s) => n + s, 0);
+    for (const o of plan.upload) {
+      // Include the old object while the single next upload is still in flight.
+      simulatedPeak = Math.max(simulatedPeak, [...bucket.values()].reduce((n, s) => n + s, 0) + o.size);
+      bucket.set(o.key, o.size);
+    }
     for (const key of plan.deleteAfter) bucket.delete(key);
     const simulatedFinal = [...bucket.values()].reduce((n, s) => n + s, 0);
 
