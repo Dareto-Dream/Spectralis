@@ -21,8 +21,8 @@ export const MAX_BUDGET_BYTES = 8 * GB;
 /** What the upload tool plans against unless told to use less. Normal use (a handful of releases) is a third of it. */
 export const DEFAULT_BUDGET_BYTES = 5 * GB;
 
-/** Releases kept on the CDN; older ones live on the legacy CDN and in the local backup. */
-export const DEFAULT_KEEP_VERSIONS = 4;
+/** Current and previous release stay on the CDN; the permanent history lives on GitHub. */
+export const DEFAULT_KEEP_VERSIONS = 2;
 
 /** A requested budget in bytes, clamped into (0, MAX_BUDGET_BYTES]. Anything unparseable falls back to the default. */
 export function resolveBudget(requestedBytes) {

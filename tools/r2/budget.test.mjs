@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  DEFAULT_BUDGET_BYTES, GB, MAX_BUDGET_BYTES, FREE_TIER_BYTES,
+  DEFAULT_BUDGET_BYTES, DEFAULT_KEEP_VERSIONS, GB, MAX_BUDGET_BYTES, FREE_TIER_BYTES,
   classify, compareVersions, planEmergencyPrune, planSync, resolveBudget, versionsOf,
 } from './budget.mjs';
 
@@ -19,6 +19,29 @@ const feeds = () => [
   { key: 'RELEASES', size: 8_000 },
 ];
 const total = (items) => items.reduce((n, o) => n + o.size, 0);
+
+test('three-platform releases fit the unchanged budget with current and previous CDN retention', () => {
+  const packages = (version) => [...release(version, { win: 355 * MB, linux: 316 * MB }),
+    pkg(version, 'osx-x64', 'full', 316 * MB)];
+  const installers = [
+    { key: 'Spectralis-win-x64-Setup.exe', size: 358 * MB },
+    { key: 'Spectralis-linux-x64.AppImage', size: 317 * MB },
+    { key: 'Spectralis-osx-x64-Setup.pkg', size: 310 * MB },
+  ];
+  const existing = [...['7.1.1', '7.1.2', '7.1.3'].flatMap(packages), ...installers,
+    { key: 'Spectralis-osx-arm64-Setup.pkg', size: 152 * MB },
+    { key: 'visualizers/manifest.json', size: 80 * MB }, ...feeds()];
+  const incoming = [...packages('7.1.4'), ...installers, ...feeds()];
+  assert.ok(total(existing) < DEFAULT_BUDGET_BYTES);
+  assert.equal(DEFAULT_KEEP_VERSIONS, 2);
+  assert.equal(planSync({ existing, incoming, keepVersions: 4 }).ok, false);
+  const plan = planSync({ existing, incoming });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.keptVersions, ['7.1.4', '7.1.3']);
+  assert.ok(plan.peakBytes <= DEFAULT_BUDGET_BYTES);
+  assert.ok(plan.finalBytes <= DEFAULT_BUDGET_BYTES);
+  assert.ok([...plan.deleteBefore, ...plan.deleteAfter].every(key => classify(key).kind === 'package'));
+});
 
 // ── the limits themselves ────────────────────────────────────────────────────────────────────────
 

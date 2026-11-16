@@ -7,7 +7,7 @@
 // Environment (an R2 API token scoped to the one bucket, "Object Read & Write"):
 //   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, optional R2_BUCKET (default spectralis-cdn)
 //
-// Flags: --keep <n>      releases to keep on the CDN (default 4)
+// Flags: --keep <n>      releases to keep on the CDN (default 2)
 //        --budget-gb <n> storage budget in GB (default 5, can never be set above 8)
 //
 // R2 has no hard storage cap, so this is the cap: see budget.mjs for the rules and why they hold.
