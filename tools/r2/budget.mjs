@@ -122,8 +122,12 @@ export function planSync({ existing, incoming, budgetBytes = DEFAULT_BUDGET_BYTE
   const prunableKeys = new Set(prunable.map((o) => o.key));
 
   // Never upload something we'd immediately prune.
-  const upload = incoming.filter((o) => !prunableKeys.has(o.key));
-  const uploadKeys = new Set(upload.map((o) => o.key));
+  const storedSize = new Map(existing.map((e) => [e.key, e.size]));
+  // The executor awaits and verifies each write. Replace installers before growing the
+  // versioned archive, and publish feeds last so they only name complete packages.
+  const upload = [...incomingByKey.values()].filter((o) => !prunableKeys.has(o.key)).sort((a, b) =>
+    Number(classify(a.key).kind === 'feed') - Number(classify(b.key).kind === 'feed') ||
+    Number(!storedSize.has(a.key)) - Number(!storedSize.has(b.key)));
 
   const existingTotal = sum(existing);
   const finalState = [...world.values()].filter((o) => !prunableKeys.has(o.key));
@@ -140,11 +144,18 @@ export function planSync({ existing, incoming, budgetBytes = DEFAULT_BUDGET_BYTE
     );
   }
 
-  // Peak if we upload first and prune afterwards. Overwriting a key keeps the old object until the new one
-  // finishes, and uploads may overlap, so count every uploaded byte on top of everything already stored.
-  // That's the safe upper bound, even if it overstates the peak a little when a key is replaced.
-  const uploadBytes = sum(upload);
-  const uploadFirstPeak = existingTotal + uploadBytes;
+  // Count the old object AND the entire incoming object until each serial write completes.
+  // Keep this order in sync-core: concurrent uploads would invalidate the peak estimate.
+  const peakFrom = start => {
+    let current = start;
+    let peak = start;
+    for (const item of upload) {
+      peak = Math.max(peak, current + item.size);
+      current += item.size - (storedSize.get(item.key) ?? 0);
+    }
+    return peak;
+  };
+  const uploadFirstPeak = peakFrom(existingTotal);
 
   if (uploadFirstPeak <= budget) {
     return {
@@ -156,15 +167,14 @@ export function planSync({ existing, incoming, budgetBytes = DEFAULT_BUDGET_BYTE
 
   // Not enough room to upload first: delete the oldest prunable objects, as few as it takes, then upload.
   const deleteBefore = [];
-  const storedSize = new Map(existing.map((e) => [e.key, e.size])); // what is really in the bucket, not what we'd replace it with
   let current = existingTotal;
   for (const o of prunable) {
     if (!storedSize.has(o.key)) continue;
-    if (current + uploadBytes <= budget) break;
+    if (peakFrom(current) <= budget) break;
     deleteBefore.push(o.key);
     current -= storedSize.get(o.key);
   }
-  const peak = current + uploadBytes;
+  const peak = peakFrom(current);
   if (peak > budget) {
     return refuse(
       `Uploading would peak at ${fmt(peak)} even after removing every old release, over the ${fmt(budget)} budget. Nothing was uploaded.`,

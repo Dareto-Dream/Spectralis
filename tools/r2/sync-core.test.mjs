@@ -97,6 +97,33 @@ test('apply uploads packages first and the feed last, pruned to what is kept', a
   assert.ok(storage.total() <= 5 * GB);
 });
 
+test('replacements finish one at a time in the budgeted order before new packages and feeds', async () => {
+  const initial = [
+    { key: 'Spectralis-osx-x64-Setup.pkg', size: 400 * MB },
+    { key: 'Spectralis-osx-arm64-Setup.pkg', size: 400 * MB },
+  ];
+  const storage = fakeStorage(initial);
+  const original = storage.put.bind(storage);
+  let active = false;
+  let peak = storage.total();
+  storage.put = async (key, body, size) => {
+    assert.equal(active, false, 'uploads must never overlap');
+    active = true;
+    peak = Math.max(peak, storage.total() + size);
+    await new Promise(resolve => setImmediate(resolve));
+    await original(key, body, size);
+    active = false;
+  };
+  const files = [feedFile, ...pkgFiles('7.1.6', { win: 200 * MB, linux: 100 * MB }), ...initial];
+  const result = await runSync({ storage, files, readFeed: async () => feedText(['7.1.6']),
+    budgetBytes: 1.3 * GB, apply: true });
+  assert.equal(result.ok, true);
+  assert.ok(peak <= result.plan.peakBytes && peak <= 1.3 * GB);
+  assert.deepEqual(storage.calls.filter(c => c[0] === 'put').map(c => c[1]), result.plan.upload.map(o => o.key));
+  assert.equal(result.plan.upload.at(-1).key, FEED_KEY);
+  assert.ok(result.plan.upload.slice(0, 2).every(o => o.key.endsWith('.pkg')));
+});
+
 test('an over-budget request is refused before anything is touched', async () => {
   const storage = fakeStorage();
 
