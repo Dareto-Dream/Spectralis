@@ -16,6 +16,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Spectralis.App</RootNamespace>
     <AssemblyName>Spectralis.App</AssemblyName>
+    <Product>Spectralis</Product>
+    <Title>Spectralis</Title>
+    <Company>DeltaV Devs</Company>
+    <Authors>DeltaV Devs</Authors>
+    <Description>Music player, visualizer and OBS overlay server.</Description>
     <LangVersion>latest</LangVersion>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>

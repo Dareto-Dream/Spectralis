@@ -56,6 +56,8 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            // Match Velopack's StartupWMClass so Linux desktops group our windows with our icon.
+            .With(new X11PlatformOptions { WmClass = "Spectralis" })
             .LogToTrace()
             .UseReactiveUI();
 }

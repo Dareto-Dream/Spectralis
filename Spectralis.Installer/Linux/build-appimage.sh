@@ -62,13 +62,14 @@ Type=Application
 Name=Spectralis
 Exec=Spectralis.App %U
 Icon=spectralis
+StartupWMClass=Spectralis
+Terminal=false
 Categories=AudioVideo;Audio;Player;
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-wav;audio/mp4;x-scheme-handler/spectralis;
 DESKTOP
 
-if [[ -f "$REPO_ROOT/Assets/icon.png" ]]; then
-  cp "$REPO_ROOT/Assets/icon.png" "$APPDIR/spectralis.png"
-fi
+cp "$REPO_ROOT/Assets/icon.png" "$APPDIR/spectralis.png"
+ln -s spectralis.png "$APPDIR/.DirIcon"
 
 ARCH=x86_64 $APPIMAGETOOL "$APPDIR" "$OUTPUT"
 echo "[linux] Built $OUTPUT"

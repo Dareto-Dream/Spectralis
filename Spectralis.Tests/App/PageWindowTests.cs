@@ -44,6 +44,14 @@ public sealed class VisualizerUiCollection;
 [Collection("Visualizer UI")]
 public sealed class PageWindowTests
 {
+    [AvaloniaFact]
+    public void PoppedOutPagesKeepTheSpectralisWindowIcon()
+    {
+        var window = new PageWindow("Now Playing");
+        try { Assert.NotNull(window.Icon); }
+        finally { window.Close(); }
+    }
+
     [AvaloniaTheory]
     [InlineData(false, false)]
     [InlineData(false, true)]

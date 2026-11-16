@@ -85,6 +85,10 @@ $VPK_CMD pack \
   --packVersion "$VERSION" \
   --packDir "$PUBLISH_DIR" \
   --mainExe "Spectralis.App" \
+  --packTitle "Spectralis" \
+  --packAuthors "DeltaV Devs" \
+  --icon "$REPO_ROOT/Assets/icon.png" \
+  --categories "AudioVideo;Audio;Player" \
   --channel "$CHANNEL" \
   -o "$RELEASE_DIR"
 

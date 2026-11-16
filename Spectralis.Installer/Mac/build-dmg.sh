@@ -41,23 +41,10 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 rsync -a "$OUT/$RID/" "$BUNDLE/Contents/MacOS/"
 mv "$BUNDLE/Contents/MacOS/Spectralis.App" "$BUNDLE/Contents/MacOS/Spectralis"
 
-cat > "$BUNDLE/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Spectralis</string>
-  <key>CFBundleIdentifier</key><string>com.deltavdevs.spectralis</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
-  <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleExecutable</key><string>Spectralis</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>CFBundleURLTypes</key><array><dict>
-    <key>CFBundleURLName</key><string>Spectralis Protocol</string>
-    <key>CFBundleURLSchemes</key><array><string>spectralis</string></array>
-  </dict></array>
-</dict></plist>
-PLIST
+METADATA="$REPO_ROOT/output/app-metadata/macos-legacy"
+bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$METADATA" Spectralis
+cp "$METADATA/Info.plist" "$BUNDLE/Contents/Info.plist"
+cp "$METADATA/Spectralis.icns" "$BUNDLE/Contents/Resources/Spectralis.icns"
 
 if [[ -n "${SPECTRALIS_MAC_SIGN_IDENTITY:-}" ]]; then
   codesign --deep --force --options runtime --sign "$SPECTRALIS_MAC_SIGN_IDENTITY" "$BUNDLE"
