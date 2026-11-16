@@ -94,7 +94,7 @@ for RID in "$RID"; do
   test -f "$PUBLISH_DIR/libwgpu_host.dylib" || { echo "Native visualizer missing" >&2; exit 1; }
   chmod +x "$PUBLISH_DIR/Updater/UpdateSpectralis" "$PUBLISH_DIR/Tools/yt-dlp/yt-dlp_macos" "$PUBLISH_DIR/Tools/deno/deno"
   for native in Spectralis.App libcef.dylib libwgpu_host.dylib ffmpeg Updater/UpdateSpectralis Tools/deno/deno Tools/yt-dlp/yt-dlp_macos; do
-    lipo -verify_arch "$NATIVE_ARCH" "$PUBLISH_DIR/$native"
+    lipo "$PUBLISH_DIR/$native" -verify_arch "$NATIVE_ARCH"
   done
   "$PUBLISH_DIR/Tools/yt-dlp/yt-dlp_macos" --version
   "$PUBLISH_DIR/Tools/deno/deno" --version

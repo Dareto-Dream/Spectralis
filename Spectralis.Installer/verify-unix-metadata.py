@@ -57,9 +57,17 @@ def verify_macos(root, version, expected_icon, rid='osx-x64'):
         if not path.is_file(): continue
         with path.open('rb') as stream: header = stream.read(4)
         if header not in magic: continue
-        subprocess.run(['/usr/bin/lipo', '-verify_arch', arch, str(path)], check=True)
+        subprocess.run(['/usr/bin/lipo', str(path), '-verify_arch', arch], check=True)
         checked += 1
     print(f'Verified {checked} Mach-O payloads for {arch}; no mixed-architecture app or helpers')
+    for relative, argument in [('Tools/yt-dlp/yt-dlp_macos', '--version'),
+                               ('Tools/deno/deno', '--version'),
+                               ('Updater/UpdateSpectralis', '--version'), ('ffmpeg', '-version')]:
+        helper = macos / relative
+        assert os.access(helper, os.X_OK), f'Packaged helper is not executable: {relative}'
+        result = subprocess.run([str(helper), argument], check=True, timeout=30,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f'Packaged {relative}: {result.stdout.splitlines()[0]}')
     print(f'Verified macOS identity, protocol, version and Spectralis icon: {contents.parent}')
 
 

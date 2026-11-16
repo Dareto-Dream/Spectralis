@@ -35,22 +35,23 @@ if [[ ! -f "$TOOLS/deno/deno" ]]; then
   unzip -qo "$TOOLS/$archive" -d "$TOOLS/deno"
 fi
 
-if [[ ! -f "$ROOT/ffmpeg-osx" ]] || ! lipo -verify_arch "$ARCH" "$ROOT/ffmpeg-osx" >/dev/null 2>&1; then
+if [[ ! -f "$ROOT/ffmpeg-osx" ]] || ! lipo "$ROOT/ffmpeg-osx" -verify_arch "$ARCH" >/dev/null 2>&1; then
   if [[ "$RID" == osx-arm64 ]]; then
     # This native static build requires macOS 13; the ARM64 app bundle declares the same minimum.
     curl --fail --location --retry 3 https://www.osxexperts.net/ffmpeg902arm.zip -o "$TOOLS/ffmpeg.zip"
     unzip -qo "$TOOLS/ffmpeg.zip" -d "$TOOLS/ffmpeg"
     printf '%s  %s\n' 6deb2860c3dc0c08e0f96bab119196c024103046fa3cc7ef72e3a77797d8553c "$TOOLS/ffmpeg/ffmpeg" | shasum -a 256 -c -
   else
-    curl --fail --location --retry 3 https://evermeet.cx/ffmpeg/getrelease/zip -o "$TOOLS/ffmpeg.zip"
+    curl --fail --location --retry 3 https://www.osxexperts.net/ffmpeg80intel.zip -o "$TOOLS/ffmpeg.zip"
     unzip -qo "$TOOLS/ffmpeg.zip" -d "$TOOLS/ffmpeg"
+    printf '%s  %s\n' df3f1e3facdc1ae0ad0bd898cdfb072fbc9641bf47b11f172844525a05db8d11 "$TOOLS/ffmpeg/ffmpeg" | shasum -a 256 -c -
   fi
   cp "$TOOLS/ffmpeg/ffmpeg" "$ROOT/ffmpeg-osx"
 fi
 
 chmod +x "$TOOLS/yt-dlp/yt-dlp_macos" "$TOOLS/deno/deno" "$ROOT/ffmpeg-osx"
 for helper in "$TOOLS/yt-dlp/yt-dlp_macos" "$TOOLS/deno/deno" "$ROOT/ffmpeg-osx"; do
-  lipo -verify_arch "$ARCH" "$helper"
+  lipo "$helper" -verify_arch "$ARCH"
 done
 "$TOOLS/yt-dlp/yt-dlp_macos" --version
 "$TOOLS/deno/deno" --version
