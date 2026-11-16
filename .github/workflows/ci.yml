@@ -1,0 +1,155 @@
+name: CI
+
+# Checks on every pull request and on pushes to the long-lived branches. Each job only runs when
+# its part of the repo changed, so a copy fix on the site does not wait on the .NET tests.
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches: [main, staging, dev]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      site: ${{ steps.filter.outputs.site }}
+      backend: ${{ steps.filter.outputs.backend }}
+      tools: ${{ steps.filter.outputs.tools }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter
+        id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            files=$(git ls-files)   # new branch or force push: check everything
+          else
+            files=$(git diff --name-only "$BASE" HEAD)
+          fi
+          hit() { grep -qE "$1" <<< "$files" && echo true || echo false; }
+          {
+            echo "app=$(hit '^(Spectralis\.(App|Core|Tests|Installer)/|Assets/|wgpu-host/|Directory\.Build\.|global\.json|Spectralis\.sln|legal\.html|docs/legal/|ffmpeg$|ffmpeg\.exe$|yt-dlp$|yt-dlp\.exe$|\.config/dotnet-tools\.json$|\.github/workflows/)')"
+            echo "site=$(hit '^(frontend/|\.github/workflows/)')"
+            echo "backend=$(hit '^(backend/|web-share/|\.github/workflows/)')"
+            echo "tools=$(hit '^(tools/(r2|release-pipeline)/|\.github/workflows/)')"
+          } >> "$GITHUB_OUTPUT"
+
+  app:
+    name: App tests
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-windows-
+
+      - name: Test
+        # The Performance tests assert frame rates, which a shared runner can't promise. They
+        # stay a local check; everything else gates the merge.
+        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance" --logger "trx;LogFileName=tests.trx"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: '**/tests.trx'
+          retention-days: 7
+
+  site:
+    name: Website
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    name: Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: cargo-backend-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: cargo-backend-
+
+      - run: cargo test --locked
+
+  tools:
+    name: Release tooling
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Release rules
+        working-directory: tools/release-pipeline
+        run: npm test
+
+      - name: CDN budget rules
+        working-directory: tools/r2
+        run: |
+          npm ci --silent
+          npm test

@@ -69,7 +69,7 @@ each.
 ---
 
 The release pipeline adds the entry for each stable release from the pull request description; see
-[development/releasing.md](development/releasing.md).
+[release workflow](../.github/workflows/release.yml).
 
 ---
 

@@ -28,8 +28,10 @@ The app's update client reads `https://spectralis-cdn.deltavdevs.com/releases.<r
 `visualizers/` holds the redeemable visualizers: `visualizers/manifest.json` plus one folder per
 visualizer with its module, binary, data and artwork (see below).
 
-Only the newest four release versions are kept. Older ones stay on the legacy CDN and in the local
-backup; the feeds are pruned to match, so a client is never told to fetch a package that is gone.
+Only the newest four release versions are kept, and only stable ones: betas never come here. Every
+release, old or new, stable or beta, is also a GitHub Release, which is where older versions are
+downloaded from and what the bucket can be rebuilt from. The feeds are pruned to match the bucket,
+so a client is never told to fetch a package that is gone.
 
 ---
 
@@ -63,6 +65,10 @@ version and never touched by the janitor.
 
 ## Publishing
 
+Releases are published by GitHub Actions on every merge into `main`
+([release workflow](../.github/workflows/release.yml)). The publish job runs the same two tools
+described here, and they can still be run by hand.
+
 `deploy.ps1` uploads to the legacy CDN (installed apps from 7.0.0 and earlier still read it) and then
 runs the R2 upload. The R2 step needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
 and can be skipped with `-SkipR2`.
@@ -92,6 +98,10 @@ So the cap is enforced in two independent layers:
    80% of that. It never deletes feeds, installers or the newest two versions.
 
 A Billing usage alert on R2 storage in the Cloudflare dashboard is the third layer and is set by hand.
+
+A weekly GitHub Actions job (`upkeep.yml`, running `tools/r2/usage.mjs`) is the fourth: it only
+measures the bucket, warns above 85% of the budget and fails above it, which emails the repository
+owner. The same measurement runs at the end of every stable release.
 
 Telescreen has a **Release CDN** page for this bucket (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` on the telescreen service). It shows usage against the budget and the hard cap, browses the bucket, and lets an owner upload to `visualizers/` (8 MB, refused if it would pass the budget) and delete objects. Releases still go up with `tools/r2/sync.mjs`.
 

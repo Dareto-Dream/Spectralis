@@ -31,6 +31,14 @@ node sync.mjs --source ..\..\releases-velopack --apply
 `deploy.ps1` runs this for you after the legacy CDN upload. Exit codes: 0 ok, 1 refused (nothing written),
 2 written but the bucket measured over budget, 3 error.
 
+## Checking usage
+
+```powershell
+node usage.mjs        # lists the bucket, prints the total by kind; exit 1 when over budget
+```
+
+Read-only. The weekly `upkeep.yml` workflow and every stable release run it.
+
 ## Visualizers
 
 `upload-visualizers.mjs` puts the redeemable visualizers under `visualizers/`. It plans against the same

@@ -7,6 +7,8 @@ param(
     [string]$WebDavUrl = "https://cdn.deltavdevs.com/webdav/",
     [string]$WebDavUser = "Admin",
     [string]$WebDavPassword = $env:SPECTRALIS_WEBDAV_PASSWORD,
+    # Where the Velopack artifacts are. CI passes the folder it downloaded the build into.
+    [string]$VelopackDir,
     [switch]$UseMappedDrive,
     [switch]$SkipSquirrel,
     [switch]$SkipVelopack,
@@ -314,15 +316,25 @@ if (-not $SkipSquirrel) {
 }
 
 if (-not $SkipVelopack) {
-    $velopackDir = Join-Path $repoRoot "releases-velopack"
+    $velopackDir = if ([string]::IsNullOrWhiteSpace($VelopackDir)) {
+        Join-Path $repoRoot "releases-velopack"
+    } else {
+        (Resolve-Path -LiteralPath $VelopackDir).Path
+    }
+
+    # What a channel publishes depends on its platform: Windows has a Setup.exe and a portable
+    # zip, Linux has the AppImage. The feed and the full package are common to both.
+    # assets.<channel>.json is vpk's build log (local paths), so it stays out.
     $velopackFiles = @(
         "releases.$Channel.json",
-        "assets.$Channel.json",
         "RELEASES-$Channel",
-        "Spectralis-$Version-$Channel-full.nupkg",
-        "Spectralis-$Channel-Setup.exe",
-        "Spectralis-$Channel-Portable.zip"
+        "Spectralis-$Version-$Channel-full.nupkg"
     )
+    if ($Channel -like "win-*") {
+        $velopackFiles += @("Spectralis-$Channel-Setup.exe", "Spectralis-$Channel-Portable.zip")
+    } elseif ($Channel -like "linux-*") {
+        $velopackFiles += @("Spectralis-$Channel.AppImage")
+    }
 
     Assert-PathExists $velopackDir "Velopack release directory" "Run .\build.ps1 -Version $Version."
     foreach ($file in $velopackFiles) {
@@ -387,6 +399,10 @@ if ($SkipVelopack) {
     foreach ($file in $velopackFiles) {
         Copy-Artifact (Join-Path $velopackDir $file) $cdnTarget "Velopack $Channel artifact"
     }
+    $velopackDelta = Join-Path $velopackDir "Spectralis-$Version-$Channel-delta.nupkg"
+    if (Test-Path -LiteralPath $velopackDelta) {
+        Copy-Artifact $velopackDelta $cdnTarget "Velopack $Channel delta package"
+    }
 }
 
 # Linux AppImage
@@ -396,7 +412,7 @@ if ($hasLinuxAppImage) {
     Write-Host "[Linux] $appImage"
     Write-Host "     -> $cdnTarget"
     Copy-Artifact $appImage $cdnTarget "Linux AppImage"
-} else {
+} elseif ($Channel -notlike "linux-*") {
     Write-Warning "Linux AppImage not found - skipping (build with -Linux to produce it)"
 }
 

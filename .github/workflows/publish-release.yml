@@ -1,0 +1,158 @@
+name: Publish release
+
+# Takes the two build artifacts and puts a version out. Every release, stable or beta, becomes a
+# GitHub Release: that is the permanent archive older versions are installed from, and it costs
+# nothing. Only stable releases also go to the R2 CDN (through the budget-guarded sync, which is
+# the one thing allowed to write there) and to the legacy CDN that installs from 7.0.0 and
+# earlier still read. Betas never touch R2.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      channel:
+        description: stable or beta
+        required: true
+        type: string
+      title:
+        description: JSON-encoded pull request title, used as the changelog label
+        required: false
+        type: string
+        default: '""'
+      notes-artifact:
+        description: Name of the artifact holding release-notes.md
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Stable and beta both read/replace the release index. Keep those writes in order.
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+      CHANNEL: ${{ inputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*-x64
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.notes-artifact }}
+          path: notes
+
+      - name: Check the files
+        run: |
+          ls -la dist
+          for required in releases.win-x64.json releases.linux-x64.json \
+                          "Spectralis-$VERSION-win-x64-full.nupkg" "Spectralis-$VERSION-linux-x64-full.nupkg" \
+                          Spectralis-win-x64-Setup.exe Spectralis-linux-x64.AppImage; do
+            [ -f "dist/$required" ] || { echo "::error::Missing $required"; exit 1; }
+          done
+          # assets.*.json is a build log with runner paths in it; it is not for publishing.
+          rm -f dist/assets.*.json
+
+      # The tag is created here, on the commit that was built. Re-running replaces the files.
+      - name: GitHub Release
+        run: |
+          flags=()
+          if [ "$CHANNEL" = "beta" ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" dist/* --clobber
+          else
+            gh release create "v$VERSION" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "Spectralis $VERSION" \
+              --notes-file notes/release-notes.md \
+              "${flags[@]}"
+          fi
+
+      # sync.mjs plans before it writes and refuses anything that would not fit the storage budget
+      # (5 GB, hard maximum 8 GB, free tier 10 GB). It prunes the bucket to the newest four versions.
+      - name: R2 CDN (stable only)
+        if: inputs.channel == 'stable'
+        working-directory: tools/r2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          npm ci --silent
+          node sync.mjs --source ../../dist --apply
+          node usage.mjs
+
+      # Installs from 7.0.0 and earlier read the old CDN. Not worth failing a release over: the
+      # GitHub Release and R2 already have it, and the job summary says if this step did not run.
+      - name: Legacy CDN (stable only)
+        if: inputs.channel == 'stable'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          SPECTRALIS_WEBDAV_PASSWORD: ${{ secrets.SPECTRALIS_WEBDAV_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SPECTRALIS_WEBDAV_PASSWORD)) {
+            Write-Host "::warning::SPECTRALIS_WEBDAV_PASSWORD is not set, so the legacy CDN did not get $env:VERSION."
+            exit 0
+          }
+          foreach ($channel in @("win-x64", "linux-x64")) {
+            ./deploy.ps1 -Version $env:VERSION -Channel $channel -VelopackDir dist -SkipSquirrel -SkipR2
+          }
+
+      # Changelog (stable) and the release index (both). The website and the app read these, so
+      # this is the step that makes the release show up.
+      - name: Changelog and release index
+        id: content
+        env:
+          SPECTRALIS_ADMIN_TOKEN: ${{ secrets.SPECTRALIS_ADMIN_TOKEN }}
+          TITLE: ${{ inputs.title }}   # through the environment: a title is user text, never shell
+        run: |
+          node tools/release-pipeline/cli.mjs publish-content \
+            --version "$VERSION" \
+            --files-dir dist \
+            --notes-file notes/release-notes.md \
+            --title "$TITLE"
+
+      - name: Retire old betas
+        if: steps.content.outputs.dropped_betas != ''
+        continue-on-error: true
+        env:
+          DROPPED: ${{ steps.content.outputs.dropped_betas }}
+        run: |
+          for tag in $DROPPED; do
+            case "$tag" in
+              v[0-9]*-beta.[0-9]*) gh release delete "$tag" --cleanup-tag --yes || true ;;
+              *) echo "::warning::not deleting unexpected tag '$tag'" ;;
+            esac
+          done
+
+      - name: Summary
+        run: |
+          {
+            echo "### Spectralis $VERSION ($CHANNEL)"
+            echo
+            echo "- Release: https://github.com/${{ github.repository }}/releases/tag/v$VERSION"
+            if [ "$CHANNEL" = "stable" ]; then
+              echo "- Windows: https://spectralis-cdn.deltavdevs.com/Spectralis-win-x64-Setup.exe"
+              echo "- Linux: https://spectralis-cdn.deltavdevs.com/Spectralis-linux-x64.AppImage"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
