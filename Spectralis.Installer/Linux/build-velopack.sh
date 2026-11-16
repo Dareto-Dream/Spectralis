@@ -13,6 +13,9 @@ PUBLISH_DIR="$REPO_ROOT/publish-velopack-linux"
 RELEASE_DIR="$REPO_ROOT/releases-velopack"
 CHANNEL="linux-x64"
 
+dotnet publish "$REPO_ROOT/Spectralis.Installer/Updater/Spectralis.Updater.csproj" \
+  -c Release -r linux-x64 /p:PublishAot=true -o "$REPO_ROOT/output/updater/linux-x64"
+
 for required in SPECTRALIS_SPOTIFY_CLIENT_ID SPECTRALIS_DISCORD_CLIENT_ID; do
   if [[ -z "${!required:-}" ]]; then
     echo "error: $required is not set. Releases must ship with baked-in client IDs; set it before building." >&2
@@ -43,6 +46,9 @@ dotnet publish "$APP_PROJECT" \
   /p:SPECTRALIS_SPOTIFY_CLIENT_ID="$SPECTRALIS_SPOTIFY_CLIENT_ID" \
   /p:SPECTRALIS_DISCORD_CLIENT_ID="$SPECTRALIS_DISCORD_CLIENT_ID" \
   -o "$PUBLISH_DIR"
+
+test -f "$PUBLISH_DIR/Updater/UpdateSpectralis" || { echo "Recovery updater missing from publish output" >&2; exit 1; }
+chmod +x "$PUBLISH_DIR/Updater/UpdateSpectralis"
 
 rm -f "$RELEASE_DIR/Spectralis-$VERSION-$CHANNEL-full.nupkg" \
       "$RELEASE_DIR/releases.$CHANNEL.json"

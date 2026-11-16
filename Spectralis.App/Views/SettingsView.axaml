@@ -340,6 +340,9 @@
           <TextBlock Classes="data"
                      Text="{Binding UpdateStatus}"
                      TextWrapping="Wrap" />
+          <Button Content="Show recovery updater" Click="OnShowRecoveryUpdater"
+                  HorizontalAlignment="Left" Classes="ghost"
+                  ToolTip.Tip="Find the standalone recovery tool." />
         </StackPanel>
       </StackPanel>
 

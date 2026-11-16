@@ -42,6 +42,12 @@ public partial class VersionPickerWindow : Window
         return window._chosen;
     }
 
+    public static Task<bool> ConfirmDowngradeAsync(Window owner, string version) =>
+        ConfirmWindow.ShowAsync(owner, $"Install Spectralis {version}?",
+            "Automatic updates will be turned off so this version stays installed.\n\n" +
+            "Use Update Spectralis in your apps menu to return to the latest stable release. " +
+            "Newer settings may not work in this older version.", "Install older version", "Cancel");
+
     private async Task LoadAsync()
     {
         try
