@@ -74,9 +74,9 @@ jobs:
           restore-keys: nuget-windows-
 
       - name: Test
-        # The Performance tests assert frame rates, which a shared runner can't promise. They
+        # Performance benchmarks assert frame rates, which a shared runner can't promise. They
         # stay a local check; everything else gates the merge.
-        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance" --logger "trx;LogFileName=tests.trx"
+        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance&Category!=Performance" --logger "trx;LogFileName=tests.trx"
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -118,7 +118,7 @@ jobs:
       - name: Build native visualizer before project evaluation
         run: cargo build --release --manifest-path wgpu-host/Cargo.toml
       - name: Test
-        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance" --logger "trx;LogFileName=macos-tests.trx"
+        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance&Category!=Performance" --logger "trx;LogFileName=macos-tests.trx"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
