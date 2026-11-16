@@ -27,7 +27,7 @@ MINIMUM_OS=12.0
 [[ "$RID" == osx-arm64 ]] && MINIMUM_OS=13.0
 export MACOSX_DEPLOYMENT_TARGET="$MINIMUM_OS"
 bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh" "$RID"
-dotnet publish "$APP_PROJECT" -c Release -f net8.0 /p:TargetFrameworks=net8.0 -r "$RID" --self-contained true \
+dotnet publish "$APP_PROJECT" -c Release -f net8.0 -r "$RID" --self-contained true \
   -o "$OUT/$RID" "/p:Version=$VERSION"
 
 if [[ ! -f "$OUT/$RID/libcef.dylib" ]]; then

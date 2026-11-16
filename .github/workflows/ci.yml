@@ -130,7 +130,7 @@ jobs:
       - name: Build native visualizer before project evaluation
         run: cargo build --release --manifest-path wgpu-host/Cargo.toml
       - name: Test
-        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release -p:TargetFrameworks=net8.0 --filter "FullyQualifiedName!~Spectralis.Tests.Performance&Category!=Performance" --logger "trx;LogFileName=macos-tests.trx"
+        run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance&Category!=Performance" --logger "trx;LogFileName=macos-tests.trx"
       - name: Measure native audio analysis and snapshot allocation
         run: dotnet run --project tools/performance/Spectralis.AnalysisProbe.csproj -c Release
       - uses: actions/upload-artifact@v4

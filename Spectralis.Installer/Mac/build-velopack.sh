@@ -77,7 +77,6 @@ for RID in "$RID"; do
   dotnet publish "$APP_PROJECT" \
     -c Release \
     -f net8.0 \
-    /p:TargetFrameworks=net8.0 \
     -r "$RID" \
     --self-contained true \
     /p:Version="$VERSION" \
