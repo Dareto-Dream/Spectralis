@@ -61,6 +61,18 @@ public sealed class PlaylistTests : IDisposable
         Assert.Equal(@"C:\abs\other.mp3", paths[1]);
     }
 
+    [Theory]
+    [InlineData("sub/song.mp3")]
+    [InlineData("sub\\song.mp3")]
+    public void RelativeSeparatorsWorkForRawAndExtendedPlaylists(string entry)
+    {
+        var path = Path.Combine(_tempDir, "portable.m3u8");
+        File.WriteAllLines(path, ["#EXTM3U", "#EXTINF:12,Artist - Song", entry]);
+        var expected = Path.Combine(_tempDir, "sub", "song.mp3");
+        Assert.Equal(expected, Assert.Single(M3uParser.Import(path)));
+        Assert.Equal(expected, Assert.Single(M3uParser.ImportItems(path)).Path);
+    }
+
     private static LibraryEntry Entry(
         string path,
         string title = "",
