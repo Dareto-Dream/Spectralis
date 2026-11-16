@@ -26,9 +26,10 @@ public static class RecoveryUpdater
             try { File.Copy(source, staged); File.Move(staged, target, overwrite: true); }
             finally { if (File.Exists(staged)) File.Delete(staged); }
         }
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            File.SetUnixFileMode(target, File.GetUnixFileMode(target) | UnixFileMode.UserExecute);
         if (OperatingSystem.IsLinux())
         {
-            File.SetUnixFileMode(target, File.GetUnixFileMode(target) | UnixFileMode.UserExecute);
             var appImage = Environment.GetEnvironmentVariable("APPIMAGE");
             if (!string.IsNullOrWhiteSpace(appImage) && Path.IsPathFullyQualified(appImage) && File.Exists(appImage))
                 File.WriteAllText(Path.Combine(directory, "target.json"), JsonSerializer.Serialize(new { appImagePath = appImage }));
@@ -46,6 +47,8 @@ public static class RecoveryUpdater
                 File.WriteAllText(Path.Combine(applications, "spectralis-updater.desktop"),
                     $"[Desktop Entry]\nType=Application\nName=Update Spectralis\nComment=Return to the latest stable release\nExec=\"{executable}\"\nTerminal=true\nCategories=AudioVideo;Audio;\n");
             }
+            else if (OperatingSystem.IsMacOS()) CreateMacLauncher(target, directory,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Applications"));
         }
         return target;
     }
@@ -61,6 +64,31 @@ public static class RecoveryUpdater
         using var left = File.OpenRead(a);
         using var right = File.OpenRead(b);
         return SHA256.HashData(left).AsSpan().SequenceEqual(SHA256.HashData(right));
+    }
+
+    [SupportedOSPlatform("macos")]
+    internal static void CreateMacLauncher(string target, string directory, string applicationsDirectory)
+    {
+        static string Quote(string path) => "'" + path.Replace("'", "'\\''") + "'";
+        var command = Path.Combine(directory, "Update Spectralis.command");
+        File.WriteAllText(command, "#!/bin/sh\nexec " + Quote(target) + "\n");
+        File.SetUnixFileMode(command, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var bundle = Path.Combine(applicationsDirectory, "Update Spectralis.app", "Contents");
+        var executable = Path.Combine(bundle, "MacOS", "launcher");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(Path.Combine(bundle, "Info.plist"), """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0"><dict>
+              <key>CFBundleIdentifier</key><string>com.deltavdevs.spectralis.updater</string>
+              <key>CFBundleName</key><string>Update Spectralis</string>
+              <key>CFBundleExecutable</key><string>launcher</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>LSUIElement</key><true/>
+            </dict></plist>
+            """);
+        File.WriteAllText(executable, "#!/bin/sh\nexec /usr/bin/open -a Terminal " + Quote(command) + "\n");
+        File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
     [SupportedOSPlatform("windows")]

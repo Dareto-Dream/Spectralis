@@ -85,7 +85,8 @@ public class MacLoopbackTests
 
         Assert.False(started);
         Assert.StartsWith("setup-required", source.StatusDetail);
-        Assert.Contains("BlackHole", MacLoopbackCaptureSource.SetupInstructions + MacLoopbackCaptureSource.BlackHoleDownloadUrl);
+        Assert.False(string.IsNullOrWhiteSpace(MacLoopbackCaptureSource.SetupInstructions));
+        Assert.Contains(MacLoopbackCaptureSource.SetupInstructions, source.StatusDetail);
     }
 }
 

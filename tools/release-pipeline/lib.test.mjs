@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   betaVersion, bump, compareVersions, explicitVersion, latestStable, mergeChangelog, mergeReleases,
-  parseChangelog, planStable, releaseEntry, touchesApp, versionsInFeed,
+  parseChangelog, planStable, releaseEntry, touchesApp, versionsInFeed, REPO_URL,
 } from './lib.mjs';
 
 test('versions order the way semver says', () => {
@@ -101,6 +101,16 @@ test('entries stay inside what the backend accepts', () => {
   assert.equal(a.groups[0].bullets.length, 20);
   assert.ok(a.groups[0].bullets.every((b) => b.length <= 800));
   assert.equal(parseChangelog(groups, { version: '1.0.0' }).groups.length, 12);
+});
+
+test('macOS installers and portable builds join the release index only with a matching feed', () => {
+  const files = ['releases.osx-x64.json', 'Spectralis-osx-x64-Setup.pkg', 'Spectralis-osx-x64-Portable.zip'];
+  const entry = releaseEntry({ version: '7.1.3', date: '2026-11-16', files });
+  assert.deepEqual(entry.platforms['osx-x64'], {
+    installer: `${REPO_URL}/releases/download/v7.1.3/Spectralis-osx-x64-Setup.pkg`,
+    portable: `${REPO_URL}/releases/download/v7.1.3/Spectralis-osx-x64-Portable.zip`,
+  });
+  assert.deepEqual(releaseEntry({ version: '7.1.3', files: files.slice(1) }).platforms, {});
 });
 
 test('the new entry goes on top and the old latest steps down', () => {

@@ -16,11 +16,17 @@ public sealed class RecoveryClient(HttpClient http)
         uri.IsDefaultPort && uri.UserInfo.Length == 0 && uri.Query.Length == 0 && uri.Fragment.Length == 0 &&
         uri.AbsolutePath.StartsWith(DownloadPrefix, StringComparison.Ordinal) &&
         uri.AbsolutePath[DownloadPrefix.Length..].Split('/') is [var tag, var file] && tag.Length > 0 &&
-        file == (rid == "win-x64" ? "Spectralis-win-x64-Setup.exe" : "Spectralis-linux-x64.AppImage");
+        file == (rid switch
+        {
+            "win-x64" => "Spectralis-win-x64-Setup.exe",
+            "linux-x64" => "Spectralis-linux-x64.AppImage",
+            "osx-x64" => "Spectralis-osx-x64-Setup.pkg",
+            _ => ""
+        });
 
     public static RecoveryRelease SelectLatest(string json, string rid)
     {
-        if (rid is not ("win-x64" or "linux-x64")) throw new PlatformNotSupportedException();
+        if (rid is not ("win-x64" or "linux-x64" or "osx-x64")) throw new PlatformNotSupportedException();
         using var document = JsonDocument.Parse(json);
         RecoveryRelease? best = null;
         Version? newest = null;

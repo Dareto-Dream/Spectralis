@@ -191,6 +191,7 @@ public class VisualizerRendererTests
     }
 
     [Theory]
+    [Trait("Category", "Performance")]
     [MemberData(nameof(AllModes))]
     public void Renderer_FrameLogicStaysWithinBudget(VisualizerMode mode)
     {
@@ -215,7 +216,7 @@ public class VisualizerRendererTests
         sw.Stop();
 
         // Renderer math must leave the bulk of the 16.7ms frame budget for the
-        // actual GPU/draw work. 4ms average is a generous ceiling on CI boxes.
+        // actual GPU/draw work. Run this benchmark locally; hosted runner CPU time varies.
         var averageMs = sw.Elapsed.TotalMilliseconds / frames;
         Assert.True(averageMs < 4.0, $"{mode} averaged {averageMs:0.00}ms of frame logic per frame.");
     }

@@ -3,7 +3,7 @@ import { Download, Terminal, Apple, GitFork, ArrowUpRight } from 'lucide-react'
 import { FAQ, APP_VERSION, DOWNLOAD_BASE, RELEASES_PAGE_URL } from '../data/site.jsx'
 import { useReleases } from '../lib/useReleases.js'
 
-const PLATFORM_LABELS = { 'win-x64': 'Windows', 'linux-x64': 'Linux' }
+const PLATFORM_LABELS = { 'win-x64': 'Windows', 'linux-x64': 'Linux', 'osx-x64': 'macOS' }
 
 function ReleaseDownloads({ release }) {
   return Object.entries(PLATFORM_LABELS)
@@ -41,7 +41,7 @@ export default function Setup() {
             </div>
             <div className="dl-hero__stat">
               <span className="dl-hero__stat-n">macOS</span>
-              <span className="dl-hero__stat-l">.pkg · v6.0.0 LTS</span>
+              <span className="dl-hero__stat-l">.pkg · Intel / Rosetta</span>
             </div>
             <div className="dl-hero__stat">
               <span className="dl-hero__stat-n">Linux</span>
@@ -110,29 +110,21 @@ export default function Setup() {
               <h2 className="dl-card__title">macOS</h2>
               <p className="dl-card__platform-sub">11 Big Sur or newer</p>
             </div>
-            <span className="dl-card__badge dl-card__badge--new">v6.0.0 LTS</span>
+            <span className="dl-card__badge dl-card__badge--new">v{version}</span>
           </div>
 
           <div className="dl-card__file">
-            <span className="dl-card__filename">Spectralis-osx-&lt;arch&gt;-Setup.pkg</span>
-            <span className="dl-card__filetype">.pkg installer · pick your chip</span>
+            <span className="dl-card__filename">Spectralis-osx-x64-Setup.pkg</span>
+            <span className="dl-card__filetype">.pkg installer · Intel / Rosetta</span>
           </div>
 
           <div className="dl-card__arch">
             <a
-              href={`${DOWNLOAD_BASE}/Spectralis-osx-arm64-Setup.pkg`}
+              href={latest?.downloads['osx-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
               className="btn btn--primary dl-card__arch-btn"
             >
               <Download size={16} />
-              Apple Silicon
-              <span className="dl-card__arch-tag">arm64</span>
-            </a>
-            <a
-              href={`${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
-              className="btn btn--ghost dl-card__arch-btn"
-            >
-              <Download size={16} />
-              Intel
+              Download for macOS
               <span className="dl-card__arch-tag">x64</span>
             </a>
           </div>
@@ -140,15 +132,15 @@ export default function Setup() {
           <div className="dl-card__notes">
             <div className="dl-note">
               <span className="dl-note__label">Which one?</span>
-              <p className="dl-note__body">M1 through M4 Macs take the Apple Silicon build; 2020-and-earlier Intel Macs take the Intel build. Not sure? Check <code>Apple menu → About This Mac</code>.</p>
+              <p className="dl-note__body">Runs on Intel Macs. Apple Silicon Macs use Rosetta 2; macOS offers to install it when needed.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Release support</span>
-              <p className="dl-note__body">macOS remains on the 6.0.0 LTS release. Version {version} is available for Windows and Linux.</p>
+              <p className="dl-note__body">Built and published with Windows and Linux, including beta releases and version history.</p>
             </div>
             <div className="dl-note">
               <span className="dl-note__label">Gatekeeper</span>
-              <p className="dl-note__body">If macOS won't open the <code>.pkg</code>, Control-click it and choose Open, or allow it under <code>System Settings → Privacy &amp; Security</code>.</p>
+              <p className="dl-note__body">Not yet signed or notarized. If macOS blocks the installer, use <code>System Settings → Privacy &amp; Security → Open Anyway</code> after trying to open it.</p>
             </div>
           </div>
 

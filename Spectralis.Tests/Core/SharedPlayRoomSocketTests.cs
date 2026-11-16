@@ -58,6 +58,7 @@ public sealed class SharedPlayRoomSocketTests
     private sealed class FakeTransport : ISharedPlaySocketTransport
     {
         private readonly Channel<string> _inbound = Channel.CreateUnbounded<string>();
+        private readonly SemaphoreSlim _sentSignal = new(0);
         public readonly List<string> Sent = new();
         public readonly TaskCompletionSource Connected = new();
 
@@ -73,7 +74,14 @@ public sealed class SharedPlayRoomSocketTests
         public Task SendTextAsync(string text, CancellationToken ct)
         {
             lock (Sent) Sent.Add(text);
+            _sentSignal.Release();
             return Task.CompletedTask;
+        }
+
+        public async Task WaitForSendsAsync(int count)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            for (var i = 0; i < count; i++) await _sentSignal.WaitAsync(timeout.Token);
         }
 
         public async Task<string?> ReceiveTextAsync(CancellationToken ct)
@@ -96,7 +104,7 @@ public sealed class SharedPlayRoomSocketTests
             transportFactory: () => transport);
         socket.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
+        await transport.WaitForSendsAsync(1);
         return (socket, transport);
     }
 
@@ -117,10 +125,10 @@ public sealed class SharedPlayRoomSocketTests
     public async Task WelcomeFrame_RaisesCapsAndRoster()
     {
         var (socket, transport) = await ConnectAsync();
-        SharedPlayCapabilities? caps = null;
-        IReadOnlyList<SharedPlayMember>? roster = null;
-        socket.CapsReceived += c => caps = c;
-        socket.RosterReceived += r => roster = r;
+        var capsReceived = new TaskCompletionSource<SharedPlayCapabilities>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rosterReceived = new TaskCompletionSource<IReadOnlyList<SharedPlayMember>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        socket.CapsReceived += c => capsReceived.TrySetResult(c);
+        socket.RosterReceived += r => rosterReceived.TrySetResult(r);
 
         transport.Inject("""
         {"v":1,"t":"welcome","you":{"clientId":"client-1","role":"follower"},
@@ -129,7 +137,8 @@ public sealed class SharedPlayRoomSocketTests
             {"clientId":"h","name":"Host","role":"host","isHost":true},
             {"clientId":"client-1","name":"Tester","role":"follower"}]}
         """);
-        await Task.Delay(80);
+        var caps = await capsReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var roster = await rosterReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.NotNull(caps);
         Assert.Equal("everyone", caps!.Transport);
@@ -143,14 +152,14 @@ public sealed class SharedPlayRoomSocketTests
     public async Task CommandFrame_RaisesTypedCommand()
     {
         var (socket, transport) = await ConnectAsync("host");
-        SharedPlayIncomingCommand? cmd = null;
-        socket.CommandReceived += c => cmd = c;
+        var commandReceived = new TaskCompletionSource<SharedPlayIncomingCommand>(TaskCreationOptions.RunContinuationsAsynchronously);
+        socket.CommandReceived += c => commandReceived.TrySetResult(c);
 
         transport.Inject("""
         {"v":1,"t":"command","cmd":"transport","payload":{"action":"pause"},
          "by":{"clientId":"lis","name":"Alice"}}
         """);
-        await Task.Delay(80);
+        var cmd = await commandReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.NotNull(cmd);
         Assert.Equal("transport", cmd!.Cmd);
@@ -167,7 +176,7 @@ public sealed class SharedPlayRoomSocketTests
         socket.RequestQueueAdd("https://youtube.com/watch?v=x", "Song");
         socket.SendTransport("seek", 42.5);
         socket.VoteSkip();
-        await Task.Delay(60);
+        await transport.WaitForSendsAsync(3);
 
         List<string> frames;
         lock (transport.Sent) frames = transport.Sent.ToList();
@@ -189,11 +198,10 @@ public sealed class SharedPlayRoomSocketTests
     public async Task KickedFrame_RaisesKicked()
     {
         var (socket, transport) = await ConnectAsync();
-        var kicked = false;
-        socket.Kicked += () => kicked = true;
+        var kicked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        socket.Kicked += () => kicked.TrySetResult();
         transport.Inject("""{"v":1,"t":"kicked"}""");
-        await Task.Delay(80);
-        Assert.True(kicked);
+        await kicked.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await socket.StopAsync();
     }
 }

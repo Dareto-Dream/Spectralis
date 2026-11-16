@@ -81,7 +81,7 @@
              Condition="'$(SpectralisHelperOs)' == 'win' And Exists('..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis.exe')" />
     <Content Include="..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis"
              Link="Updater\UpdateSpectralis" CopyToOutputDirectory="PreserveNewest"
-             Condition="'$(SpectralisHelperOs)' == 'linux' And Exists('..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis')" />
+             Condition="('$(SpectralisHelperOs)' == 'linux' Or '$(SpectralisHelperOs)' == 'osx') And Exists('..\output\updater\$(RuntimeIdentifier)\UpdateSpectralis')" />
   </ItemGroup>
 
   <ItemGroup>

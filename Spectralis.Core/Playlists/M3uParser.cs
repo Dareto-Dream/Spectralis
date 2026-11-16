@@ -18,9 +18,7 @@ public static class M3uParser
                 continue;
             }
 
-            var abs = Path.IsPathRooted(line)
-                ? line
-                : Path.GetFullPath(Path.Combine(dir, line));
+            var abs = ResolvePath(dir, line);
 
             if (!string.IsNullOrEmpty(abs))
             {
@@ -60,9 +58,7 @@ public static class M3uParser
                 continue;
             }
 
-            var abs = Path.IsPathRooted(line)
-                ? line
-                : Path.GetFullPath(Path.Combine(dir, line));
+            var abs = ResolvePath(dir, line);
 
             items.Add(new PlaylistItem
             {
@@ -109,6 +105,17 @@ public static class M3uParser
         }
 
         File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
+    }
+
+    private static string ResolvePath(string directory, string path)
+    {
+        // Keep foreign absolute paths intact for round trips; only relative entries belong
+        // under the playlist directory. Windows separators also occur in portable playlists.
+        if (Path.IsPathRooted(path) || path.StartsWith(@"\\", StringComparison.Ordinal) ||
+            (path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] is '\\' or '/'))
+            return path;
+        var relative = path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        return Path.GetFullPath(Path.Combine(directory, relative));
     }
 
     private static void ParseExtinf(string line, out double duration, out string? artist, out string? title)

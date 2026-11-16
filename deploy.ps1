@@ -323,7 +323,7 @@ if (-not $SkipVelopack) {
     }
 
     # What a channel publishes depends on its platform: Windows has a Setup.exe and a portable
-    # zip, Linux has the AppImage. The feed and the full package are common to both.
+    # zip, Linux has the AppImage, macOS has a pkg and portable zip. Feeds and full packages are shared.
     # assets.<channel>.json is vpk's build log (local paths), so it stays out.
     $velopackFiles = @(
         "releases.$Channel.json",
@@ -334,6 +334,8 @@ if (-not $SkipVelopack) {
         $velopackFiles += @("Spectralis-$Channel-Setup.exe", "Spectralis-$Channel-Portable.zip")
     } elseif ($Channel -like "linux-*") {
         $velopackFiles += @("Spectralis-$Channel.AppImage")
+    } elseif ($Channel -like "osx-*") {
+        $velopackFiles += @("Spectralis-$Channel-Setup.pkg", "Spectralis-$Channel-Portable.zip")
     }
 
     Assert-PathExists $velopackDir "Velopack release directory" "Run .\build.ps1 -Version $Version."

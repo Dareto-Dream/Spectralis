@@ -35,6 +35,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  macos-smoke:
+    name: Check published macOS updater
+    needs: publish
+    if: inputs.channel == 'stable'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Run the published standalone updater
+        run: |
+          mkdir -p macos-smoke
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern UpdateSpectralis-osx-x64 --dir macos-smoke
+          chmod +x macos-smoke/UpdateSpectralis-osx-x64
+          macos-smoke/UpdateSpectralis-osx-x64 --version
+          for attempt in 1 2 3 4; do
+            if macos-smoke/UpdateSpectralis-osx-x64 --check > macos-smoke/result.txt 2>&1 && \
+               grep -Fq "Latest stable release: $VERSION" macos-smoke/result.txt; then
+              cat macos-smoke/result.txt
+              exit 0
+            fi
+            sleep 10
+          done
+          cat macos-smoke/result.txt
+          exit 1
+
   publish:
     name: Publish ${{ inputs.version }}
     runs-on: ubuntu-latest
@@ -64,9 +92,10 @@ jobs:
       - name: Check the files
         run: |
           ls -la dist
-          for required in releases.win-x64.json releases.linux-x64.json \
+          for required in releases.win-x64.json releases.linux-x64.json releases.osx-x64.json \
                           "Spectralis-$VERSION-win-x64-full.nupkg" "Spectralis-$VERSION-linux-x64-full.nupkg" \
-                          Spectralis-win-x64-Setup.exe Spectralis-linux-x64.AppImage; do
+                          "Spectralis-$VERSION-osx-x64-full.nupkg" \
+                          Spectralis-win-x64-Setup.exe Spectralis-linux-x64.AppImage Spectralis-osx-x64-Setup.pkg; do
             [ -f "dist/$required" ] || { echo "::error::Missing $required"; exit 1; }
           done
           # assets.*.json is a build log with runner paths in it; it is not for publishing.
@@ -114,7 +143,7 @@ jobs:
             Write-Host "::warning::SPECTRALIS_WEBDAV_PASSWORD is not set, so the legacy CDN did not get $env:VERSION."
             exit 0
           }
-          foreach ($channel in @("win-x64", "linux-x64")) {
+          foreach ($channel in @("win-x64", "linux-x64", "osx-x64")) {
             ./deploy.ps1 -Version $env:VERSION -Channel $channel -VelopackDir dist -SkipSquirrel -SkipR2
           }
 

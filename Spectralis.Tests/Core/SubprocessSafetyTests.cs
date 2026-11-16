@@ -5,14 +5,16 @@ namespace Spectralis.Tests.Core;
 
 public class SafeProcessRunnerTests
 {
-    private static readonly string Cmd = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+    private static string Host => Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+    private static string[] Probe(params string[] arguments) =>
+        new[] { Path.Combine(AppContext.BaseDirectory, "ProcessProbe", "Spectralis.ProcessProbe.dll") }
+            .Concat(arguments).ToArray();
 
     [Fact]
     public async Task Run_CapturesStdoutAndExitCode()
     {
         var result = await SafeProcessRunner.RunAsync(
-            Cmd, new[] { "/c", "echo", "hello" }, TimeSpan.FromSeconds(30));
+            Host, Probe("echo", "hello"), TimeSpan.FromSeconds(30));
 
         Assert.True(result.Succeeded);
         Assert.Contains("hello", result.Stdout);
@@ -23,7 +25,7 @@ public class SafeProcessRunnerTests
     public async Task Run_NonZeroExitCodeIsReported()
     {
         var result = await SafeProcessRunner.RunAsync(
-            Cmd, new[] { "/c", "exit", "3" }, TimeSpan.FromSeconds(30));
+            Host, Probe("exit", "3"), TimeSpan.FromSeconds(30));
 
         Assert.Equal(3, result.ExitCode);
         Assert.False(result.Succeeded);
@@ -34,8 +36,8 @@ public class SafeProcessRunnerTests
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var result = await SafeProcessRunner.RunAsync(
-            Cmd,
-            new[] { "/c", "ping", "-n", "30", "127.0.0.1" },
+            Host,
+            Probe("hang"),
             TimeSpan.FromSeconds(2));
         sw.Stop();
 
@@ -52,8 +54,8 @@ public class SafeProcessRunnerTests
         try
         {
             var result = await SafeProcessRunner.RunAsync(
-                Cmd,
-                new[] { "/c", "type", bigFile },
+                Host,
+                Probe("cat", bigFile),
                 TimeSpan.FromSeconds(30),
                 maxOutputBytes: 10_000);
 
@@ -69,14 +71,13 @@ public class SafeProcessRunnerTests
     [Fact]
     public async Task Run_AdversarialArgumentArrivesAsSingleLiteralToken()
     {
-        // ArgumentList must deliver hostile metadata as one literal argv entry —
-        // command chaining must not execute. (cmd /c echo is the probe, so the
-        // payload avoids raw quotes that cmd itself would re-parse.)
-        const string hostile = "& del C:\\ & echo pwned";
+        // A portable child reports one argv entry without involving any shell.
+        const string hostile = "title \"quoted\" & echo pwned; $(echo pwned) | anything";
         var result = await SafeProcessRunner.RunAsync(
-            Cmd, new[] { "/c", "echo", hostile }, TimeSpan.FromSeconds(30));
+            Host, Probe("literal", hostile), TimeSpan.FromSeconds(30));
 
-        Assert.Contains("del C:\\", result.Stdout); // echoed back as text, not executed
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("<" + hostile + ">", result.Stdout);
     }
 }
 
