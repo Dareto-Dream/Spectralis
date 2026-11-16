@@ -48,9 +48,11 @@ test('the page gets the latest, the older ones, and a beta only while it is ahea
 test('macOS downloads are present in stable, historical and beta rows', () => {
   const mac = version => row(version, version.includes('-beta.') ? 'beta' : 'stable', {
     'osx-x64': { installer: `${base}/v${version}/Spectralis-osx-x64-Setup.pkg` },
+    'osx-arm64': { installer: `${base}/v${version}/Spectralis-osx-arm64-Setup.pkg` },
   })
   const releases = splitReleases(normalizeReleases([mac('7.1.3'), mac('7.1.2'), mac('7.1.4-beta.1')]))
   for (const release of [releases.latest, releases.older[0], releases.beta]) {
     assert.equal(release.downloads['osx-x64'], `${base}/v${release.version}/Spectralis-osx-x64-Setup.pkg`)
+    assert.equal(release.downloads['osx-arm64'], `${base}/v${release.version}/Spectralis-osx-arm64-Setup.pkg`)
   }
 })

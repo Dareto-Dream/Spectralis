@@ -5,6 +5,7 @@ set -euo pipefail
 VERSION="${1:?usage: generate-metadata.sh <version> <output-directory> [executable]}"
 OUT="${2:?output directory required}"
 EXECUTABLE="${3:-Spectralis.App}"
+MINIMUM_OS="${4:-12.0}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   echo "error: invalid release version: $VERSION" >&2
@@ -36,7 +37,7 @@ cat > "$OUT/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Spectralis.icns</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSMinimumSystemVersion</key><string>$MINIMUM_OS</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>Spectralis Protocol</string>

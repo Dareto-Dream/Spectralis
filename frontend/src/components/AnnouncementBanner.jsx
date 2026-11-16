@@ -26,7 +26,7 @@ export function AnnouncementBanner() {
     <div className="promo-banner">
       <Link to="/setup#macos" className="promo-banner__msg">
         <Apple size={13} />
-        <span className="promo-banner__text">Mac builds: Intel, or Apple Silicon with Rosetta 2.</span>
+        <span className="promo-banner__text">Spectralis for Mac. Native Apple Silicon and Intel builds.</span>
         <span className="promo-banner__cta">Get it <ArrowRight size={12} /></span>
       </Link>
       <button

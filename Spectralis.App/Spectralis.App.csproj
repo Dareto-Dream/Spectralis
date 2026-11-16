@@ -5,11 +5,11 @@
     <!-- Windows TFM carries the WinRT projections for SMTC; plain net8.0 serves Linux/macOS. -->
     <TargetFrameworks>net8.0-windows10.0.19041.0;net8.0</TargetFrameworks>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
-    <!-- CefGlue's pinned macOS redistribution currently contains x64 binaries only. -->
-    <RuntimeIdentifier Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</RuntimeIdentifier>
+    <!-- CefGlue has separate x64/ARM64 packages; keep it native to the selected Mac RID. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
     <!-- That RID is here to resolve CEF's native assets, not to constrain the
          managed output: left alone it stamps the assembly x86-64, and then the
-         arm64 test host cannot load it. The apphost stays x64 either way. -->
+         arm64 test host cannot load it. The apphost still follows the selected RID. -->
     <PlatformTarget Condition="'$(TargetFramework)' == 'net8.0' And $([MSBuild]::IsOSPlatform('OSX'))">AnyCPU</PlatformTarget>
     <RuntimeIdentifiers Condition="$(TargetFramework.Contains('-windows'))">win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
@@ -70,7 +70,8 @@
     <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.2" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.2" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
-    <PackageReference Include="WebViewControl-Avalonia" Version="3.120.11" />
+    <PackageReference Include="WebViewControl-Avalonia" Version="3.120.11" Condition="'$(RuntimeIdentifier)' != 'osx-arm64'" />
+    <PackageReference Include="WebViewControl-Avalonia-ARM64" Version="3.120.11" Condition="'$(RuntimeIdentifier)' == 'osx-arm64'" />
     <!-- Exact pin (not a floating minimum) so restores are reproducible; keep
          in lockstep with the vpk CLI version in .config/dotnet-tools.json. -->
     <PackageReference Include="Velopack" Version="[0.0.915]" />
@@ -113,7 +114,10 @@
     <Content Include="..\ffmpeg" Link="ffmpeg" Condition="'$(SpectralisHelperOs)' == 'linux' And Exists('..\ffmpeg')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\yt-dlp-osx" Link="yt-dlp" Condition="'$(SpectralisHelperOs)' == 'osx' And Exists('..\yt-dlp-osx')">
+    <Content Include="..\output\macos-tools\yt-dlp\**\*" Link="Tools\yt-dlp\%(RecursiveDir)%(Filename)%(Extension)" Condition="'$(SpectralisHelperOs)' == 'osx'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\output\macos-tools\deno\deno" Link="Tools\deno\deno" Condition="'$(SpectralisHelperOs)' == 'osx' And Exists('..\output\macos-tools\deno\deno')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\ffmpeg-osx" Link="ffmpeg" Condition="'$(SpectralisHelperOs)' == 'osx' And Exists('..\ffmpeg-osx')">

@@ -36,10 +36,22 @@ concurrency:
 
 jobs:
   macos-smoke:
-    name: Check published macOS updater
+    name: Check published macOS updater (${{ matrix.rid }})
     needs: publish
     if: inputs.channel == 'stable'
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-x64
+            arch: x64
+            runner: macos-15-intel
+            minimum: '12.0'
+          - rid: osx-arm64
+            arch: arm64
+            runner: macos-15
+            minimum: '13.0'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     env:
       VERSION: ${{ inputs.version }}
@@ -49,11 +61,11 @@ jobs:
         run: |
           mkdir -p macos-smoke
           gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --pattern UpdateSpectralis-osx-x64 --dir macos-smoke
-          chmod +x macos-smoke/UpdateSpectralis-osx-x64
-          macos-smoke/UpdateSpectralis-osx-x64 --version
+            --pattern UpdateSpectralis-${{ matrix.rid }} --dir macos-smoke
+          chmod +x macos-smoke/UpdateSpectralis-${{ matrix.rid }}
+          macos-smoke/UpdateSpectralis-${{ matrix.rid }} --version
           for attempt in 1 2 3 4; do
-            if macos-smoke/UpdateSpectralis-osx-x64 --check > macos-smoke/result.txt 2>&1 && \
+            if macos-smoke/UpdateSpectralis-${{ matrix.rid }} --check > macos-smoke/result.txt 2>&1 && \
                grep -Fq "Latest stable release: $VERSION" macos-smoke/result.txt; then
               cat macos-smoke/result.txt
               exit 0
@@ -80,7 +92,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: release-*-x64
+          pattern: release-*-*
           path: dist
           merge-multiple: true
 
@@ -92,10 +104,10 @@ jobs:
       - name: Check the files
         run: |
           ls -la dist
-          for required in releases.win-x64.json releases.linux-x64.json releases.osx-x64.json \
+          for required in releases.win-x64.json releases.linux-x64.json releases.osx-x64.json releases.osx-arm64.json \
                           "Spectralis-$VERSION-win-x64-full.nupkg" "Spectralis-$VERSION-linux-x64-full.nupkg" \
-                          "Spectralis-$VERSION-osx-x64-full.nupkg" \
-                          Spectralis-win-x64-Setup.exe Spectralis-linux-x64.AppImage Spectralis-osx-x64-Setup.pkg; do
+                          "Spectralis-$VERSION-osx-x64-full.nupkg" "Spectralis-$VERSION-osx-arm64-full.nupkg" \
+                          Spectralis-win-x64-Setup.exe Spectralis-linux-x64.AppImage Spectralis-osx-x64-Setup.pkg Spectralis-osx-arm64-Setup.pkg; do
             [ -f "dist/$required" ] || { echo "::error::Missing $required"; exit 1; }
           done
           # assets.*.json is a build log with runner paths in it; it is not for publishing.
@@ -143,7 +155,7 @@ jobs:
             Write-Host "::warning::SPECTRALIS_WEBDAV_PASSWORD is not set, so the legacy CDN did not get $env:VERSION."
             exit 0
           }
-          foreach ($channel in @("win-x64", "linux-x64", "osx-x64")) {
+          foreach ($channel in @("win-x64", "linux-x64", "osx-x64", "osx-arm64")) {
             ./deploy.ps1 -Version $env:VERSION -Channel $channel -VelopackDir dist -SkipSquirrel -SkipR2
           }
 

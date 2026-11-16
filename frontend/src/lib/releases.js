@@ -5,7 +5,7 @@
 
 export const RELEASES_PATH = '/spectralis/v1/releases'
 
-const PLATFORMS = ['win-x64', 'linux-x64', 'osx-x64']
+const PLATFORMS = ['win-x64', 'linux-x64', 'osx-x64', 'osx-arm64']
 
 // Downloads only ever point at our own release locations, whatever the index says.
 const TRUSTED = [

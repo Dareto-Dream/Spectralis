@@ -54,6 +54,7 @@
 }
 .setup-platform__name p { margin-top: 6px; font-size: 13px; }
 .setup-platform__info { padding-top: 2px; font-size: 14px; line-height: 1.65; }
+.setup-platform__downloads { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .setup-install { margin-top: 8px; }
 .setup-install summary {
   display: inline-flex;
@@ -163,7 +164,7 @@
 @media (max-width: 900px) {
   .setup-page { padding: 56px 32px; }
   .setup-platform { grid-template-columns: 180px minmax(0, 1fr); gap: 12px 24px; }
-  .setup-download { grid-column: 2; justify-self: start; min-width: 192px; }
+  .setup-platform__downloads { grid-column: 2; justify-self: start; min-width: 192px; }
   .setup-section { grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
 }
 
@@ -174,7 +175,7 @@
   .setup-platform { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 24px 0; }
   .setup-platform h2 { font-size: 28px; }
   .setup-platform__info { padding-top: 0; }
-  .setup-download { grid-column: auto; justify-self: stretch; margin-top: 4px; }
+  .setup-platform__downloads { grid-column: auto; justify-self: stretch; margin-top: 4px; }
   .setup-section { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 32px 0; }
   .setup-section__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; }
   .setup-section__heading > a { margin-top: 0; }

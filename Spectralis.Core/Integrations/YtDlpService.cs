@@ -15,6 +15,14 @@ public static class YtDlpService
 
     public static string? FindExecutable()
     {
+        // The Mac folder distribution keeps Python beside the launcher instead of
+        // unpacking a second copy into a temporary directory on every invocation.
+        var unpacked = Path.Combine(AppContext.BaseDirectory, "Tools", "yt-dlp", "yt-dlp_macos");
+        if (OperatingSystem.IsMacOS() && File.Exists(unpacked))
+        {
+            EnsureExecutable(unpacked);
+            return unpacked;
+        }
         var appDir = Path.GetDirectoryName(Environment.ProcessPath);
         if (appDir is not null)
         {
@@ -207,6 +215,12 @@ public static class YtDlpService
 
     private static string[] FindJsRuntimeArguments()
     {
+        var bundled = Path.Combine(AppContext.BaseDirectory, "Tools", "deno", OperatingSystem.IsWindows() ? "deno.exe" : "deno");
+        if (File.Exists(bundled))
+        {
+            EnsureExecutable(bundled);
+            return ["--js-runtimes", $"deno:{bundled}"];
+        }
         var suffix = OperatingSystem.IsWindows() ? ".exe" : "";
         foreach (var runtime in new[] { "deno", "node", "bun" })
         {

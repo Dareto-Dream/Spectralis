@@ -1,6 +1,6 @@
 name: Build app
 
-# Builds Windows, Linux and Intel macOS packages for the stable and beta release workflows.
+# Builds Windows, Linux, Intel Mac and Apple Silicon packages for the stable and beta release workflows.
 
 on:
   workflow_call:
@@ -99,13 +99,25 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: macOS (osx-x64)
-    runs-on: macos-15-intel
+    name: macOS (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-x64
+            arch: x64
+            runner: macos-15-intel
+            minimum: '12.0'
+          - rid: osx-arm64
+            arch: arm64
+            runner: macos-15
+            minimum: '13.0'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       SPECTRALIS_SPOTIFY_CLIENT_ID: ${{ secrets.SPECTRALIS_SPOTIFY_CLIENT_ID }}
       SPECTRALIS_DISCORD_CLIENT_ID: ${{ secrets.SPECTRALIS_DISCORD_CLIENT_ID }}
-      MACOSX_DEPLOYMENT_TARGET: '11.0'
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.minimum }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -116,16 +128,16 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: nuget-macos-x64-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
-          restore-keys: nuget-macos-x64-
+          key: nuget-macos-${{ matrix.arch }}-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-macos-${{ matrix.arch }}-
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             wgpu-host/target
-          key: cargo-macos-x64-${{ hashFiles('wgpu-host/Cargo.lock') }}
-          restore-keys: cargo-macos-x64-
+          key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('wgpu-host/Cargo.lock') }}
+          restore-keys: cargo-macos-${{ matrix.arch }}-
       - name: Restore tools
         run: dotnet tool restore
       - name: Fetch previous release for delta
@@ -133,38 +145,39 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p releases-velopack
-          DOTNET_ROLL_FORWARD=LatestMajor dotnet vpk download http --url "$CDN_BASE" --channel osx-x64 -o releases-velopack
+          DOTNET_ROLL_FORWARD=LatestMajor dotnet vpk download http --url "$CDN_BASE" --channel ${{ matrix.rid }} -o releases-velopack
       - name: Build
         env:
           VERSION: ${{ inputs.version }}
-        run: bash Spectralis.Installer/Mac/build-velopack.sh "$VERSION"
+        run: bash Spectralis.Installer/Mac/build-velopack.sh "$VERSION" "${{ matrix.rid }}"
       - name: Check and collect macOS packages
         env:
           VERSION: ${{ inputs.version }}
         run: |
           v="$VERSION"
           mkdir -p dist
-          cp output/updater/osx-x64/UpdateSpectralis dist/UpdateSpectralis-osx-x64
-          for name in releases.osx-x64.json assets.osx-x64.json RELEASES-osx-x64 \
-                      "Spectralis-$v-osx-x64-full.nupkg" "Spectralis-$v-osx-x64-delta.nupkg" \
-                      Spectralis-osx-x64-Setup.pkg Spectralis-osx-x64-Portable.zip; do
+          cp output/updater/${{ matrix.rid }}/UpdateSpectralis dist/UpdateSpectralis-${{ matrix.rid }}
+          for name in releases.${{ matrix.rid }}.json assets.${{ matrix.rid }}.json RELEASES-${{ matrix.rid }} \
+                      "Spectralis-$v-${{ matrix.rid }}-full.nupkg" "Spectralis-$v-${{ matrix.rid }}-delta.nupkg" \
+                      Spectralis-${{ matrix.rid }}-Setup.pkg Spectralis-${{ matrix.rid }}-Portable.zip; do
             if [ -f "releases-velopack/$name" ]; then cp "releases-velopack/$name" dist/; fi
           done
-          for name in releases.osx-x64.json "Spectralis-$v-osx-x64-full.nupkg" Spectralis-osx-x64-Setup.pkg; do
+          for name in releases.${{ matrix.rid }}.json "Spectralis-$v-${{ matrix.rid }}-full.nupkg" Spectralis-${{ matrix.rid }}-Setup.pkg; do
             test -f "dist/$name" || { echo "::error::Missing $name"; exit 1; }
           done
-          pkgutil --expand-full dist/Spectralis-osx-x64-Setup.pkg output/macos-package-check
+          pkgutil --expand-full dist/Spectralis-${{ matrix.rid }}-Setup.pkg output/macos-package-check
           find output/macos-package-check -path '*/Updater/UpdateSpectralis' -print -quit | grep -q .
           find output/macos-package-check -name libcef.dylib -print -quit | grep -q .
           python3 Spectralis.Installer/verify-unix-metadata.py macos output/macos-package-check \
-            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns
-          unzip -q dist/Spectralis-osx-x64-Portable.zip -d output/macos-portable-check
+            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns --rid "${{ matrix.rid }}"
+          rm -rf output/macos-package-check
+          unzip -q dist/Spectralis-${{ matrix.rid }}-Portable.zip -d output/macos-portable-check
           python3 Spectralis.Installer/verify-unix-metadata.py macos output/macos-portable-check \
-            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns
+            --version "$VERSION" --expected-icon output/app-metadata/macos/Spectralis.icns --rid "${{ matrix.rid }}"
           echo "::notice::macOS packages are unsigned unless signing identities are supplied to the packaging script."
       - uses: actions/upload-artifact@v4
         with:
-          name: release-osx-x64
+          name: release-${{ matrix.rid }}
           path: dist/
           retention-days: 7
           compression-level: 0
