@@ -279,7 +279,7 @@ export default function Setup() {
                 <tr><td>OS</td><td>macOS 11 Big Sur or newer</td></tr>
                 <tr><td>Runtime</td><td>.NET 8 (bundled)</td></tr>
                 <tr><td>Chip</td><td>Apple Silicon or Intel</td></tr>
-                <tr><td>Arch</td><td>arm64 · x64</td></tr>
+                <tr><td>Arch</td><td>x64 · Rosetta 2 on Apple Silicon</td></tr>
               </tbody>
             </table>
           </div>

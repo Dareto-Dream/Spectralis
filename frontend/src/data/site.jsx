@@ -43,11 +43,11 @@ export const FAQ = [
   },
   {
     q: 'Is macOS supported?',
-    a: 'Yes, as of v6. There are separate builds for Apple Silicon (arm64) and Intel (x64) Macs running macOS 11 or newer.',
+    a: 'Yes. The Intel x64 build runs on macOS 11 or newer. Apple Silicon Macs use Rosetta 2.',
   },
   {
     q: 'macOS won\'t open the installer. What do I do?',
-    a: 'If Gatekeeper blocks it, right-click (or Control-click) the .pkg and choose Open, or allow it under System Settings → Privacy & Security, then run it again.',
+    a: 'The installer is unsigned and not notarized. After trying to open it, go to System Settings → Privacy & Security → Open Anyway.',
   },
   {
     q: 'The AppImage won\'t launch on Linux. What do I do?',
