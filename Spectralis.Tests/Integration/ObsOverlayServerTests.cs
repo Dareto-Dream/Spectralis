@@ -178,3 +178,21 @@ public sealed class ObsOverlayServerTests : IDisposable
         }
     }
 }
+
+public sealed class ObsOverlayLifecycleTests
+{
+    [Fact]
+    public void DisposingAnUnstartedServerDoesNotTryToBindItsPort()
+    {
+        var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        try
+        {
+            var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+            using var unstarted = new ObsOverlayServer(port, "unused-token");
+            unstarted.Dispose();
+            unstarted.Dispose();
+        }
+        finally { reservation.Stop(); }
+    }
+}

@@ -14,6 +14,8 @@ public sealed class StreamerQueueRealtimeClientTests
         private readonly Channel<string> _inbound = Channel.CreateUnbounded<string>();
         public readonly List<string> Sent = [];
         public readonly TaskCompletionSource Connected = new();
+        public readonly TaskCompletionSource FirstSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource SecondSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Uri? ConnectedTo;
 
         public WebSocketState State { get; private set; } = WebSocketState.None;
@@ -28,7 +30,10 @@ public sealed class StreamerQueueRealtimeClientTests
 
         public Task SendTextAsync(string text, CancellationToken ct)
         {
-            lock (Sent) Sent.Add(text);
+            int count;
+            lock (Sent) { Sent.Add(text); count = Sent.Count; }
+            FirstSent.TrySetResult();
+            if (count >= 2) SecondSent.TrySetResult();
             return Task.CompletedTask;
         }
 
@@ -80,7 +85,7 @@ public sealed class StreamerQueueRealtimeClientTests
         var (client, transport, _) = Create();
         client.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
+        await transport.FirstSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         string hello;
         lock (transport.Sent) hello = transport.Sent[0];
@@ -99,16 +104,18 @@ public sealed class StreamerQueueRealtimeClientTests
     {
         var (client, transport, _) = Create(debounceMs: 40);
         var changed = 0;
-        client.Changed += () => Interlocked.Increment(ref changed);
+        var notifications = Channel.CreateUnbounded<int>();
+        client.Changed += () => notifications.Writer.TryWrite(Interlocked.Increment(ref changed));
         client.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         for (var i = 0; i < 5; i++) transport.Inject("""{"v":2,"t":"sq.changed","status":{}}""");
-        await Task.Delay(200);
+        Assert.Equal(1, await notifications.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(120); // Observe a quiet window of three debounce intervals.
         Assert.Equal(1, Volatile.Read(ref changed));
 
         transport.Inject("""{"v":2,"t":"sq.changed","status":{}}""");
-        await Task.Delay(200);
+        Assert.Equal(2, await notifications.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal(2, Volatile.Read(ref changed));
         await client.StopAsync();
     }
@@ -117,13 +124,13 @@ public sealed class StreamerQueueRealtimeClientTests
     public async Task Webhook_submissions_are_reported_with_source_and_name()
     {
         var (client, transport, _) = Create();
-        (string, string)? seen = null;
-        client.WebhookSubmission += (source, name) => seen = (source, name);
+        var submission = new TaskCompletionSource<(string, string)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.WebhookSubmission += (source, name) => submission.TrySetResult((source, name));
         client.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         transport.Inject("""{"v":2,"t":"sq.submission","source":"twitch","displayName":"Ann","submissionId":"s","status":"queued"}""");
-        await Task.Delay(80);
+        var seen = await submission.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(("twitch", "Ann"), seen);
         await client.StopAsync();
@@ -155,7 +162,8 @@ public sealed class StreamerQueueRealtimeClientTests
         var (client, transport, connects) = Create();
         string? message = null;
         var raised = 0;
-        client.UpdateRequiredReceived += m => { message = m; raised++; };
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.UpdateRequiredReceived += m => { message = m; raised++; received.TrySetResult(); };
         client.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -163,6 +171,7 @@ public sealed class StreamerQueueRealtimeClientTests
         transport.Inject(frame);
         transport.Inject(frame);
         transport.CloseFromServer();
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await Task.Delay(1400); // longer than the first backoff step
 
         Assert.True(client.UpdateRequired);
@@ -180,7 +189,7 @@ public sealed class StreamerQueueRealtimeClientTests
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         transport.CloseFromServer();
-        await Task.Delay(1500);
+        await transport.SecondSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.True(connects() >= 2);
         await client.StopAsync();
@@ -191,10 +200,11 @@ public sealed class StreamerQueueRealtimeClientTests
     {
         var (client, transport, _) = Create();
         var states = new List<bool>();
-        client.ConnectionChanged += states.Add;
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.ConnectionChanged += value => { states.Add(value); if (value) connected.TrySetResult(); };
         client.Start();
         await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
+        await connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         await client.StopAsync();
 
