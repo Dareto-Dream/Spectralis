@@ -69,15 +69,17 @@ public sealed class CdnWarning
 
     public bool AppliesToVersion(string? currentVersion)
     {
-        if (string.IsNullOrWhiteSpace(currentVersion)) return true;
-        if (!Version.TryParse(currentVersion, out var current)) return true;
+        // Beta versions are semver too. An unknown build must not inherit every targeted notice.
+        if (!ReleaseVersion.TryParse(currentVersion, out _))
+            return Versions is not { Count: > 0 } &&
+                   string.IsNullOrWhiteSpace(MinVersion) && string.IsNullOrWhiteSpace(MaxVersion);
 
         if (Versions is { Count: > 0 })
-            return Versions.Any(v => Version.TryParse(v, out var parsed) && parsed == current);
+            return Versions.Any(v => ReleaseVersion.TryParse(v, out _) && ReleaseVersion.Compare(v, currentVersion) == 0);
 
-        if (!string.IsNullOrWhiteSpace(MinVersion) && Version.TryParse(MinVersion, out var min) && current < min)
+        if (ReleaseVersion.TryParse(MinVersion, out _) && ReleaseVersion.Compare(currentVersion, MinVersion) < 0)
             return false;
-        if (!string.IsNullOrWhiteSpace(MaxVersion) && Version.TryParse(MaxVersion, out var max) && current > max)
+        if (ReleaseVersion.TryParse(MaxVersion, out _) && ReleaseVersion.Compare(currentVersion, MaxVersion) > 0)
             return false;
 
         return true;
