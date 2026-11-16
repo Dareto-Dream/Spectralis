@@ -96,7 +96,7 @@ function DownloadsSection() {
               <span className="dl-teaser__icon"><Apple size={20} /></span>
               <span className="dl-teaser__text">
                 <span className="dl-teaser__name">macOS</span>
-                <span className="dl-teaser__sub">11+ · Apple Silicon &amp; Intel</span>
+                <span className="dl-teaser__sub">11+ · Intel / Rosetta 2</span>
               </span>
               <ArrowRight size={16} className="dl-teaser__arrow" />
             </Link>

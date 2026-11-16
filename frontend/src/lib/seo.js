@@ -36,7 +36,7 @@ const STATIC_ROUTES = {
   '/setup': {
     title: 'Download and Setup — Spectralis',
     description:
-      'Download Spectralis for Windows 10/11, macOS 11+ (Apple Silicon and Intel) or Linux (AppImage). Free, no sign-in, updates itself.',
+      'Download Spectralis for Windows 10/11, macOS 11+ (Intel or Rosetta 2) or Linux (AppImage). Free, no sign-in, updates itself.',
     kind: 'setup',
   },
   '/terms': {
