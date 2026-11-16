@@ -121,7 +121,7 @@ public static partial class VideoExportEngine
 
                     var entry = sequence.Resolve(elapsed);
                     var vizFrame = visProvider.GetFrame();
-                    sceneState.UpdateFrame(vizFrame, true, elapsed, entry.Mode);
+                    sceneState.UpdateFrame(vizFrame, true, elapsed, entry.Mode, 1f / fps);
                     var scene = sceneState.CreateScene(entry.Label);
 
                     var overlayModel = BuildOverlayModel(request, options, overlayCover, elapsed, durationSeconds);

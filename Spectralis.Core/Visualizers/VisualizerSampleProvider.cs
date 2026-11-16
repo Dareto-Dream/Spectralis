@@ -21,15 +21,10 @@ public sealed class VisualizerSampleProvider : ISampleProvider
     private readonly int channels;
     private readonly object syncRoot = new();
 
-    // Mono FFT (existing) + stereo FFT infrastructure. fftBuffer/L/R hold the windowed
-    // frequency-domain result of the most recent analysis; fftRing*/fftRingPos are the
-    // raw time-domain circular history each analysis window is cut from.
+    // Stereo waveform/correlation are captured independently; spectrum consumers use the
+    // mono transform, so computing two unused channel transforms only wastes audio-thread time.
     private readonly Complex[] fftBuffer = new Complex[FftLength];
-    private readonly Complex[] fftBufferL = new Complex[FftLength];
-    private readonly Complex[] fftBufferR = new Complex[FftLength];
     private readonly float[] fftRingMono = new float[FftLength];
-    private readonly float[] fftRingL = new float[FftLength];
-    private readonly float[] fftRingR = new float[FftLength];
     private int fftRingPos;
     private int samplesSinceHop;
 
@@ -106,6 +101,11 @@ public sealed class VisualizerSampleProvider : ISampleProvider
     private float _stereoCorrelation;
 
     // Spectrogram ring buffer — allocated once, written each FFT cycle
+    // Rows are immutable after publication; snapshots only copy the ring's references.
+    private static readonly float[] SilentSpectrogramRow = new float[FftBins];
+    private static readonly float[] FftWindow = Enumerable.Range(0, FftLength)
+        .Select(i => (float)FastFourierTransform.HammingWindow(i, FftLength)).ToArray();
+    private readonly (int Start, int End)[] spectrumBinRanges;
     private readonly float[][] spectrogramBuffer;
     private int spectrogramNewestIndex;
 
@@ -116,9 +116,15 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 
         var fs = source.WaveFormat.SampleRate;
 
-        spectrogramBuffer = new float[SpectrogramHistoryLength][];
-        for (var i = 0; i < SpectrogramHistoryLength; i++)
-            spectrogramBuffer[i] = new float[FftBins];
+        spectrogramBuffer = Enumerable.Repeat(SilentSpectrogramRow, SpectrogramHistoryLength).ToArray();
+        var nyquist = fs / 2.0;
+        var maximumFrequency = Math.Min(18000.0, nyquist);
+        spectrumBinRanges = Enumerable.Range(0, SpectrumBarCount).Select(index =>
+        {
+            var start = Math.Clamp((int)(GetLogFrequency(25.0, maximumFrequency, index / (double)SpectrumBarCount) / nyquist * FftBins), 1, FftBins - 1);
+            var end = Math.Clamp((int)(GetLogFrequency(25.0, maximumFrequency, (index + 1) / (double)SpectrumBarCount) / nyquist * FftBins), start + 1, FftBins);
+            return (start, end);
+        }).ToArray();
 
         lufsRingMom = new float[(int)(0.400 * fs)];
         lufsRingST = new float[(int)(3.000 * fs)];
@@ -180,21 +186,7 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 
         RawBlockCaptured?.Invoke(buffer, offset, samplesRead, channels);
 
-        for (var index = 0; index < samplesRead; index += channels)
-        {
-            float left, right;
-            if (channels >= 2)
-            {
-                left = buffer[offset + index];
-                right = buffer[offset + index + 1];
-            }
-            else
-            {
-                left = right = buffer[offset + index];
-            }
-
-            CaptureStereoSample(left, right);
-        }
+        CaptureSamples(buffer, offset, samplesRead, channels);
 
         return samplesRead;
     }
@@ -212,13 +204,8 @@ public sealed class VisualizerSampleProvider : ISampleProvider
                 waveformR[i] = waveformRingR[idx];
             }
 
-            var spectrogramCopy = Array.Empty<float[]>();
-            if (includeSpectrogram)
-            {
-                spectrogramCopy = new float[SpectrogramHistoryLength][];
-                for (var i = 0; i < SpectrogramHistoryLength; i++)
-                    spectrogramCopy[i] = (float[])spectrogramBuffer[i].Clone();
-            }
+            var spectrogramCopy = includeSpectrogram
+                ? (float[][])spectrogramBuffer.Clone() : Array.Empty<float[]>();
 
             return new VisualizerFrame(
                 Spectrum: (float[])spectrumBars.Clone(),
@@ -244,21 +231,26 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 
     public void FeedExternalSamples(float[] buffer, int offset, int count, int channels)
     {
-        var ch = Math.Max(1, channels);
-        for (var i = 0; i < count; i += ch)
-        {
-            float left, right;
-            if (ch >= 2)
-            {
-                left = buffer[offset + i];
-                right = buffer[offset + i + 1];
-            }
-            else
-            {
-                left = right = buffer[offset + i];
-            }
+        CaptureSamples(buffer, offset, count, Math.Max(1, channels));
+    }
 
-            CaptureStereoSample(left, right);
+    private void CaptureSamples(float[] buffer, int offset, int count, int channelCount)
+    {
+        // Bound each lock to a small audio block, instead of taking it for every sample.
+        // GetFrame can still take a consistent snapshot between blocks.
+        var frames = count / channelCount;
+        for (var first = 0; first < frames; first += 256)
+        {
+            lock (syncRoot)
+            {
+                var last = Math.Min(first + 256, frames);
+                for (var frame = first; frame < last; frame++)
+                {
+                    var index = offset + frame * channelCount;
+                    var left = buffer[index];
+                    CaptureStereoSample(left, channelCount >= 2 ? buffer[index + 1] : left);
+                }
+            }
         }
     }
 
@@ -267,11 +259,7 @@ public sealed class VisualizerSampleProvider : ISampleProvider
         lock (syncRoot)
         {
             Array.Clear(fftBuffer);
-            Array.Clear(fftBufferL);
-            Array.Clear(fftBufferR);
             Array.Clear(fftRingMono);
-            Array.Clear(fftRingL);
-            Array.Clear(fftRingR);
             Array.Clear(spectrumBars);
             Array.Clear(rawFftBins);
             Array.Clear(waveformRingL);
@@ -309,88 +297,82 @@ public sealed class VisualizerSampleProvider : ISampleProvider
             _rmsSlow = 0;
             _stereoCorrelation = 0;
 
-            foreach (var row in spectrogramBuffer)
-                Array.Clear(row);
+            Array.Fill(spectrogramBuffer, SilentSpectrogramRow);
             spectrogramNewestIndex = 0;
         }
     }
 
     private void CaptureStereoSample(float left, float right)
     {
-        lock (syncRoot)
+        waveformRingL[waveformPosition] = left;
+        waveformRingR[waveformPosition] = right;
+        waveformPosition = (waveformPosition + 1) % WaveformPointCount;
+
+        var mono = (left + right) * 0.5f;
+
+        // Legacy peak + RMS (unchanged behaviour)
+        peakLevel = Math.Max(Math.Abs(mono), peakLevel * 0.94f);
+        rmsAccumulator += mono * mono;
+        rmsAccumulatorCount++;
+        if (rmsAccumulatorCount >= 256)
         {
-            waveformRingL[waveformPosition] = left;
-            waveformRingR[waveformPosition] = right;
-            waveformPosition = (waveformPosition + 1) % WaveformPointCount;
-
-            var mono = (left + right) * 0.5f;
-
-            // Legacy peak + RMS (unchanged behaviour)
-            peakLevel = Math.Max(Math.Abs(mono), peakLevel * 0.94f);
-            rmsAccumulator += mono * mono;
-            rmsAccumulatorCount++;
-            if (rmsAccumulatorCount >= 256)
-            {
-                rmsLevel = (float)Math.Sqrt(rmsAccumulator / rmsAccumulatorCount);
-                rmsAccumulator = 0;
-                rmsAccumulatorCount = 0;
-            }
-
-            // Unweighted RMS sliding windows
-            var monoSq = (float)(mono * mono);
-            rmsSumFast += monoSq - rmsRingFast[rmsPosFast];
-            rmsRingFast[rmsPosFast] = monoSq;
-            rmsPosFast = (rmsPosFast + 1) % rmsRingFast.Length;
-
-            rmsSumSlow += monoSq - rmsRingSlow[rmsPosSlow];
-            rmsRingSlow[rmsPosSlow] = monoSq;
-            rmsPosSlow = (rmsPosSlow + 1) % rmsRingSlow.Length;
-
-            // K-weighting filter — transposed direct form II
-            // Stage 1 (high-shelf): y1[n] = b0·x + z1;  z1 = b1·x - a1·y1 + z2;  z2 = b2·x - a2·y1
-            var y1 = kS1b0 * mono + kS1z1;
-            kS1z1 = kS1b1 * mono - kS1a1 * y1 + kS1z2;
-            kS1z2 = kS1b2 * mono - kS1a2 * y1;
-            // Stage 2 (high-pass)
-            var y2 = kS2b0 * y1 + kS2z1;
-            kS2z1 = kS2b1 * y1 - kS2a1 * y2 + kS2z2;
-            kS2z2 = kS2b2 * y1 - kS2a2 * y2;
-
-            // LUFS sliding windows
-            var kSq = (float)(y2 * y2);
-            lfsSumMom += kSq - lufsRingMom[lufsPosMom];
-            lufsRingMom[lufsPosMom] = kSq;
-            lufsPosMom = (lufsPosMom + 1) % lufsRingMom.Length;
-
-            lfsSumST += kSq - lufsRingST[lufsPosST];
-            lufsRingST[lufsPosST] = kSq;
-            lufsPosST = (lufsPosST + 1) % lufsRingST.Length;
-
-            // Stereo correlation — accumulate; publish every 512 samples
-            corrLR += left * right;
-            corrLL += left * left;
-            corrRR += right * right;
-            if (++corrCount >= CorrelationBlockSize)
-            {
-                var denom = Math.Sqrt(Math.Max(0, corrLL * corrRR));
-                _stereoCorrelation = denom < 1e-12 ? 0f : (float)Math.Clamp(corrLR / denom, -1.0, 1.0);
-                corrLR = corrLL = corrRR = 0;
-                corrCount = 0;
-            }
-
-            // FFT ring accumulation — raw samples only; windowing happens once per hop
-            // in RunFftCycle, over whatever the most recent FftLength samples are.
-            fftRingMono[fftRingPos] = mono;
-            fftRingL[fftRingPos] = left;
-            fftRingR[fftRingPos] = right;
-            fftRingPos = (fftRingPos + 1) % FftLength;
-
-            if (++samplesSinceHop < FftHop)
-                return;
-
-            samplesSinceHop = 0;
-            RunFftCycle();
+            rmsLevel = (float)Math.Sqrt(rmsAccumulator / rmsAccumulatorCount);
+            rmsAccumulator = 0;
+            rmsAccumulatorCount = 0;
         }
+
+        // Unweighted RMS sliding windows
+        var monoSq = (float)(mono * mono);
+        rmsSumFast += monoSq - rmsRingFast[rmsPosFast];
+        rmsRingFast[rmsPosFast] = monoSq;
+        rmsPosFast = (rmsPosFast + 1) % rmsRingFast.Length;
+
+        rmsSumSlow += monoSq - rmsRingSlow[rmsPosSlow];
+        rmsRingSlow[rmsPosSlow] = monoSq;
+        rmsPosSlow = (rmsPosSlow + 1) % rmsRingSlow.Length;
+
+        // K-weighting filter — transposed direct form II
+        // Stage 1 (high-shelf): y1[n] = b0·x + z1;  z1 = b1·x - a1·y1 + z2;  z2 = b2·x - a2·y1
+        var y1 = kS1b0 * mono + kS1z1;
+        kS1z1 = kS1b1 * mono - kS1a1 * y1 + kS1z2;
+        kS1z2 = kS1b2 * mono - kS1a2 * y1;
+        // Stage 2 (high-pass)
+        var y2 = kS2b0 * y1 + kS2z1;
+        kS2z1 = kS2b1 * y1 - kS2a1 * y2 + kS2z2;
+        kS2z2 = kS2b2 * y1 - kS2a2 * y2;
+
+        // LUFS sliding windows
+        var kSq = (float)(y2 * y2);
+        lfsSumMom += kSq - lufsRingMom[lufsPosMom];
+        lufsRingMom[lufsPosMom] = kSq;
+        lufsPosMom = (lufsPosMom + 1) % lufsRingMom.Length;
+
+        lfsSumST += kSq - lufsRingST[lufsPosST];
+        lufsRingST[lufsPosST] = kSq;
+        lufsPosST = (lufsPosST + 1) % lufsRingST.Length;
+
+        // Stereo correlation — accumulate; publish every 512 samples
+        corrLR += left * right;
+        corrLL += left * left;
+        corrRR += right * right;
+        if (++corrCount >= CorrelationBlockSize)
+        {
+            var denom = Math.Sqrt(Math.Max(0, corrLL * corrRR));
+            _stereoCorrelation = denom < 1e-12 ? 0f : (float)Math.Clamp(corrLR / denom, -1.0, 1.0);
+            corrLR = corrLL = corrRR = 0;
+            corrCount = 0;
+        }
+
+        // FFT ring accumulation — raw samples only; windowing happens once per hop
+        // in RunFftCycle, over whatever the most recent FftLength samples are.
+        fftRingMono[fftRingPos] = mono;
+        fftRingPos = (fftRingPos + 1) % FftLength;
+
+        if (++samplesSinceHop < FftHop)
+            return;
+
+        samplesSinceHop = 0;
+        RunFftCycle();
     }
 
     /// <summary>
@@ -407,19 +389,13 @@ public sealed class VisualizerSampleProvider : ISampleProvider
         for (var i = 0; i < FftLength; i++)
         {
             var ringIndex = (fftRingPos + i) % FftLength;
-            var win = (float)FastFourierTransform.HammingWindow(i, FftLength);
+            var win = FftWindow[i];
             fftBuffer[i].X = fftRingMono[ringIndex] * win;
             fftBuffer[i].Y = 0;
-            fftBufferL[i].X = fftRingL[ringIndex] * win;
-            fftBufferL[i].Y = 0;
-            fftBufferR[i].X = fftRingR[ringIndex] * win;
-            fftBufferR[i].Y = 0;
         }
 
         var log2N = (int)Math.Log2(FftLength);
         FastFourierTransform.FFT(true, log2N, fftBuffer);
-        FastFourierTransform.FFT(true, log2N, fftBufferL);
-        FastFourierTransform.FFT(true, log2N, fftBufferR);
 
         UpdateSpectrumBars();
         UpdateRawFftBins();
@@ -429,18 +405,9 @@ public sealed class VisualizerSampleProvider : ISampleProvider
 
     private void UpdateSpectrumBars()
     {
-        var nyquist = WaveFormat.SampleRate / 2.0;
-        var minimumFrequency = 25.0;
-        var maximumFrequency = Math.Min(18000.0, nyquist);
-        var binCount = FftBins;
-
         for (var barIndex = 0; barIndex < spectrumBars.Length; barIndex++)
         {
-            var startFrequency = GetLogFrequency(minimumFrequency, maximumFrequency, barIndex / (double)spectrumBars.Length);
-            var endFrequency = GetLogFrequency(minimumFrequency, maximumFrequency, (barIndex + 1) / (double)spectrumBars.Length);
-
-            var startBin = Math.Clamp((int)(startFrequency / nyquist * binCount), 1, binCount - 1);
-            var endBin = Math.Clamp((int)(endFrequency / nyquist * binCount), startBin + 1, binCount);
+            var (startBin, endBin) = spectrumBinRanges[barIndex];
 
             double energy = 0;
             for (var bin = startBin; bin < endBin; bin++)
@@ -473,7 +440,7 @@ public sealed class VisualizerSampleProvider : ISampleProvider
     private void UpdateSpectrogramRow()
     {
         spectrogramNewestIndex = (spectrogramNewestIndex + 1) % SpectrogramHistoryLength;
-        Array.Copy(rawFftBins, spectrogramBuffer[spectrogramNewestIndex], FftBins);
+        spectrogramBuffer[spectrogramNewestIndex] = (float[])rawFftBins.Clone();
     }
 
     private void UpdateMetrics()

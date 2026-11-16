@@ -100,11 +100,13 @@ public sealed class AudioToolboxAudioDevice : IAudioDevice
         psi.ArgumentList.Add("-");
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add("audiotoolbox");
-        psi.ArgumentList.Add(DeviceId ?? "default");
+        psi.ArgumentList.Add(DeviceId ?? "-");
 
         try
         {
             _process = Process.Start(psi) ?? throw new InvalidOperationException("ffmpeg did not start.");
+            _process.ErrorDataReceived += (_, _) => { };
+            _process.BeginErrorReadLine();
         }
         catch (Exception ex)
         {
@@ -178,8 +180,11 @@ public sealed class AudioToolboxAudioDevice : IAudioDevice
             return;
         }
 
-        var floatBuffer = new float[2048 * Math.Max(source.Channels, 1)];
+        var framesPerRead = Math.Clamp(source.SampleRate * Math.Clamp(_latencyMs, 20, 200) / 4000, 128, 512);
+        var floatBuffer = new float[framesPerRead * Math.Max(source.Channels, 1)];
         var stream = process.StandardInput.BaseStream;
+        var clock = Stopwatch.StartNew();
+        var pacer = new PcmWritePacer(source.SampleRate, Math.Max(source.Channels, 1));
 
         try
         {
@@ -187,7 +192,17 @@ public sealed class AudioToolboxAudioDevice : IAudioDevice
             {
                 if (!_playing)
                 {
+                    pacer.Reset(clock.Elapsed);
                     Thread.Sleep(10);
+                    continue;
+                }
+
+                // A pipe accepts large bursts before blocking. Reading audio that far ahead
+                // also advances the visualizer in bursts, even while the display is at 60 Hz.
+                var delay = pacer.DelayBeforeRead(clock.Elapsed);
+                if (delay > TimeSpan.Zero)
+                {
+                    Thread.Sleep(TimeSpan.FromMilliseconds(Math.Min(5, delay.TotalMilliseconds)));
                     continue;
                 }
 
@@ -207,6 +222,7 @@ public sealed class AudioToolboxAudioDevice : IAudioDevice
                 }
 
                 stream.Write(MemoryMarshal.AsBytes(floatBuffer.AsSpan(0, read)));
+                pacer.RecordWrite(read, clock.Elapsed);
             }
 
             // Let ffmpeg drain what's already queued instead of cutting the tail off.
@@ -234,6 +250,15 @@ public sealed class AudioToolboxAudioDevice : IAudioDevice
         }
     }
 
+}
+
+internal sealed class PcmWritePacer(int sampleRate, int channels)
+{
+    private double _nextRead;
+    public TimeSpan DelayBeforeRead(TimeSpan elapsed) => TimeSpan.FromSeconds(Math.Max(0, _nextRead - elapsed.TotalSeconds));
+    public void Reset(TimeSpan elapsed) => _nextRead = elapsed.TotalSeconds;
+    public void RecordWrite(int samples, TimeSpan elapsed) =>
+        _nextRead = Math.Max(_nextRead + samples / (double)channels / sampleRate, elapsed.TotalSeconds);
 }
 
 /// <summary>Per-device selection isn't wired up on macOS yet — same current
