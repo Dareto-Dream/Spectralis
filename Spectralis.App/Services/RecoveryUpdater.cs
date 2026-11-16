@@ -35,7 +35,9 @@ public static class RecoveryUpdater
         }
         if (createShortcut)
         {
-            if (OperatingSystem.IsWindows()) CreateWindowsShortcut(target);
+            // Keep the recovery shortcut outside folders managed by old app installers too.
+            if (OperatingSystem.IsWindows()) CreateWindowsShortcut(target,
+                Environment.GetFolderPath(Environment.SpecialFolder.Programs));
             else if (OperatingSystem.IsLinux())
             {
                 var applications = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "applications");
@@ -62,9 +64,8 @@ public static class RecoveryUpdater
     }
 
     [SupportedOSPlatform("windows")]
-    private static void CreateWindowsShortcut(string target)
+    private static void CreateWindowsShortcut(string target, string folder)
     {
-        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Spectralis");
         Directory.CreateDirectory(folder);
         dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
         try
