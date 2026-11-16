@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import struct
 import subprocess
+import xml.etree.ElementTree as ET
 
 
 def verify_macos(root, version, expected_icon, rid='osx-x64'):
@@ -48,7 +49,12 @@ def verify_macos(root, version, expected_icon, rid='osx-x64'):
     assert {b'ic07', b'ic08', b'ic09', b'ic10'} <= types, 'Missing high-resolution icon representations'
     arch = 'arm64' if rid == 'osx-arm64' else 'x86_64'
     macos = contents / 'MacOS'
-    for native in ['Spectralis.App', 'libcef.dylib', 'libwgpu_host.dylib', 'ffmpeg',
+    ns = {'n': 'http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd'}
+    metadata = ET.parse(macos / 'sq.version').getroot()
+    assert metadata.findtext('n:metadata/n:rid', namespaces=ns) == rid, 'Wrong update package runtime'
+    assert metadata.findtext('n:metadata/n:machineArchitecture', namespaces=ns) == rid.split('-')[1], 'Wrong update package architecture'
+    assert metadata.findtext('n:metadata/n:version', namespaces=ns) == version, 'Wrong update package version'
+    for native in ['Spectralis.App', 'UpdateMac', 'libcef.dylib', 'libwgpu_host.dylib', 'ffmpeg',
                    'Updater/UpdateSpectralis', 'Tools/deno/deno', 'Tools/yt-dlp/yt-dlp_macos']:
         assert (macos / native).is_file(), f'Missing native payload: {native}'
     magic = {b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'}

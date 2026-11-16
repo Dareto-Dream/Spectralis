@@ -111,6 +111,7 @@ for RID in "$RID"; do
     --icon "$REPO_ROOT/output/app-metadata/macos/Spectralis.icns" \
     --plist "$REPO_ROOT/output/app-metadata/macos/Info.plist" \
     --channel "$CHANNEL" \
+    --runtime "$RID" \
     ${sign_args[@]+"${sign_args[@]}"} \
     -o "$RELEASE_DIR"
 
