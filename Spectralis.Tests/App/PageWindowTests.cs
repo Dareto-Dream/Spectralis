@@ -168,7 +168,7 @@ public sealed class PageWindowTests
                 Assert.Same(presentation, surface.FrameSource); Assert.True(mix.Mixer.GetDeck(0).Playing);
                 var samples = new float[9600]; mix.Mixer.Read(samples, 0, samples.Length);
                 Assert.Contains(samples, s => Math.Abs(s) > .01);
-                Assert.Same(presentation.GetFrame(), presentation.GetFrame());
+                Assert.Equal(mix.Mixer.GetVisualizerFrame().Waveform, presentation.GetFrame().Waveform);
                 player.VolumePercent = 42; Assert.Equal(42, mix.MasterVolume);
                 player.TogglePlayback(); Assert.False(mix.IsPlaying);
                 player.TogglePlayback(); Assert.True(mix.IsPlaying);
