@@ -32,7 +32,7 @@ public partial class PlaylistsView : UserControl
         if (!string.IsNullOrWhiteSpace(name))
         {
             var playlist = vm.CreatePlaylist(name, []);
-            if (await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
+            if (await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems, vm.ResolvePlaylistLinkAsync))
             {
                 await vm.SavePlaylist(playlist);
             }
@@ -56,6 +56,27 @@ public partial class PlaylistsView : UserControl
             }
         }
     }
+
+    private async void OnImportLink(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || OwnerWindow is not { } owner) return;
+        var link = await NameInputWindow.PromptAsync(owner, "Import playlist", "Playlist or track link:", "");
+        if (!string.IsNullOrWhiteSpace(link)) await vm.ImportLinkAsync(link);
+    }
+
+    private async void OnDownloadOffline(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { SelectedRow: not null } vm || OwnerWindow is not { } owner || vm.IsPlaylistBusy) return;
+        var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Save playlist audio", AllowMultiple = false });
+        if (folders.FirstOrDefault()?.TryGetLocalPath() is { } path) await vm.DownloadSelectedAsync(path);
+    }
+
+    private async void OnPlayOffline(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm) await vm.PlayOfflineAsync();
+    }
+
+    private void OnCancelJob(object? sender, RoutedEventArgs e) => ViewModel?.CancelPlaylistJob();
 
     private async void OnImportM3u(object? sender, RoutedEventArgs e)
     {
@@ -112,7 +133,7 @@ public partial class PlaylistsView : UserControl
         else
         {
             var playlist = vm.FindPlaylist(row.Id);
-            if (playlist is not null && await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems))
+            if (playlist is not null && await PlaylistEditorWindow.EditAsync(owner, playlist, vm.BuildItems, vm.ResolvePlaylistLinkAsync))
             {
                 await vm.SavePlaylist(playlist);
             }

@@ -53,7 +53,13 @@ public static class PlaylistStore
     {
         EnsureDirectory();
         var path = Path.Combine(Dir, $"{playlist.Id:N}.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(playlist, Opts));
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(playlist, Opts));
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
     public static void Delete(Guid id)

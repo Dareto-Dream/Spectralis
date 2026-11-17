@@ -8,6 +8,11 @@ public sealed class Playlist
     public string Name { get; set; } = "New Playlist";
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
     public List<PlaylistItem> Items { get; set; } = [];
+    public string? SourceUrl { get; set; }
+    public string? SourceName { get; set; }
+    public bool IsReadOnlySource { get; set; }
+    public string? ImportNotice { get; set; }
+    public string? OfflineDirectory { get; set; }
 
     /// <summary>Spotify's playlist id. Non-null means this playlist is backed by a live
     /// Spotify playlist and track add/remove/reorder write back to Spotify.</summary>
@@ -57,6 +62,18 @@ public sealed class PlaylistItem
     /// <summary>Spotify track URI ("spotify:track:..."), set instead of <see cref="Path"/> for a
     /// Spotify-sourced item so one playlist can mix local files and Spotify tracks.</summary>
     public string? SpotifyTrackUri { get; set; }
+    public string? SourceUrl { get; set; }
+    public string? OfflinePath { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string SourceReference => SpotifyTrackUri ?? SourceUrl ?? Path;
+
+    public string? PlayableReference(bool offlineOnly = false)
+    {
+        if (!string.IsNullOrWhiteSpace(OfflinePath) && File.Exists(OfflinePath)) return OfflinePath;
+        if (!string.IsNullOrWhiteSpace(Path) && File.Exists(Path)) return Path;
+        return offlineOnly ? null : SourceReference;
+    }
 
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
     public string? Title { get; set; }

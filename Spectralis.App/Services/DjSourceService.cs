@@ -86,7 +86,7 @@ public sealed class DjSourceService : IDjSourceService
             var rootToRelease = jobRoot;
             var prepared = new DjPreparedSource(ownedPath, resolved.SourceUrl,
                 resolved.Title ?? source.Title, resolved.Artist ?? source.Artist, resolved.ServiceLabel,
-                path => { if (rootToRelease is null) _release(path); else TempStorageCleanup.DeleteOwnedTree(Path.GetDirectoryName(rootToRelease)!, rootToRelease); });
+                path => { if (rootToRelease is null) _release(path); else TempStorageCleanup.DeleteOwnedTree(Path.GetDirectoryName(rootToRelease)!, rootToRelease); }, resolved);
             ownedPath = null; jobRoot = null;
             return prepared;
         }
@@ -125,7 +125,7 @@ public sealed class DjSourceService : IDjSourceService
         if (!_matchupEnabled()) throw new NotSupportedException(SpotifyMessage);
         if (matched?.CachedAudioPath is not { } path || !File.Exists(path))
             throw new InvalidOperationException("No matching YouTube audio found. Try another track or load an audio file.");
-        return new(path, link.WebUrl.AbsoluteUri, matched.Title ?? source.Title, matched.Artist ?? source.Artist, label);
+        return new(path, link.WebUrl.AbsoluteUri, matched.Title ?? source.Title, matched.Artist ?? source.Artist, label, resolved: matched);
     }
 
     private static Task<string> DownloadAsync(RemoteAudioResolveResult result, IProgress<string>? progress, CancellationToken ct) =>
@@ -143,8 +143,10 @@ public sealed class DjPreparedSource : IDisposable
     public string? Title { get; }
     public string? Artist { get; }
     public string Service { get; }
-    public DjPreparedSource(string path, string identity, string? title, string? artist, string service, Action<string>? release = null)
+    public RemoteAudioResolveResult? Resolved { get; }
+    public DjPreparedSource(string path, string identity, string? title, string? artist, string service, Action<string>? release = null, RemoteAudioResolveResult? resolved = null)
     {
+        Resolved = resolved;
         Path = path; Identity = identity; Title = title; Artist = artist; Service = service; _release = release;
         _lease = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
     }

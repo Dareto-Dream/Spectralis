@@ -121,8 +121,8 @@ public sealed class PlayQueue
             var nextPos = _shufflePos + 1;
             if (nextPos >= _shuffleOrder.Count)
             {
-                // Repeat-all wrap: fresh unpinned order (legacy behavior).
-                if (Repeat == RepeatMode.All) { RebuildShuffle(pinCurrent: false); return _shuffleOrder![0]; }
+                // Keep peeking stable so prepared audio is the track MoveNext will select.
+                if (Repeat == RepeatMode.All) return _shuffleOrder[0];
                 return -1;
             }
             return _shuffleOrder[nextPos];

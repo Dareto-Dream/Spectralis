@@ -72,6 +72,7 @@ public sealed partial class NowPlayingViewModel
         _engine.GaplessEnabled = saved.Gapless;
         _engine.CrossfadeSeconds = saved.Crossfade;
         sessionQueue = null;
+        RefreshUpcomingAudio();
     }
 
     private sealed record SessionQueueBookmark(string[] Paths, int Index, double Position, bool WasPlaying, RepeatMode Repeat, bool Shuffle,

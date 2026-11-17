@@ -1,4 +1,4 @@
-﻿using System.Reactive;
+using System.Reactive;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Diagnostics;
@@ -1977,6 +1977,7 @@ public sealed class SettingsViewModel : ViewModelBase
                 case nameof(NowPlayingViewModel.AutoCycleVisualizers):
                 case nameof(NowPlayingViewModel.SelectedCycleDuration):
                 case nameof(NowPlayingViewModel.SelectedSampleRate):
+                case nameof(NowPlayingViewModel.PrecacheUpcomingAudio):
                 case nameof(NowPlayingViewModel.GaplessPlayback):
                 case nameof(NowPlayingViewModel.OutputDeviceOptions):
                 case nameof(NowPlayingViewModel.SelectedOutputDevice):
@@ -2275,6 +2276,12 @@ public sealed class SettingsViewModel : ViewModelBase
             AppSettingsStore.Save(_settings);
             this.RaisePropertyChanged();
         }
+    }
+
+    public bool PrecacheUpcomingAudio
+    {
+        get => _nowPlaying.PrecacheUpcomingAudio;
+        set { _nowPlaying.PrecacheUpcomingAudio = value; this.RaisePropertyChanged(); }
     }
 
     public bool GaplessPlayback

@@ -429,10 +429,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         EffectChain? effectChain = null,
         LibraryDatabase? library = null,
         SpotifyMatchupService? spotifyMatchup = null,
-        Func<string?, CancellationToken, Task<byte[]?>>? fetchRemoteArtwork = null)
+        Func<string?, CancellationToken, Task<byte[]?>>? fetchRemoteArtwork = null,
+        QueueAudioCache? queueAudioCache = null)
     {
         _engine = engine;
         _spotifyMatchup = spotifyMatchup ?? SpotifyMatchupService.Shared;
+        _queueAudioCache = queueAudioCache ?? QueueAudioCache.Shared;
         _fetchRemoteArtwork = fetchRemoteArtwork ?? OpenUrlService.TryFetchArtworkBytesAsync;
         _library = library;
         _settings = settings is null
@@ -1352,6 +1354,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         }
 
         RaiseQueueNavigationChanged();
+        RefreshUpcomingAudio();
     }
 
     /// <summary>Re-flags the current row when only the playing position in the queue moved.</summary>
@@ -1373,6 +1376,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             Queue.Shuffle = value;
             this.RaisePropertyChanged();
             RaiseQueueNavigationChanged();
+            RefreshUpcomingAudio();
         }
     }
 
@@ -1385,6 +1389,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged();
             this.RaisePropertyChanged(nameof(RepeatIconData));
             RaiseQueueNavigationChanged();
+            RefreshUpcomingAudio();
         }
     }
 
@@ -1611,6 +1616,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadQueueItemAsync(string pathOrUrl, bool startPlayback)
     {
         SyncQueueCurrent();
+        if (await TryLoadCachedQueueAudioAsync(pathOrUrl, startPlayback)) return;
+        _precacheCts?.Cancel();
         if (pathOrUrl.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
         {
             // Spotify matchup (beta) plays the track itself from matched audio; anything it can't
@@ -1624,7 +1631,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             _queueDrivenSpotifyTrack = false;
-            await LoadUrlAsync(pathOrUrl);
+            await LoadUrlAsync(pathOrUrl, preserveQueue: true, startPlayback);
             if (startPlayback && _engine.IsLoaded && !_engine.IsPlaying)
             {
                 _engine.Play();
@@ -1748,7 +1755,10 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             RemoteStatus = "Reading the track list...";
-            var tracks = await _spotifyMatchup.FetchContextTracksAsync(link, cancellationToken);
+            var playlist = await new PlaylistImportService(_settings).ImportAsync(link.WebUrl.AbsoluteUri, cancellationToken);
+            var tracks = playlist.Items.Where(i => SpotifyMatchup.TrackIdFromUri(i.SourceReference) is not null)
+                .Select(i => new SpotifyTrackFacts(SpotifyMatchup.TrackIdFromUri(i.SourceReference)!, i.Title ?? "Track", i.Artist ?? "", (int)(i.DurationSeconds * 1000), i.AlbumArtUrl)).ToList();
+            _spotifyMatchup.RememberTrackFacts(tracks);
             if (tracks.Count == 0)
             {
                 return (null, false);
@@ -1758,6 +1768,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 .GroupBy(static t => t.Uri)
                 .ToDictionary(static g => g.Key, static g => (g.First().Title, g.First().Artist)));
             await PlayQueueAsync(tracks.Select(static t => t.Uri).ToList(), 0);
+            if (playlist.ImportNotice is not null) LoadError = playlist.ImportNotice;
             return (null, true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -3793,7 +3804,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         RefreshFromEngine();
     }
 
-    public async Task LoadUrlAsync(string input)
+    public Task LoadUrlAsync(string input) => LoadUrlAsync(input, preserveQueue: false);
+
+    private async Task LoadUrlAsync(string input, bool preserveQueue, bool? startPlayback = null)
     {
         SelectTrackSource();
         _remoteLoadCts?.Cancel();
@@ -3801,8 +3814,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         _remoteLoadCts = new CancellationTokenSource();
         var cancellationToken = _remoteLoadCts.Token;
 
-        Queue.Clear();
-        SyncQueueItems();
+        if (!preserveQueue)
+        {
+            Queue.Clear();
+            SyncQueueItems();
+        }
         LoadError = string.Empty;
         RemoteStatus = "Resolving remote source...";
         IsOpeningRemote = true;
@@ -3827,7 +3843,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await LoadResolvedAsync(resolved, cancellationToken);
+        await LoadResolvedAsync(resolved, cancellationToken, startPlayback);
     }
 
     /// <summary>
@@ -3990,7 +4006,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            _engine.Load(cachedPath, trackInfo);
+            if (!_engine.TrySeamlessAdvance(cachedPath, trackInfo))
+                _engine.Load(cachedPath, trackInfo);
             var oldRemotePath = _remoteAudioTempPath;
             _remoteAudioTempPath = cachedPath;
             CurrentRemoteAudio = resolved;
@@ -4002,13 +4019,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 _engine.Play();
             }
 
-            // Pre-open the next queue track (if local) while the remote track starts playing.
-            var nextQueuePath = Queue.PeekNextPath();
-            if (!string.IsNullOrEmpty(nextQueuePath) && File.Exists(nextQueuePath))
-            {
-                _ = _engine.PrepareNextAsync(nextQueuePath);
-                UpcomingQueueTrackReady?.Invoke(nextQueuePath);
-            }
+            RefreshUpcomingAudio();
 
             ApplyTrack(_engine.CurrentTrack);
             // Cover downloads are presentation work; a slow image server must not delay audio.
@@ -4121,13 +4132,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             ReactiveSectionLabel = string.Empty;
             LocalTrackLoaded?.Invoke(path);
 
-            // Pre-open the next queue track in the background to minimize cold-start latency.
-            var nextPath = Queue.PeekNextPath();
-            if (!string.IsNullOrEmpty(nextPath) && File.Exists(nextPath))
-            {
-                _ = _engine.PrepareNextAsync(nextPath);
-                UpcomingQueueTrackReady?.Invoke(nextPath);
-            }
+            RefreshUpcomingAudio();
         }
         catch (Exception ex)
         {
@@ -4674,6 +4679,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _precacheDisposed = true;
+        CancelUpcomingAudio();
+        _currentQueueAudio?.Dispose();
         RemoteAudioCache.TryDelete(sessionQueue?.TemporaryPath);
         if (_mixSource is not null) _mixSource.PropertyChanged -= OnMixSourceChanged;
         FlushResume(finished: false);

@@ -197,6 +197,12 @@ public sealed class SpotifyMatchupService
     /// The tracks of an album or playlist link, in order, read from its embed page. Empty when the
     /// page can't be read; a long playlist only yields what the embed page shows.
     /// </summary>
+    public void RememberTrackFacts(IEnumerable<SpotifyTrackFacts> tracks)
+    {
+        if (_knownFacts.Count > 10000) _knownFacts.Clear();
+        foreach (var track in tracks.Take(10000)) _knownFacts[track.Id] = track;
+    }
+
     public async Task<IReadOnlyList<SpotifyTrackFacts>> FetchContextTracksAsync(SpotifyPlaybackLink link, CancellationToken ct)
     {
         var parts = link.PlaybackUri.Split(':');
