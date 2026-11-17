@@ -275,6 +275,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
         ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
         LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
+        CopyDiscordCommand = ReactiveCommand.Create(() => CopyToClipboardRequested?.Invoke(DiscordPairingCommand),
+            this.WhenAnyValue(x => x.DiscordPinDisplay, pin => !string.IsNullOrWhiteSpace(pin)));
         AddToQueueCommand      = ReactiveCommand.CreateFromTask(AddToQueueAsync,
             this.WhenAnyValue(x => x.AddToQueueUrl, x => x.IsOwner, (u, owner) => owner && !string.IsNullOrWhiteSpace(u)));
         AddChannelCommand      = ReactiveCommand.Create(AddChannel, isOwner);
@@ -299,6 +301,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
     public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyDiscordCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToQueueCommand { get; }
     public ReactiveCommand<Unit, Unit> AddChannelCommand { get; }
     public ReactiveCommand<Unit, Unit> AddMixSlotCommand { get; }
@@ -480,8 +483,13 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     public string DiscordPinDisplay
     {
         get => _discordPinDisplay;
-        private set => this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
+            this.RaisePropertyChanged(nameof(DiscordPairingCommand));
+        }
     }
+    public string DiscordPairingCommand => string.IsNullOrEmpty(DiscordPinDisplay) ? "" : $"/link-queue pin:{DiscordPinDisplay}";
 
     public string AddToQueueUrl
     {
@@ -835,6 +843,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
             LastError = string.Empty;
             var result = await _controller.CreateDiscordPinAsync(ct);
             DiscordPinDisplay = result.Pin;
+            StatusText = "Run the pairing command in your Discord channel within 10 minutes.";
         }
         catch (Exception ex) { LastError = ex.Message; }
     }

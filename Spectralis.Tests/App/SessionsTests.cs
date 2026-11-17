@@ -121,7 +121,8 @@ public sealed class SessionsTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
             Assert.True(view.Bounds.Width > 0);
-            Assert.Equal(width < 860 ? 1 : 0, Grid.GetRow(view.FindControl<StackPanel>("InboxPanel")!));
+            Assert.Equal(0, Grid.GetRow(view.FindControl<StackPanel>("InboxPanel")!));
+            Assert.Equal(width < 860 ? 1 : 0, Grid.GetRow(view.FindControl<StackPanel>("RoundPanel")!));
         }
         finally { window.Close(); }
     }

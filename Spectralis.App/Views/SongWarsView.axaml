@@ -11,7 +11,8 @@
           <TextBlock Text="Song Wars" FontSize="20" FontWeight="SemiBold" />
           <Button Grid.Column="1" Content="Pop out" Click="OnPopOutClick" Classes="ghost" />
         </Grid>
-        <StackPanel Spacing="10" IsVisible="{Binding !HasTournament}">
+        <Expander Header="Set up a tournament" IsVisible="{Binding !HasTournament}" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="10">
           <TextBlock Text="Build a tournament from requests or local tracks." Classes="secondary" TextWrapping="Wrap" />
           <TextBox Text="{Binding Name}" Watermark="Tournament name" AutomationProperties.Name="Tournament name" />
           <TextBox Text="{Binding JudgeNames}" Watermark="Judge names, separated by commas" AutomationProperties.Name="Judge names" />
@@ -19,7 +20,8 @@
             <TextBlock Text="{Binding Entries.Count, StringFormat='{}{0} entries'}" VerticalAlignment="Center" Classes="secondary" />
             <Button Grid.Column="1" Content="Add audio files" Click="OnAddFiles" />
           </Grid>
-          <ItemsControl ItemsSource="{Binding Entries}" MaxHeight="220">
+          <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Entries}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="sw:SongWarsSubmission">
                 <Grid ColumnDefinitions="*,Auto" Margin="0,3">
@@ -29,6 +31,7 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          </ScrollViewer>
           <Button Content="Create tournament" Command="{Binding CreateCommand}" Classes="accent" HorizontalAlignment="Left" />
           <Expander Header="Saved tournaments" HorizontalAlignment="Stretch">
             <StackPanel Spacing="8">
@@ -37,6 +40,7 @@
             </StackPanel>
           </Expander>
         </StackPanel>
+        </Expander>
         <StackPanel Spacing="12" IsVisible="{Binding HasTournament}">
           <TextBlock Text="{Binding TournamentName}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
           <TextBlock Text="{Binding Round}" Classes="secondary" />

@@ -29,10 +29,10 @@ public partial class SessionsView : UserControl
         SizeChanged += (_, _) =>
         {
             var stacked = Bounds.Width < 860;
-            Workbench.ColumnDefinitions = new ColumnDefinitions(stacked ? "*" : "*,28,*");
-            Grid.SetColumn(InboxPanel, stacked ? 0 : 2);
-            Grid.SetRow(InboxPanel, stacked ? 1 : 0);
-            InboxPanel.Margin = new Avalonia.Thickness(0, stacked ? 28 : 0, 0, 0);
+            Workbench.ColumnDefinitions = new ColumnDefinitions(stacked ? "*" : "3*,32,2*");
+            Grid.SetColumn(RoundPanel, stacked ? 0 : 2);
+            Grid.SetRow(RoundPanel, stacked ? 1 : 0);
+            RoundPanel.Margin = new Avalonia.Thickness(0, stacked ? 28 : 0, 0, 0);
         };
         CompetitionView.PopOutRequested = () =>
         {

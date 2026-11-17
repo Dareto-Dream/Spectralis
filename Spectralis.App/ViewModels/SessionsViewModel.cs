@@ -81,12 +81,18 @@ public sealed class SessionsViewModel : ViewModelBase, IDisposable
     public SessionPlaybackCoordinator Playback { get; }
     public ObservableCollection<SessionRequestViewModel> Inbox { get; } = [];
     public bool HasRequests => Inbox.Count > 0;
-    public bool Active { get => active; private set => this.RaiseAndSetIfChanged(ref active, value); }
+    public bool Active { get => active; private set { this.RaiseAndSetIfChanged(ref active, value); RefreshState(); } }
     public bool Busy { get => busy; private set => this.RaiseAndSetIfChanged(ref busy, value); }
     public string Status { get => status; private set => this.RaiseAndSetIfChanged(ref status, value); }
     public string JoinCode { get => joinCode; set => this.RaiseAndSetIfChanged(ref joinCode, value); }
     public bool RoundActive => Playback.RoundOwnsPlayback;
-    public string PlaybackStatus => RoundActive ? $"Song Wars has playback · {Playback.WaitingCount} waiting" : "Listening queue has playback";
+    public string PlaybackStatus => RoundActive ? $"Song Wars round · {Playback.WaitingCount} waiting" :
+        Listening.IsJoined ? "Listening to a shared session" : Active ? "Listening queue" : "Ready to host or join";
+    public string RequestState => !Requests.HasRoom ? (Active ? "Requests unavailable" : "Start a session to take requests") :
+        Requests.SqEnabled && Requests.AcceptingSubmissions ? "Requests open" : "Requests closed";
+    public string RequestSummary => $"{Inbox.Count(i => i.Pending)} awaiting approval · {Inbox.Count(i => !i.Pending)} ready";
+    public bool RequestsNeedReconnect => Active && (!Requests.HasRoom || !string.IsNullOrEmpty(Requests.LastError));
+    public string EmptyRequestsHint => Active ? "Share your request link or connect a Discord channel." : "Start a session, then share a listening invite or request link.";
     public ReactiveCommand<Unit, Unit> StartCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> JoinCommand { get; }
@@ -109,10 +115,19 @@ public sealed class SessionsViewModel : ViewModelBase, IDisposable
     {
         if (args.PropertyName is nameof(Listening.IsHosting) or nameof(Listening.HostPending))
             Active = Listening.IsHosting || Listening.HostPending;
+        RefreshState();
     }
     private void OnRequestSettingsChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(Requests.RequireApproval)) RefreshRequests();
+        RefreshState();
+    }
+    private void RefreshState()
+    {
+        this.RaisePropertyChanged(nameof(PlaybackStatus));
+        this.RaisePropertyChanged(nameof(RequestState));
+        this.RaisePropertyChanged(nameof(RequestsNeedReconnect));
+        this.RaisePropertyChanged(nameof(EmptyRequestsHint));
     }
     private void OnRequestsChanged(object? sender, NotifyCollectionChangedEventArgs args)
     {
@@ -142,6 +157,7 @@ public sealed class SessionsViewModel : ViewModelBase, IDisposable
             else if (Inbox.IndexOf(existing) != index) Inbox.Move(Inbox.IndexOf(existing), index);
         }
         this.RaisePropertyChanged(nameof(HasRequests));
+        this.RaisePropertyChanged(nameof(RequestSummary));
     }
     private void AddToCompetition(string title, string? artist, string? source)
     {

@@ -8,7 +8,7 @@
     <StackPanel Margin="24" Spacing="20">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="5">
-          <TextBlock Text="Sessions" FontSize="28" FontWeight="SemiBold" />
+          <TextBlock Text="Sessions" FontSize="24" FontWeight="SemiBold" />
           <TextBlock Text="{Binding PlaybackStatus}" Classes="secondary" TextWrapping="Wrap" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -16,6 +16,7 @@
           <Button Content="End session" Command="{Binding StopCommand}" IsVisible="{Binding Active}" />
         </StackPanel>
       </Grid>
+      <ProgressBar IsIndeterminate="True" Height="2" IsVisible="{Binding Busy}" AutomationProperties.Name="Updating session" />
       <StackPanel Spacing="10" IsVisible="{Binding !Active}">
         <WrapPanel>
           <TextBox Text="{Binding JoinCode}" Watermark="Room code" AutomationProperties.Name="Room code" Width="190" Margin="0,0,8,8" />
@@ -47,20 +48,23 @@
         <Button Grid.Column="1" Content="Play / pause" Command="{Binding Player.PlayPauseCommand}" VerticalAlignment="Center" />
       </Grid>
       <Border Height="1" Background="{DynamicResource Brush.Border}" />
-      <Grid x:Name="Workbench" ColumnDefinitions="*,28,*" RowDefinitions="Auto,Auto">
-        <StackPanel x:Name="RoundPanel" Spacing="12">
+      <Grid x:Name="Workbench" ColumnDefinitions="3*,32,2*" RowDefinitions="Auto,Auto">
+        <StackPanel x:Name="RoundPanel" Grid.Column="2" Spacing="12">
           <TextBlock Text="Requests stay open during rounds. Listening resumes between matches." TextWrapping="Wrap" Classes="secondary" IsVisible="{Binding RoundActive}" />
           <views:SongWarsView x:Name="CompetitionView" DataContext="{Binding Competition}" />
         </StackPanel>
-        <StackPanel x:Name="InboxPanel" Grid.Column="2" Spacing="12">
+        <StackPanel x:Name="InboxPanel" Grid.Column="0" Spacing="12">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Text="Requests" FontSize="20" FontWeight="SemiBold" />
             <Button Grid.Column="1" Content="{Binding Requests.AcceptingToggleLabel}" Command="{Binding Requests.ToggleAcceptingCommand}" IsVisible="{Binding Requests.HasRoom}" Classes="ghost" />
           </Grid>
+          <TextBlock Text="{Binding RequestState}" Classes="secondary" />
+          <TextBlock Text="{Binding RequestSummary}" IsVisible="{Binding HasRequests}" Classes="secondary" />
           <StackPanel Spacing="8" IsVisible="{Binding !HasRequests}">
-            <TextBlock Text="No requests yet." FontSize="16" />
-            <TextBlock Text="Start a session and share the request link. Approved tracks can join the listening queue or enter Song Wars." Classes="secondary" TextWrapping="Wrap" />
+            <TextBlock Text="No requests yet" FontSize="16" Margin="0,8,0,0" />
+            <TextBlock Text="{Binding EmptyRequestsHint}" Classes="secondary" TextWrapping="Wrap" />
           </StackPanel>
+          <ScrollViewer MaxHeight="440" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasRequests}">
           <ItemsControl ItemsSource="{Binding Inbox}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SessionRequestViewModel">
@@ -69,6 +73,7 @@
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Artist}" Classes="secondary" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Sender, StringFormat='From {0}'}" Classes="secondary" />
+                    <TextBlock Text="Awaiting approval" IsVisible="{Binding Pending}" Classes="secondary" />
                     <WrapPanel>
                       <Button Content="Approve" Command="{Binding ApproveCommand}" IsVisible="{Binding Pending}" Margin="0,0,6,6" />
                       <Button Content="Play / queue" Command="{Binding PlayCommand}" IsVisible="{Binding !Pending}" Margin="0,0,6,6" ToolTip.Tip="Waits while a round is playing." />
@@ -80,13 +85,25 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          </ScrollViewer>
           <StackPanel Spacing="8" IsVisible="{Binding Requests.HasRoom}">
             <TextBox Text="{Binding Requests.AddToQueueUrl}" Watermark="Add a track link" AutomationProperties.Name="Track link" />
             <Button Content="Add request" Command="{Binding Requests.AddToQueueCommand}" HorizontalAlignment="Left" />
           </StackPanel>
           <TextBlock Text="{Binding Requests.StatusText}" IsVisible="{Binding Requests.StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="secondary" TextWrapping="Wrap" />
           <TextBlock Text="{Binding Requests.LastError}" IsVisible="{Binding Requests.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="secondary" TextWrapping="Wrap" />
-          <Button Content="Reconnect requests" Command="{Binding RetryRequestsCommand}" IsVisible="{Binding Active}" HorizontalAlignment="Left" Classes="ghost" />
+          <Button Content="Reconnect requests" Command="{Binding RetryRequestsCommand}" IsVisible="{Binding RequestsNeedReconnect}" HorizontalAlignment="Left" Classes="ghost" />
+          <Expander Header="Discord" HorizontalAlignment="Stretch" IsVisible="{Binding Requests.HasRoom}">
+            <StackPanel Spacing="10">
+              <TextBlock Text="Send channel requests into this session." Classes="secondary" TextWrapping="Wrap" />
+              <Button Content="Get pairing code" Command="{Binding Requests.LinkDiscordCommand}" HorizontalAlignment="Left" />
+              <StackPanel Spacing="8" IsVisible="{Binding Requests.DiscordPinDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBox Text="{Binding Requests.DiscordPairingCommand, Mode=OneWay}" IsReadOnly="True" AutomationProperties.Name="Discord pairing command" />
+                <Button Content="Copy command" Command="{Binding Requests.CopyDiscordCommand}" HorizontalAlignment="Left" />
+                <TextBlock Text="Run this in your Discord channel within 10 minutes. You need Manage Channels permission." Classes="secondary" TextWrapping="Wrap" />
+              </StackPanel>
+            </StackPanel>
+          </Expander>
         </StackPanel>
       </Grid>
       <Border Height="1" Background="{DynamicResource Brush.Border}" />
@@ -115,8 +132,6 @@
             <CheckBox Content="Approve requests first" IsChecked="{Binding Requests.RequireApproval}" Margin="0,0,20,8" />
             <CheckBox Content="Allow duplicates" IsChecked="{Binding Requests.AllowDuplicates}" Margin="0,0,20,8" />
             <Button Content="Save request settings" Command="{Binding Requests.SaveSettingsCommand}" Margin="0,0,12,8" />
-            <Button Content="Link Discord" Command="{Binding Requests.LinkDiscordCommand}" Margin="0,0,12,8" />
-            <TextBlock Text="{Binding Requests.DiscordPinDisplay}" VerticalAlignment="Center" />
           </WrapPanel>
         </StackPanel>
       </Expander>
