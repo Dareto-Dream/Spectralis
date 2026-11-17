@@ -19,7 +19,7 @@ public sealed class DjSourceTests : IDisposable
     private static RemoteAudioResolveResult Result(string? cache = null, RemoteAudioServiceKind kind = RemoteAudioServiceKind.DirectAudio) =>
         new(kind, "Direct audio", "https://example.test/song.m4a", "https://cdn.example.test/audio", ".m4a", "M4A",
             "Night Drive", "Artist", null, null, TimeSpan.FromSeconds(1), "https://example.test", CachedAudioPath: cache);
-    private DjViewModel Model(IDjSourceService sources) => new(new() { DjModeEnabled = true },
+    private DjViewModel Model(IDjSourceService sources) => new(new() { UpdateChannel = "beta", DjModeEnabled = true },
         mixer: new(new FakeAudioDeviceEnumerator()), cues: new(Path.Combine(_root, "cues.json")), saveSettings: () => { }, sources: sources);
 
     [Theory]

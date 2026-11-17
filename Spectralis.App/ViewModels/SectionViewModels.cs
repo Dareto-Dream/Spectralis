@@ -2251,13 +2251,14 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public bool DjModeEnabled
     {
-        get => _settings.DjModeEnabled;
+        get => BetaFeatures.DjMixing(_settings);
         set
         {
+            if (value && !BetaFeaturesAvailable) return;
             if (_settings.DjModeEnabled == value) return;
             _settings.DjModeEnabled = value;
             AppSettingsStore.Save(_settings);
-            _onDjModeChanged?.Invoke(value);
+            _onDjModeChanged?.Invoke(DjModeEnabled);
             this.RaisePropertyChanged();
         }
     }
@@ -2795,6 +2796,8 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(BetaFeaturesAvailable));
             this.RaisePropertyChanged(nameof(UpdateChannelHint));
             BetaFeatures.Apply(_settings);
+            this.RaisePropertyChanged(nameof(DjModeEnabled));
+            _onDjModeChanged?.Invoke(DjModeEnabled);
         }
     }
 

@@ -2393,7 +2393,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>Local file path of the currently playing track, or null for remote/URL sources.</summary>
     public string? CurrentTrackPath => _engine.CurrentTrack?.SourcePath is { } p && File.Exists(p) ? p : null;
-    public bool DjModeEnabled => _mixSource?.Enabled ?? _settings.DjModeEnabled;
+    public bool DjModeEnabled => _mixSource?.Enabled ?? BetaFeatures.DjMixing(_settings);
     public Spectralis.Core.Visualizers.IVisualizerFrameSource? VisualizationSource { get; set; }
     public void RefreshDjMode() { this.RaisePropertyChanged(nameof(DjModeEnabled)); this.RaisePropertyChanged(nameof(ShowPlaybackSourcePicker)); }
 

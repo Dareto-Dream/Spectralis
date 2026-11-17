@@ -169,7 +169,7 @@ public sealed class DjTrackLoaderTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DjTrackLoader.ResolveAsync(["unused.m4a"], cancellation.Token));
     }
 
-    private DjViewModel ViewModel() => new(new() { DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()),
+    private DjViewModel ViewModel() => new(new() { UpdateChannel = "beta", DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()),
         cues: new DjCueStore(Path.Combine(_directory, "cues.json")), saveSettings: () => { });
 
     private async Task<string> Container(string name, string[] streamNames)

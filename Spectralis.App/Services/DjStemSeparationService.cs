@@ -193,7 +193,7 @@ public sealed class DjStemSeparationService
     }
     private static void RequireOptIn(bool optedIn)
     {
-        if (!optedIn) throw new InvalidOperationException("Enable local AI stem separation in Settings → Playback first.");
+        if (!optedIn) throw new InvalidOperationException("Enable local AI stem separation in Settings → Updates → Beta features first.");
     }
     private const string OfflineGuard = "import torch\ndef no_download(*a, **k): raise RuntimeError('Model missing. Use Install / repair AI tools.')\ntorch.hub.download_url_to_file = no_download\n";
     private const string OfflineSeparationScript = OfflineGuard + "from demucs.separate import main\nmain()";

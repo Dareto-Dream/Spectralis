@@ -64,7 +64,7 @@ public sealed class PageWindowTests
         {
             using var engine = new AudioEngine(new FakeAudioDeviceEnumerator());
             using var player = new NowPlayingViewModel(engine, enablePositionPolling: false);
-            using var mix = new DjViewModel(new() { DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
+            using var mix = new DjViewModel(new() { UpdateChannel = "beta", DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
             player.AttachMixer(mix);
             await player.LoadTrackAsync(path);
             if (mixSource) player.SelectMixSource();
@@ -143,7 +143,7 @@ public sealed class PageWindowTests
         {
             using var engine = new AudioEngine(new FakeAudioDeviceEnumerator());
             using var player = new NowPlayingViewModel(engine, enablePositionPolling: false);
-            using var mix = new DjViewModel(new() { DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
+            using var mix = new DjViewModel(new() { UpdateChannel = "beta", DjModeEnabled = true }, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
             player.AttachMixer(mix);
             using var presentation = new PlaybackVisualizerSource(player, mix);
             player.VisualizationSource = presentation;

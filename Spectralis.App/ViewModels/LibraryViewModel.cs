@@ -85,7 +85,7 @@ public sealed class TrackRow
 
 public sealed class LibraryViewModel : ViewModelBase, IDisposable
 {
-    public bool DjModeEnabled => _settings?.DjModeEnabled == true;
+    public bool DjModeEnabled => _settings is not null && BetaFeatures.DjMixing(_settings);
     public void RefreshDjMode() => this.RaisePropertyChanged(nameof(DjModeEnabled));
     private readonly LibraryDatabase _database;
     private readonly LibraryScanner _scanner;

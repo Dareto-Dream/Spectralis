@@ -328,7 +328,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         };
 
         _selectedSection = Sections[0];
-        UpdateDjNavigation(AppSettings.DjModeEnabled);
+        UpdateDjNavigation(BetaFeatures.DjMixing(AppSettings));
         Settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SettingsViewModel.DjAiStemSeparationEnabled)) Dj.RefreshOptions();

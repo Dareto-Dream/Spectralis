@@ -39,7 +39,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     public ObservableCollection<DjLibraryTrack> LibraryTracks { get; } = [];
     public DjLibraryTrack? SelectedTrack { get; set; }
     public bool Enabled => _enabled;
-    public bool AiEnabled => _settings.DjAiStemSeparationEnabled;
+    public bool AiEnabled => Enabled && _settings.DjAiStemSeparationEnabled;
     public string[] BrowserSources { get; } = ["Library", "Queue"];
     public string BrowserSource { get => _browserSource; set { this.RaiseAndSetIfChanged(ref _browserSource, value); RefreshLibrary(); } }
     public int ActiveDeckIndex { get => _activeDeckIndex; set { this.RaiseAndSetIfChanged(ref _activeDeckIndex, value == 1 ? 1 : 0); DeckA.RefreshSelection(); DeckB.RefreshSelection(); } }
@@ -74,7 +74,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     {
         _settings = settings; _library = library; _beforePlay = beforePlay ?? (() => { });
         _saveSettings = saveSettings ?? (() => AppSettingsStore.Save(settings));
-        _enabled = settings.DjModeEnabled;
+        _enabled = BetaFeatures.DjMixing(settings);
         Mixer = mixer ?? new DjMixerEngine(); _cues = cues ?? new DjCueStore();
         Sources = sources ?? new DjSourceService();
         DeckA = new(this, 0); DeckB = new(this, 1);
@@ -122,6 +122,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     public async Task SetEnabledAsync(bool enabled)
     {
         var activation = ++_activationVersion;
+        enabled &= BetaFeatures.DjMixing(_settings);
         _enabled = enabled;
         if (!enabled)
         {
@@ -135,11 +136,12 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             DeckA.Refresh(); DeckB.Refresh();
         }
         this.RaisePropertyChanged(nameof(Enabled));
+        this.RaisePropertyChanged(nameof(AiEnabled));
         this.RaisePropertyChanged(nameof(HasSession));
     }
     public void EnsureOutput()
     {
-        if (!_enabled) throw new InvalidOperationException("Enable DJ mode in Settings → Playback first.");
+        if (!_enabled) throw new InvalidOperationException("Enable DJ mode in Settings → Updates → Beta features first.");
         _beforePlay();
         UseForVisualization = true;
         if (_outputStarted) return;
