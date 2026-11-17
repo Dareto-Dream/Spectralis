@@ -97,7 +97,7 @@ public sealed class SessionsViewModel : ViewModelBase, IDisposable
         Busy = true;
         Status = "";
         try { await work(); }
-        catch (Exception ex) { Status = ex.Message; }
+        catch (Exception ex) { Status = ex.Message; SpectralisLog.Error("Session operation failed.", ex); }
         finally { Busy = false; }
     }, this.WhenAnyValue(x => x.Busy, b => !b));
     private void OnPlaybackChanged()
