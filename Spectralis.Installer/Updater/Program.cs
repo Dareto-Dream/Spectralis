@@ -9,6 +9,10 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         if (args is ["--version"]) { Console.WriteLine("Update Spectralis 1.0"); return 0; }
+#if SPECTRALIS_STAGING
+        Console.WriteLine("This is a staging preview. Download a newer preview build to update it.");
+        return 0;
+#else
         var checkOnly = args is ["--check"];
         if (args.Length > 0 && !checkOnly) { Console.Error.WriteLine("Usage: UpdateSpectralis [--check|--version]"); return 1; }
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(15));
@@ -97,5 +101,6 @@ internal static class Program
             if (temporaryDirectory is not null) try { Directory.Delete(temporaryDirectory, recursive: true); } catch { }
             if (!checkOnly && !Console.IsInputRedirected) { Console.WriteLine("\nPress Enter to close."); Console.ReadLine(); }
         }
+#endif
     }
 }

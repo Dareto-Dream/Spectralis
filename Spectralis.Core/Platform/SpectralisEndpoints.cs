@@ -6,7 +6,14 @@ namespace Spectralis.Core.Platform;
 /// </summary>
 public static class SpectralisEndpoints
 {
-    public const string ApiBase = "https://spectralis-api.deltavdevs.com";
+    public const string ProductionApiBase = "https://spectralis-api.deltavdevs.com";
+#if SPECTRALIS_STAGING
+    public static bool IsStaging => true;
+    public const string ApiBase = "https://audioplayer-staging.up.railway.app";
+#else
+    public static bool IsStaging => false;
+    public const string ApiBase = ProductionApiBase;
+#endif
 
     public const string WarningsPath = "/spectralis/v1/warnings";
     public const string ChangelogPath = "/spectralis/v1/changelog";

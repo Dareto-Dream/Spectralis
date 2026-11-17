@@ -54,6 +54,7 @@ public sealed class VelopackUpdateService : IUpdateService
 
     public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken ct)
     {
+        if (SpectralisEndpoints.IsStaging) return new UpdateCheckResult(false, null, null);
         LogUpdate($"Checking for updates ({(_followBeta ? BetaChannel : StableChannel)} channel).");
         try
         {
@@ -195,6 +196,7 @@ public sealed class VelopackUpdateService : IUpdateService
 
     public async Task DownloadAndApplyAsync(IProgress<double>? progress, CancellationToken ct)
     {
+        if (SpectralisEndpoints.IsStaging) throw new InvalidOperationException("Staging previews are updated from the preview build, not the release channel.");
         LogUpdate("Starting update download and apply.");
         var plan = await ResolveAsync(ct);
         if (plan is null)
@@ -213,6 +215,7 @@ public sealed class VelopackUpdateService : IUpdateService
     public async Task InstallVersionAsync(ReleaseInfo release, IProgress<double>? progress, CancellationToken ct,
         Action? beforeRestart = null)
     {
+        if (SpectralisEndpoints.IsStaging) throw new InvalidOperationException("Staging previews cannot install production releases.");
         if (!ReleaseIndex.IsTrustedFeedBase(release.FeedBase))
         {
             throw new InvalidOperationException("That release does not come from a Spectralis download location.");

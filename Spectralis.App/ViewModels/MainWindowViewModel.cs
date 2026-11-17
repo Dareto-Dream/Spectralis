@@ -378,15 +378,16 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            if (Dj.IsPlaying) return $"DJ · {Dj.SessionTitle} - Spectralis";
+            var appName = Spectralis.Core.Platform.SpectralisEndpoints.IsStaging ? "Spectralis Staging" : "Spectralis";
+            if (Dj.IsPlaying) return $"DJ · {Dj.SessionTitle} - {appName}";
             if (!NowPlaying.HasTrack)
             {
-                return "Spectralis";
+                return appName;
             }
 
             return string.IsNullOrWhiteSpace(NowPlaying.Artist)
-                ? $"{NowPlaying.Title} - Spectralis"
-                : $"{NowPlaying.Artist} - {NowPlaying.Title} - Spectralis";
+                ? $"{NowPlaying.Title} - {appName}"
+                : $"{NowPlaying.Artist} - {NowPlaying.Title} - {appName}";
         }
     }
 

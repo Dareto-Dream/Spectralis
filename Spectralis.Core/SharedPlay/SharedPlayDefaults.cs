@@ -6,7 +6,7 @@ public static class SharedPlayDefaults
 {
     public const string CdnBaseUrl = Spectralis.Core.Platform.SpectralisEndpoints.ApiBase;
     public const string StagingCdnBaseUrl = "https://audioplayer-staging.up.railway.app";
-    public static bool SupportsWard(Uri backend) => WardCredentialStore.Origin(backend) == CdnBaseUrl;
+    public static bool SupportsWard(Uri backend) => !Spectralis.Core.Platform.SpectralisEndpoints.IsStaging && WardCredentialStore.Origin(backend) == CdnBaseUrl;
     public const string ProtocolVersion = "shared-play-v2";
     /// <summary>Wire-envelope major version for the collaborative-room WebSocket.</summary>
     public const int SocketEnvelopeVersion = RealtimeProtocolVersion;
@@ -37,6 +37,7 @@ public static class SharedPlayDefaults
 
     public static string NormalizeCdnBaseUrl(string? value)
     {
+        if (Spectralis.Core.Platform.SpectralisEndpoints.IsStaging) return StagingCdnBaseUrl;
         if (IsLegacyBackend(value))
         {
             return CdnBaseUrl;
@@ -81,7 +82,7 @@ public static class SharedPlayDefaults
             : AddSessionQuery(new Uri(cdnBaseUri, WebSharePlayerPath), encodedCode, null);
     }
 
-    private static bool IsProductionPlayer(Uri uri) => uri.GetLeftPart(UriPartial.Authority) is CdnBaseUrl or "https://player.deltavdevs.com" || IsLegacyBackend(uri.ToString());
+    private static bool IsProductionPlayer(Uri uri) => uri.GetLeftPart(UriPartial.Authority) is Spectralis.Core.Platform.SpectralisEndpoints.ProductionApiBase or "https://player.deltavdevs.com" || IsLegacyBackend(uri.ToString());
 
     public static Uri BuildRoomJoinUrl(Uri cdnBaseUri, string roomId) => IsProductionPlayer(cdnBaseUri)
         ? new Uri($"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(roomId)}")

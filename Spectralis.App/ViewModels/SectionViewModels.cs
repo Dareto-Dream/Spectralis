@@ -2051,6 +2051,7 @@ public sealed class SettingsViewModel : ViewModelBase
         set
         {
             if (UseStagingBackend == value) return;
+            if (Spectralis.Core.Platform.SpectralisEndpoints.IsStaging && !value) return;
             var target = value ? SharedPlayDefaults.StagingCdnBaseUrl : string.Empty;
             _settings.SharedPlayCdnBaseUrl = target;
             _settings.SqCdnBaseUrl = target;
