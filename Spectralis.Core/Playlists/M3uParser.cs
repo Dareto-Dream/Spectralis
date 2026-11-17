@@ -89,7 +89,7 @@ public static class M3uParser
             var title = item.Title ?? Path.GetFileNameWithoutExtension(item.Path);
             var label = string.IsNullOrEmpty(artist) ? title : $"{artist} - {title}";
             sb.AppendLine($"#EXTINF:{dur},{label}");
-            sb.AppendLine(item.Path);
+            sb.AppendLine(item.SourceReference);
         }
 
         File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
@@ -109,6 +109,7 @@ public static class M3uParser
 
     private static string ResolvePath(string directory, string path)
     {
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "spotify") return path;
         // Keep foreign absolute paths intact for round trips; only relative entries belong
         // under the playlist directory. Windows separators also occur in portable playlists.
         if (Path.IsPathRooted(path) || path.StartsWith(@"\\", StringComparison.Ordinal) ||

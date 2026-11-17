@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace Spectralis.Core.Integrations.Spotify;
 
-public sealed class SpotifyService : IDisposable
+public sealed partial class SpotifyService : IDisposable
 {
     private const string AuthBase = "https://accounts.spotify.com";
     private const string ApiBase = "https://api.spotify.com/v1";
@@ -370,7 +370,7 @@ public sealed class SpotifyService : IDisposable
         var token = await GetFreshAccessTokenAsync(clientId);
         if (token is null || string.IsNullOrWhiteSpace(playlistId)) return [];
 
-        var url = $"{ApiBase}/playlists/{Uri.EscapeDataString(playlistId)}/tracks?limit=100";
+        var url = $"{ApiBase}/playlists/{Uri.EscapeDataString(playlistId)}/items?limit=50";
         return await FetchPaginatedAsync(url, token, "items", ReadPlaylistTrack);
     }
 
@@ -405,7 +405,7 @@ public sealed class SpotifyService : IDisposable
         if (token is null || string.IsNullOrWhiteSpace(playlistId) || trackUris.Count == 0) return null;
 
         var body = JsonSerializer.Serialize(new { uris = trackUris });
-        return await SendPlaylistWriteAsync(HttpMethod.Post, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+        return await SendPlaylistWriteAsync(HttpMethod.Post, $"/playlists/{Uri.EscapeDataString(playlistId)}/items", token, body);
     }
 
     /// <summary>Replaces a Spotify playlist's entire track list in one call — the simplest way to
@@ -419,7 +419,7 @@ public sealed class SpotifyService : IDisposable
         if (token is null || string.IsNullOrWhiteSpace(playlistId)) return null;
 
         var body = JsonSerializer.Serialize(new { uris = trackUris.Take(100) });
-        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/items", token, body);
     }
 
     /// <summary>Removes specific tracks from a Spotify playlist, guarded by <paramref name="snapshotId"/>
@@ -431,10 +431,10 @@ public sealed class SpotifyService : IDisposable
 
         var body = JsonSerializer.Serialize(new
         {
-            tracks = trackUris.Select(uri => new { uri }).ToArray(),
+            items = trackUris.Select(uri => new { uri }).ToArray(),
             snapshot_id = snapshotId,
         });
-        return await SendPlaylistWriteAsync(HttpMethod.Delete, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+        return await SendPlaylistWriteAsync(HttpMethod.Delete, $"/playlists/{Uri.EscapeDataString(playlistId)}/items", token, body);
     }
 
     /// <summary>Moves a contiguous run of tracks within a Spotify playlist, guarded by <paramref name="snapshotId"/>.</summary>
@@ -450,7 +450,7 @@ public sealed class SpotifyService : IDisposable
             insert_before = insertBefore,
             snapshot_id = snapshotId,
         });
-        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks", token, body);
+        return await SendPlaylistWriteAsync(HttpMethod.Put, $"/playlists/{Uri.EscapeDataString(playlistId)}/items", token, body);
     }
 
     private static async Task<string?> SendPlaylistWriteAsync(HttpMethod method, string path, string token, string json)
@@ -585,7 +585,7 @@ public sealed class SpotifyService : IDisposable
             ? ownerIdEl.GetString()
             : null;
 
-        var trackCount = element.TryGetProperty("tracks", out var tracksEl) && tracksEl.ValueKind == JsonValueKind.Object &&
+        var trackCount = (element.TryGetProperty("items", out var tracksEl) || element.TryGetProperty("tracks", out tracksEl)) && tracksEl.ValueKind == JsonValueKind.Object &&
             tracksEl.TryGetProperty("total", out var totalEl) && totalEl.ValueKind == JsonValueKind.Number
             ? totalEl.GetInt32()
             : 0;
@@ -603,7 +603,7 @@ public sealed class SpotifyService : IDisposable
     /// <summary>Unwraps a playlist-tracks page item (each one wraps the actual track under "track")
     /// before delegating to the same parsing <see cref="ReadSearchTrack"/> uses.</summary>
     private static SpotifyTrackResult? ReadPlaylistTrack(JsonElement itemEl) =>
-        itemEl.TryGetProperty("track", out var trackEl) && trackEl.ValueKind == JsonValueKind.Object
+        (itemEl.TryGetProperty("item", out var trackEl) || itemEl.TryGetProperty("track", out trackEl)) && trackEl.ValueKind == JsonValueKind.Object
             ? ReadSearchTrack(trackEl)
             : null;
 

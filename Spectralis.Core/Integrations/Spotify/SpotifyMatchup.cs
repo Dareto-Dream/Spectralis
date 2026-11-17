@@ -112,6 +112,12 @@ public static partial class SpotifyMatchup
         return tracks;
     }
 
+    public static string? ParseCollectionName(string html)
+    {
+        using var doc = ParseEntity(html, out var entity);
+        return doc is null ? null : FirstNonEmpty(Text(entity, "name"), Text(entity, "title"));
+    }
+
     public static bool IsTrackId(string? id) =>
         id is { Length: 22 } && id.All(char.IsAsciiLetterOrDigit);
 
