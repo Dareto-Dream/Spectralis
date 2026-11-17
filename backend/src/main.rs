@@ -182,6 +182,7 @@ async fn main() -> Result<()> {
         .route("/player/v1/rooms", post(create_public_room))
         .route("/player/v1/rooms/:id/profile", put(update_public_room_profile))
         .route("/player/v1/me", get(player::me).delete(player::disconnect))
+        .route("/player/v1/me/preferences", get(player::get_preferences).put(player::put_preferences))
         .route("/player/v1/me/rooms", get(player::my_rooms))
         .route("/player/v1/me/room", get(rooms::my_room))
         .route("/spectralis/v1/admin/rooms/wipe", post(rooms::wipe_rooms))

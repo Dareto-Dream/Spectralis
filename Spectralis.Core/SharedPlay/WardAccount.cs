@@ -85,9 +85,16 @@ public static class WardAccount
     public static async Task DisconnectAsync(Uri backend, CancellationToken ct = default)
     {
         RequireWard(backend);
-        if (IsConnectedTo(backend)) await RequestAsync(backend,"/player/v1/me",HttpMethod.Delete,ct:ct);
-        Accounts.Remove(backend);
-        Changed?.Invoke();
+        try
+        {
+            if (IsConnectedTo(backend)) await RequestAsync(backend,"/player/v1/me",HttpMethod.Delete,ct:ct);
+        }
+        finally
+        {
+            // An unavailable account service must never trap this device in a signed-in state.
+            Accounts.Remove(backend);
+            Changed?.Invoke();
+        }
     }
 }
 
@@ -96,7 +103,8 @@ internal sealed class WardHttpHandler : DelegatingHandler
     public WardHttpHandler() : base(new HttpClientHandler()) { }
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        WardAccount.Authorize(request);
+        if (!(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/streamer-queue/v1/rooms"))
+            WardAccount.Authorize(request);
         return base.SendAsync(request,ct);
     }
 }

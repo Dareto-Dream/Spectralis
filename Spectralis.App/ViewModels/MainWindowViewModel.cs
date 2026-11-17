@@ -164,6 +164,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         SharedPlay.QueueTrackRequested = QueueStreamerRequestTrackAsync;
         SharedPlay.TransportCommandRequested = (action, position) =>
         {
+            if (NowPlaying.SessionRoundActive) return;
             switch (action)
             {
                 case "play" when !NowPlaying.IsPlaying:
@@ -213,6 +214,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         StreamerQueue.ApplySettings(AppSettings);
         StreamerQueue.PlayTrackRequested = PlayStreamerQueueTrackAsync;
         SongWars = new SongWarsViewModel(AppSettings);
+        Sessions = new SessionsViewModel(AppSettings, SharedPlay, StreamerQueue, SongWars, NowPlaying,
+            PlayStreamerQueueTrackAsync, QueueStreamerRequestTrackAsync);
         NowPlaying.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(NowPlayingViewModel.PositionSeconds) or
@@ -318,9 +321,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("Capsules", IconData.Capsules, Capsules),
             new("Randomizer", IconData.Randomizer, RandomizerTools),
             NavSection.Separator("CREATE & STREAM"),
-            new("Shared Play", IconData.SharedPlay, SharedPlay),
-            new("Streamer Queue", IconData.StreamerQueue, StreamerQueue),
-            new("Song Wars", IconData.SongWars, SongWars),
+            new("Sessions", IconData.SharedPlay, Sessions),
             new("Timing Studio", IconData.TimingStudio, TimingStudio),
             new("Timeline Editor", IconData.TimelineEditor, TimelineEditor),
             new("OBS Overlay", IconData.Obs, ObsEditor),
@@ -473,6 +474,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public SharedPlayViewModel SharedPlay { get; }
     public StreamerQueueViewModel StreamerQueue { get; }
     public SongWarsViewModel SongWars { get; }
+    public SessionsViewModel Sessions { get; }
     public RandomizerToolsViewModel RandomizerTools { get; }
     public CapsulesViewModel Capsules { get; }
     public TimingStudioViewModel TimingStudio { get; }
@@ -557,6 +559,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>Routes the shell to the section hosting <paramref name="content"/>.</summary>
     public void SelectSection(ViewModelBase content)
     {
+        if (ReferenceEquals(content, SharedPlay) || ReferenceEquals(content, StreamerQueue) || ReferenceEquals(content, SongWars)) content = Sessions;
         var section = Sections.FirstOrDefault(section => ReferenceEquals(section.Content, content));
         if (section is not null)
         {
@@ -708,6 +711,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (Path.IsPathFullyQualified(url) && File.Exists(url))
         {
             await NowPlaying.PlayQueueAsync([url], 0);
+            if (!string.IsNullOrEmpty(NowPlaying.LoadError)) throw new InvalidOperationException(NowPlaying.LoadError);
             return;
         }
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
@@ -719,6 +723,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         await NowPlaying.LoadUrlAsync(url);
+        if (!string.IsNullOrEmpty(NowPlaying.LoadError)) throw new InvalidOperationException(NowPlaying.LoadError);
     }
 
     /// <summary>Auto-add path for a fresh Shared Play listener request: appends to the

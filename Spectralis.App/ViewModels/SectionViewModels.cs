@@ -109,6 +109,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public SharedPlayViewModel()
     {
+        WardAccount.Changed += OnWardAccountChanged;
         RequestedTracks.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasRequests));
         _controller.StatusChanged += OnStatusChanged;
         _controller.CommandReceived += OnCommandReceived;
@@ -148,6 +149,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
     /// <summary>Wired by MainWindowViewModel to append a freshly-seen listener request to the
     /// playback queue automatically, without touching whatever's currently playing.</summary>
     public Func<string, Task>? QueueTrackRequested { get; set; }
+    public bool AutoQueueListenerRequests { get; set; } = true;
 
     /// <summary>Wired by MainWindowViewModel to apply a Shared Play join's downloaded track to the engine.</summary>
     public event Action<TrackInfo>? TrackReadyForEngine;
@@ -562,8 +564,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     private async Task HostAsync()
     {
-        // Signed in, the party runs in the account's one permanent room, so it has to exist before we start.
-        await EnsureRoomAsync();
+        if (UseSavedRoom && WardConnected) await EnsureRoomAsync();
         _hostingRequested = true;
         ReapplyControllerSettings();
         StartPolling();
@@ -584,15 +585,15 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
         _controller.ApplySettings(
             _hostingRequested,
             _settings?.SharedPlayCdnBaseUrl,
-            // Signed in with a room: always the permanent room. Signed out: a temporary, link-only one.
-            WardConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
+            // Sign-in alone must not change where this session hosts.
+            UseSavedRoom && WardConnected && !string.IsNullOrEmpty(_settings?.SharedPlayLiveChannelId),
             _settings?.SharedPlayLiveChannelId ?? string.Empty,
             _settings?.SharedPlayLiveChannelOwnerToken ?? string.Empty,
             _settings?.SharedPlayLiveChannelDisplayName ?? string.Empty);
     }
 
     /// <summary>The link to share: the permanent room's address when signed in, otherwise this party's invite link.</summary>
-    public string ShareLink => WardConnected && HasRoom ? RoomLink : _joinUrl;
+    public string ShareLink => UseSavedRoom && WardConnected && HasRoom ? RoomLink : _joinUrl;
 
     private void CopyLink()
     {
@@ -772,7 +773,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
             if (existingIds.Contains(item.Id)) continue;
             RequestedTracks.Add(new SharedPlayRequestedTrackVm(item, PlayRequestedTrack, RemoveRequestedTrack, vm => _ = AcceptRequestedTrackAsync(vm.Item, false)));
 
-            if ((!isFirstLoad || item.SourceKind == "upload") && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
+            if (AutoQueueListenerRequests && (!isFirstLoad || item.SourceKind == "upload") && !string.IsNullOrWhiteSpace(item.Url) && QueueTrackRequested is not null)
                 _ = AcceptRequestedTrackAsync(item, playNow: false);
         }
 
@@ -820,6 +821,7 @@ public sealed partial class SharedPlayViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        WardAccount.Changed -= OnWardAccountChanged;
         _pollCts.Cancel();
         _controller.Dispose();
         _joinRuntime.Dispose();

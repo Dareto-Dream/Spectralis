@@ -17,9 +17,8 @@ public sealed record OwnedPlayerRoom(string Id, string Name, bool IsPublic)
 }
 
 /// <summary>
-/// Shared Play has two kinds of room. Signed out, starting a party makes a temporary room: private, reachable
-/// only through its invite link, gone when you stop. Signed in with Ward, your party always runs in your one
-/// permanent room, which is created the first time you start and can be listed in the room finder.
+/// Every session can host with a temporary invite. Ward supplies optional saved-room management;
+/// attaching a saved room is a separate choice made before hosting.
 /// </summary>
 public sealed partial class SharedPlayViewModel
 {
@@ -27,6 +26,13 @@ public sealed partial class SharedPlayViewModel
     private string _accountStatus = string.Empty;
     private bool _accountBusy;
     private PlayerRoom? _myRoom;
+    private bool _useSavedRoom;
+
+    public bool UseSavedRoom
+    {
+        get => _useSavedRoom;
+        set { if (!IsHosting && !HostPending) this.RaiseAndSetIfChanged(ref _useSavedRoom, value); }
+    }
 
     public string AccountStatus { get => _accountStatus; private set => this.RaiseAndSetIfChanged(ref _accountStatus, value); }
     public bool AccountBusy { get => _accountBusy; private set => this.RaiseAndSetIfChanged(ref _accountBusy, value); }
@@ -56,7 +62,7 @@ public sealed partial class SharedPlayViewModel
         set { if (MyRoom is not null && MyRoom.IsPublic != value) _ = SetRoomPublicAsync(value); }
     }
 
-    public string ModeTitle => WardConnected ? "Your room" : "Temporary room";
+    public string ModeTitle => UseSavedRoom && WardConnected ? "Saved room" : "Session invite";
 
     public string ModeText =>
         !WardAvailable ? "Development uses temporary rooms only. Share the invite link to listen together; the room ends when you stop."
@@ -122,6 +128,8 @@ public sealed partial class SharedPlayViewModel
     });
 
     private Uri PlayerBase => new(SharedPlayDefaults.NormalizeCdnBaseUrl(CdnBaseUrl) + "/");
+
+    private void OnWardAccountChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = LoadMyRoomAsync());
 
     private async Task SetRoomPublicAsync(bool value)
     {

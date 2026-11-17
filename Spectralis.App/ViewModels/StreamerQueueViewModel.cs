@@ -308,6 +308,22 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     /// <summary>Wired by MainWindowViewModel to NowPlaying.LoadUrlAsync so clicking Play actually plays the track.</summary>
     public Func<string, Task>? PlayTrackRequested { get; set; }
+    public Func<string, Task<bool>>? SessionPlayRequested { get; set; }
+
+    public async Task StartSessionAsync(CancellationToken ct = default)
+    {
+        if (!HasRoom) await CreateRoomAsync(ct);
+        if (!HasRoom) throw new InvalidOperationException(LastError);
+        await _controller.SetAcceptingSubmissionsAsync(true, ct);
+        StartPolling();
+        await PollOnceAsync();
+    }
+
+    public async Task EndSessionAsync(CancellationToken ct = default)
+    {
+        if (HasRoom) await _controller.SetAcceptingSubmissionsAsync(false, ct);
+        AcceptingSubmissions = false;
+    }
     public event Action<AppSettings>? SettingsSaveRequested;
 
     // ── Reactive properties ───────────────────────────────────────────────────
@@ -747,6 +763,13 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         try
         {
             var playbackUrl = ResolvePlaybackUrl(item);
+            if (playbackUrl is null) throw new InvalidOperationException("This request has no playable source.");
+            if (SessionPlayRequested is not null)
+            {
+                if (await SessionPlayRequested(playbackUrl)) await MarkNowPlayingAsync(item.Id);
+                else StatusText = "Queued for after the Song Wars round.";
+                return;
+            }
             if (playbackUrl is not null && PlayTrackRequested is not null)
                 await PlayTrackRequested(playbackUrl);
 
@@ -755,7 +778,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { LastError = ex.Message; }
     }
 
-    private string? ResolvePlaybackUrl(SqItemVm item)
+    internal string? ResolvePlaybackUrl(SqItemVm item)
     {
         if (!string.IsNullOrWhiteSpace(item.Url))
             return item.Url;
