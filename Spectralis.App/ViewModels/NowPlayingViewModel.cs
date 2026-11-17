@@ -1576,6 +1576,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayNextAsync()
     {
+        if (SessionRoundActive) return;
         if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             await _spotifyHost.NextTrackAsync();
@@ -1587,6 +1588,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayPreviousAsync()
     {
+        if (SessionRoundActive) return;
         if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             if (_spotifyPositionMs > 3000)
@@ -1783,6 +1785,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task AutoAdvanceAsync()
     {
+        if (SessionRoundActive) { RefreshFromEngine(); return; }
         if (IsMixSource) return;
         if (_spotifyState is not null && !_queueDrivenSpotifyTrack)
         {
