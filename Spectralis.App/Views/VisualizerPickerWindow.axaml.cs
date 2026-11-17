@@ -13,8 +13,6 @@ public partial class VisualizerPickerWindow : Window
     public VisualizerPickerWindow()
     {
         InitializeComponent();
-        Preview.FrameSource = new VisualizerDemoSource();
-        Preview.Appearance = new() { ShowHud = false };
     }
 
     public static async Task<VisualizerOption?> ChooseAsync(Window owner, IEnumerable<VisualizerOption> options,
@@ -23,19 +21,6 @@ public partial class VisualizerPickerWindow : Window
         var window = new VisualizerPickerWindow { DataContext = new VisualizerGalleryViewModel(options, selected, player?.CoverArtBytes) };
         window.ClearButton.IsVisible = false;
         window.ApplyButton.Content = action;
-        if (player is not null)
-        {
-            window.Preview.Appearance = player.VisualizerAppearance with { ShowHud = false };
-            window.Preview.Sensitivity = player.VisualizerSensitivity;
-            window.Preview.ShowPeaks = player.PeakHold;
-            window.Preview.AlbumArtBytes = player.CoverArtBytes;
-            if (player.Engine.IsPlaying || player.VisualizationSource?.IsPlaying == true)
-            {
-                window.Preview.FrameSource = player.VisualizationSource;
-                window.Preview.Engine = player.Engine;
-                window.PreviewSourceLabel.Text = "Live audio preview";
-            }
-        }
         await window.ShowDialog(owner);
         return window._confirmed ? window._selection : null;
     }

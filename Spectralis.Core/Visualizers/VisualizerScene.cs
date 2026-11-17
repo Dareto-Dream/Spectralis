@@ -37,6 +37,9 @@ public enum VisualizerMode
     Starfield,
     Orbital,
     Silk,
+    SignalCity,
+    NeonTerrain,
+    Stardust,
 }
 
 /// <summary>Immutable per-frame scene handed to renderers.</summary>
@@ -60,6 +63,14 @@ public sealed class VisualizerScene
 
     public VisualizerAppearance Appearance { get; init; } = new();
     public double MotionTimeSeconds { get; init; }
+    public float MusicalEnergy { get; init; }
+    public float BassEnvelope { get; init; }
+    public float MidEnvelope { get; init; }
+    public float TrebleEnvelope { get; init; }
+    public float TransientEnvelope { get; init; }
+    public double TravelDistance { get; init; }
+    public float[][] TerrainHistory { get; init; } = [];
+    public int TerrainNewestIndex { get; init; }
 
     // Extended audio analysis channels used by the meter/scope renderers.
     public float[] WaveformLeft { get; init; } = Array.Empty<float>();
@@ -105,6 +116,18 @@ public sealed class VisualizerSceneState
     public bool ShowPeaks { get; set; } = true;
     public VisualizerAppearance Appearance { get; set; } = new();
     private double _motionTime;
+    private float _musicalEnergy, _bassEnvelope, _midEnvelope, _trebleEnvelope, _transientEnvelope;
+    private double _travelDistance;
+    private float[][]? _terrainHistory;
+    private int _terrainNewestIndex;
+    private float _terrainClock;
+
+    private float AverageBands(int first, int last)
+    {
+        var sum = 0f;
+        for (var i = first; i < last; i++) sum += _spectrumLevels[i];
+        return Math.Clamp(sum / (last - first), 0, 1);
+    }
 
     private float _sensitivity = 1f;
 
@@ -165,10 +188,42 @@ public sealed class VisualizerSceneState
         _spectrogramHistory = frame.SpectrogramHistory;
         _spectrogramNewestIndex = frame.SpectrogramNewestIndex;
 
+        // Distinct envelopes keep architecture and camera movement slow while
+        // lights and particle accents can still follow individual transients.
+        var bass = AverageBands(0, 8);
+        var mid = AverageBands(8, 36);
+        var treble = AverageBands(36, 64);
+        _transientEnvelope = Math.Max(Math.Clamp((treble - _trebleEnvelope) * 5 + (bass - _bassEnvelope) * 2, 0, 1),
+            _transientEnvelope * MathF.Exp(-seconds * 3));
+        _bassEnvelope += (bass - _bassEnvelope) * (1 - MathF.Exp(-seconds * 5));
+        _midEnvelope += (mid - _midEnvelope) * (1 - MathF.Exp(-seconds * 3));
+        _trebleEnvelope += (treble - _trebleEnvelope) * (1 - MathF.Exp(-seconds * 7));
+        var energy = bass * .45f + mid * .4f + treble * .15f;
+        _musicalEnergy += (energy - _musicalEnergy) * (1 - MathF.Exp(-seconds * .55f));
+
         if (activePlayback)
         {
             var motionScale = Appearance.ReduceMotion ? 0f : Math.Clamp(Appearance.MotionPercent, 0, 200) / 100f;
             _motionTime += seconds * motionScale;
+            _travelDistance += seconds * motionScale * (.65 + _musicalEnergy * .7);
+            if (mode == VisualizerMode.NeonTerrain)
+            {
+                if (_terrainHistory is null)
+                {
+                    _terrainHistory = Enumerable.Range(0, 48).Select(_ => new float[32]).ToArray();
+                    // A first frame with reduced motion still has a landscape.
+                    foreach (var row in _terrainHistory)
+                        for (var bin = 0; bin < 32; bin++) row[bin] = Math.Clamp((_spectrumLevels[bin*2]+_spectrumLevels[bin*2+1])*.5f,0,1);
+                }
+                _terrainClock += seconds * motionScale;
+                while (_terrainClock >= .05f)
+                {
+                    _terrainClock -= .05f;
+                    _terrainNewestIndex = (_terrainNewestIndex + 1) % _terrainHistory.Length;
+                    for (var bin = 0; bin < 32; bin++)
+                        _terrainHistory[_terrainNewestIndex][bin] = Math.Clamp((_spectrumLevels[bin * 2] + _spectrumLevels[bin * 2 + 1]) * .5f, 0, 1);
+                }
+            }
             frameScale *= motionScale;
             if (mode == VisualizerMode.SpinningDisk)
             {
@@ -201,6 +256,11 @@ public sealed class VisualizerSceneState
         _isActive = false;
         _diskAngle = 0;
         _motionTime = 0;
+        _travelDistance = 0;
+        _musicalEnergy = _bassEnvelope = _midEnvelope = _trebleEnvelope = _transientEnvelope = 0;
+        _terrainClock = 0;
+        _terrainNewestIndex = 0;
+        if (_terrainHistory is not null) foreach (var row in _terrainHistory) Array.Clear(row);
         _animationPhase = 0;
         _playbackTimeSeconds = 0;
         _midiNotes = Array.Empty<MidiNoteState>();
@@ -223,6 +283,14 @@ public sealed class VisualizerSceneState
             Theme = Appearance.Apply(Palette),
             Appearance = Appearance,
             MotionTimeSeconds = _motionTime,
+            TravelDistance = _travelDistance,
+            MusicalEnergy = _musicalEnergy,
+            BassEnvelope = _bassEnvelope,
+            MidEnvelope = _midEnvelope,
+            TrebleEnvelope = _trebleEnvelope,
+            TransientEnvelope = _transientEnvelope,
+            TerrainHistory = _terrainHistory ?? [],
+            TerrainNewestIndex = _terrainNewestIndex,
             SpectrumLevels = _spectrumLevels,
             PeakHoldLevels = _peakHoldLevels,
             WaveformPoints = _waveformPoints,

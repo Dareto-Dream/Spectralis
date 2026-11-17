@@ -95,6 +95,7 @@
     <!-- Shared runtime assets from the repo root: SoundFont for MIDI/KAR
          playback, helper executables for stream resolution. -->
     <AvaloniaResource Include="..\Assets\icon.png" Link="Assets\icon.png" />
+    <AvaloniaResource Include="Assets\VisualizerCaptures\*.png" />
     <Content Include="..\Assets\SoundFonts\**\*" Link="Assets\SoundFonts\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

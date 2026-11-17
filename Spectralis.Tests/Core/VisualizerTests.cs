@@ -224,7 +224,7 @@ public class VisualizerRendererTests
     [Fact]
     public void Catalog_RegistersAllImplementedVisualizers()
     {
-        Assert.Equal(20, VisualizerCatalog.All.Count);
+        Assert.Equal(22, VisualizerCatalog.All.Count);
         Assert.Equal(VisualizerCatalog.All, VisualizerCatalog.AllRegistered);
 
         // Legacy stub modes intentionally ship without renderers, mirroring WinForms.
@@ -238,6 +238,7 @@ public class VisualizerRendererTests
             VisualizerMode.GpuBars,
             VisualizerMode.GpuRadial,
             VisualizerMode.GpuTunnel,
+            VisualizerMode.Starfield,
         ];
         Assert.All(
             Enum.GetValues<VisualizerMode>().Except(stubs),

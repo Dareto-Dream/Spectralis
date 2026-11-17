@@ -17,7 +17,7 @@
              Background="Transparent" HorizontalAlignment="Left" AutomationProperties.Name="Visualizer category">
       <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ListBox.ItemsPanel>
     </ListBox>
-    <Grid Grid.Row="2" ColumnDefinitions="*,280" ColumnSpacing="24">
+    <Grid Grid.Row="2">
       <Panel>
         <ListBox x:Name="GalleryList" ItemsSource="{Binding Families}" SelectedItem="{Binding SelectedFamily}"
                  Background="Transparent" AutomationProperties.Name="Visualizer gallery"
@@ -34,12 +34,14 @@
           </ListBox.Styles>
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:VisualizerFamily">
-              <StackPanel Width="240" Spacing="6">
-                <Border CornerRadius="4" ClipToBounds="True" Background="{StaticResource Brush.Bg.Raised}">
-                  <controls:VisualizerThumbnail Mode="{Binding PreviewMode}" AlbumArtBytes="{Binding ArtworkBytes}" Height="126" IsHitTestVisible="False" />
+              <StackPanel Width="196" Spacing="8">
+                <Border Height="110" CornerRadius="4" ClipToBounds="True" Background="{StaticResource Brush.Bg.Raised}">
+                  <Panel>
+                    <controls:VisualizerThumbnail Mode="{Binding PreviewMode}" Height="110" IsHitTestVisible="False" IsVisible="{Binding !IsCustom}" />
+                    <TextBlock Text="Custom visualizer" IsVisible="{Binding IsCustom}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="secondary" />
+                  </Panel>
                 </Border>
                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" Margin="2,2,0,0" />
-                <TextBlock Text="{Binding VariantSummary}" Classes="secondary" FontSize="12" Margin="2,0,0,4" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -49,32 +51,16 @@
           <TextBlock Text="Try another name or category." Classes="secondary" />
         </StackPanel>
       </Panel>
-      <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="12">
-          <Border Height="200" CornerRadius="4" ClipToBounds="True" Background="{StaticResource Brush.Bg.Raised}">
-            <Panel>
-              <controls:VisualizerHostControl x:Name="Preview" Mode="{Binding PreviewMode}" IsVisible="{Binding CanPreview}" />
-              <TextBlock Text="{Binding PreviewUnavailableText}" TextWrapping="Wrap" Margin="20" IsVisible="{Binding !CanPreview}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="secondary" />
-            </Panel>
-          </Border>
-          <TextBlock x:Name="PreviewSourceLabel" Text="Demo preview" Classes="secondary" FontSize="12" />
-          <TextBlock Text="{Binding SelectedFamily.Name}" TextWrapping="Wrap" FontSize="22" FontWeight="SemiBold" Margin="0,8,0,0" />
-          <TextBlock Text="{Binding SelectedFamily.Description}" Classes="secondary" TextWrapping="Wrap" />
-          <StackPanel IsVisible="{Binding HasVariations}" Spacing="6" Margin="0,8,0,0">
-            <TextBlock Text="Variation" FontWeight="SemiBold" />
-            <ComboBox ItemsSource="{Binding SelectedFamily.Variants}" SelectedItem="{Binding SelectedVariant}" HorizontalAlignment="Stretch" />
-          </StackPanel>
-          <TextBlock Text="{Binding PreviewNote}" Classes="secondary" TextWrapping="Wrap" />
-          <TextBlock Text="Adjust color, motion, and detail in Settings / Visualizer." Classes="secondary" TextWrapping="Wrap" Margin="0,12,0,0" />
-        </StackPanel>
-      </ScrollViewer>
     </Grid>
-    <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+    <Grid Grid.Row="3" RowDefinitions="Auto,Auto" RowSpacing="12">
+      <ComboBox ItemsSource="{Binding SelectedFamily.Variants}" SelectedItem="{Binding SelectedVariant}" IsVisible="{Binding HasVariations}" MinWidth="200" AutomationProperties.Name="Visualizer variation" />
+      <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
       <Button x:Name="ClearButton" Content="Use app default" Click="OnClear" Classes="ghost" HorizontalAlignment="Left" />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
         <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
         <Button x:Name="ApplyButton" Content="Use visualizer" Click="OnSet" IsDefault="True" Classes="primary" IsEnabled="{Binding !IsEmpty}" />
       </StackPanel>
+      </Grid>
     </Grid>
   </Grid>
 </Window>

@@ -33,9 +33,11 @@ public static class VisualizerCatalog
         new(VisualizerMode.LoudnessMeter, "Loudness Meter", new LoudnessMeterRenderer()),
 
         new(VisualizerMode.Wormhole, "Wormhole", new WormholeRenderer()),
-        new(VisualizerMode.Starfield, "Starfield", new StarfieldRenderer()),
+        new(VisualizerMode.Stardust, "Stardust", new StardustRenderer()),
         new(VisualizerMode.Orbital, "Orbital", new OrbitalRenderer()),
         new(VisualizerMode.Silk, "Silk", new SilkRenderer()),
+        new(VisualizerMode.SignalCity, "Signal City", new SignalCityRenderer()),
+        new(VisualizerMode.NeonTerrain, "Neon Terrain", new NeonTerrainRenderer()),
     ];
 
     private static readonly Dictionary<VisualizerMode, VisualizerDefinition> DefinitionsByMode =
@@ -49,6 +51,7 @@ public static class VisualizerCatalog
         VisualizerMode.GpuBars => VisualizerMode.Spectrum,
         VisualizerMode.GpuRadial => VisualizerMode.RadialSpectrum,
         VisualizerMode.GpuTunnel => VisualizerMode.Wormhole,
+        VisualizerMode.Starfield => VisualizerMode.Stardust,
         _ => DefinitionsByMode.ContainsKey(mode) ? mode : VisualizerMode.MirrorSpectrum,
     };
 
