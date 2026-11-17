@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Spectralis.Core.Integrations;
 using Spectralis.Core.Integrations.Spotify;
@@ -33,7 +34,7 @@ public sealed class SpotifyMatchupService
     private readonly string _cacheRoot;
     private readonly Func<string?> _findExecutable;
     private readonly Func<string, CancellationToken, Task<SpotifyTrackFacts?>> _fetchFacts;
-    private readonly Func<string, SpotifyTrackFacts, CancellationToken, Task<YouTubeCandidate?>> _findMatch;
+    private readonly Func<string, SpotifyTrackFacts, CancellationToken, IAsyncEnumerable<YouTubeCandidate>> _findMatches;
     private readonly Func<string, string, YouTubeCandidate, Action<string>?, CancellationToken, Task<string>> _download;
 
     public SpotifyMatchupService(string? cacheRoot = null) : this(cacheRoot, null, null, null, null) { }
@@ -43,14 +44,22 @@ public sealed class SpotifyMatchupService
         Func<string, CancellationToken, Task<SpotifyTrackFacts?>>? fetchFacts,
         Func<string, SpotifyTrackFacts, CancellationToken, Task<YouTubeCandidate?>>? findMatch,
         Func<string, string, YouTubeCandidate, Action<string>?, CancellationToken, Task<string>>? download,
-        HttpClient? http = null)
+        HttpClient? http = null,
+        Func<string, SpotifyTrackFacts, CancellationToken, IAsyncEnumerable<YouTubeCandidate>>? findMatches = null)
     {
         _cacheRoot = Path.GetFullPath(cacheRoot ?? DefaultCacheRoot);
         _http = http ?? Http;
         _findExecutable = findExecutable ?? YtDlpService.FindExecutable;
         _fetchFacts = fetchFacts ?? FetchFactsAsync;
-        _findMatch = findMatch ?? FindMatchAsync;
+        _findMatches = findMatches ?? (findMatch is null ? FindMatchesAsync : OneMatchAsync);
         _download = download ?? DownloadAsync;
+
+        async IAsyncEnumerable<YouTubeCandidate> OneMatchAsync(string executable, SpotifyTrackFacts facts,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            var match = await findMatch!(executable, facts, ct);
+            if (match is not null) yield return match;
+        }
     }
 
     public static string DefaultCacheRoot => Path.Combine(
@@ -154,32 +163,48 @@ public sealed class SpotifyMatchupService
             return null;
         }
 
+        var attempted = new HashSet<string>(StringComparer.Ordinal);
+        Exception? lastDownloadError = null;
         // Audio eviction shouldn't forget an already verified match. Try it once before searching.
         if (cached is not null)
         {
+            attempted.Add(cached.VideoId);
             try
             {
                 status?.Invoke("Loading the saved YouTube match...");
                 return await CacheMatchAsync(executable, facts,
                     new(cached.VideoId, cached.Title, cached.Artist, cached.DurationMs / 1000d), status, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+            catch (InvalidOperationException ex) when (!ct.IsCancellationRequested)
             {
+                lastDownloadError = ex;
                 Log($"saved match {cached.VideoId} unavailable, searching again: {ex.Message}");
             }
         }
 
         status?.Invoke($"Finding \"{facts.Title}\" on YouTube...");
-        var match = await _findMatch(executable, facts, ct);
-        ct.ThrowIfCancellationRequested();
-        if (match is null)
+        await foreach (var match in _findMatches(executable, facts, ct).WithCancellation(ct))
         {
-            Log($"no confident match for {trackId} \"{facts.Artist} - {facts.Title}\"");
-            return null;
+            ct.ThrowIfCancellationRequested();
+            if (!attempted.Add(match.Id)) continue;
+            Log($"matched {trackId} -> {match.Id} score={SpotifyMatchup.Score(facts, match):0.00}");
+            try
+            {
+                return await CacheMatchAsync(executable, facts, match, status, ct);
+            }
+            catch (InvalidOperationException ex) when (!ct.IsCancellationRequested)
+            {
+                lastDownloadError = ex;
+                Log($"match {match.Id} unavailable: {ex.Message}");
+                if (attempted.Count >= 3) break;
+                status?.Invoke("Trying another matching upload...");
+            }
         }
-
-        Log($"matched {trackId} -> {match.Id} score={SpotifyMatchup.Score(facts, match):0.00}");
-        return await CacheMatchAsync(executable, facts, match, status, ct);
+        ct.ThrowIfCancellationRequested();
+        if (lastDownloadError is not null)
+            throw new InvalidOperationException($"Couldn't download a playable match. {lastDownloadError.Message}", lastDownloadError);
+        Log($"no confident match for {trackId} \"{facts.Artist} - {facts.Title}\"");
+        return null;
     }
 
     private async Task<RemoteAudioResolveResult> CacheMatchAsync(string executable, SpotifyTrackFacts facts,
@@ -240,7 +265,8 @@ public sealed class SpotifyMatchupService
         }
     }
 
-    private static async Task<YouTubeCandidate?> FindMatchAsync(string executable, SpotifyTrackFacts facts, CancellationToken ct)
+    private static async IAsyncEnumerable<YouTubeCandidate> FindMatchesAsync(string executable, SpotifyTrackFacts facts,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         foreach (var query in SpotifyMatchup.BuildQueries(facts))
         {
@@ -259,14 +285,12 @@ public sealed class SpotifyMatchupService
 
             var candidates = YtDlpService.ParseCandidateSearch(result.Stdout)
                 .Select(static c => new YouTubeCandidate(c.Id, c.Title, c.Channel, c.DurationSeconds));
-            var best = SpotifyMatchup.PickBest(facts, candidates);
-            if (best is not null)
-            {
-                return best;
-            }
+            // Search results can contain private, restricted or removed uploads. Keep
+            // the same matching threshold and only try the next query if these fail.
+            foreach (var candidate in candidates.OrderByDescending(c => SpotifyMatchup.Score(facts, c)))
+                if (SpotifyMatchup.Score(facts, candidate) >= SpotifyMatchup.AcceptScore)
+                    yield return candidate;
         }
-
-        return null;
     }
 
     private async Task<string> DownloadAsync(
