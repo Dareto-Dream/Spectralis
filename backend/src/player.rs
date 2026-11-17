@@ -8,6 +8,32 @@ pub fn ward_enabled_for(environment: &str) -> bool { environment.eq_ignore_ascii
 fn ward_disabled() -> AppError { AppError::forbidden("Development uses temporary rooms only. Ward sign-in is disabled.") }
 
 fn token_hash(token: &str) -> String { bytes_to_hex(&Sha256::digest(token.as_bytes())) }
+
+pub async fn get_preferences(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    let subject = ward_subject(&state, &headers).await?;
+    let value = read_json_opt(&state, &format!("player:preferences:{}", token_hash(&subject))).await
+        .ok_or_else(|| AppError::not_found("No settings have been saved to Ward yet."))?;
+    Ok(Json(value))
+}
+
+pub async fn put_preferences(State(state): State<AppState>, headers: HeaderMap, Json(payload): Json<Value>) -> Result<Json<Value>, AppError> {
+    let subject = ward_subject(&state, &headers).await?;
+    validate_preferences(&payload)?;
+    write_json(&state, &format!("player:preferences:{}", token_hash(&subject)), &payload).await?;
+    Ok(Json(payload))
+}
+
+fn validate_preferences(payload: &Value) -> Result<(), AppError> {
+    let object = payload.as_object().ok_or_else(|| AppError::bad_request("Expected settings."))?;
+    let booleans = ["showVisualizer", "peakHold", "enableClipboardUrlMonitoring", "queueByDefault", "gaplessPlayback"];
+    let numbers = [("schemaVersion", 1, 1), ("themeMode", 0, 3), ("themeAccent", 0, 9), ("visualizerSensitivity", 0, 200), ("crossfadeSeconds", 0, 12)];
+    if object.len() != booleans.len() + numbers.len()
+        || booleans.iter().any(|key| !payload[*key].is_boolean())
+        || numbers.iter().any(|(key, min, max)| !payload[*key].as_i64().is_some_and(|value| (*min..=*max).contains(&value))) {
+        return Err(AppError::bad_request("Unsupported settings. Only portable Spectralis preferences can be saved."));
+    }
+    Ok(())
+}
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::AUTHORIZATION)?.to_str().ok()?.strip_prefix("Bearer ").filter(|v| !v.is_empty())
 }
@@ -104,13 +130,13 @@ async fn guard(state: &AppState, uri: &axum::http::Uri, method: &str, headers: &
         if let Some(room) = read_json_opt(state, &sq_room_key(id)).await {
             if let Some(channel) = room["publicRoomId"].as_str() {
                 let profile = read_json(state, &channel_key_checked(channel)?).await?;
-                let subject = optional_subject(state, headers).await?;
                 // Owner/bot endpoints authenticate their own credentials. Public reads/submits
                 // must not bypass admission just because they use the standalone queue URL.
                 let tail = rest.strip_prefix(id).unwrap_or("");
                 let query: HashMap<String,String> = uri.query().and_then(|q| reqwest::Url::parse(&format!("https://local/?{q}")).ok()).map(|u| u.query_pairs().into_owned().collect()).unwrap_or_default();
                 let privileged = query.get("ownerToken").is_some_and(|t| sq_owner_token_valid(&room,t)) || query.get("botToken").is_some_and(|t| sq_bot_token_valid(&room,t));
                 if matches!(tail, "/submit" | "/upload") || (tail.is_empty() && !privileged) {
+                    let subject = optional_subject(state, headers).await?;
                     admission(state, &profile, subject.as_deref()).await?;
                 }
             }
@@ -314,6 +340,41 @@ pub async fn get_image(State(state):State<AppState>,AxumPath((id,kind)):AxumPath
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn preferences() -> Value {
+        json!({"schemaVersion":1,"themeMode":0,"themeAccent":0,"showVisualizer":true,"peakHold":true,
+            "visualizerSensitivity":100,"enableClipboardUrlMonitoring":true,"queueByDefault":false,
+            "gaplessPlayback":true,"crossfadeSeconds":0})
+    }
+
+    #[test]
+    fn settings_sync_rejects_secrets_unknown_fields_and_invalid_values() {
+        assert!(validate_preferences(&preferences()).is_ok());
+        for key in ["ownerToken", "libraryFolders", "enableAutoUpdates", "unknown"] {
+            let mut value = preferences(); value[key] = json!("private");
+            assert!(validate_preferences(&value).is_err());
+        }
+        for (key, bad) in [("schemaVersion",json!(2)),("themeMode",json!(99)),("crossfadeSeconds",json!(-1)),("peakHold",json!("true"))] {
+            let mut value = preferences(); value[key] = bad;
+            assert!(validate_preferences(&value).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn preferences_require_identity_and_are_isolated_by_account() {
+        let state = state().await;
+        assert!(get_preferences(State(state.clone()), HeaderMap::new()).await.is_err());
+        assert!(put_preferences(State(state.clone()), HeaderMap::new(), Json(preferences())).await.is_err());
+        let mut a = HeaderMap::new();
+        a.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer sp_app_preferences_a"));
+        let mut b = HeaderMap::new();
+        b.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer sp_app_preferences_b"));
+        for (token, subject) in [("sp_app_preferences_a","account-a"),("sp_app_preferences_b","account-b")] {
+            write_json(&state, &format!("player:device:{}",token_hash(token)), &json!({"sub":subject})).await.unwrap();
+        }
+        put_preferences(State(state.clone()), a.clone(), Json(preferences())).await.unwrap();
+        assert_eq!(get_preferences(State(state.clone()), a).await.unwrap().0, preferences());
+        assert!(get_preferences(State(state), b).await.is_err());
+    }
     #[test]
     fn only_production_has_ward_accounts() {
         assert!(ward_enabled_for("production"));
