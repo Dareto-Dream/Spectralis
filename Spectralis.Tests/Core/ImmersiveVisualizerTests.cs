@@ -9,6 +9,7 @@ public sealed class ImmersiveVisualizerTests
     [InlineData(VisualizerMode.GpuBars, VisualizerMode.Spectrum)]
     [InlineData(VisualizerMode.GpuRadial, VisualizerMode.RadialSpectrum)]
     [InlineData(VisualizerMode.GpuTunnel, VisualizerMode.Wormhole)]
+    [InlineData(VisualizerMode.Starfield, VisualizerMode.Stardust)]
     public void Retired_modes_migrate_without_reusing_persisted_ids(VisualizerMode old, VisualizerMode replacement)
     {
         Assert.DoesNotContain(VisualizerCatalog.All, d => d.Mode == old);
@@ -42,7 +43,7 @@ public sealed class ImmersiveVisualizerTests
 
     [Theory]
     [InlineData(VisualizerMode.Wormhole)]
-    [InlineData(VisualizerMode.Starfield)]
+    [InlineData(VisualizerMode.Stardust)]
     [InlineData(VisualizerMode.Orbital)]
     [InlineData(VisualizerMode.Silk)]
     public void Detail_levels_are_bounded_and_draw_without_native_pixel_readback(VisualizerMode mode)
@@ -95,5 +96,43 @@ public sealed class ImmersiveVisualizerTests
         Assert.Equal(VisualizerColorway.Theme, normalized.Colorway);
         Assert.Equal(VisualizerPalette.Default, normalized.Apply(VisualizerPalette.Default));
         Assert.NotEqual(VisualizerPalette.Default.BarStartColor, (normalized with { Colorway = VisualizerColorway.Aurora }).Apply(VisualizerPalette.Default).BarStartColor);
+    }
+
+    [Fact]
+    public void Terrain_preserves_frequency_history_and_stops_travelling_when_motion_is_disabled()
+    {
+        var state = new VisualizerSceneState();
+        var low = new float[64]; Array.Fill(low, .7f, 0, 8);
+        var high = new float[64]; Array.Fill(high, .8f, 48, 16);
+        for(var i=0;i<30;i++) state.UpdateFrame(new(low,[],.8f,.4f),true,i/30f,VisualizerMode.NeonTerrain,1f/30);
+        for(var i=0;i<30;i++) state.UpdateFrame(new(high,[],.8f,.4f),true,1+i/30f,VisualizerMode.NeonTerrain,1f/30);
+        var scene=state.CreateScene("Terrain");
+        Assert.Equal(48,scene.TerrainHistory.Length);
+        Assert.True(scene.TerrainHistory[scene.TerrainNewestIndex][27]>.7f);
+        Assert.Contains(scene.TerrainHistory,row=>row[0]>.6f&&row[27]<.01f);
+        var distance=scene.TravelDistance;
+        var index=scene.TerrainNewestIndex;
+        state.Appearance=new(){ReduceMotion=true};
+        state.UpdateFrame(VisualizerFrame.Empty,true,3,VisualizerMode.NeonTerrain,.1f);
+        Assert.Equal(distance,state.CreateScene("Terrain").TravelDistance);
+        Assert.Equal(index,state.CreateScene("Terrain").TerrainNewestIndex);
+        state.Clear();
+        Assert.All(state.CreateScene("Terrain").TerrainHistory,row=>Assert.All(row,x=>Assert.Equal(0,x)));
+    }
+
+    [Theory]
+    [InlineData(VisualizerMode.SignalCity)]
+    [InlineData(VisualizerMode.NeonTerrain)]
+    public void Worlds_use_bounded_geometry_without_pixel_readback(VisualizerMode mode)
+    {
+        foreach(var detail in Enum.GetValues<VisualizerDetail>())
+        {
+            var state=new VisualizerSceneState{Appearance=new(){Detail=detail,ShowHud=false}};
+            state.UpdateFrame(new(Enumerable.Repeat(.6f,64).ToArray(),[],.8f,.4f),true,1,mode);
+            var canvas=new NullVizCanvas();
+            VisualizerCatalog.CreateRenderer(mode).Draw(canvas,new(0,0,1280,720),state.CreateScene("test"));
+            Assert.Equal(0,canvas.PixelBlits);
+            Assert.InRange(canvas.CallCount,50,5000);
+        }
     }
 }

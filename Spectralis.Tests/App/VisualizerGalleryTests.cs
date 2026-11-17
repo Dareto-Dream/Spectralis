@@ -67,6 +67,20 @@ public sealed class VisualizerGalleryTests
         Assert.DoesNotContain("Wormhole", serialized);
     }
 
+    [Fact]
+    public void Starfield_migrates_and_backdating_keeps_new_modes_out_of_older_settings()
+    {
+        var settings=AppSettingsStore.Normalize(new AppSettings{CurrentVisualizer=VisualizerMode.Starfield,DefaultVisualizer=VisualizerMode.SignalCity});
+        Assert.Equal(VisualizerMode.Stardust,settings.CurrentVisualizer);
+        settings.HoldVersion("8.1.0","8.2.0");
+        Assert.Equal(VisualizerMode.Starfield,settings.CurrentVisualizer);
+        Assert.Equal(VisualizerMode.Graph3D,settings.DefaultVisualizer);
+        Assert.False(settings.EnableAutoUpdates);
+        var gallery=new VisualizerGalleryViewModel(Options());
+        Assert.DoesNotContain(gallery.Families,f=>f.Name=="Starfield");
+        Assert.Contains(gallery.Families,f=>f.Name=="Stardust");
+    }
+
     [AvaloniaTheory]
     [InlineData(720)]
     [InlineData(980)]
@@ -78,6 +92,7 @@ public sealed class VisualizerGalleryTests
         {
             window.Show();
             Dispatcher.UIThread.RunJobs();
+            Assert.Null(window.FindControl<Spectralis.App.Controls.VisualizerHostControl>("Preview"));
             var button = window.FindControl<Button>("ApplyButton")!;
             var position = button.TranslatePoint(default, window)!.Value;
             Assert.InRange(position.X + button.Bounds.Width, 0, width);
@@ -91,6 +106,23 @@ public sealed class VisualizerGalleryTests
             Assert.Equal(VisualizerMode.Silk, vm.PreviewMode);
         }
         finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Built_in_grid_tiles_have_packaged_renderer_screenshots()
+    {
+        Span<byte> header=stackalloc byte[24];
+        foreach(var definition in VisualizerCatalog.All)
+        {
+            var uri=new Uri($"avares://Spectralis.App/Assets/VisualizerCaptures/{definition.Mode}.png");
+            Assert.True(Avalonia.Platform.AssetLoader.Exists(uri),definition.Label);
+            using var stream=Avalonia.Platform.AssetLoader.Open(uri);
+            // The headless platform uses a dummy 1x1 bitmap decoder. Verify
+            // the embedded PNG header directly, rather than testing that stub.
+            stream.ReadExactly(header);
+            Assert.Equal(640,System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[16..20]));
+            Assert.Equal(360,System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[20..24]));
+        }
     }
 
     [AvaloniaFact]

@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Spectralis.Core.Visualizers;
 
 namespace Spectralis.App.Controls;
@@ -8,6 +10,9 @@ namespace Spectralis.App.Controls;
 /// <summary>A real renderer snapshot, not a second animation loop per gallery tile.</summary>
 public sealed class VisualizerThumbnail : Control
 {
+    private static readonly Dictionary<VisualizerMode, Bitmap> Captures = new();
+    /// <summary>Capture tooling bypasses the packaged screenshot to render its source.</summary>
+    public bool RenderLiveFrame { get; set; }
     public static readonly StyledProperty<VisualizerMode> ModeProperty = AvaloniaProperty.Register<VisualizerThumbnail, VisualizerMode>(nameof(Mode));
     public VisualizerMode Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
     public static readonly StyledProperty<byte[]?> AlbumArtBytesProperty = AvaloniaProperty.Register<VisualizerThumbnail, byte[]?>(nameof(AlbumArtBytes));
@@ -27,6 +32,24 @@ public sealed class VisualizerThumbnail : Control
     {
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
         using var clip = context.PushClip(new Rect(Bounds.Size));
+        if (!RenderLiveFrame)
+        {
+            var mode = VisualizerCatalog.NormalizeMode(Mode);
+            if (!Captures.TryGetValue(mode, out var capture))
+            {
+                var uri = new Uri($"avares://Spectralis.App/Assets/VisualizerCaptures/{mode}.png");
+                if (AssetLoader.Exists(uri))
+                {
+                    using var stream = AssetLoader.Open(uri);
+                    Captures[mode] = capture = new Bitmap(stream);
+                }
+            }
+            if (capture is not null)
+            {
+                context.DrawImage(capture, new Rect(capture.Size), new Rect(Bounds.Size));
+                return;
+            }
+        }
         if (!ReferenceEquals(_decodedBytes, AlbumArtBytes) && VisualizerCatalog.GetDefinition(Mode).RequiresAlbumArt)
         {
             if (_artwork?.Image is IDisposable bitmap) bitmap.Dispose();
@@ -40,15 +63,14 @@ public sealed class VisualizerThumbnail : Control
                 AlbumArt = _artwork,
                 Appearance = new() { ShowHud = false, Detail = VisualizerDetail.Low, Colorway = VisualizerColorway.Aurora },
             };
-            var frame = VisualizerDemoSource.Sample(7, Mode == VisualizerMode.Spectrogram);
-            for (var i = 0; i < 80; i++) state.UpdateFrame(frame, true, 7, Mode, .1f);
+            for (var i = 0; i < 120; i++)
+                state.UpdateFrame(VisualizerDemoSource.Sample(i / 15.0, Mode == VisualizerMode.Spectrogram), true, i / 15f, Mode, 1f/15);
             _scene = state.CreateScene(VisualizerCatalog.GetDefinition(Mode).Label);
             _sceneMode = Mode;
             _renderer = VisualizerCatalog.CreateRenderer(Mode);
         }
-        var immersive = Mode is VisualizerMode.Wormhole or VisualizerMode.Starfield or VisualizerMode.Orbital or VisualizerMode.Silk;
-        var width = immersive ? (float)Bounds.Width : 640;
-        var height = immersive ? (float)Bounds.Height : 360;
+        const float width = 640;
+        const float height = 360;
         using var scale = context.PushTransform(Matrix.CreateScale(Bounds.Width / width, Bounds.Height / height));
         _renderer!.Draw(new AvaloniaVizCanvas(context), new(0, 0, width, height), _scene);
     }

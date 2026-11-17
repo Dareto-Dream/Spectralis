@@ -77,31 +77,40 @@ public sealed class WormholeRenderer : ImmersiveRenderer
     }
 }
 
-public sealed class StarfieldRenderer : ImmersiveRenderer
+public sealed class StardustRenderer : ImmersiveRenderer
 {
     public override void Draw(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
     {
         if (bounds.Width < 2 || bounds.Height < 2) return;
         Space(canvas, bounds, scene);
-        var count = Detail(scene, 160, 320, 560);
+        var count = Detail(scene, 180, 340, 560);
         var time = scene.MotionTimeSeconds;
         var bass = Bass(scene);
-        var vanishing = new Vector2(bounds.Width * .07f * MathF.Sin((float)(time * .12)), bounds.Height * .05f * MathF.Cos((float)(time * .15)));
+        var vanishing = new Vector2(bounds.Width * .05f * MathF.Sin((float)(time * .08)), bounds.Height * .04f * MathF.Cos((float)(time * .11)));
+        var energy = scene.MusicalEnergy;
         for (var i = 0; i < count; i++)
         {
             // Irrational strides distribute a stable field without a random generator or stored particle state.
             var angle = i * 2.399963f;
-            var radius = .25f + Fraction(i * .754877) * 5;
-            var z = .3f + Fraction(i * .618034 - time * .09) * 12;
-            var point = new Vector3(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius, z);
+            // Three depth populations and curved currents give parallax without
+            // rotating the whole camera or turning every kick into a warp jump.
+            var layer = i % 3;
+            var radius = (.45f + Fraction(i * .754877) * 6) * (1 + energy * .22f);
+            var z = .55f + Fraction(i * .618034 - scene.TravelDistance * (.018 + layer * .018)) * 14;
+            var drift = MathF.Sin(z * .38f + (float)time * .18f + layer) * (.15f + layer * .12f);
+            var point = new Vector3(MathF.Cos(angle + drift) * radius, MathF.Sin(angle + drift) * radius * .7f, z);
             var start = Project(point, bounds) + vanishing;
-            var tail = Project(point with { Z = z + (scene.Appearance.ReduceMotion ? .015f : .12f + bass * .35f) }, bounds) + vanishing;
+            var trail = scene.Appearance.ReduceMotion ? .01f : .035f + layer * .05f + energy * .3f;
+            var tail = Project(point with { Z = z + trail }, bounds) + vanishing;
             if (start.X < bounds.Left || start.X > bounds.Right || start.Y < bounds.Top || start.Y > bounds.Bottom) continue;
-            var alpha = (int)(40 + (1 - z / 12.3f) * 200);
-            var size = Math.Clamp(2.8f / z, .6f, 3.2f);
-            canvas.DrawLine(tail, start, Color(scene, Fraction(i * .381966), alpha), size, true);
-            if (z < 2.5f)
-                canvas.FillEllipse(new(start.X - size * 2, start.Y - size * 2, size * 4, size * 4), Color(scene, .1f, 20));
+            var ripple = MathF.Exp(-MathF.Abs(radius - Fraction(time * .16) * 7) * 3) * scene.TransientEnvelope;
+            var alpha = (int)Math.Clamp(35 + (1 - z / 14.6f) * 175 + ripple * 80, 0, 255);
+            var size = Math.Clamp((1.8f + layer * .5f) / z, .45f, 3.2f);
+            var shade = VizColor.Blend(Color(scene, Fraction(i * .381966)), VizColor.FromRgb(219,232,255), .4f+layer*.15f).WithAlpha(alpha);
+            canvas.DrawLine(tail, start, shade, size, true);
+            canvas.FillEllipse(new(start.X-size*.55f,start.Y-size*.55f,size*1.1f,size*1.1f),shade.WithAlpha(Math.Min(255,alpha+35)));
+            if (z < 3.5f && i % 3 == 0)
+                canvas.FillRadialGlow(new(start.X - size * 5, start.Y - size * 5, size * 10, size * 10), Color(scene, .1f, 38));
         }
         Finish(canvas, bounds, scene);
     }
@@ -109,42 +118,56 @@ public sealed class StarfieldRenderer : ImmersiveRenderer
 
 public sealed class OrbitalRenderer : ImmersiveRenderer
 {
-    private readonly record struct OrbitPoint(Vector3 Position, float Mix, float Size);
-
     public override void Draw(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
     {
         if (bounds.Width < 2 || bounds.Height < 2) return;
         Space(canvas, bounds, scene);
-        var count = Detail(scene, 280, 520, 880);
-        Span<OrbitPoint> particles = stackalloc OrbitPoint[880];
+        var rings = Detail(scene, 30, 48, 68);
+        var segments = Detail(scene, 80, 112, 144);
+        Span<Vector2> points = stackalloc Vector2[145];
         var time = (float)scene.MotionTimeSeconds;
         var bass = Bass(scene);
-        var yaw = .2f + MathF.Sin(time * .18f) * .24f;
-        var pitch = -.85f + MathF.Sin(time * .13f) * .12f;
-        for (var i = 0; i < count; i++)
+        var scale = Math.Min(bounds.Width * .43f, bounds.Height * .72f);
+        var centre = new Vector2(bounds.CenterX, bounds.CenterY + bounds.Height * .035f);
+        var hole = scale * .22f;
+        // 4.25 degrees above the accretion plane. The lensed far side rises
+        // around the silhouette; the near side passes in front of it.
+        const float inclination = 4.25f * MathF.PI / 180;
+        canvas.FillRadialGlow(new(centre.X - scale, centre.Y - scale * .7f, scale * 2, scale * 1.4f), Color(scene, .3f, 38));
+        for (var pass = 0; pass < 2; pass++)
         {
-            var band = i % 5;
-            var angle = i * 2.399963f + time * (.16f + band * .035f);
-            var energy = SampleRange(scene.SpectrumLevels, i % 64, 64);
-            var radius = 1.1f + band * .16f + energy * .12f;
-            var position = new Vector3(MathF.Cos(angle) * radius,
-                MathF.Sin(angle * 3 + band) * (.12f + energy * .30f), MathF.Sin(angle) * radius);
-            position = VizMath.Rotate(position, yaw, pitch);
-            position.Z += 4.2f;
-            particles[i] = new(position, band / 4f, .8f + energy * 2.2f);
+            if (pass == 1)
+            {
+                canvas.FillEllipse(new(centre.X-hole, centre.Y-hole, hole*2, hole*2), VizColor.FromRgb(1,2,5));
+                canvas.DrawEllipse(new(centre.X-hole*1.03f, centre.Y-hole*1.03f, hole*2.06f, hole*2.06f), Color(scene, .12f, 160), 1.5f);
+            }
+            for (var ring = rings - 1; ring >= 0; ring--)
+            {
+                var depth = ring / (float)(rings - 1);
+                var radius = hole * 1.12f + depth * (scale-hole*1.12f);
+                for (var i = 0; i <= segments; i++)
+                {
+                    var a = i / (float)segments * MathF.PI + (pass == 0 ? MathF.PI : 0);
+                    var x = MathF.Cos(a) * radius;
+                    var y = MathF.Sin(a) * radius * MathF.Sin(inclination);
+                    if (pass == 0)
+                    {
+                        var lens = MathF.Sqrt(Math.Max(0, hole * hole * 1.18f - x*x));
+                        y -= lens * (1-depth*.36f);
+                    }
+                    var turbulence = MathF.Sin(a*11 + time*(1.8f-depth) + ring*.55f) * (1.2f+bass*2);
+                    points[i] = centre + new Vector2(x, y + turbulence*(.3f+depth*.7f));
+                }
+                var alpha = (int)(45 + (1-depth)*140);
+                canvas.DrawPolyline(points[..(segments+1)], Color(scene, depth, alpha), .8f + (1-depth)*1.1f);
+                // Hot material rotates at a different speed at each radius.
+                for (var arc = 0; arc < 3; arc++)
+                {
+                    var first = (int)(Fraction(time*(.08+(.12*(1-depth)))+arc/3.0+depth*.4) * (segments-10));
+                    canvas.DrawPolyline(points.Slice(first, 8), VizColor.Blend(Color(scene, depth), VizColor.FromRgb(255,240,210), .55f).WithAlpha(alpha), 1.25f);
+                }
+            }
         }
-        particles[..count].Sort(static (a, b) => b.Position.Z.CompareTo(a.Position.Z));
-        var core = Math.Min(bounds.Width, bounds.Height) * (.10f + bass * .025f);
-        canvas.FillRadialGlow(new(bounds.CenterX - core * 2, bounds.CenterY - core * 2, core * 4, core * 4), Color(scene, .5f, 65));
-        for (var i = 0; i < count; i++)
-        {
-            var particle = particles[i];
-            var point = Project(particle.Position, bounds, 1.05f);
-            var depth = Math.Clamp((6 - particle.Position.Z) / 3.5f, 0, 1);
-            var size = particle.Size * (.7f + depth) * Math.Clamp(bounds.Height / 720f, .35f, 1.5f);
-            canvas.FillEllipse(new(point.X - size, point.Y - size, size * 2, size * 2), Color(scene, particle.Mix, (int)(50 + depth * 200)));
-        }
-        canvas.DrawEllipse(new(bounds.CenterX - core * .3f, bounds.CenterY - core * .3f, core * .6f, core * .6f), Color(scene, 0, 100), 1);
         Finish(canvas, bounds, scene);
     }
 }
@@ -155,7 +178,7 @@ public sealed class SilkRenderer : ImmersiveRenderer
     {
         if (bounds.Width < 2 || bounds.Height < 2) return;
         Space(canvas, bounds, scene);
-        var strands = Detail(scene, 22, 38, 56);
+        var strands = Detail(scene, 36, 64, 92);
         var samples = Detail(scene, 72, 112, 144);
         Span<Vector2> points = stackalloc Vector2[145];
         var time = (float)scene.MotionTimeSeconds;
@@ -166,19 +189,20 @@ public sealed class SilkRenderer : ImmersiveRenderer
             for (var i = 0; i <= samples; i++)
             {
                 var u = i / (float)samples;
-                var x = (u - .5f) * 5;
-                var twist = x * 1.55f + time * .38f + layer * .95f;
+                var x = (u - .5f) * (bounds.Width / bounds.Height) * 5.5f;
+                var bank = strand % 3;
+                var twist = u * 7.4f + time * (.26f + bank*.035f) + layer * 3.4f + bank*1.3f;
                 var envelope = MathF.Sin(u * MathF.PI);
                 var energy = SampleRange(scene.SpectrumLevels, i, samples + 1);
-                var radius = .48f + layer * .48f + envelope * energy * .28f;
-                var point = new Vector3(x, MathF.Sin(twist) * radius + MathF.Sin(x * 2 - time * .2f) * bass * .12f,
-                    4 + MathF.Cos(twist) * radius);
+                var radius = .65f + layer * .95f + envelope * energy * .32f;
+                var point = new Vector3(x, MathF.Sin(twist) * radius + (bank-1)*.35f + MathF.Sin(u*9-time*.2f)*bass*.16f,
+                    3.5f + MathF.Cos(twist) * radius * .35f);
                 points[i] = Project(point, bounds, .82f);
             }
-            var color = Color(scene, layer, (int)(55 + (1 - layer) * 120));
+            var color = Color(scene, layer, (int)(65 + (1 - layer) * 100));
             if (strand % 6 == 0 && scene.Appearance.Detail != VisualizerDetail.Low)
                 canvas.DrawPolyline(points[..(samples + 1)], color.WithAlpha(18), 6);
-            canvas.DrawPolyline(points[..(samples + 1)], color, 1.15f);
+            canvas.DrawPolyline(points[..(samples + 1)], color, 1.3f + layer*.7f);
         }
         Finish(canvas, bounds, scene);
     }

@@ -23,6 +23,11 @@ public sealed class AppSettings
     public void HoldVersion(string version, string currentVersion)
     {
         HeldVersion = version;
+        if (Spectralis.Core.Platform.ReleaseVersion.Compare(version, "8.2.0") < 0)
+        {
+            CurrentVisualizer = PreviousCollectionVisualizer(CurrentVisualizer);
+            DefaultVisualizer = PreviousCollectionVisualizer(DefaultVisualizer);
+        }
         if (Spectralis.Core.Platform.ReleaseVersion.Compare(version, "8.1.0") < 0)
         {
             // Older builds reject unknown enum strings and reset the entire settings file.
@@ -39,8 +44,15 @@ public sealed class AppSettings
     }
 
     private static VisualizerMode LegacyCompatibleVisualizer(VisualizerMode mode) =>
-        VisualizerCatalog.NormalizeMode(mode) is VisualizerMode.Wormhole or VisualizerMode.Starfield or VisualizerMode.Orbital or VisualizerMode.Silk
+        VisualizerCatalog.NormalizeMode(mode) is VisualizerMode.Wormhole or VisualizerMode.Stardust or VisualizerMode.Orbital or VisualizerMode.Silk or VisualizerMode.SignalCity or VisualizerMode.NeonTerrain
             ? VisualizerMode.MirrorSpectrum : VisualizerCatalog.NormalizeMode(mode);
+
+    private static VisualizerMode PreviousCollectionVisualizer(VisualizerMode mode) => mode switch
+    {
+        VisualizerMode.Stardust => VisualizerMode.Starfield,
+        VisualizerMode.SignalCity or VisualizerMode.NeonTerrain => VisualizerMode.Graph3D,
+        _ => mode,
+    };
 
     public AppThemeMode ThemeMode { get; set; } = AppThemeMode.Dark;
     public AppThemeAccent ThemeAccent { get; set; } = AppThemeAccent.Amber;

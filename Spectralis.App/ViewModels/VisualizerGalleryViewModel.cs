@@ -6,6 +6,7 @@ namespace Spectralis.App.ViewModels;
 public sealed record VisualizerFamily(string Name, string Category, string Description, IReadOnlyList<VisualizerOption> Variants, byte[]? ArtworkBytes = null)
 {
     public VisualizerMode PreviewMode => Variants[0].Mode;
+    public bool IsCustom => Variants[0] is { Script: not null } or { Installed: not null };
     public string VariantSummary => Variants.Count == 1 ? Category : $"{Category} · {Variants.Count} variations";
 }
 
@@ -84,8 +85,10 @@ public sealed class VisualizerGalleryViewModel : ViewModelBase
         }
         Add("Wormhole", "Immersive", "A twisting tunnel pulled forward by the music.", VisualizerMode.Wormhole);
         Add("Silk", "Immersive", "Ribbons fold through space with every phrase.", VisualizerMode.Silk);
-        Add("Starfield", "Immersive", "A drifting field of stars with bass-driven trails.", VisualizerMode.Starfield);
-        Add("Orbital", "Immersive", "A rotating particle sculpture shaped by the spectrum.", VisualizerMode.Orbital);
+        Add("Stardust", "Immersive", "Layered particles follow curved currents through space.", VisualizerMode.Stardust);
+        Add("Orbital", "Immersive", "A spinning black hole viewed from the accretion plane.", VisualizerMode.Orbital);
+        Add("Signal City", "Immersive", "Travel through streets of reactive light.", VisualizerMode.SignalCity);
+        Add("Neon Terrain", "Immersive", "A landscape formed by recent frequency history.", VisualizerMode.NeonTerrain);
         Add("Spectrum", "Spectrum", "Frequency bars, radial rings, or a flowing spectrum.", VisualizerMode.MirrorSpectrum, VisualizerMode.Spectrum, VisualizerMode.RadialSpectrum, VisualizerMode.SpectrumWave);
         Add("Waveforms", "Spectrum", "Follow the signal as a flowing wave or an oscilloscope trace.", VisualizerMode.Oscilloscope, VisualizerMode.Waveform);
         Add("3D spectrum", "Immersive", "Turn frequency into a landscape or a rotating sphere.", VisualizerMode.Graph3D, VisualizerMode.Sphere3D);
