@@ -2274,6 +2274,16 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public void ApplyVisualizerChoice(VisualizerOption option)
+    {
+        if (IsVisualizerLocked) return;
+        SelectedVisualizer = option;
+        if (option.Installed is not null) return;
+        ShowYouTubeVideo = false;
+        ShowEmbeddedHtml = false;
+        ShowVisualizer = true;
+    }
+
     public VisualizerMode SelectedVisualizerMode => _selectedVisualizer.Mode;
 
     public bool PeakHold

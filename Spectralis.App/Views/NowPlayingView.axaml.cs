@@ -70,7 +70,7 @@ public partial class NowPlayingView : Grid
     {
         if (DataContext is not NowPlayingViewModel player || player.IsVisualizerLocked || TopLevel.GetTopLevel(this) is not Window owner) return;
         var selected = await VisualizerPickerWindow.ChooseAsync(owner, player.VisualizerOptions, player.SelectedVisualizer, player);
-        if (selected is not null) player.SelectedVisualizer = selected;
+        if (selected is not null) player.ApplyVisualizerChoice(selected);
     }
 
 public NowPlayingView()

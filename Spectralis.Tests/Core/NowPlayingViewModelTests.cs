@@ -37,6 +37,23 @@ public sealed class NowPlayingViewModelTests : IDisposable
         return path;
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Gallery_choice_exits_video_even_when_reselecting_the_current_visualizer(bool keepCurrent)
+    {
+        typeof(NowPlayingViewModel).GetProperty(nameof(NowPlayingViewModel.YouTubeVideoId))!.SetValue(_vm, "dQw4w9WgXcQ");
+        _vm.ShowYouTubeVideo = true;
+        _vm.PeakHold = true;
+        var option = keepCurrent ? _vm.SelectedVisualizer
+            : _vm.VisualizerOptions.Single(o => o.Mode == Spectralis.Core.Visualizers.VisualizerMode.Wormhole);
+        _vm.ApplyVisualizerChoice(option);
+        Assert.False(_vm.ShowYouTubeVideo);
+        Assert.True(_vm.ShowVisualizerSurface);
+        Assert.True(_vm.PeakHold);
+        Assert.Equal(option, _vm.SelectedVisualizer);
+    }
+
     [Fact]
     public void InitialState_NoTrack()
     {
