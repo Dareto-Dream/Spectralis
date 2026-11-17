@@ -88,6 +88,16 @@ public static class SharedPlayDefaults
         ? new Uri($"https://player.deltavdevs.com/rooms/{Uri.EscapeDataString(roomId)}")
         : new Uri(cdnBaseUri, WebSharePlayerPath + "?channel=" + Uri.EscapeDataString(roomId));
 
+    public static Uri BuildQueueSubmitUrl(Uri backend, string roomId, string? channelId = null)
+    {
+        var production = IsProductionPlayer(backend);
+        var url = production
+            ? $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(roomId)}"
+            : new Uri(backend, WebSharePlayerPath + "sq.html?room=" + Uri.EscapeDataString(roomId)).AbsoluteUri;
+        if (!string.IsNullOrWhiteSpace(channelId)) url += (production ? "?" : "&") + "ch=" + Uri.EscapeDataString(channelId);
+        return new Uri(url);
+    }
+
     public static Uri BuildDiscordActivityJoinUrl(Uri cdnBaseUri, string roomCode)
     {
         var code = NormalizeRoomCode(roomCode) ?? roomCode.Trim();

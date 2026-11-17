@@ -36,5 +36,9 @@ public class StagingBuildTests
         var backend = new Uri(SharedPlayDefaults.StagingCdnBaseUrl);
         Assert.Equal(backend.Host, SharedPlayDefaults.BuildWebShareJoinUrl(backend, "ABC123").Host);
         Assert.Equal(backend.Host, SharedPlayDefaults.BuildRoomJoinUrl(backend, "room").Host);
+        Assert.Equal(backend.Host, SharedPlayDefaults.BuildQueueSubmitUrl(backend, "room").Host);
+        Assert.Equal("/spectralis/web-share/sq.html", SharedPlayDefaults.BuildQueueSubmitUrl(backend, "room").AbsolutePath);
+        Assert.Equal("?room=room&ch=vip", SharedPlayDefaults.BuildQueueSubmitUrl(backend, "room", "vip").Query);
+        Assert.Equal("https://player.deltavdevs.com/queues/room?ch=vip", SharedPlayDefaults.BuildQueueSubmitUrl(new Uri(SpectralisEndpoints.ProductionApiBase), "room", "vip").AbsoluteUri);
     }
 }

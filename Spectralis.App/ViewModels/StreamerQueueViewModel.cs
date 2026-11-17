@@ -711,9 +711,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private void RefreshChannelShareUrls()
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
-        var baseUrl = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
         foreach (var channel in Channels)
-            channel.ShareUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}?ch={Uri.EscapeDataString(channel.Id)}";
+            channel.ShareUrl = SharedPlayDefaults.BuildQueueSubmitUrl(_cdnBaseUri, RoomId, channel.Id).AbsoluteUri;
     }
 
     // ── Queue actions ─────────────────────────────────────────────────────────
@@ -1098,7 +1097,6 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private void UpdateSubmitUrl()
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
-        var base_ = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
-        SubmitUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}";
+        SubmitUrl = SharedPlayDefaults.BuildQueueSubmitUrl(_cdnBaseUri, RoomId).AbsoluteUri;
     }
 }
