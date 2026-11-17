@@ -314,7 +314,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     {
         if (!HasRoom) await CreateRoomAsync(ct);
         if (!HasRoom) throw new InvalidOperationException(LastError);
-        await _controller.SetAcceptingSubmissionsAsync(true, ct);
+        var room = await _controller.SetAcceptingSubmissionsAsync(true, ct);
+        ApplyRoomSnapshot(room);
         StartPolling();
         await PollOnceAsync();
     }
@@ -605,6 +606,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         {
             LastError = string.Empty;
             var room = await _controller.SetAcceptingSubmissionsAsync(!AcceptingSubmissions, ct);
+            SqEnabled = room.Enabled;
             ApplyQueueSnapshot(room);
             AcceptingSubmissions = room.AcceptingSubmissions;
         }

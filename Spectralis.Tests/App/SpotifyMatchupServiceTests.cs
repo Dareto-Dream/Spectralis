@@ -151,6 +151,93 @@ public sealed class SpotifyMatchupServiceTests : IDisposable
         Assert.Null(await service.ResolveAsync(Id, Facts, null, default));
     }
 
+    private static async IAsyncEnumerable<YouTubeCandidate> Candidates(params YouTubeCandidate[] candidates)
+    {
+        await Task.CompletedTask;
+        foreach (var candidate in candidates) yield return candidate;
+    }
+
+    [Fact]
+    public async Task Restricted_first_upload_tries_a_distinct_match_and_only_caches_success()
+    {
+        var attempts = new List<string>();
+        var alternate = Candidate with { Id = "alternate01" };
+        var service = new SpotifyMatchupService(_root, () => "test-resolver", null, null,
+            (exe, id, match, status, ct) =>
+            {
+                attempts.Add(match.Id);
+                if (match.Id == Candidate.Id) throw new InvalidOperationException("This YouTube upload requires sign-in.");
+                return Download(exe, id, match, status, ct);
+            }, findMatches: (_, _, _) => Candidates(Candidate, Candidate, alternate));
+        Assert.NotNull(await service.ResolveAsync(Id, Facts, null, default));
+        Assert.Equal(new[] { Candidate.Id, alternate.Id }, attempts);
+        var saved = JsonSerializer.Deserialize<SpotifyMatchupService.CachedMatch[]>(await File.ReadAllTextAsync(Path.Combine(_root, "index.json")));
+        Assert.Equal(alternate.Id, Assert.Single(saved!).VideoId);
+    }
+
+    [Fact]
+    public async Task Unavailable_matches_stop_after_three_downloads_without_caching_failure()
+    {
+        var attempts = 0;
+        var service = new SpotifyMatchupService(_root, () => "test-resolver", null, null,
+            (_, _, _, _, _) => { attempts++; throw new InvalidOperationException("Video unavailable"); },
+            findMatches: (_, _, _) => Candidates(Enumerable.Range(0, 5).Select(i => Candidate with { Id = "candidate0" + i }).ToArray()));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ResolveAsync(Id, Facts, null, default));
+        Assert.Contains("Couldn't download a playable match", error.Message);
+        Assert.Equal(3, attempts);
+        Assert.False(File.Exists(Path.Combine(_root, "index.json")));
+    }
+
+    [Fact]
+    public async Task Cancelled_download_does_not_try_another_match()
+    {
+        var attempts = 0;
+        using var cancellation = new CancellationTokenSource();
+        var service = new SpotifyMatchupService(_root, () => "test-resolver", null, null,
+            (_, _, _, _, ct) => { attempts++; cancellation.Cancel(); ct.ThrowIfCancellationRequested(); throw new Exception(); },
+            findMatches: (_, _, _) => Candidates(Candidate, Candidate with { Id = "alternate01" }));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ResolveAsync(Id, Facts, null, cancellation.Token));
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public async Task Failed_saved_match_is_not_downloaded_again_when_search_returns_it()
+    {
+        await SaveMapping();
+        var attempts = new List<string>();
+        var alternate = Candidate with { Id = "alternate01" };
+        var service = new SpotifyMatchupService(_root, () => "test-resolver", null, null,
+            (exe, id, match, status, ct) =>
+            {
+                attempts.Add(match.Id);
+                if (match.Id == Candidate.Id) throw new InvalidOperationException("Video unavailable");
+                return Download(exe, id, match, status, ct);
+            }, findMatches: (_, _, _) => Candidates(Candidate, alternate));
+        Assert.NotNull(await service.ResolveAsync(Id, null, null, default));
+        Assert.Equal(new[] { Candidate.Id, alternate.Id }, attempts);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Disk_write_failure_is_not_retried_as_an_unavailable_upload(bool savedMatch)
+    {
+        if (savedMatch) await SaveMapping();
+        var attempts = 0;
+        var service = new SpotifyMatchupService(_root, () => "test-resolver", null, null,
+            (_, _, _, _, _) => { attempts++; throw new IOException("Disk full"); },
+            findMatches: (_, _, _) => Candidates(Candidate, Candidate with { Id = "alternate01" }));
+        await Assert.ThrowsAsync<IOException>(() => service.ResolveAsync(Id, Facts, null, default));
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public void Sign_in_error_does_not_show_raw_cookie_instructions()
+    {
+        Assert.Equal("This YouTube upload requires sign-in.", Spectralis.Core.Integrations.YtDlpService.DescribeFailure(
+            "ERROR: [youtube] dX3k_QDnzHE: Please sign in. Use --cookies-from-browser or --cookies for the authentication.", 1));
+    }
+
     private sealed class Requests(string html) : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];

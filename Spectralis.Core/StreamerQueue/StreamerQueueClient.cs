@@ -51,7 +51,9 @@ public sealed class StreamerQueueClient : IDisposable
 
     public async Task<SqRoom> SetAcceptingSubmissionsAsync(Uri baseUri, string roomId, string ownerToken, bool accepting, CancellationToken ct)
     {
-        var body = new { ownerToken, acceptingSubmissions = accepting };
+        // Opening intake also brings a newly created (disabled) queue online. Closing
+        // intake keeps its public now-playing/history page available.
+        var body = new { ownerToken, acceptingSubmissions = accepting, enabled = accepting ? (bool?)true : null };
         var res = await http.PutAsync(new Uri(RoomUri(baseUri, roomId) + "/settings"), JsonContent(body), ct);
         return await DeserializeAsync<SqRoom>(res, ct);
     }

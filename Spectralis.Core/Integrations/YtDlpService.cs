@@ -251,6 +251,8 @@ public static class YtDlpService
     public static string DescribeFailure(string? stderr, int exitCode)
     {
         var text = stderr ?? string.Empty;
+        if (text.Contains("Please sign in", StringComparison.OrdinalIgnoreCase))
+            return "This YouTube upload requires sign-in.";
         if (text.Contains("confirm you", StringComparison.OrdinalIgnoreCase) &&
             text.Contains("not a bot", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("HTTP Error 429", StringComparison.OrdinalIgnoreCase))
