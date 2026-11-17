@@ -5,6 +5,10 @@
              x:Class="Spectralis.App.Views.PlaylistsView"
              x:DataType="vm:PlaylistsViewModel">
 
+  <UserControl.Styles>
+    <Style Selector="WrapPanel > Button"><Setter Property="Margin" Value="0,0,8,6" /></Style>
+  </UserControl.Styles>
+
   <UserControl.Resources>
     <!-- Shared by both the pinned and unpinned lists below so the tile markup isn't duplicated. -->
     <DataTemplate x:Key="PlaylistTileTemplate" DataType="vm:PlaylistRow">
@@ -56,11 +60,11 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <Panel>
+  <Grid RowDefinitions="*,Auto">
 
     <!-- ============ Empty state ============ -->
     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440"
-                IsVisible="{Binding !HasPlaylists}">
+                IsVisible="{Binding !HasPlaylists}" IsEnabled="{Binding !IsPlaylistBusy}">
       <PathIcon Data="{x:Static design:IconData.Playlists}"
                 Width="48" Height="48"
                 Foreground="{StaticResource Brush.Ink.Muted}"
@@ -70,26 +74,30 @@
       <TextBlock Classes="display" Text="No playlists yet"
                  TextAlignment="Center" Margin="0,0,0,8" />
       <TextBlock Classes="muted"
-                 Text="Create a static playlist, build a smart playlist from rules, import an M3U, or link Spotify in Settings to pull yours in."
+                 Text="Add files and supported music links, import a playlist, or build one from your library."
                  TextAlignment="Center"
                  FontSize="{StaticResource FontSize.UI.Small}"
                  TextWrapping="Wrap"
                  Margin="0,0,0,20" />
-      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+      <WrapPanel HorizontalAlignment="Center">
         <Button Content="New Playlist…" Click="OnNewPlaylist" Classes="primary" />
         <Button Content="New Smart…" Click="OnNewSmart" />
+        <Button Content="Import link…" Click="OnImportLink" />
         <Button Content="Import M3U…" Click="OnImportM3u" />
-      </StackPanel>
+      </WrapPanel>
     </StackPanel>
 
     <!-- ============ Playlist grid ============ -->
-    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasPlaylists}">
+    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasPlaylists}" IsEnabled="{Binding !IsPlaylistBusy}">
 
-      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,12">
+      <WrapPanel Grid.Row="0" Margin="16,12">
         <Button Content="New Playlist..." Click="OnNewPlaylist" />
         <Button Content="New Smart..." Click="OnNewSmart" />
-        <Button Content="Import M3U..." Click="OnImportM3u" />
-      </StackPanel>
+        <Button Content="Import M3U..." Click="OnImportM3u" Margin="0,0,8,4" />
+        <Button Content="Import link..." Click="OnImportLink" Margin="0,0,8,4" />
+        <Button Content="Download offline..." Click="OnDownloadOffline" Margin="0,0,8,4" IsEnabled="{Binding !IsPlaylistBusy}" />
+        <Button Content="Play offline" Click="OnPlayOffline" Margin="0,0,8,4" IsEnabled="{Binding HasSelectedPlaylist}" />
+      </WrapPanel>
 
       <!-- One real ScrollViewer around both lists so pinned + bar + unpinned scroll together as a
            single region. Each inner ListBox has its own scrolling turned off entirely (both axes)
@@ -127,6 +135,8 @@
                 <MenuItem Header="Move Left" Click="OnMoveUp" />
                 <MenuItem Header="Move Right" Click="OnMoveDown" />
                 <Separator />
+                <MenuItem Header="Download offline..." Click="OnDownloadOffline" />
+                <MenuItem Header="Play offline" Click="OnPlayOffline" />
                 <MenuItem Header="Export M3U..." Click="OnExportM3u" />
                 <Separator />
                 <MenuItem Header="Delete" Click="OnDelete" />
@@ -162,6 +172,8 @@
                 <MenuItem Header="Move Left" Click="OnMoveUp" />
                 <MenuItem Header="Move Right" Click="OnMoveDown" />
                 <Separator />
+                <MenuItem Header="Download offline..." Click="OnDownloadOffline" />
+                <MenuItem Header="Play offline" Click="OnPlayOffline" />
                 <MenuItem Header="Export M3U..." Click="OnExportM3u" />
                 <Separator />
                 <MenuItem Header="Delete" Click="OnDelete" />
@@ -177,5 +189,10 @@
                  Margin="16,8"
                  FontSize="{StaticResource FontSize.UI.Small}" />
     </Grid>
-  </Panel>
+    <StackPanel Grid.Row="1" Spacing="4" Margin="16,4,16,12">
+      <TextBlock Text="{Binding SelectedNotice}" Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding OperationStatus}" TextWrapping="Wrap" />
+      <Button Content="Cancel" Click="OnCancelJob" IsVisible="{Binding IsPlaylistBusy}" HorizontalAlignment="Left" />
+    </StackPanel>
+  </Grid>
 </UserControl>

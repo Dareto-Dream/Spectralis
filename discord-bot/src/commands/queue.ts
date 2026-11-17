@@ -2,6 +2,7 @@ import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { getLink } from '../lib/db.js';
 import { getRoom } from '../lib/sqApi.js';
+import { queuePresentation } from '../lib/queuePresentation.js';
 
 export const data = new SlashCommandBuilder().setName('queue').setDescription("Show what's playing and the queue status.");
 
@@ -18,11 +19,13 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   try {
     const room = await getRoom(link.roomId);
+    const presentation = queuePresentation(room);
     const embed = new EmbedBuilder()
-      .setTitle(room.nowPlayingId ? room.nowPlayingTitle ?? 'Untitled' : 'Nothing playing')
-      .setDescription(room.nowPlayingArtist ?? null)
-      .setFooter({ text: `${room.queueLength} in queue` });
-    const content = room.acceptingSubmissions ? undefined : "Requests are closed right now, but here's what's playing:";
+      .setTitle(presentation.title)
+      .setDescription(presentation.description)
+      .setColor(presentation.color)
+      .setFooter({ text: presentation.footer });
+    const content = !room.enabled ? 'The host has not started this session.' : room.acceptingSubmissions ? undefined : 'Requests are closed right now.';
     await interaction.editReply({ content, embeds: [embed] });
   } catch (err) {
     await interaction.editReply(`Couldn't reach the queue (${(err as Error).message}).`);

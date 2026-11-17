@@ -5,33 +5,42 @@ import { config } from './config.js';
 import { RoomSocket } from './sqRealtime.js';
 import { trackedForChannel, untrackSubmission } from './db.js';
 import type { GuildLink, SqBotRoom, SqSubmission } from '../types.js';
+import { queuePresentation, terminalReaction } from './queuePresentation.js';
 
 const SUBMITTED_REACTION = '📥';
-const PLAYED_REACTION = '✅';
-const MISSED_REACTION = '⚠️';
 
 const POLL_INTERVAL_MS = 15_000;
 const STAGGER_MS = 500;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
 interface ChannelPollState {
-  lastNowPlayingId: string | null;
+  lastPresentation: string | null;
   pinnedMessageId: string | null;
   consecutiveFailures: number;
   nextAttemptAtMs: number;
 }
 
 const state = new Map<string, ChannelPollState>(); // key: `${guildId}:${channelId}`
+const inFlight = new Set<string>();
+const activeLinks = new Map<string, GuildLink>();
 
 function keyFor(link: GuildLink): string {
   return `${link.guildId}:${link.channelId}`;
 }
 
 function emptyState(): ChannelPollState {
-  return { lastNowPlayingId: null, pinnedMessageId: null, consecutiveFailures: 0, nextAttemptAtMs: 0 };
+  return { lastPresentation: null, pinnedMessageId: null, consecutiveFailures: 0, nextAttemptAtMs: 0 };
 }
 
 async function pollOnce(client: Client, link: GuildLink): Promise<void> {
+  const key = keyFor(link);
+  if (inFlight.has(key) || activeLinks.get(key) !== link) return;
+  inFlight.add(key);
+  try { await refreshRoom(client, link); }
+  finally { inFlight.delete(key); }
+}
+
+async function refreshRoom(client: Client, link: GuildLink): Promise<void> {
   const key = keyFor(link);
   const prev = state.get(key) ?? emptyState();
 
@@ -42,6 +51,7 @@ async function pollOnce(client: Client, link: GuildLink): Promise<void> {
   const room = link.botToken
     ? await getRoomAsBot(link.roomId, link.botToken).catch(() => null)
     : await getRoom(link.roomId).catch(() => null);
+  if (activeLinks.get(key) !== link) return;
 
   if (!room) {
     const consecutiveFailures = prev.consecutiveFailures + 1;
@@ -57,8 +67,13 @@ async function pollOnce(client: Client, link: GuildLink): Promise<void> {
 
     const current = state.get(key) ?? prev;
     const cleared = { ...current, consecutiveFailures: 0, nextAttemptAtMs: 0 };
-    if (room.nowPlayingId === cleared.lastNowPlayingId) {
+    const presentation = JSON.stringify(queuePresentation(room));
+    if (presentation === cleared.lastPresentation) {
       state.set(key, cleared);
+      return;
+    }
+    if (!cleared.pinnedMessageId && !room.nowPlayingId && !room.queueLength) {
+      state.set(key, { ...cleared, lastPresentation: presentation });
       return;
     }
 
@@ -68,10 +83,11 @@ async function pollOnce(client: Client, link: GuildLink): Promise<void> {
       return;
     }
 
+    if (activeLinks.get(key) !== link) return;
     const embed = buildNowPlayingEmbed(room);
     await postOrEditNowPlaying(channel, cleared, embed);
 
-    state.set(key, { ...cleared, lastNowPlayingId: room.nowPlayingId });
+    state.set(key, { ...cleared, lastPresentation: presentation });
   } catch (err) {
     // A failed embed post/edit used to throw out of pollOnce as an unhandled rejection and
     // skip the state update, re-posting the same embed every cycle until it happened to work.
@@ -91,10 +107,8 @@ async function reconcileReactions(client: Client, link: GuildLink, submissions: 
 
   for (const row of tracked) {
     const sub = byId.get(row.submission_id);
-    const terminal = !sub || sub.status === 'played' || sub.status === 'rejected' || sub.status === 'payment_failed';
-    if (!terminal) continue;
-
-    const reaction = !sub || sub.status !== 'played' ? MISSED_REACTION : PLAYED_REACTION;
+    const reaction = terminalReaction(sub?.status);
+    if (!reaction) continue;
     const channel = await client.channels.fetch(row.channel_id).catch(() => null);
     if (channel && channel.isSendable()) {
       const message = await channel.messages.fetch(row.message_id).catch(() => null);
@@ -108,11 +122,12 @@ async function reconcileReactions(client: Client, link: GuildLink, submissions: 
 }
 
 function buildNowPlayingEmbed(room: Awaited<ReturnType<typeof getRoom>>) {
+  const presentation = queuePresentation(room);
   return new EmbedBuilder()
-    .setTitle(room.nowPlayingId ? room.nowPlayingTitle ?? 'Untitled' : 'Nothing playing')
-    .setDescription(room.nowPlayingArtist ?? null)
-    .setFooter({ text: `${room.queueLength} in queue` })
-    .setColor(room.nowPlayingTier === 'super_skip' ? 0xffcc00 : room.nowPlayingTier === 'skip' ? 0x33aaff : 0x8899aa);
+    .setTitle(presentation.title)
+    .setDescription(presentation.description)
+    .setFooter({ text: presentation.footer })
+    .setColor(presentation.color);
 }
 
 async function postOrEditNowPlaying(
@@ -137,6 +152,7 @@ const sockets = new Map<string, RoomSocket>();
 export function startPolling(client: Client, link: GuildLink, indexForStagger = 0): void {
   const key = keyFor(link);
   stopPolling(link);
+  activeLinks.set(key, link);
   const delay = (indexForStagger * STAGGER_MS) % POLL_INTERVAL_MS;
   const timer = setTimeout(function tick() {
     void pollOnce(client, link);
@@ -166,4 +182,5 @@ export function stopPolling(link: GuildLink): void {
   sockets.get(key)?.stop();
   sockets.delete(key);
   state.delete(key);
+  activeLinks.delete(key);
 }

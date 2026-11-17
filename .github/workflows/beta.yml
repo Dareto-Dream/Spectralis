@@ -25,9 +25,14 @@ on:
       - yt-dlp
       - yt-dlp.exe
   workflow_dispatch:
+    inputs:
+      staging-preview:
+        description: Build staging-only preview artifacts without publishing any release
+        type: boolean
+        default: false
 
 concurrency:
-  group: beta
+  group: ${{ inputs.staging-preview && 'staging-preview' || 'beta' }}
   cancel-in-progress: false
 
 permissions:
@@ -53,6 +58,7 @@ jobs:
           node-version: 22
 
       - name: Check publishing credentials
+        if: ${{ !inputs.staging-preview }}
         env:
           SPECTRALIS_ADMIN_TOKEN: ${{ secrets.SPECTRALIS_ADMIN_TOKEN }}
         run: |
@@ -63,7 +69,24 @@ jobs:
 
       - name: Decide
         id: plan
-        run: node tools/release-pipeline/cli.mjs plan-beta --build "$GITHUB_RUN_NUMBER"
+        env:
+          STAGING_PREVIEW: ${{ inputs.staging-preview }}
+        run: |
+          if [ "$STAGING_PREVIEW" = "true" ]; then
+            node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          const versions = execFileSync('git', ['tag', '--list'], {encoding:'utf8'}).split('\n')
+            .map(t => /^v(\d+)\.(\d+)\.(\d+)$/.exec(t)).filter(Boolean).map(m => m.slice(1).map(Number))
+            .sort((a,b) => b[0]-a[0] || b[1]-a[1] || b[2]-a[2]);
+          const [major,minor,patch] = versions[0] ?? [0,0,0];
+          const version = `${major}.${minor}.${patch+1}-staging.${process.env.GITHUB_RUN_NUMBER}`;
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          writeFileSync('release-notes.md', 'Staging preview only. No release feeds are changed.\n');
+          JS
+          else
+            node tools/release-pipeline/cli.mjs plan-beta --build "$GITHUB_RUN_NUMBER"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -77,11 +100,13 @@ jobs:
     uses: ./.github/workflows/build-app.yml
     with:
       version: ${{ needs.plan.outputs.version }}
+      build-environment: ${{ inputs.staging-preview && 'staging' || 'production' }}
     secrets:
       SPECTRALIS_SPOTIFY_CLIENT_ID: ${{ secrets.SPECTRALIS_SPOTIFY_CLIENT_ID }}
       SPECTRALIS_DISCORD_CLIENT_ID: ${{ secrets.SPECTRALIS_DISCORD_CLIENT_ID }}
 
   publish:
+    if: ${{ !inputs.staging-preview }}
     name: Publish
     needs: [plan, build]
     uses: ./.github/workflows/publish-release.yml

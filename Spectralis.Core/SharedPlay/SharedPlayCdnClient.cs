@@ -19,7 +19,8 @@ public sealed class SharedPlayCdnClient : IDisposable
 
     private Task<HttpResponseMessage> SendAuthorizedAsync(HttpRequestMessage request, CancellationToken ct, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
     {
-        WardAccount.Authorize(request);
+        if (!(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/shared-play/v2/sessions"))
+            WardAccount.Authorize(request);
         var parts = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 4 && parts[0] == "shared-play" && parts[2] == "sessions"
             && sessionKeys.TryGetValue(request.RequestUri.GetLeftPart(UriPartial.Authority) + "/" + parts[3], out var key))

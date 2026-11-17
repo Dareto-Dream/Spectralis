@@ -16,16 +16,17 @@
 
     <ListBox Grid.Row="1" x:Name="ItemsList" SelectionMode="Multiple" />
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+    <WrapPanel Grid.Row="2">
       <Button Content="Add Files..." Click="OnAddFiles" />
+        <Button Content="Add link..." Click="OnAddLink" />
       <Button Content="Remove" Click="OnRemoveSelected" Classes="destructive" />
       <Button Content="Up" Click="OnMoveUp" />
       <Button Content="Down" Click="OnMoveDown" />
-      <TextBlock x:Name="CountText" Classes="muted" VerticalAlignment="Center" Margin="8,0,0,0" />
-    </StackPanel>
+      <TextBlock x:Name="CountText" Classes="muted" VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" MaxWidth="480" />
+    </WrapPanel>
 
     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button Content="Save" Click="OnSave" IsDefault="True" Classes="primary" />
+      <Button x:Name="SaveButton" Content="Save" Click="OnSave" IsDefault="True" Classes="primary" />
       <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
     </StackPanel>
   </Grid>

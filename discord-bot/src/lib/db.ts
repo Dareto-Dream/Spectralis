@@ -83,15 +83,20 @@ export function getLink(guildId: string, channelId: string): GuildLink | null {
 }
 
 export function saveLink(link: Omit<GuildLink, 'openMessage' | 'closedMessage'>): void {
-  db.prepare(
-    `INSERT INTO guild_links (guild_id, channel_id, room_id, bot_token, linked_by, linked_at)
-     VALUES (@guildId, @channelId, @roomId, @botToken, @linkedBy, @linkedAt)
-     ON CONFLICT(guild_id, channel_id) DO UPDATE SET
-       room_id = excluded.room_id,
-       bot_token = excluded.bot_token,
-       linked_by = excluded.linked_by,
-       linked_at = excluded.linked_at`,
-  ).run(link);
+  db.transaction(() => {
+    // Pairing rotates the room's scoped token. Keep every channel for that room
+    // on the new token so linking a second channel doesn't disconnect the first.
+    db.prepare('UPDATE guild_links SET bot_token = ? WHERE room_id = ?').run(link.botToken, link.roomId);
+    db.prepare(
+      `INSERT INTO guild_links (guild_id, channel_id, room_id, bot_token, linked_by, linked_at)
+       VALUES (@guildId, @channelId, @roomId, @botToken, @linkedBy, @linkedAt)
+       ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+         room_id = excluded.room_id,
+         bot_token = excluded.bot_token,
+         linked_by = excluded.linked_by,
+         linked_at = excluded.linked_at`,
+    ).run(link);
+  })();
 }
 
 export function removeLink(guildId: string, channelId: string): boolean {

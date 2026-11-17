@@ -41,6 +41,8 @@ public sealed class AudioEngine : IDisposable
     // Gapless: pre-opened stream for the next track so Load() can skip the cold-open delay.
     private WaveStream? _preparedStream;
     private string? _preparedPath;
+    private int _preparationVersion;
+    private readonly object _preparationGate = new();
 
     // In-chain transitions (true gapless / crossfade): the head of the sample chain swaps to the
     // prepared track on its own, so the output device never stops between tracks.
@@ -167,33 +169,42 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Pre-opens the audio stream for <paramref name="path"/> on a background thread so that
-    /// a subsequent <see cref="Load"/> call for the same path can use it without a cold-open delay.
-    /// Safe to call while a track is playing. No-op for MIDI or unsupported formats.
-    /// </summary>
-    public async Task PrepareNextAsync(string path)
+    /// <summary>Disarms the next track and invalidates any decoder still being prepared.</summary>
+    public void CancelPreparedNext()
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return;
+        lock (_preparationGate)
+        {
+            _preparationVersion++;
+            _transition?.Disarm();
+            Interlocked.Exchange(ref _preparedStream, null)?.Dispose();
+            _preparedPath = null;
+        }
+    }
 
-        // Drop stale prepared stream first (and make sure the chain isn't still pointing at it).
-        _transition?.Disarm();
-        var old = Interlocked.Exchange(ref _preparedStream, null);
-        _preparedPath = null;
-        old?.Dispose();
-
+    /// <summary>Opens the next decoder off-thread while the current track keeps playing.</summary>
+    public async Task PrepareNextAsync(string path, CancellationToken cancellationToken = default)
+    {
+        CancelPreparedNext();
+        var version = _preparationVersion;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
         try
         {
-            var stream = await Task.Run(() => OpenPlaybackStream(path, out _));
-            _preparedStream = stream;
-            _preparedPath = path;
-            TryArmTransition();
+            await Task.Run(() =>
+            {
+                lock (_preparationGate)
+                {
+                    if (version != _preparationVersion || cancellationToken.IsCancellationRequested) return;
+                    // Publish on this worker. Cancellation/disposal must not leave an open decoder
+                    // waiting for a UI continuation that may never run during shutdown.
+                    var stream = OpenPlaybackStream(path, out _);
+                    if (cancellationToken.IsCancellationRequested) { stream.Dispose(); return; }
+                    _preparedStream = stream;
+                    _preparedPath = path;
+                    TryArmTransition();
+                }
+            }, cancellationToken);
         }
-        catch
-        {
-            // Preparation is best-effort; failure is silent — Load() will open normally.
-        }
+        catch { /* Foreground playback can retry a failed preparation. */ }
     }
 
     /// <summary>
@@ -559,6 +570,7 @@ public sealed class AudioEngine : IDisposable
 
     public void Dispose()
     {
+        CancelPreparedNext();
         var prepared = Interlocked.Exchange(ref _preparedStream, null);
         _preparedPath = null;
         prepared?.Dispose();

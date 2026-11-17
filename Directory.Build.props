@@ -1,4 +1,7 @@
 <Project>
+  <PropertyGroup Condition="'$(SPECTRALIS_BUILD_ENVIRONMENT)' == 'staging'">
+    <DefineConstants>$(DefineConstants);SPECTRALIS_STAGING</DefineConstants>
+  </PropertyGroup>
 
   <!-- Several projects target Windows TFMs (the app's SMTC/WinRT target and the
        whole legacy WinForms tree). Building or even restoring those from macOS

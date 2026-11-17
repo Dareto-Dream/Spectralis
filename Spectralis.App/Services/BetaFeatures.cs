@@ -25,6 +25,9 @@ public static class BetaFeatures
     /// </summary>
     public static bool SpotifyMatchup => _spotifyMatchup;
 
+    /// <summary>DJ tools are opt-in beta features, even when an older build saved them as enabled.</summary>
+    public static bool DjMixing(AppSettings settings) => Available(settings) && settings.DjModeEnabled;
+
     /// <summary>Call at startup and whenever the channel or a feature switch changes.</summary>
     public static void Apply(AppSettings settings)
     {

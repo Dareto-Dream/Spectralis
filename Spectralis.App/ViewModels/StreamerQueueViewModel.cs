@@ -275,6 +275,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         ClearNowPlayingCommand = ReactiveCommand.CreateFromTask(() => MarkNowPlayingAsync(null));
         ToggleAcceptingCommand = ReactiveCommand.CreateFromTask(ToggleAcceptingAsync, isOwner);
         LinkDiscordCommand     = ReactiveCommand.CreateFromTask(LinkDiscordAsync, isOwner);
+        CopyDiscordCommand = ReactiveCommand.Create(() => CopyToClipboardRequested?.Invoke(DiscordPairingCommand),
+            this.WhenAnyValue(x => x.DiscordPinDisplay, pin => !string.IsNullOrWhiteSpace(pin)));
         AddToQueueCommand      = ReactiveCommand.CreateFromTask(AddToQueueAsync,
             this.WhenAnyValue(x => x.AddToQueueUrl, x => x.IsOwner, (u, owner) => owner && !string.IsNullOrWhiteSpace(u)));
         AddChannelCommand      = ReactiveCommand.Create(AddChannel, isOwner);
@@ -299,6 +301,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ClearNowPlayingCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleAcceptingCommand { get; }
     public ReactiveCommand<Unit, Unit> LinkDiscordCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyDiscordCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToQueueCommand { get; }
     public ReactiveCommand<Unit, Unit> AddChannelCommand { get; }
     public ReactiveCommand<Unit, Unit> AddMixSlotCommand { get; }
@@ -308,6 +311,23 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
 
     /// <summary>Wired by MainWindowViewModel to NowPlaying.LoadUrlAsync so clicking Play actually plays the track.</summary>
     public Func<string, Task>? PlayTrackRequested { get; set; }
+    public Func<string, Task<bool>>? SessionPlayRequested { get; set; }
+
+    public async Task StartSessionAsync(CancellationToken ct = default)
+    {
+        if (!HasRoom) await CreateRoomAsync(ct);
+        if (!HasRoom) throw new InvalidOperationException(LastError);
+        var room = await _controller.SetAcceptingSubmissionsAsync(true, ct);
+        ApplyRoomSnapshot(room);
+        StartPolling();
+        await PollOnceAsync();
+    }
+
+    public async Task EndSessionAsync(CancellationToken ct = default)
+    {
+        if (HasRoom) await _controller.SetAcceptingSubmissionsAsync(false, ct);
+        AcceptingSubmissions = false;
+    }
     public event Action<AppSettings>? SettingsSaveRequested;
 
     // ── Reactive properties ───────────────────────────────────────────────────
@@ -369,7 +389,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         private set { this.RaiseAndSetIfChanged(ref _acceptingSubmissions, value); this.RaisePropertyChanged(nameof(AcceptingToggleLabel)); }
     }
 
-    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close Queue" : "Reopen Queue";
+    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close requests" : "Open requests";
 
     public bool RequireApproval
     {
@@ -463,8 +483,13 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     public string DiscordPinDisplay
     {
         get => _discordPinDisplay;
-        private set => this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _discordPinDisplay, value);
+            this.RaisePropertyChanged(nameof(DiscordPairingCommand));
+        }
     }
+    public string DiscordPairingCommand => string.IsNullOrEmpty(DiscordPinDisplay) ? "" : $"/link-queue pin:{DiscordPinDisplay}";
 
     public string AddToQueueUrl
     {
@@ -589,6 +614,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         {
             LastError = string.Empty;
             var room = await _controller.SetAcceptingSubmissionsAsync(!AcceptingSubmissions, ct);
+            SqEnabled = room.Enabled;
             ApplyQueueSnapshot(room);
             AcceptingSubmissions = room.AcceptingSubmissions;
         }
@@ -695,9 +721,8 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private void RefreshChannelShareUrls()
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
-        var baseUrl = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
         foreach (var channel in Channels)
-            channel.ShareUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}?ch={Uri.EscapeDataString(channel.Id)}";
+            channel.ShareUrl = SharedPlayDefaults.BuildQueueSubmitUrl(_cdnBaseUri, RoomId, channel.Id).AbsoluteUri;
     }
 
     // ── Queue actions ─────────────────────────────────────────────────────────
@@ -747,6 +772,13 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         try
         {
             var playbackUrl = ResolvePlaybackUrl(item);
+            if (playbackUrl is null) throw new InvalidOperationException("This request has no playable source.");
+            if (SessionPlayRequested is not null)
+            {
+                if (await SessionPlayRequested(playbackUrl)) await MarkNowPlayingAsync(item.Id);
+                else StatusText = "Queued for after the Song Wars round.";
+                return;
+            }
             if (playbackUrl is not null && PlayTrackRequested is not null)
                 await PlayTrackRequested(playbackUrl);
 
@@ -755,7 +787,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { LastError = ex.Message; }
     }
 
-    private string? ResolvePlaybackUrl(SqItemVm item)
+    internal string? ResolvePlaybackUrl(SqItemVm item)
     {
         if (!string.IsNullOrWhiteSpace(item.Url))
             return item.Url;
@@ -811,6 +843,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
             LastError = string.Empty;
             var result = await _controller.CreateDiscordPinAsync(ct);
             DiscordPinDisplay = result.Pin;
+            StatusText = "Run the pairing command in your Discord channel within 10 minutes.";
         }
         catch (Exception ex) { LastError = ex.Message; }
     }
@@ -1075,7 +1108,6 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
     private void UpdateSubmitUrl()
     {
         if (string.IsNullOrWhiteSpace(RoomId)) return;
-        var base_ = _cdnBaseUri.AbsoluteUri.TrimEnd('/');
-        SubmitUrl = $"https://player.deltavdevs.com/queues/{Uri.EscapeDataString(RoomId)}";
+        SubmitUrl = SharedPlayDefaults.BuildQueueSubmitUrl(_cdnBaseUri, RoomId).AbsoluteUri;
     }
 }

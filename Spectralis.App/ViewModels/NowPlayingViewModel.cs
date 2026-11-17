@@ -232,6 +232,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     private readonly IDisposable? _positionPoll;
     private readonly OpenUrlService _openUrlService;
     private readonly SpotifyMatchupService _spotifyMatchup;
+    private readonly Func<string?, CancellationToken, Task<byte[]?>> _fetchRemoteArtwork;
     private RemoteAudioResolveResult? _currentRemoteAudio;
     private readonly SpotifyService _spotify = new();
     private readonly bool _persistSettings;
@@ -427,10 +428,14 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         bool enablePositionPolling = true,
         EffectChain? effectChain = null,
         LibraryDatabase? library = null,
-        SpotifyMatchupService? spotifyMatchup = null)
+        SpotifyMatchupService? spotifyMatchup = null,
+        Func<string?, CancellationToken, Task<byte[]?>>? fetchRemoteArtwork = null,
+        QueueAudioCache? queueAudioCache = null)
     {
         _engine = engine;
-        _spotifyMatchup = spotifyMatchup ?? new SpotifyMatchupService();
+        _spotifyMatchup = spotifyMatchup ?? SpotifyMatchupService.Shared;
+        _queueAudioCache = queueAudioCache ?? QueueAudioCache.Shared;
+        _fetchRemoteArtwork = fetchRemoteArtwork ?? OpenUrlService.TryFetchArtworkBytesAsync;
         _library = library;
         _settings = settings is null
             ? new AppSettings()
@@ -1349,6 +1354,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         }
 
         RaiseQueueNavigationChanged();
+        RefreshUpcomingAudio();
     }
 
     /// <summary>Re-flags the current row when only the playing position in the queue moved.</summary>
@@ -1370,6 +1376,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             Queue.Shuffle = value;
             this.RaisePropertyChanged();
             RaiseQueueNavigationChanged();
+            RefreshUpcomingAudio();
         }
     }
 
@@ -1382,6 +1389,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             this.RaisePropertyChanged();
             this.RaisePropertyChanged(nameof(RepeatIconData));
             RaiseQueueNavigationChanged();
+            RefreshUpcomingAudio();
         }
     }
 
@@ -1573,6 +1581,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayNextAsync()
     {
+        if (SessionRoundActive) return;
         if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             await _spotifyHost.NextTrackAsync();
@@ -1584,6 +1593,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public async Task PlayPreviousAsync()
     {
+        if (SessionRoundActive) return;
         if (_spotifyState is not null && _spotifyHost is not null && !_queueDrivenSpotifyTrack)
         {
             if (_spotifyPositionMs > 3000)
@@ -1606,6 +1616,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     private async Task LoadQueueItemAsync(string pathOrUrl, bool startPlayback)
     {
         SyncQueueCurrent();
+        if (await TryLoadCachedQueueAudioAsync(pathOrUrl, startPlayback)) return;
+        _precacheCts?.Cancel();
         if (pathOrUrl.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
         {
             // Spotify matchup (beta) plays the track itself from matched audio; anything it can't
@@ -1619,7 +1631,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             _queueDrivenSpotifyTrack = false;
-            await LoadUrlAsync(pathOrUrl);
+            await LoadUrlAsync(pathOrUrl, preserveQueue: true, startPlayback);
             if (startPlayback && _engine.IsLoaded && !_engine.IsPlaying)
             {
                 _engine.Play();
@@ -1658,7 +1670,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// Spotify matchup (beta): loads a queued "spotify:track:..." entry as ordinary local audio
     /// found on YouTube, so it plays through Spectralis's own engine (visualizer, effects, gapless
     /// queueing) without the Spotify player. Returns false when the feature is off or no upload
-    /// could be matched, and the caller then uses the Spotify player.
+    /// could be matched. An opted-in failed match stays account-free and reports an error.
     /// </summary>
     private async Task<bool> TryLoadMatchedSpotifyQueueTrackAsync(string trackUri, bool startPlayback)
     {
@@ -1670,8 +1682,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         SelectTrackSource();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
-        _remoteLoadCts = new CancellationTokenSource();
-        var cancellationToken = _remoteLoadCts.Token;
+        var request = _remoteLoadCts = new CancellationTokenSource();
+        var cancellationToken = request.Token;
+        bool IsCurrent() => ReferenceEquals(_remoteLoadCts, request) && !cancellationToken.IsCancellationRequested;
         LoadError = string.Empty;
         IsOpeningRemote = true;
         RemoteStatus = "Matching Spotify track...";
@@ -1684,25 +1697,31 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             var known = _queueTrackMetadata.TryGetValue(trackUri, out var meta) && !string.IsNullOrWhiteSpace(meta.Title)
                 ? new SpotifyTrackFacts(trackId, meta.Title, meta.Subtitle ?? string.Empty, 0)
                 : null;
-            matched = await _spotifyMatchup.ResolveAsync(trackId, known, status => RemoteStatus = status, cancellationToken);
+            matched = await _spotifyMatchup.ResolveAsync(trackId, known, status => { if (IsCurrent()) RemoteStatus = status; }, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            RemoteStatus = string.Empty;
-            IsOpeningRemote = false;
+            if (ReferenceEquals(_remoteLoadCts, request))
+            {
+                RemoteStatus = string.Empty;
+                IsOpeningRemote = false;
+            }
             return true; // superseded by a newer load; nothing to fall back to
         }
         catch (Exception ex)
         {
-            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            SpectralisLog.Warn("Spotify matchup failed: " + ex.Message);
+            if (IsCurrent()) LoadError = "Couldn't load the YouTube match. Retry or choose another track.";
             matched = null;
         }
 
+        if (!IsCurrent()) return true;
         if (matched is null)
         {
             RemoteStatus = string.Empty;
             IsOpeningRemote = false;
-            return false;
+            if (string.IsNullOrEmpty(LoadError)) LoadError = "No matching YouTube audio found. Try another track.";
+            return true; // Matchup is explicitly selected; don't fall through to account-based playback.
         }
 
         _queueDrivenSpotifyTrack = false;
@@ -1736,7 +1755,10 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             RemoteStatus = "Reading the track list...";
-            var tracks = await _spotifyMatchup.FetchContextTracksAsync(link, cancellationToken);
+            var playlist = await new PlaylistImportService(_settings).ImportAsync(link.WebUrl.AbsoluteUri, cancellationToken);
+            var tracks = playlist.Items.Where(i => SpotifyMatchup.TrackIdFromUri(i.SourceReference) is not null)
+                .Select(i => new SpotifyTrackFacts(SpotifyMatchup.TrackIdFromUri(i.SourceReference)!, i.Title ?? "Track", i.Artist ?? "", (int)(i.DurationSeconds * 1000), i.AlbumArtUrl)).ToList();
+            _spotifyMatchup.RememberTrackFacts(tracks);
             if (tracks.Count == 0)
             {
                 return (null, false);
@@ -1746,6 +1768,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 .GroupBy(static t => t.Uri)
                 .ToDictionary(static g => g.Key, static g => (g.First().Title, g.First().Artist)));
             await PlayQueueAsync(tracks.Select(static t => t.Uri).ToList(), 0);
+            if (playlist.ImportNotice is not null) LoadError = playlist.ImportNotice;
             return (null, true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1754,7 +1777,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            SpectralisLog.Warn("Spotify matchup failed: " + ex.Message);
             return (null, false);
         }
     }
@@ -1773,6 +1796,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     private async Task AutoAdvanceAsync()
     {
+        if (SessionRoundActive) { RefreshFromEngine(); return; }
         if (IsMixSource) return;
         if (_spotifyState is not null && !_queueDrivenSpotifyTrack)
         {
@@ -2393,7 +2417,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     /// <summary>Local file path of the currently playing track, or null for remote/URL sources.</summary>
     public string? CurrentTrackPath => _engine.CurrentTrack?.SourcePath is { } p && File.Exists(p) ? p : null;
-    public bool DjModeEnabled => _mixSource?.Enabled ?? _settings.DjModeEnabled;
+    public bool DjModeEnabled => _mixSource?.Enabled ?? BetaFeatures.DjMixing(_settings);
     public Spectralis.Core.Visualizers.IVisualizerFrameSource? VisualizationSource { get; set; }
     public void RefreshDjMode() { this.RaisePropertyChanged(nameof(DjModeEnabled)); this.RaisePropertyChanged(nameof(ShowPlaybackSourcePicker)); }
 
@@ -3025,6 +3049,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// that goes stale as soon as the context advances on Spotify's side.</summary>
     public async Task<bool> PlaySpotifyContextAsync(string contextUri)
     {
+        if (BetaFeatures.SpotifyMatchup)
+        {
+            await LoadUrlAsync(contextUri);
+            return HasTrack && string.IsNullOrEmpty(LoadError);
+        }
         SelectTrackSource();
         if (SpotifyHost is null)
         {
@@ -3052,6 +3081,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// context-offset jump.</summary>
     public async Task<bool> PlaySpotifyTrackListAsync(IReadOnlyList<string> trackUris)
     {
+        if (trackUris.Count == 0) return false;
+        if (BetaFeatures.SpotifyMatchup)
+        {
+            await PlayQueueAsync(trackUris, 0);
+            return HasTrack && string.IsNullOrEmpty(LoadError);
+        }
         SelectTrackSource();
         if (SpotifyHost is null)
         {
@@ -3769,7 +3804,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         RefreshFromEngine();
     }
 
-    public async Task LoadUrlAsync(string input)
+    public Task LoadUrlAsync(string input) => LoadUrlAsync(input, preserveQueue: false);
+
+    private async Task LoadUrlAsync(string input, bool preserveQueue, bool? startPlayback = null)
     {
         SelectTrackSource();
         _remoteLoadCts?.Cancel();
@@ -3777,8 +3814,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         _remoteLoadCts = new CancellationTokenSource();
         var cancellationToken = _remoteLoadCts.Token;
 
-        Queue.Clear();
-        SyncQueueItems();
+        if (!preserveQueue)
+        {
+            Queue.Clear();
+            SyncQueueItems();
+        }
         LoadError = string.Empty;
         RemoteStatus = "Resolving remote source...";
         IsOpeningRemote = true;
@@ -3803,7 +3843,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await LoadResolvedAsync(resolved, cancellationToken);
+        await LoadResolvedAsync(resolved, cancellationToken, startPlayback);
     }
 
     /// <summary>
@@ -3849,6 +3889,10 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 if (matched is not null)
                 {
                     resolved = matched;
+                }
+                else if (BetaFeatures.SpotifyMatchup)
+                {
+                    throw new InvalidOperationException("Couldn't match this Spotify link. Try another track or load an audio file.");
                 }
             }
 
@@ -3933,8 +3977,6 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
             TrackInfo metadata = new() { SourcePath = cachedPath };
             await Task.Run(() => metadata = TrackMetadataReader.Read(cachedPath), cancellationToken);
-            var artworkBytes = metadata.CoverArt ??
-                await OpenUrlService.TryFetchArtworkBytesAsync(resolved.ArtworkUrl, cancellationToken);
 
             var trackInfo = metadata with
             {
@@ -3947,7 +3989,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 Album = FirstNonEmpty(metadata.Album, resolved.Album, resolved.ServiceLabel),
                 Duration = metadata.Duration > TimeSpan.Zero ? metadata.Duration : resolved.Duration,
                 FormatName = FirstNonEmpty(metadata.FormatName, resolved.FormatName),
-                CoverArt = artworkBytes,
+                CoverArt = metadata.CoverArt,
                 CoverArtMimeType = metadata.CoverArt is not null ? metadata.CoverArtMimeType : null,
             };
 
@@ -3964,7 +4006,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            _engine.Load(cachedPath, trackInfo);
+            if (!_engine.TrySeamlessAdvance(cachedPath, trackInfo))
+                _engine.Load(cachedPath, trackInfo);
             var oldRemotePath = _remoteAudioTempPath;
             _remoteAudioTempPath = cachedPath;
             CurrentRemoteAudio = resolved;
@@ -3976,15 +4019,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 _engine.Play();
             }
 
-            // Pre-open the next queue track (if local) while the remote track starts playing.
-            var nextQueuePath = Queue.PeekNextPath();
-            if (!string.IsNullOrEmpty(nextQueuePath) && File.Exists(nextQueuePath))
-            {
-                _ = _engine.PrepareNextAsync(nextQueuePath);
-                UpcomingQueueTrackReady?.Invoke(nextQueuePath);
-            }
+            RefreshUpcomingAudio();
 
             ApplyTrack(_engine.CurrentTrack);
+            // Cover downloads are presentation work; a slow image server must not delay audio.
+            if (metadata.CoverArt is null && !string.IsNullOrWhiteSpace(resolved.ArtworkUrl))
+                _ = LoadRemoteArtworkAsync(resolved, cancellationToken);
             ApplyYouTubeVideo(resolved);
             var remoteLyrics = !string.IsNullOrWhiteSpace(resolved.LyricsText)
                 ? LrcParser.ParsePlainText(resolved.LyricsText, resolved.ServiceLabel)
@@ -4024,6 +4064,20 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             IsOpeningRemote = false;
             RefreshFromEngine();
         }
+    }
+
+    private async Task LoadRemoteArtworkAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(6));
+            var artwork = await _fetchRemoteArtwork(resolved.ArtworkUrl, deadline.Token);
+            if (artwork is not null && !deadline.IsCancellationRequested && ReferenceEquals(CurrentRemoteAudio, resolved))
+                CoverArtBytes = artwork;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SpectralisLog.Warn("Remote artwork unavailable: " + ex.Message); }
     }
 
     private async Task LoadCurrentQueueTrackAsync(string path, bool startPlayback)
@@ -4078,13 +4132,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             ReactiveSectionLabel = string.Empty;
             LocalTrackLoaded?.Invoke(path);
 
-            // Pre-open the next queue track in the background to minimize cold-start latency.
-            var nextPath = Queue.PeekNextPath();
-            if (!string.IsNullOrEmpty(nextPath) && File.Exists(nextPath))
-            {
-                _ = _engine.PrepareNextAsync(nextPath);
-                UpcomingQueueTrackReady?.Invoke(nextPath);
-            }
+            RefreshUpcomingAudio();
         }
         catch (Exception ex)
         {
@@ -4631,6 +4679,10 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _precacheDisposed = true;
+        CancelUpcomingAudio();
+        _currentQueueAudio?.Dispose();
+        RemoteAudioCache.TryDelete(sessionQueue?.TemporaryPath);
         if (_mixSource is not null) _mixSource.PropertyChanged -= OnMixSourceChanged;
         FlushResume(finished: false);
         _resumeFlushTimer?.Stop();

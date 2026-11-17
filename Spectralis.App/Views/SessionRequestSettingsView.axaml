@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels" x:Class="Spectralis.App.Views.SessionRequestSettingsView"
+             x:Name="Root" x:DataType="vm:StreamerQueueViewModel">
+  <StackPanel Spacing="16">
+    <WrapPanel>
+      <StackPanel Spacing="4" Margin="0,0,16,8"><TextBlock Text="Queue limit" /><TextBox Text="{Binding MaxQueueLength}" Width="120" AutomationProperties.Name="Queue limit" /></StackPanel>
+      <StackPanel Spacing="4" Margin="0,0,16,8"><TextBlock Text="Per person" /><TextBox Text="{Binding MaxPerPerson}" Width="120" AutomationProperties.Name="Per-person limit" /></StackPanel>
+      <CheckBox Content="Allow links" IsChecked="{Binding AllowLinkSubmissions}" Margin="0,0,16,8" />
+      <CheckBox Content="Paid skips bypass limits" IsChecked="{Binding SkipBypassesLimit}" Margin="0,0,16,8" />
+    </WrapPanel>
+    <TextBlock Text="Request channels" FontWeight="SemiBold" />
+    <TextBlock Text="Higher channels get priority. Each has its own share link." Classes="secondary" TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding Channels}">
+      <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:SqChannelVm">
+        <StackPanel Spacing="6" Margin="0,0,0,12">
+          <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+            <TextBox Text="{Binding Name}" Watermark="Channel name" AutomationProperties.Name="Channel name" />
+            <Button Grid.Column="1" Content="Up" Command="{Binding MoveUpCommand}" />
+            <Button Grid.Column="2" Content="Down" Command="{Binding MoveDownCommand}" />
+            <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" Classes="ghost" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+            <TextBox Text="{Binding DiscordChannelId}" Watermark="Discord channel ID (optional)" AutomationProperties.Name="Discord channel ID" />
+            <Button Grid.Column="1" Content="Copy link" Command="{Binding CopyLinkCommand}" />
+          </Grid>
+        </StackPanel>
+      </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <Button Content="Add channel" Command="{Binding AddChannelCommand}" HorizontalAlignment="Left" />
+    <TextBlock Text="Channel rotation" FontWeight="SemiBold" />
+    <TextBlock Text="Choose how many tracks to take from each channel per cycle. Leave empty to use priority." Classes="secondary" TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding MixPattern}">
+      <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:SqMixSlotVm">
+        <Grid ColumnDefinitions="*,70,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
+          <ComboBox ItemsSource="{Binding #Root.((vm:StreamerQueueViewModel)DataContext).Channels}" SelectedValue="{Binding ChannelId, Mode=TwoWay}" SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:SqChannelVm"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBox Grid.Column="1" Text="{Binding Count}" Watermark="Tracks" AutomationProperties.Name="Tracks per cycle" />
+          <Button Grid.Column="2" Content="Up" Command="{Binding MoveUpCommand}" />
+          <Button Grid.Column="3" Content="Down" Command="{Binding MoveDownCommand}" />
+          <Button Grid.Column="4" Content="Remove" Command="{Binding RemoveCommand}" Classes="ghost" />
+        </Grid>
+      </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <Button Content="Add rotation slot" Command="{Binding AddMixSlotCommand}" HorizontalAlignment="Left" />
+    <TextBlock Text="Paid requests (USD)" FontWeight="SemiBold" />
+    <TextBlock Text="{Binding StripeStatus}" Classes="secondary" />
+    <WrapPanel>
+      <Button Content="Connect Stripe" Command="{Binding ConnectStripeCommand}" IsVisible="{Binding !StripeConnected}" Margin="0,0,12,8" />
+      <Button Content="Disconnect Stripe" Command="{Binding DisconnectStripeCommand}" IsVisible="{Binding StripeConnected}" Margin="0,0,12,8" />
+    </WrapPanel>
+    <WrapPanel>
+      <StackPanel Spacing="4" Margin="0,0,16,8"><CheckBox Content="Entry fee" IsChecked="{Binding QueueFeeEnabled}" /><TextBox Text="{Binding QueueFeeAmount}" Width="130" AutomationProperties.Name="Entry fee amount" /></StackPanel>
+      <StackPanel Spacing="4" Margin="0,0,16,8"><CheckBox Content="Skip fee" IsChecked="{Binding SkipFeeEnabled}" /><TextBox Text="{Binding SkipFeeAmount}" Width="130" AutomationProperties.Name="Skip fee amount" /></StackPanel>
+      <StackPanel Spacing="4" Margin="0,0,16,8"><CheckBox Content="Super-skip fee" IsChecked="{Binding SuperSkipFeeEnabled}" /><TextBox Text="{Binding SuperSkipFeeAmount}" Width="130" AutomationProperties.Name="Super-skip fee amount" /></StackPanel>
+    </WrapPanel>
+    <TextBlock Text="Paid priority affects the request queue; it cannot interrupt Song Wars." Classes="secondary" TextWrapping="Wrap" />
+    <Button Content="Save request settings" Command="{Binding SaveSettingsCommand}" Classes="accent" HorizontalAlignment="Left" />
+  </StackPanel>
+</UserControl>

@@ -48,7 +48,8 @@ public sealed class AppSettings
 
     /// <summary>Join tracks with no gap when the next queue item is ready.</summary>
     public bool GaplessPlayback { get; set; } = true;
-    public bool DjModeEnabled { get; set; }
+    public bool PrecacheUpcomingAudio { get; set; } = true;
+    public bool DjModeEnabled { get; set; } = Spectralis.Core.Platform.SpectralisEndpoints.IsStaging;
     public bool DjAiStemSeparationEnabled { get; set; }
     public string? DjMasterOutputDeviceId { get; set; }
     public string? DjCueOutputDeviceId { get; set; }
@@ -116,7 +117,7 @@ public sealed class AppSettings
     public string HeldVersion { get; set; } = string.Empty;
     /// <summary>Beta feature: play Spotify tracks from a matched YouTube upload instead of the
     /// Spotify player (so it works without Premium). Only honoured while beta features are on.</summary>
-    public bool SpotifyMatchupEnabled { get; set; }
+    public bool SpotifyMatchupEnabled { get; set; } = Spectralis.Core.Platform.SpectralisEndpoints.IsStaging;
     public string SpotifyCustomClientId { get; set; } = string.Empty;
     /// <summary>Opt-out: when Spotify is linked, mirror the user's Spotify playlists into the Playlists page.</summary>
     public bool ImportSpotifyPlaylists { get; set; } = true;
@@ -187,6 +188,7 @@ public sealed class AppSettings
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
             GaplessPlayback = GaplessPlayback,
+            PrecacheUpcomingAudio = PrecacheUpcomingAudio,
             DjModeEnabled = DjModeEnabled,
             DjAiStemSeparationEnabled = DjAiStemSeparationEnabled,
             DjMasterOutputDeviceId = DjMasterOutputDeviceId,
@@ -288,7 +290,7 @@ public static class AppSettingsStore
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Spectralis",
-            "settings-avalonia.json");
+            Spectralis.Core.Platform.SpectralisEndpoints.IsStaging ? "settings-staging.json" : "settings-avalonia.json");
 
     public static AppSettings Load()
     {
@@ -322,6 +324,13 @@ public static class AppSettingsStore
 
     public static AppSettings Normalize(AppSettings settings)
     {
+        if (Spectralis.Core.Platform.SpectralisEndpoints.IsStaging)
+        {
+            settings.SharedPlayCdnBaseUrl = Spectralis.Core.SharedPlay.SharedPlayDefaults.StagingCdnBaseUrl;
+            settings.SqCdnBaseUrl = settings.SharedPlayCdnBaseUrl;
+            settings.EnableAutoUpdates = false;
+            settings.UpdateChannel = "beta";
+        }
         // A backend address saved before the move to spectralis-api.deltavdevs.com would pin Shared Play and Streamer
         // Queue to the old host for good, so a saved legacy address is dropped and the default takes over.
         if (Spectralis.Core.SharedPlay.SharedPlayDefaults.IsLegacyBackend(settings.SharedPlayCdnBaseUrl))

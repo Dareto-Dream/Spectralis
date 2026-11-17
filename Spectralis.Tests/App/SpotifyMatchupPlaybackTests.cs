@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Avalonia.Headless.XUnit;
 using Spectralis.App.Services;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Audio;
@@ -15,6 +16,43 @@ public class SpotifyMatchupCollection { }
 public sealed class SpotifyMatchupPlaybackTests
 {
     private const string TrackId = "4cOdK2wGLETKBW3PvgPWqT";
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Audio_starts_before_cover_art_and_late_art_cannot_replace_the_next_tracks_cover(bool changeTrack)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "spectralis-matchup-art-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var fixture = WavFixture.CreateSineWav(1);
+        var wasEnabled = BetaFeatures.SpotifyMatchup;
+        // Completing this on the UI context runs its captured await continuation deterministically.
+        var artwork = new TaskCompletionSource<byte[]?>();
+        try
+        {
+            var audio = Path.Combine(root, TrackId + ".wav"); File.Copy(fixture, audio);
+            var match = new SpotifyMatchupService.CachedMatch(TrackId, "dQw4w9WgXcQ", Path.GetFileName(audio),
+                "Track", "Artist", null, "https://images.example/cover.png", 1000, DateTime.UtcNow);
+            await File.WriteAllTextAsync(Path.Combine(root, "index.json"), JsonSerializer.Serialize(new[] { match }));
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = true });
+            using var engine = new AudioEngine(new FakeAudioDeviceEnumerator());
+            using var vm = new NowPlayingViewModel(engine, enablePositionPolling: false,
+                spotifyMatchup: new SpotifyMatchupService(root), fetchRemoteArtwork: (_, _) => artwork.Task);
+            await vm.PlayQueueAsync([$"spotify:track:{TrackId}"], 0).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(engine.IsPlaying); Assert.Null(vm.CoverArtBytes); Assert.False(artwork.Task.IsCompleted);
+            if (changeTrack) await vm.LoadTrackAsync(fixture);
+            var cover = new byte[] { 1, 2, 3 };
+            artwork.SetResult(cover);
+            if (changeTrack) Assert.Null(vm.CoverArtBytes);
+            else Assert.Same(cover, vm.CoverArtBytes);
+        }
+        finally
+        {
+            artwork.TrySetResult(null);
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = wasEnabled });
+            Directory.Delete(root, true); File.Delete(fixture);
+        }
+    }
 
     [Theory]
     [InlineData(false)]
@@ -45,6 +83,10 @@ public sealed class SpotifyMatchupPlaybackTests
             Assert.Equal(audio, engine.CurrentTrack?.SourcePath);
             Assert.Equal("Spotify title", vm.Title);
             Assert.Equal("Spotify artist", vm.Artist);
+            var djSource = vm.GetCurrentDjSource();
+            Assert.Equal(audio, djSource?.CachedPath);
+            Assert.Equal($"https://open.spotify.com/track/{TrackId}", djSource?.Reference);
+            Assert.Equal("Spotify title", djSource?.Title);
 
             await vm.LoadTrackAsync(fixture);
             Assert.True(File.Exists(audio));
@@ -58,6 +100,32 @@ public sealed class SpotifyMatchupPlaybackTests
             File.Delete(fixture);
             foreach (var file in Directory.EnumerateFiles(cacheRoot)) File.Delete(file);
             Directory.Delete(cacheRoot);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_beta_match_reports_an_error_without_requiring_the_spotify_host(bool queue)
+    {
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "spectralis-unmatched-" + Guid.NewGuid().ToString("N"));
+        var wasEnabled = BetaFeatures.SpotifyMatchup;
+        try
+        {
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = true });
+            var service = new SpotifyMatchupService(cacheRoot, () => null, null, null, null);
+            using var engine = new AudioEngine(new FakeAudioDeviceEnumerator());
+            using var vm = new NowPlayingViewModel(engine, enablePositionPolling: false, spotifyMatchup: service);
+            if (queue) await vm.PlayQueueAsync([$"spotify:track:{TrackId}"], 0);
+            else await vm.LoadUrlAsync($"https://open.spotify.com/track/{TrackId}");
+            Assert.Contains(queue ? "No matching YouTube" : "Couldn't match", vm.LoadError);
+            Assert.DoesNotContain("host", vm.LoadError, StringComparison.OrdinalIgnoreCase);
+            Assert.False(vm.IsOpeningRemote);
+        }
+        finally
+        {
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = wasEnabled });
+            if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, true);
         }
     }
 }

@@ -17,15 +17,17 @@ public partial class PlaylistEditorWindow : Window
     public PlaylistEditorWindow()
     {
         InitializeComponent();
+        Closed += (_, _) => _linkJob?.Cancel();
     }
 
-    public static async Task<bool> EditAsync(Window owner, Playlist playlist, Func<IEnumerable<string>, List<PlaylistItem>> buildItems)
+    public static async Task<bool> EditAsync(Window owner, Playlist playlist, Func<IEnumerable<string>, List<PlaylistItem>> buildItems, Func<string, CancellationToken, Task<Playlist>>? resolveLink = null)
     {
         var window = new PlaylistEditorWindow
         {
             _playlist = playlist,
         };
         window._buildItems = buildItems;
+        window._resolveLink = resolveLink;
         window.NameBox.Text = playlist.Name;
         window._items.AddRange(playlist.Items);
         window.RefreshList();
@@ -34,6 +36,32 @@ public partial class PlaylistEditorWindow : Window
     }
 
     private Func<IEnumerable<string>, List<PlaylistItem>>? _buildItems;
+
+    private Func<string, CancellationToken, Task<Playlist>>? _resolveLink;
+    private CancellationTokenSource? _linkJob;
+
+    private async void OnAddLink(object? sender, RoutedEventArgs e)
+    {
+        if (_resolveLink is null || _linkJob is not null) return;
+        var link = await NameInputWindow.PromptAsync(this, "Add music", "Playlist or track link:", "");
+        if (string.IsNullOrWhiteSpace(link)) return;
+        if (sender is Button button) button.IsEnabled = false;
+        using var job = new CancellationTokenSource();
+        _linkJob = job;
+        SaveButton.IsEnabled = false;
+        CountText.Text = "Loading link...";
+        try
+        {
+            var imported = await _resolveLink(link, job.Token);
+            job.Token.ThrowIfCancellationRequested();
+            _items.AddRange(imported.Items);
+            RefreshList();
+            if (imported.ImportNotice is not null) CountText.Text += " · " + imported.ImportNotice;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { CountText.Text = ex.Message; }
+        finally { _linkJob = null; SaveButton.IsEnabled = true; if (sender is Button b) b.IsEnabled = true; }
+    }
 
     private void RefreshList()
     {

@@ -100,7 +100,6 @@ public partial class MainWindow : Window
                 // and OBS overlay both need a single, always-available instance.
                 _songWarsView = (SongWarsView)new ViewLocator().Build(vm.SongWars)!;
                 _songWarsView.DataContext = vm.SongWars;
-                _songWarsView.RequestPlay = path => _ = vm.NowPlaying.PlayQueueAsync([path], 0);
                 _songWarsView.PopOutRequested = () => OpenOrFocusSongWars(vm);
                 vm.ObsOverlay.GetActiveTournament = () => _songWarsView.CurrentTournament;
             }
@@ -149,6 +148,7 @@ public partial class MainWindow : Window
             _pageWindows?.Dispose();
             (DataContext as MainWindowViewModel)?.Presentation.Dispose();
             (DataContext as MainWindowViewModel)?.Dj.Dispose();
+            (DataContext as MainWindowViewModel)?.Sessions.Dispose();
         };
         Closing += (_, _) =>
         {
@@ -939,7 +939,7 @@ public partial class MainWindow : Window
 
     private void OnPopOutPage(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm && ReferenceEquals(vm.CurrentContent, vm.SongWars))
+        if (DataContext is MainWindowViewModel vm && ReferenceEquals(vm.CurrentContent, vm.Sessions))
         {
             vm.NowPlaying.ShowSongWarsPanel = false;
             _songWarsWindow?.Close();

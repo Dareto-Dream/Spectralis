@@ -9,6 +9,42 @@ namespace Spectralis.Tests.App;
 
 public sealed class DjWorkflowTests
 {
+    [Theory]
+    [InlineData("stable", false)]
+    [InlineData("stable", true)]
+    [InlineData("beta", false)]
+    [InlineData("beta", true)]
+    public async Task Saved_dj_opt_in_only_activates_when_beta_features_are_available(string channel, bool optedIn)
+    {
+        var settings = new AppSettings { UpdateChannel = channel, DjModeEnabled = optedIn, DjAiStemSeparationEnabled = true };
+        using var vm = new DjViewModel(settings, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
+        var expected = optedIn && BetaFeatures.Available(settings);
+        Assert.Equal(expected, vm.Enabled);
+        Assert.Equal(expected, vm.AiEnabled);
+        await vm.SetEnabledAsync(true);
+        Assert.Equal(expected, vm.Enabled);
+        Assert.Equal(optedIn, settings.DjModeEnabled);
+    }
+
+    [Fact]
+    public async Task Leaving_beta_stops_and_unloads_a_mix_without_erasing_its_saved_opt_in()
+    {
+        var path = WavFixture.CreateSineWav(1, 48000, 2);
+        var settings = new AppSettings { UpdateChannel = "beta", DjModeEnabled = true };
+        try
+        {
+            using var vm = new DjViewModel(settings, mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
+            await vm.DeckA.LoadFilesAsync([path]);
+            Assert.True(vm.DeckA.HasTrack);
+            settings.UpdateChannel = "stable";
+            await vm.SetEnabledAsync(BetaFeatures.DjMixing(settings));
+            Assert.Equal(BetaFeatures.Available(settings), vm.Enabled);
+            if (!vm.Enabled) Assert.False(vm.DeckA.HasTrack);
+            Assert.True(settings.DjModeEnabled);
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public async Task Mix_transport_resumes_only_previously_playing_decks_and_ignores_empty_decks()
     {
@@ -16,7 +52,7 @@ public sealed class DjWorkflowTests
         try
         {
             var interruptions = 0;
-            using var vm = new DjViewModel(new() { DjModeEnabled = true }, beforePlay: () => interruptions++,
+            using var vm = new DjViewModel(new() { UpdateChannel = "beta", DjModeEnabled = true }, beforePlay: () => interruptions++,
                 mixer: new(new FakeAudioDeviceEnumerator()), saveSettings: () => { });
             vm.TogglePlayback(); Assert.Equal(0, interruptions);
             await vm.DeckA.LoadFilesAsync([path]); await vm.DeckB.LoadFilesAsync([path]);
@@ -55,7 +91,7 @@ public sealed class DjWorkflowTests
         {
             var devices = new FakeAudioDeviceEnumerator();
             var interrupted = false;
-            using var vm = new DjViewModel(new() { DjModeEnabled = true }, beforePlay: () => interrupted = true,
+            using var vm = new DjViewModel(new() { UpdateChannel = "beta", DjModeEnabled = true }, beforePlay: () => interrupted = true,
                 mixer: new(devices), cues: new(Path.Combine(directory, "cues.json")), saveSettings: () => { });
             await vm.DeckA.LoadAsync([new(path, "Song")]);
             Assert.True(vm.DeckA.HasTrack); Assert.Single(vm.DeckA.Stems);

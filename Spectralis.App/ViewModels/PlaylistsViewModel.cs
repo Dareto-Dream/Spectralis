@@ -37,7 +37,7 @@ public sealed class PlaylistRow : ViewModelBase
     }
 }
 
-public sealed class PlaylistsViewModel : ViewModelBase
+public sealed partial class PlaylistsViewModel : ViewModelBase
 {
     private readonly LibraryDatabase _database;
     private readonly Func<IReadOnlyList<string>, int, Task> _playQueue;
@@ -81,8 +81,10 @@ public sealed class PlaylistsViewModel : ViewModelBase
     public PlaylistRow? SelectedRow
     {
         get => _selectedRow;
-        set => this.RaiseAndSetIfChanged(ref _selectedRow, value);
+        set { this.RaiseAndSetIfChanged(ref _selectedRow, value); this.RaisePropertyChanged(nameof(SelectedNotice)); this.RaisePropertyChanged(nameof(HasSelectedPlaylist)); }
     }
+
+    public bool HasSelectedPlaylist => SelectedRow is { IsSmart: false };
 
     public bool HasPlaylists => PinnedRows.Count > 0 || Rows.Count > 0;
 
@@ -188,8 +190,9 @@ public sealed class PlaylistsViewModel : ViewModelBase
         {
             var cached = PlaylistStore.LoadAll();
             var byRemoteId = cached
-                .Where(p => p.SpotifyPlaylistId is not null)
-                .ToDictionary(p => p.SpotifyPlaylistId!, p => p);
+                .Where(p => p.SpotifyPlaylistId is not null && !p.IsReadOnlySource)
+                .GroupBy(p => p.SpotifyPlaylistId!)
+                .ToDictionary(g => g.Key, g => g.First());
 
             foreach (var summary in remote)
             {
@@ -199,14 +202,16 @@ public sealed class PlaylistsViewModel : ViewModelBase
 
                 if (isNew || playlist.SpotifySnapshotId != summary.SnapshotId)
                 {
-                    var tracks = await _spotify.GetPlaylistTracksAsync(clientId, summary.Id);
-                    playlist.Items = tracks.Select(t => new PlaylistItem
+                    SpotifyPlaylistContents? contents;
+                    try { contents = await _spotify.GetPlaylistContentsAsync(clientId, summary.Id); }
+                    catch (Exception) { byRemoteId.Remove(summary.Id); continue; }
+                    if (contents is not { HasFullAccess: true }) { byRemoteId.Remove(summary.Id); continue; }
+                    var offline = playlist.Items.GroupBy(i => i.SourceReference).ToDictionary(g => g.Key, g => g.First().OfflinePath);
+                    playlist.Items = contents.Tracks.Select(t =>
                     {
-                        SpotifyTrackUri = t.Uri,
-                        Title = t.Name,
-                        Artist = t.Artist,
-                        DurationSeconds = t.DurationMs / 1000.0,
-                        AlbumArtUrl = t.AlbumArtUrl,
+                        var item = PlaylistImportService.FromSpotify(t);
+                        item.OfflinePath = offline.GetValueOrDefault(item.SourceReference);
+                        return item;
                     }).ToList();
                     playlist.SpotifySnapshotId = summary.SnapshotId;
                 }
@@ -241,9 +246,11 @@ public sealed class PlaylistsViewModel : ViewModelBase
 
         var existing = PlaylistStore.LoadAll().FirstOrDefault(p => p.IsLikedSongs);
         var playlist = existing ?? new Playlist { Name = "Liked Songs", IsLikedSongs = true, IsPinned = true };
+        var offline = playlist.Items.GroupBy(i => i.SourceReference).ToDictionary(g => g.Key, g => g.First().OfflinePath);
         playlist.Items = tracks.Select(t => new PlaylistItem
         {
             SpotifyTrackUri = t.Uri,
+            OfflinePath = offline.GetValueOrDefault(t.Uri),
             Title = t.Name,
             Artist = t.Artist,
             DurationSeconds = t.DurationMs / 1000.0,
@@ -297,7 +304,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
             : playlist.Items.Select(i => Describe(PlayableRef(i), i.Title, i.Artist)).ToList();
     }
 
-    private static string PlayableRef(PlaylistItem item) => item.SpotifyTrackUri ?? item.Path;
+    private static string PlayableRef(PlaylistItem item) => item.PlayableReference() ?? string.Empty;
 
     /// <summary>Resolves a row to its playable paths/uris (static items, evaluated smart rules, or
     /// a mix of local paths and "spotify:track:..." uris for a Spotify-backed/mixed playlist).</summary>
@@ -321,7 +328,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
         }
 
         var refs = GetPathsForRow(row)
-            .Where(r => r.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase) || File.Exists(r))
+            .Where(r => r.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase) || OpenUrlService.MightBeUrl(r) || File.Exists(r))
             .ToList();
         if (refs.Count == 0)
         {
@@ -351,7 +358,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
             // Not with Spotify matchup on (beta): there the tracks are played by Spectralis itself
             // from matched audio, so they go into Spectralis's own Queue like local files do.
             if (!BetaFeatures.SpotifyMatchup &&
-                playlist.Items.Count > 0 && playlist.Items.All(i => i.SpotifyTrackUri is not null))
+                refs.Count > 0 && refs.All(r => r.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase)))
             {
                 // Actually synced from/linked to a real Spotify playlist — context_uri play keeps
                 // Spotify's own "Playing from: <playlist>" context, which a bare track list can't.
@@ -366,7 +373,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
                 // Spotify the whole ordered track list in one play call instead.
                 if (_playSpotifyTrackList is not null)
                 {
-                    await _playSpotifyTrackList(playlist.Items.Select(i => i.SpotifyTrackUri!).ToList());
+                    await _playSpotifyTrackList(refs);
                     return;
                 }
             }
@@ -379,6 +386,9 @@ public sealed class PlaylistsViewModel : ViewModelBase
                 .GroupBy(PlayableRef)
                 .ToDictionary(g => g.Key, g => (g.First().Title!, g.First().Artist ?? string.Empty));
             _setQueueMetadata?.Invoke(metadata);
+            SpotifyMatchupService.Shared.RememberTrackFacts(playlist.Items
+                .Where(i => SpotifyMatchup.TrackIdFromUri(i.SourceReference) is not null)
+                .Select(i => new SpotifyTrackFacts(SpotifyMatchup.TrackIdFromUri(i.SourceReference)!, i.Title ?? "", i.Artist ?? "", (int)Math.Clamp(i.DurationSeconds * 1000, 0, int.MaxValue), i.AlbumArtUrl)));
         }
 
         await _playQueue(refs, 0);
@@ -407,7 +417,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
     /// on Spotify's side and are just skipped for that call, but stay in the local copy.</summary>
     public async Task SavePlaylist(Playlist playlist)
     {
-        if (playlist.SpotifyPlaylistId is not null)
+        if (playlist.SpotifyPlaylistId is not null && !playlist.IsReadOnlySource)
         {
             var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
             var spotifyUris = playlist.Items
@@ -588,7 +598,7 @@ public sealed class PlaylistsViewModel : ViewModelBase
             AlbumArtUrl = track.AlbumArtUrl,
         };
 
-        if (playlist.SpotifyPlaylistId is not null)
+        if (playlist.SpotifyPlaylistId is not null && !playlist.IsReadOnlySource)
         {
             var clientId = SpotifyClientIdProvider.ResolveClientId(_settings.SpotifyCustomClientId);
             var newSnapshot = await _spotify.AddPlaylistItemsAsync(clientId, playlist.SpotifyPlaylistId, [track.Uri]);
