@@ -128,7 +128,7 @@ export default function Setup() {
           Run the installer. No administrator access needed.
         </PlatformDownload>
         <PlatformDownload
-          id="macos" name="macOS" requirements={nativeMac ? 'Apple Silicon: 13+ · Intel: 12+' : 'macOS 11+ · Intel / Rosetta 2'}
+          id="macos" name="macOS" requirements={nativeMac ? 'Apple Silicon: 13+ · Intel: 12+' : 'Intel / Rosetta 2'}
           href={latest?.downloads['osx-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
           format=".pkg"
           downloads={nativeMac ? <>
