@@ -3642,9 +3642,13 @@ fn sq_strip_private(mut room: Value) -> Value {
 
 fn sq_build_response(room: Value) -> Value {
     let ordered = sq_ordered_queue(&room);
+    let active_count = room.get("submissions").and_then(Value::as_array).map(|subs| subs.iter()
+        .filter(|s| !matches!(s["status"].as_str(), Some("rejected" | "played" | "skipped" | "payment_failed"))).count()).unwrap_or(0);
     let now_playing_id = room.get("nowPlayingId").and_then(Value::as_str).map(ToOwned::to_owned);
     let now_playing_tier = room.get("nowPlayingTier").and_then(Value::as_str).map(ToOwned::to_owned);
     let mut public = sq_strip_private(room);
+    public["queueLength"] = json!(ordered.len());
+    public["activeCount"] = json!(active_count);
     public["orderedQueue"] = json!(ordered.iter().map(|s| {
         let mut s = s.clone();
         if let Some(obj) = s.as_object_mut() { obj.remove("_fp"); }
@@ -4705,6 +4709,21 @@ fn urlencoded(s: &str) -> String {
 #[cfg(test)]
 mod sq_channel_tests {
     use super::*;
+
+    #[test]
+    fn bot_snapshot_includes_queue_counts_and_playing_metadata() {
+        let room = json!({"roomId":"test", "enabled":true, "nowPlayingId":"playing", "submissions":[
+            {"id":"playing","status":"playing","title":"Current song","artist":"Artist","tier":"normal"},
+            {"id":"queued","status":"queued","tier":"normal"},
+            {"id":"pending","status":"pending","tier":"normal"},
+            {"id":"skipped","status":"skipped","tier":"normal"}
+        ]});
+        let response = sq_build_response(room);
+        assert_eq!(response["activeCount"], 3);
+        assert_eq!(response["queueLength"], response["orderedQueue"].as_array().unwrap().len());
+        assert_eq!(response["nowPlayingTitle"], "Current song");
+        assert_eq!(response["nowPlayingArtist"], "Artist");
+    }
 
     fn room_with(channels: Value, pattern: Value) -> Value {
         json!({ "queueChannels": channels, "channelMixPattern": pattern })

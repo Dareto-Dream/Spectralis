@@ -2,8 +2,8 @@ import type { Message } from 'discord.js';
 import { getLink, rememberSubmission, trackSubmission } from './db.js';
 import { submitRequest, uploadFile } from './sqApi.js';
 import { fetchOembedMetadata } from './metadata.js';
+import { extractRequestLink } from './requestLinks.js';
 
-const URL_PATTERN = /(https?:\/\/\S+|spotify:\S+)/i;
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.webm'];
 const SPECTRALIS_EXTENSIONS = ['.spectral', '.spectralis'];
 const ACCEPTED_EXTENSIONS = [...AUDIO_EXTENSIONS, ...SPECTRALIS_EXTENSIONS];
@@ -23,23 +23,23 @@ export async function handlePotentialSubmission(message: Message): Promise<void>
   const link = getLink(message.guildId, message.channelId);
   if (!link) return;
 
-  const urlMatch = message.content.match(URL_PATTERN);
+  const url = extractRequestLink(message.content);
   const attachment = message.attachments.find((a) => ACCEPTED_EXTENSIONS.includes(extensionOf(a.name)));
 
-  if (!urlMatch && !attachment) return;
+  if (!url && !attachment) return;
 
   try {
     let submissionId: string;
     if (attachment) {
-      const res = await fetch(attachment.url);
+      if (attachment.size > 100 * 1024 * 1024) throw new Error('Attachment exceeds 100 MB.');
+      const res = await fetch(attachment.url, { signal: AbortSignal.timeout(60_000) });
       if (!res.ok) throw new Error(`couldn't fetch attachment (${res.status})`);
       const bytes = new Uint8Array(await res.arrayBuffer());
-      const result = await uploadFile(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, bytes, attachment.name);
+      const result = await uploadFile(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, bytes, attachment.name, 'normal', null, message.channelId);
       submissionId = result.submissionId;
     } else {
-      const url = urlMatch![0];
-      const metadata = await fetchOembedMetadata(url);
-      const result = await submitRequest(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, url, 'normal', metadata);
+      const metadata = await fetchOembedMetadata(url!);
+      const result = await submitRequest(link.roomId, message.author.id, message.member?.displayName ?? message.author.username, url!, 'normal', metadata, message.channelId);
       submissionId = result.submissionId;
     }
 

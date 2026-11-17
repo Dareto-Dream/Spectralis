@@ -50,7 +50,7 @@ export interface SqSubmission {
   url: string | null;
   sourceKind: 'link' | 'upload';
   tier: 'normal' | 'skip' | 'super_skip';
-  status: 'pending' | 'queued' | 'approved' | 'playing' | 'played' | 'rejected' | 'awaiting_payment' | 'payment_failed';
+  status: 'pending' | 'queued' | 'approved' | 'playing' | 'played' | 'skipped' | 'rejected' | 'awaiting_payment' | 'payment_failed';
   submittedAtUtc: string;
 }
 

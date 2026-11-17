@@ -29,6 +29,7 @@ jobs:
       site: ${{ steps.filter.outputs.site }}
       backend: ${{ steps.filter.outputs.backend }}
       tools: ${{ steps.filter.outputs.tools }}
+      bot: ${{ steps.filter.outputs.bot }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +51,7 @@ jobs:
             echo "site=$(hit '^(frontend/|\.github/workflows/)')"
             echo "backend=$(hit '^(backend/|web-share/|\.github/workflows/)')"
             echo "tools=$(hit '^(tools/(r2|release-pipeline)/|\.github/workflows/)')"
+            echo "bot=$(hit '^(discord-bot/|backend/|\.github/workflows/)')"
           } >> "$GITHUB_OUTPUT"
 
   app:
@@ -185,6 +187,26 @@ jobs:
           restore-keys: cargo-backend-
 
       - run: cargo test --locked
+
+  bot:
+    name: Discord bot
+    needs: changes
+    if: needs.changes.outputs.bot == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: discord-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: discord-bot/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
 
   tools:
     name: Release tooling

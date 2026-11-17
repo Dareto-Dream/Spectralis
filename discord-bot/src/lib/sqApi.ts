@@ -68,11 +68,13 @@ export async function getRoom(roomId: string): Promise<SqPublicRoom> {
 /** Elevated view (submission-level status) via the scoped bot token — see PLANNING.md
  * and get_sq_room's is_bot branch in main.rs. Used by the reaction-lifecycle poller. */
 export async function getRoomAsBot(roomId: string, botToken: string): Promise<SqBotRoom> {
-  return request<SqBotRoom>(
+  const room = await request<SqBotRoom>(
     `/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}?botToken=${encodeURIComponent(botToken)}`,
     undefined,
     { retry: true },
   );
+  if (!Array.isArray(room.submissions)) throw new SqApiError(403, 'Discord pairing expired. Generate a new code in Sessions → Discord.');
+  return room;
 }
 
 export async function submitRequest(
@@ -82,6 +84,7 @@ export async function submitRequest(
   url: string,
   tier: 'normal' | 'skip' | 'super_skip' = 'normal',
   metadata?: { title?: string | null; artist?: string | null },
+  discordChannelId?: string,
 ): Promise<SqSubmitResponse> {
   return request<SqSubmitResponse>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/submit`, {
     method: 'POST',
@@ -91,6 +94,7 @@ export async function submitRequest(
       tier,
       title: metadata?.title ?? null,
       artist: metadata?.artist ?? null,
+      discordChannelId,
       ...fingerprintFor(discordUserId),
     }),
   });
@@ -104,6 +108,7 @@ export async function uploadFile(
   filename: string,
   tier: 'normal' | 'skip' | 'super_skip' = 'normal',
   title?: string | null,
+  discordChannelId?: string,
 ): Promise<SqSubmitResponse> {
   const fp = fingerprintFor(discordUserId);
   const form = new FormData();
@@ -115,12 +120,14 @@ export async function uploadFile(
   form.append('fpUa', fp.fpUa);
   form.append('fpScreen', fp.fpScreen);
   form.append('fpTz', String(fp.fpTz));
+  if (discordChannelId) form.append('discordChannelId', discordChannelId);
 
   // Multipart needs its own boundary content-type fetch sets from the FormData body —
   // request() always forces application/json, so this bypasses it.
   const res = await fetch(`${BASE}/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/upload`, {
     method: 'POST',
     body: form,
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -157,8 +164,9 @@ export async function exchangeDiscordPin(pin: string): Promise<{ roomId: string;
 }
 
 export async function setAcceptingSubmissions(roomId: string, botToken: string, accepting: boolean): Promise<void> {
-  await request(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/settings`, {
+  const room = await request<SqBotRoom>(`/streamer-queue/v1/rooms/${encodeURIComponent(roomId)}/settings`, {
     method: 'PUT',
     body: JSON.stringify({ botToken, acceptingSubmissions: accepting }),
   });
+  if (accepting && !room.enabled) throw new Error('Start the session in Spectralis before opening requests.');
 }
