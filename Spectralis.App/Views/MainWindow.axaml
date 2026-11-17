@@ -3,6 +3,7 @@
         xmlns:vm="using:Spectralis.App.ViewModels"
         xmlns:design="using:Spectralis.App.Design"
         xmlns:conv="using:Spectralis.App.Converters"
+        xmlns:services="using:Spectralis.App.Services"
         x:Class="Spectralis.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
@@ -180,7 +181,7 @@
           <DockPanel.Transitions>
             <Transitions>
               <DoubleTransition Property="Width"
-                                Duration="{StaticResource Duration.Base}"
+                                Duration="{DynamicResource Duration.Base}"
                                 Easing="{StaticResource Easing.Default}" />
             </Transitions>
           </DockPanel.Transitions>
@@ -449,7 +450,7 @@
     </Border>
 
     <!-- Clipboard URL toast (repositioned around dead zones — see ApplyDeadZoneAvoidance) -->
-    <Border x:Name="ClipboardToastBorder"
+    <Border x:Name="ClipboardToastBorder" services:AppMotionService.RevealOnShow="True"
             Grid.Row="1"
             Grid.RowSpan="2"
             IsVisible="{Binding ClipboardToastVisible}"

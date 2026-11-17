@@ -459,4 +459,16 @@
     <Setter Property="Margin" Value="0,4" />
   </Style>
 
+  <!-- Shared durations are zero when interface animation is disabled. -->
+  <Style Selector="Button /template/ ContentPresenter, ToggleButton /template/ ContentPresenter, ListBoxItem /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{DynamicResource Duration.Fast}" />
+        <BrushTransition Property="BorderBrush" Duration="{DynamicResource Duration.Fast}" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Expander">
+    <Setter Property="ContentTransition" Value="{DynamicResource Motion.Expansion}" />
+  </Style>
 </Styles>

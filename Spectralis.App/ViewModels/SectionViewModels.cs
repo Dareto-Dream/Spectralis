@@ -2174,6 +2174,19 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool EnableInterfaceAnimations
+    {
+        get => _settings.EnableInterfaceAnimations;
+        set
+        {
+            if (_settings.EnableInterfaceAnimations == value) return;
+            _settings.EnableInterfaceAnimations = value;
+            AppSettingsStore.Save(_settings);
+            AppMotionService.Apply(value);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public VisualizerOption SelectedDefaultVisualizer
     {
         get => _selectedDefaultVisualizer;

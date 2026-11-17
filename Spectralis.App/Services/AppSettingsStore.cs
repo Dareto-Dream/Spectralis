@@ -36,6 +36,7 @@ public sealed class AppSettings
     public bool UseEmbeddedTrackThemes { get; set; } = true;
     public bool EnableEmbeddedContent { get; set; } = true;
     public bool ShowMoreInfo { get; set; } = true;
+    public bool EnableInterfaceAnimations { get; set; } = true;
     public P2wBannerStyle P2wBannerStyle { get; set; } = P2wBannerStyle.YellowBanner;
     public VisualizerMode CurrentVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
     public VisualizerMode DefaultVisualizer { get; set; } = VisualizerMode.MirrorSpectrum;
@@ -178,6 +179,7 @@ public sealed class AppSettings
             UseEmbeddedTrackThemes = UseEmbeddedTrackThemes,
             EnableEmbeddedContent = EnableEmbeddedContent,
             ShowMoreInfo = ShowMoreInfo,
+            EnableInterfaceAnimations = EnableInterfaceAnimations,
             P2wBannerStyle = P2wBannerStyle,
             CurrentVisualizer = CurrentVisualizer,
             DefaultVisualizer = DefaultVisualizer,

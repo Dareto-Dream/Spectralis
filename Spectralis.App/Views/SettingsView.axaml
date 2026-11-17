@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Spectralis.App.ViewModels"
+             xmlns:services="using:Spectralis.App.Services"
              x:Class="Spectralis.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -44,9 +45,9 @@
       <StackPanel Margin="32" Spacing="24" MaxWidth="720" HorizontalAlignment="Left">
 
       <!-- Appearance and brand surface -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsAppearanceVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsAppearanceVisible}">
         <TextBlock Classes="heading" Text="Appearance" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Theme mode" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding ThemeModeOptions}"
@@ -82,11 +83,13 @@
                     ItemsSource="{Binding P2wBannerStyleOptions}"
                     SelectedItem="{Binding SelectedP2wBannerStyle}"
                     MaxWidth="180" HorizontalAlignment="Left" />
+          <TextBlock Grid.Row="6" Classes="secondary" Text="Interface animations" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="6" Grid.Column="1" Content="Animate navigation and controls" IsChecked="{Binding EnableInterfaceAnimations}" />
         </Grid>
       </StackPanel>
 
       <!-- Visualizer defaults and toolbar behavior -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsVisualizerVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsVisualizerVisible}">
         <TextBlock Classes="heading" Text="Visualizer" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Default visualizer" VerticalAlignment="Center" />
@@ -123,7 +126,7 @@
       </StackPanel>
 
       <!-- Playback defaults -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
@@ -217,7 +220,7 @@
       </StackPanel>
 
       <!-- Library -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsLibraryVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsLibraryVisible}">
         <TextBlock Classes="heading" Text="Library" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Watched folders" VerticalAlignment="Top" Margin="0,6,0,0" />
@@ -248,7 +251,7 @@
       </StackPanel>
 
       <!-- Integrations -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
         <TextBlock Classes="heading" Text="Integrations" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Discord presence" VerticalAlignment="Center" />
@@ -288,7 +291,7 @@
       </StackPanel>
 
       <!-- Advanced: default app + protocol registration -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsIntegrationsVisible}">
         <TextBlock Classes="heading" Text="Default app" />
         <TextBlock Classes="secondary"
                    Text="Register Spectralis for supported audio extensions and the spectralis:// protocol (current user)." />
@@ -300,7 +303,7 @@
       </StackPanel>
 
       <!-- Updates -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
         <TextBlock Classes="heading" Text="Updates" />
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Installed version" VerticalAlignment="Center" />
@@ -342,7 +345,7 @@
       </StackPanel>
 
       <!-- Beta features: opt-in previews, only offered on the beta channel or in a beta build. -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
         <StackPanel Spacing="8" IsVisible="{Binding BetaFeaturesAvailable}">
           <TextBlock Classes="heading" Text="Beta features" />
           <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left"
@@ -363,7 +366,7 @@
         </StackPanel>
       </StackPanel>
 
-      <StackPanel Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsUpdatesVisible}">
         <TextBlock Classes="heading" Text="Temporary storage" />
         <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="580"
                    Text="Spectralis automatically removes old decode, separation and installer leftovers at startup and every six hours. Files still in use, installed AI models, and current or pending updates are kept." />
@@ -372,7 +375,7 @@
       </StackPanel>
 
       <!-- About -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsAboutVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsAboutVisible}">
         <TextBlock Classes="heading" Text="About" />
         <WrapPanel Orientation="Horizontal">
           <Button Content="About" Click="OnOpenAbout" Margin="0,0,8,8" />
@@ -382,7 +385,7 @@
       </StackPanel>
 
       <!-- Developer -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsDeveloperVisible}">
+      <StackPanel services:AppMotionService.RevealOnShow="True" Spacing="8" IsVisible="{Binding IsDeveloperVisible}">
         <TextBlock Classes="heading" Text="Developer" />
         <TextBlock Classes="secondary" TextWrapping="Wrap"
                    Text="Diagnostics utilities and raw OBS layout JSON editing. Not needed for normal use." />

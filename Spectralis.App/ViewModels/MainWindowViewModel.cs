@@ -60,6 +60,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         AppSettings = AppSettingsStore.Load();
         AppThemeService.Apply(AppSettings);
+        AppMotionService.Apply(AppSettings.EnableInterfaceAnimations);
         _isSidebarCollapsed = AppSettings.SidebarCollapsed;
         Engine = new AudioEngine();
         EffectChain = new EffectChain();

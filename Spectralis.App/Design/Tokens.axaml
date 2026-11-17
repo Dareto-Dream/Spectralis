@@ -89,6 +89,7 @@
   <Thickness x:Key="Pad.Breathe">32</Thickness>
 
   <!-- ======================= Motion ======================= -->
+  <CrossFade x:Key="Motion.Expansion" Duration="0:0:0.15" />
 
   <x:TimeSpan x:Key="Duration.Fast">0:0:0.08</x:TimeSpan>
   <x:TimeSpan x:Key="Duration.Base">0:0:0.16</x:TimeSpan>
