@@ -125,7 +125,7 @@
       <!-- Playback defaults -->
       <StackPanel Spacing="8" IsVisible="{Binding IsPlaybackVisible}">
         <TextBlock Classes="heading" Text="Playback" />
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Playback quality" VerticalAlignment="Center" />
           <ComboBox Grid.Row="0" Grid.Column="1"
                     ItemsSource="{Binding SampleRateOptions}"
@@ -142,6 +142,11 @@
 
           <TextBlock Grid.Row="11" Grid.Column="1" Classes="muted" TextWrapping="Wrap"
                      Text="{Binding OutputDeviceStatus}" IsVisible="{Binding OutputDeviceStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+          <TextBlock Grid.Row="13" Grid.Column="0" Classes="secondary" Text="Preload queue audio" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="13" Grid.Column="1" IsChecked="{Binding PrecacheUpcomingAudio, Mode=TwoWay}"
+                    Content="Download the next track ahead of playback"
+                    ToolTip.Tip="Uses a 512 MB cache; active tracks stay available." />
 
           <TextBlock Grid.Row="8" Grid.Column="0" Classes="secondary" Text="Gapless playback" VerticalAlignment="Center" />
           <CheckBox Grid.Row="8" Grid.Column="1" IsChecked="{Binding GaplessPlayback, Mode=TwoWay}"

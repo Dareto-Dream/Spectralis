@@ -48,6 +48,7 @@ public sealed class AppSettings
 
     /// <summary>Join tracks with no gap when the next queue item is ready.</summary>
     public bool GaplessPlayback { get; set; } = true;
+    public bool PrecacheUpcomingAudio { get; set; } = true;
     public bool DjModeEnabled { get; set; }
     public bool DjAiStemSeparationEnabled { get; set; }
     public string? DjMasterOutputDeviceId { get; set; }
@@ -187,6 +188,7 @@ public sealed class AppSettings
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
             GaplessPlayback = GaplessPlayback,
+            PrecacheUpcomingAudio = PrecacheUpcomingAudio,
             DjModeEnabled = DjModeEnabled,
             DjAiStemSeparationEnabled = DjAiStemSeparationEnabled,
             DjMasterOutputDeviceId = DjMasterOutputDeviceId,

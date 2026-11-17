@@ -603,12 +603,15 @@ public sealed partial class SpotifyService : IDisposable
     /// <summary>Unwraps a playlist-tracks page item (each one wraps the actual track under "track")
     /// before delegating to the same parsing <see cref="ReadSearchTrack"/> uses.</summary>
     private static SpotifyTrackResult? ReadPlaylistTrack(JsonElement itemEl) =>
+        itemEl.ValueKind == JsonValueKind.Object &&
         (itemEl.TryGetProperty("item", out var trackEl) || itemEl.TryGetProperty("track", out trackEl)) && trackEl.ValueKind == JsonValueKind.Object
             ? ReadSearchTrack(trackEl)
             : null;
 
     private static SpotifyTrackResult? ReadSearchTrack(JsonElement trackEl)
     {
+        if (trackEl.TryGetProperty("is_local", out var local) && local.ValueKind == JsonValueKind.True ||
+            trackEl.TryGetProperty("is_playable", out var playable) && playable.ValueKind == JsonValueKind.False) return null;
         if (trackEl.TryGetProperty("type", out var typeEl) &&
             !string.Equals(typeEl.GetString(), "track", StringComparison.OrdinalIgnoreCase))
         {
