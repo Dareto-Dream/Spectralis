@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Spectralis.Core.Common;
@@ -52,9 +53,66 @@ public sealed class OpenUrlService
     private static readonly Regex YouTubeVideoIdPattern = new("^[A-Za-z0-9_-]{11}$", RegexOptions.Compiled);
     private static readonly HttpClient Http = CreateHttpClient();
     private static readonly TimeSpan YtDlpInfoTimeout = TimeSpan.FromSeconds(60);
+    private readonly HttpClient _previewHttp;
+
+    public OpenUrlService() : this(Http) { }
+    internal OpenUrlService(HttpClient previewHttp) => _previewHttp = previewHttp;
 
     public static string UntitledLogPath => AppLogPaths.For("untitled.log");
     public static string YouTubeLogPath => AppLogPaths.For("youtube.log");
+
+    public async Task<RemoteAudioResolveResult> ResolveClipboardMetadataAsync(string url, CancellationToken token)
+    {
+        if (!SpotifyPlaybackLink.TryParse(url, out var spotify)) return await ResolveAsync(url, token, quickOnly: true);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(4));
+        using var response = await _previewHttp.GetAsync("https://open.spotify.com/oembed?url=" + Uri.EscapeDataString(spotify.WebUrl.AbsoluteUri), deadline.Token);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+        return BuildSpotifyResult(spotify) with { Title = TryGetString(json.RootElement, "title"), ArtworkUrl = TryGetString(json.RootElement, "thumbnail_url") };
+    }
+
+    /// <summary>Recognizes supported clipboard sources without requests, redirects or helper processes.</summary>
+    public static bool TryCreateClipboardPreview(string input, out RemoteAudioResolveResult preview)
+    {
+        preview = null!;
+        if (SpotifyPlaybackLink.TryParse(input, out var spotify))
+        {
+            preview = BuildSpotifyResult(spotify) with { MetadataOnly = true };
+            return true;
+        }
+        // Manual URL entry also accepts raw video/clip IDs. Clipboard monitoring
+        // must not mistake an ordinary eleven-letter word or UUID for a link.
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        var candidate = input.Trim();
+        if (!candidate.Contains("://", StringComparison.Ordinal)) candidate = "https://" + candidate;
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
+        var kind = DetectTarget(uri);
+        if (kind is RemoteAudioServiceKind.Generic or RemoteAudioServiceKind.Spotify) return false;
+        if (kind == RemoteAudioServiceKind.YouTube &&
+            !YouTubeVideoIdPattern.IsMatch(ExtractYouTubeVideoId(uri) ?? "")) return false;
+        preview = new RemoteAudioResolveResult(kind, ServiceLabel(kind), uri.AbsoluteUri,
+            "", "", ServiceLabel(kind), null, null, null, null, TimeSpan.Zero, uri.AbsoluteUri,
+            MetadataOnly: true);
+        return true;
+    }
+
+    internal static string ClipboardLinkIdentity(RemoteAudioResolveResult preview)
+    {
+        var uri = new Uri(preview.SourceUrl);
+        if (preview.Kind == RemoteAudioServiceKind.YouTube)
+            return "youtube:" + ExtractYouTubeVideoId(uri);
+        if (SpotifyPlaybackLink.TryParse(preview.SourceUrl, out var spotify)) return spotify.PlaybackUri;
+        var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Where(part =>
+        {
+            var key = Uri.UnescapeDataString(part.Split('=')[0]);
+            return !key.StartsWith("utm_", StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("fbclid", StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("gclid", StringComparison.OrdinalIgnoreCase) &&
+                !(preview.Kind != RemoteAudioServiceKind.DirectAudio && key.Equals("si", StringComparison.OrdinalIgnoreCase));
+        });
+        return new UriBuilder(uri) { Fragment = "", Query = string.Join('&', query) }.Uri.AbsoluteUri;
+    }
 
     public async Task<RemoteAudioResolveResult> ResolveAsync(string input, CancellationToken cancellationToken, bool quickOnly = false)
     {
@@ -62,7 +120,11 @@ public sealed class OpenUrlService
         if (SpotifyPlaybackLink.TryParse(input, out var spotifyLink))
             return BuildSpotifyResult(spotifyLink);
         var sourceUri = NormalizeInput(input);
-        var expandedUri = await TryExpandRedirectAsync(sourceUri, cancellationToken);
+        // Fetching a known YouTube watch page here used to add a redundant network round trip
+        // before yt-dlp even started. Direct audio also needs no HTML/redirect discovery.
+        var sourceKind = DetectTarget(sourceUri);
+        var expandedUri = sourceKind is RemoteAudioServiceKind.YouTube or RemoteAudioServiceKind.DirectAudio
+            ? sourceUri : await TryExpandRedirectAsync(sourceUri, cancellationToken);
         var kind = DetectTarget(expandedUri);
 
         return kind switch
@@ -303,29 +365,27 @@ public sealed class OpenUrlService
             return RemoteAudioServiceKind.Untitled;
         }
 
-        if (host.Contains("soundcloud.com", StringComparison.Ordinal))
+        if (IsSourceHost(host, "soundcloud.com"))
         {
             return RemoteAudioServiceKind.SoundCloud;
         }
 
-        if (host.Contains("youtube.com", StringComparison.Ordinal) ||
-            host.Contains("youtu.be", StringComparison.Ordinal))
+        if (IsSourceHost(host, "youtube.com") || IsSourceHost(host, "youtu.be"))
         {
             return RemoteAudioServiceKind.YouTube;
         }
 
-        if (host.Contains("bandlab.com", StringComparison.Ordinal))
+        if (IsSourceHost(host, "bandlab.com"))
         {
             return RemoteAudioServiceKind.BandLab;
         }
 
-        if (host.Contains("suno.com", StringComparison.Ordinal) ||
-            host.Contains("suno.ai", StringComparison.Ordinal))
+        if (IsSourceHost(host, "suno.com") || IsSourceHost(host, "suno.ai"))
         {
             return RemoteAudioServiceKind.Suno;
         }
 
-        if (host.Contains("spotify.com", StringComparison.Ordinal) ||
+        if (IsSourceHost(host, "spotify.com") ||
             uri.Scheme.Equals("spotify", StringComparison.OrdinalIgnoreCase))
         {
             return RemoteAudioServiceKind.Spotify;
@@ -333,6 +393,10 @@ public sealed class OpenUrlService
 
         return RemoteAudioServiceKind.Generic;
     }
+
+    private static bool IsSourceHost(string host, string domain) =>
+        host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSunoCdnUri(Uri uri) =>
         (uri.Host.Equals("d2lwuy8qc234o3.cloudfront.net", StringComparison.OrdinalIgnoreCase) ||
@@ -370,77 +434,60 @@ public sealed class OpenUrlService
         bool quickOnly = false)
     {
         var isYouTube = kind == RemoteAudioServiceKind.YouTube;
+        var watch = Stopwatch.StartNew();
         if (isYouTube)
-            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"--- ResolveWithYtDlpAsync: {uri.AbsoluteUri}");
+            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"--- {(quickOnly ? "preview" : "playback")}: {uri.AbsoluteUri}");
+
+        // Clipboard enrichment needs a name and cover, not format extraction or a Python process.
+        if (isYouTube && quickOnly)
+        {
+            var preview = await ResolveYouTubePreviewAsync(uri, cancellationToken);
+            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"preview metadata ready in {watch.Elapsed.TotalMilliseconds:0} ms");
+            return preview;
+        }
 
         var executable = YtDlpService.FindExecutable();
         if (string.IsNullOrWhiteSpace(executable))
-        {
-            if (isYouTube)
-                AppLogPaths.AppendTimestamped(YouTubeLogPath, "yt-dlp not found on PATH or app directory");
-            var expectedName = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
-            throw new InvalidOperationException(
-                $"yt-dlp was not found. Put {expectedName} beside Spectralis or on PATH to open this service link.");
-        }
+            throw new InvalidOperationException("yt-dlp was not found. Reinstall Spectralis or add yt-dlp to PATH.");
 
-        if (isYouTube)
-            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"yt-dlp: {executable}");
-
-        var info = await TryGetYtDlpInfoAsync(executable, uri.AbsoluteUri, cancellationToken);
+        YtDlpMediaInfo? info;
+        string? cachedPath = null;
         if (quickOnly)
         {
-            if (info is null)
-            {
-                if (isYouTube)
-                    AppLogPaths.AppendTimestamped(YouTubeLogPath, "metadata fetch failed");
-                throw new InvalidOperationException("Could not read track info for this link.");
-            }
-
-            if (isYouTube)
-                AppLogPaths.AppendTimestamped(YouTubeLogPath, $"metadata ready  title=\"{info.Title}\" artist=\"{info.Artist}\"");
-
-            return new RemoteAudioResolveResult(
-                kind,
-                ServiceLabel(kind),
-                uri.AbsoluteUri,
-                uri.AbsoluteUri,
-                "",
-                $"{ServiceLabel(kind)} stream",
-                info.Title,
-                info.Artist,
-                info.Album ?? ServiceLabel(kind),
-                info.ArtworkUrl,
-                info.Duration,
-                uri.AbsoluteUri,
-                CachedAudioPath: null,
-                ExternalId: isYouTube ? ExtractYouTubeVideoId(uri) : null,
-                MetadataOnly: true);
+            info = await TryGetYtDlpInfoAsync(executable, uri.AbsoluteUri, cancellationToken)
+                ?? throw new InvalidOperationException("Could not read track info for this link.");
         }
-
+        else
+        {
+            if (isYouTube) AppLogPaths.AppendTimestamped(YouTubeLogPath, "extracting and downloading audio in one yt-dlp process");
+            var download = await DownloadWithYtDlpAsync(executable, uri.AbsoluteUri, cancellationToken, _ytDlpProgressCallback);
+            (cachedPath, info) = download;
+        }
         if (isYouTube)
-            AppLogPaths.AppendTimestamped(YouTubeLogPath, "downloading audio via yt-dlp");
+            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"{(quickOnly ? "metadata" : "audio")} ready in {watch.Elapsed.TotalMilliseconds:0} ms; title=\"{info?.Title}\"");
+        return new RemoteAudioResolveResult(kind, ServiceLabel(kind), uri.AbsoluteUri,
+            cachedPath ?? uri.AbsoluteUri, cachedPath is null ? "" : NormalizeAudioExtension(Path.GetExtension(cachedPath), ".m4a"),
+            $"{ServiceLabel(kind)} stream", info?.Title, info?.Artist, info?.Album ?? ServiceLabel(kind),
+            info?.ArtworkUrl, info?.Duration ?? TimeSpan.Zero, uri.AbsoluteUri, cachedPath,
+            isYouTube ? ExtractYouTubeVideoId(uri) : null, MetadataOnly: quickOnly);
+    }
 
-        var cachedPath = await DownloadWithYtDlpAsync(executable, uri.AbsoluteUri, cancellationToken, _ytDlpProgressCallback);
-        var extension = NormalizeAudioExtension(Path.GetExtension(cachedPath), ".m4a");
-
-        if (isYouTube)
-            AppLogPaths.AppendTimestamped(YouTubeLogPath, $"stream ready  title=\"{info?.Title}\" artist=\"{info?.Artist}\" dur={info?.Duration}");
-
-        return new RemoteAudioResolveResult(
-            kind,
-            ServiceLabel(kind),
-            uri.AbsoluteUri,
-            cachedPath,
-            extension,
-            $"{ServiceLabel(kind)} stream",
-            info?.Title,
-            info?.Artist,
-            info?.Album ?? ServiceLabel(kind),
-            info?.ArtworkUrl,
-            info?.Duration ?? TimeSpan.Zero,
-            uri.AbsoluteUri,
-            cachedPath,
-            isYouTube ? ExtractYouTubeVideoId(uri) : null);
+    private async Task<RemoteAudioResolveResult> ResolveYouTubePreviewAsync(Uri uri, CancellationToken token)
+    {
+        var id = ExtractYouTubeVideoId(uri);
+        if (!YouTubeVideoIdPattern.IsMatch(id ?? "")) throw new InvalidOperationException("Open a YouTube video link.");
+        var canonical = "https://www.youtube.com/watch?v=" + id;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(4));
+        using var response = await _previewHttp.GetAsync("https://www.youtube.com/oembed?format=json&url=" + Uri.EscapeDataString(canonical), deadline.Token);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+        var title = TryGetString(json.RootElement, "title");
+        if (string.IsNullOrWhiteSpace(title)) throw new InvalidOperationException("YouTube returned no preview title.");
+        return new RemoteAudioResolveResult(RemoteAudioServiceKind.YouTube, "YouTube", uri.AbsoluteUri,
+            "", "", "YouTube stream", title, TryGetString(json.RootElement, "author_name"), "YouTube",
+            TryGetString(json.RootElement, "thumbnail_url"), TimeSpan.Zero, uri.AbsoluteUri,
+            ExternalId: id, MetadataOnly: true);
     }
 
     private Action<string>? _ytDlpProgressCallback;
@@ -470,7 +517,7 @@ public sealed class OpenUrlService
         return true;
     }
 
-    private static async Task<string> DownloadWithYtDlpAsync(
+    private static async Task<(string Path, YtDlpMediaInfo? Info)> DownloadWithYtDlpAsync(
         string executable,
         string url,
         CancellationToken cancellationToken,
@@ -479,20 +526,7 @@ public sealed class OpenUrlService
         var outputTemplate = RemoteAudioCache.CreateDownloadTemplate(out var token);
         var result = await SafeProcessRunner.RunWithProgressAsync(
             executable,
-            [
-                .. YtDlpService.JsRuntimeArguments(),
-                "--no-playlist",
-                "--progress",
-                "--newline",
-                "--force-overwrites",
-                "--no-part",
-                "-f",
-                "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio",
-                "-o",
-                outputTemplate,
-                "--",
-                url,
-            ],
+            BuildYtDlpDownloadArguments(url, outputTemplate),
             TimeSpan.FromMinutes(5),
             onStdoutLine: onProgressLine,
             maxOutputBytes: 2 * 1024 * 1024,
@@ -521,8 +555,27 @@ public sealed class OpenUrlService
                 $"yt-dlp downloaded an unsupported audio container: {Path.GetExtension(downloadedPath)}");
         }
 
-        return downloadedPath;
+        return (downloadedPath, ParseYtDlpInfo(result.Stdout));
     }
+
+    internal static string[] BuildYtDlpDownloadArguments(string url, string outputTemplate) =>
+        [
+                .. YtDlpService.JsRuntimeArguments(),
+                "--ignore-config",
+                "--dump-json",
+                "--no-simulate",
+                "--no-playlist",
+                "--progress",
+                "--newline",
+                "--force-overwrites",
+                "--no-part",
+                "-f",
+                "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio",
+                "-o",
+                outputTemplate,
+                "--",
+                url,
+            ];
 
     private static async Task<YtDlpMediaInfo?> TryGetYtDlpInfoAsync(
         string executable,
@@ -541,7 +594,12 @@ public sealed class OpenUrlService
             return null;
         }
 
-        var json = result.Stdout
+        return ParseYtDlpInfo(result.Stdout);
+    }
+
+    private static YtDlpMediaInfo? ParseYtDlpInfo(string stdout)
+    {
+        var json = stdout
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(static line => line.StartsWith('{'));
         if (string.IsNullOrWhiteSpace(json))

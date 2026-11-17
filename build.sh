@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release build entrypoint for macOS - the peer of build.ps1 (Windows/Linux).
 #
-#   ./build.sh --version 6.0.0            # macOS Velopack feeds (osx-arm64 + osx-x64)
+#   ./build.sh --version 6.0.0            # native macOS Velopack feed
 #   ./build.sh --version 6.0.0 --dmg      # ...also the standalone .dmg bundle
 #   ./build.sh --version 6.0.0 --dmg-only # just the .dmg, skip Velopack
 #
@@ -62,7 +62,7 @@ fi
 dotnet tool restore >/dev/null
 
 if [[ "$BUILD_VELOPACK" == "1" ]]; then
-  echo "[build] Spectralis $VERSION - macOS Velopack (osx-arm64 + osx-x64)"
+  echo "[build] Spectralis $VERSION - macOS Velopack (native architecture)"
   "$REPO_ROOT/Spectralis.Installer/Mac/build-velopack.sh" "$VERSION"
 fi
 

@@ -21,14 +21,12 @@ done
 rm -rf "$OUT"
 mkdir -p "$REPO_ROOT/releases"
 
-# x64 only, deliberately. CefGlue's pinned CEF redistribution ships an osx64
-# package and nothing for arm64, so an osx-arm64 publish silently comes out with
-# no libcef.dylib and no CEF Resources -- the in-app browser would be dead. On
-# Apple Silicon this bundle runs under Rosetta.
-#
-# The explicit -f is required: Spectralis.App multitargets, and `dotnet publish`
-# refuses to pick a framework on its own (NETSDK1129).
-RID=osx-x64
+RID="osx-$(uname -m)"
+RID="${RID/osx-x86_64/osx-x64}"
+MINIMUM_OS=12.0
+[[ "$RID" == osx-arm64 ]] && MINIMUM_OS=13.0
+export MACOSX_DEPLOYMENT_TARGET="$MINIMUM_OS"
+bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh" "$RID"
 dotnet publish "$APP_PROJECT" -c Release -f net8.0 -r "$RID" --self-contained true \
   -o "$OUT/$RID" "/p:Version=$VERSION"
 
@@ -42,7 +40,7 @@ rsync -a "$OUT/$RID/" "$BUNDLE/Contents/MacOS/"
 mv "$BUNDLE/Contents/MacOS/Spectralis.App" "$BUNDLE/Contents/MacOS/Spectralis"
 
 METADATA="$REPO_ROOT/output/app-metadata/macos-legacy"
-bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$METADATA" Spectralis
+bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$METADATA" Spectralis "$MINIMUM_OS"
 cp "$METADATA/Info.plist" "$BUNDLE/Contents/Info.plist"
 cp "$METADATA/Spectralis.icns" "$BUNDLE/Contents/Resources/Spectralis.icns"
 

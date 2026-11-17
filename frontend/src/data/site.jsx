@@ -43,7 +43,7 @@ export const FAQ = [
   },
   {
     q: 'Is macOS supported?',
-    a: 'Yes. The Intel x64 build runs on macOS 11 or newer. Apple Silicon Macs use Rosetta 2.',
+    a: 'Yes. There are native builds for Apple Silicon (macOS 13+) and Intel (macOS 12+). Choose the package for your Mac on the downloads page.',
   },
   {
     q: 'macOS won\'t open the installer. What do I do?',

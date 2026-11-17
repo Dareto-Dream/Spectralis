@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 import plistlib
 import struct
+import subprocess
+import xml.etree.ElementTree as ET
 
 
-def verify_macos(root, version, expected_icon):
+def verify_macos(root, version, expected_icon, rid='osx-x64'):
     plists = [path for path in root.rglob('Info.plist')
               if path.parent.name == 'Contents' and path.parent.parent.name == 'Spectralis.app']
     if root.name == 'Spectralis.app':
@@ -26,7 +28,7 @@ def verify_macos(root, version, expected_icon):
         'CFBundleVersion': version.split('-')[0],
         'CFBundleShortVersionString': version.split('-')[0],
         'SpectralisReleaseVersion': version,
-        'LSMinimumSystemVersion': '11.0',
+        'LSMinimumSystemVersion': '13.0' if rid == 'osx-arm64' else '12.0',
         'LSApplicationCategoryType': 'public.app-category.music',
     }.items():
         assert info.get(key) == value, f'{key}: {info.get(key)!r} != {value!r}'
@@ -45,6 +47,33 @@ def verify_macos(root, version, expected_icon):
         types.add(kind)
         offset += size
     assert {b'ic07', b'ic08', b'ic09', b'ic10'} <= types, 'Missing high-resolution icon representations'
+    arch = 'arm64' if rid == 'osx-arm64' else 'x86_64'
+    macos = contents / 'MacOS'
+    ns = {'n': 'http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd'}
+    metadata = ET.parse(macos / 'sq.version').getroot()
+    assert metadata.findtext('n:metadata/n:rid', namespaces=ns) == rid, 'Wrong update package runtime'
+    assert metadata.findtext('n:metadata/n:machineArchitecture', namespaces=ns) == rid.split('-')[1], 'Wrong update package architecture'
+    assert metadata.findtext('n:metadata/n:version', namespaces=ns) == version, 'Wrong update package version'
+    for native in ['Spectralis.App', 'UpdateMac', 'libcef.dylib', 'libwgpu_host.dylib', 'ffmpeg',
+                   'Updater/UpdateSpectralis', 'Tools/deno/deno', 'Tools/yt-dlp/yt-dlp_macos']:
+        assert (macos / native).is_file(), f'Missing native payload: {native}'
+    magic = {b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'}
+    checked = 0
+    for path in macos.rglob('*'):
+        if not path.is_file(): continue
+        with path.open('rb') as stream: header = stream.read(4)
+        if header not in magic: continue
+        subprocess.run(['/usr/bin/lipo', str(path), '-verify_arch', arch], check=True)
+        checked += 1
+    print(f'Verified {checked} Mach-O payloads for {arch}; no mixed-architecture app or helpers')
+    for relative, argument in [('Tools/yt-dlp/yt-dlp_macos', '--version'),
+                               ('Tools/deno/deno', '--version'),
+                               ('Updater/UpdateSpectralis', '--version'), ('ffmpeg', '-version')]:
+        helper = macos / relative
+        assert os.access(helper, os.X_OK), f'Packaged helper is not executable: {relative}'
+        result = subprocess.run([str(helper), argument], check=True, timeout=30,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f'Packaged {relative}: {result.stdout.splitlines()[0]}')
     print(f'Verified macOS identity, protocol, version and Spectralis icon: {contents.parent}')
 
 
@@ -73,5 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('root', type=Path)
     parser.add_argument('--version', required=True)
     parser.add_argument('--expected-icon', required=True, type=Path)
+    parser.add_argument('--rid', default='osx-x64', choices=['osx-x64', 'osx-arm64'])
     args = parser.parse_args()
-    (verify_macos if args.platform == 'macos' else verify_linux)(args.root, args.version, args.expected_icon)
+    if args.platform == 'macos': verify_macos(args.root, args.version, args.expected_icon, args.rid)
+    else: verify_linux(args.root, args.version, args.expected_icon)

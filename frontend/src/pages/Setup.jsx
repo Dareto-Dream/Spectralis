@@ -6,7 +6,7 @@ import { useReleases } from '../lib/useReleases.js'
 import { compareVersions, parseVersion } from '../lib/releases.js'
 import './Setup.css'
 
-const PLATFORM_LABELS = { 'win-x64': 'Windows', 'osx-x64': 'macOS', 'linux-x64': 'Linux' }
+const PLATFORM_LABELS = { 'win-x64': 'Windows', 'osx-arm64': 'Mac (Apple Silicon)', 'osx-x64': 'Mac (Intel)', 'linux-x64': 'Linux' }
 
 function ReleaseDownloads({ release }) {
   return Object.entries(PLATFORM_LABELS)
@@ -78,7 +78,7 @@ function LatestChangelog({ latest }) {
   )
 }
 
-function PlatformDownload({ id, name, requirements, href, format, children, notes }) {
+function PlatformDownload({ id, name, requirements, href, format, children, notes, downloads }) {
   return (
     <section className="setup-platform" id={id} aria-labelledby={`${id}-heading`}>
       <div className="setup-platform__name">
@@ -92,9 +92,11 @@ function PlatformDownload({ id, name, requirements, href, format, children, note
           <div>{notes}</div>
         </details>
       </div>
-      <a href={href} className="setup-download" aria-label={`Download Spectralis for ${name}`}>
-        <Download size={17} aria-hidden="true" />Download <span>{format}</span>
-      </a>
+      <div className="setup-platform__downloads">
+        {downloads ?? <a href={href} className="setup-download" aria-label={`Download Spectralis for ${name}`}>
+          <Download size={17} aria-hidden="true" />Download <span>{format}</span>
+        </a>}
+      </div>
     </section>
   )
 }
@@ -102,6 +104,7 @@ function PlatformDownload({ id, name, requirements, href, format, children, note
 export default function Setup() {
   const { latest, older, beta } = useReleases()
   const version = latest?.version ?? APP_VERSION
+  const nativeMac = latest?.downloads['osx-arm64']
 
   return (
     <main className="setup-page">
@@ -125,12 +128,16 @@ export default function Setup() {
           Run the installer. No administrator access needed.
         </PlatformDownload>
         <PlatformDownload
-          id="macos" name="macOS" requirements="macOS 11+ · Intel / Rosetta 2"
+          id="macos" name="macOS" requirements={nativeMac ? 'Apple Silicon: 13+ · Intel: 12+' : 'macOS 11+ · Intel / Rosetta 2'}
           href={latest?.downloads['osx-x64'] ?? `${DOWNLOAD_BASE}/Spectralis-osx-x64-Setup.pkg`}
           format=".pkg"
-          notes={<><p>Open the <code>.pkg</code> and follow the installer. The app goes in <code>/Applications</code>. Apple Silicon Macs use Rosetta 2; macOS offers to install it if needed.</p><p>If macOS blocks the unsigned installer, try opening it first, then go to <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</p></>}
+          downloads={nativeMac ? <>
+            <a href={nativeMac} className="setup-download" aria-label="Download Spectralis for Apple Silicon"><Download size={17} aria-hidden="true" />Apple Silicon<span>.pkg</span></a>
+            <a href={latest.downloads['osx-x64']} className="setup-download" aria-label="Download Spectralis for Intel Mac"><Download size={17} aria-hidden="true" />Intel<span>.pkg</span></a>
+          </> : undefined}
+          notes={<><p>Open the <code>.pkg</code> and follow the installer. {nativeMac ? 'M-series Macs use the Apple Silicon package, which requires macOS 13 or newer. If you installed an Intel build before, quit Spectralis and install the Apple Silicon package once to switch to native updates.' : 'Apple Silicon Macs can run the Intel package through Rosetta 2.'}</p><p>If macOS blocks the unsigned installer, try opening it first, then go to <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</p></>}
         >
-          Intel build; Apple Silicon uses Rosetta 2. The installer is unsigned and not notarized.
+          {nativeMac ? 'Native builds for M-series and Intel Macs.' : 'Intel build; Apple Silicon uses Rosetta 2.'} The installers are unsigned and not notarized.
         </PlatformDownload>
         <PlatformDownload
           id="linux" name="Linux" requirements="x86_64 · AppImage"

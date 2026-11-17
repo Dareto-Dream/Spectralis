@@ -113,8 +113,13 @@ public sealed class VisualizerSceneState
     public float DiskAngle => _diskAngle;
     public float AnimationPhase => _animationPhase;
 
-    public void UpdateFrame(VisualizerFrame frame, bool activePlayback, float playbackSeconds, VisualizerMode mode)
+    public void UpdateFrame(VisualizerFrame frame, bool activePlayback, float playbackSeconds, VisualizerMode mode, float elapsedSeconds = 1f / 60f)
     {
+        var seconds = float.IsFinite(elapsedSeconds) ? Math.Clamp(elapsedSeconds, 0.001f, 0.1f) : 1f / 60f;
+        var frameScale = seconds * 60f;
+        var spectrumDecay = MathF.Pow(activePlayback ? 0.80f : 0.90f, frameScale);
+        var attack = 1f - MathF.Exp(-seconds / 0.018f);
+        var waveformRetention = MathF.Pow(0.35f, frameScale);
         _isActive = activePlayback;
         _playbackTimeSeconds = Math.Max(0, playbackSeconds);
 
@@ -123,20 +128,23 @@ public sealed class VisualizerSceneState
             var incoming = index < frame.Spectrum.Length
                 ? Math.Clamp(frame.Spectrum[index] * _sensitivity, 0, 1.25f)
                 : 0;
-            _spectrumLevels[index] = Math.Max(incoming, _spectrumLevels[index] * (activePlayback ? 0.80f : 0.90f));
+            var previous = _spectrumLevels[index];
+            _spectrumLevels[index] = incoming > previous
+                ? previous + (incoming - previous) * attack
+                : Math.Max(incoming, previous * spectrumDecay);
             _peakHoldLevels[index] = ShowPeaks
-                ? Math.Max(_spectrumLevels[index], _peakHoldLevels[index] - 0.03f)
+                ? Math.Max(_spectrumLevels[index], _peakHoldLevels[index] - 0.03f * frameScale)
                 : 0;
         }
 
         for (var index = 0; index < _waveformPoints.Length; index++)
         {
             var incoming = index < frame.Waveform.Length ? frame.Waveform[index] * _sensitivity : 0;
-            _waveformPoints[index] = (_waveformPoints[index] * 0.35f) + (incoming * 0.65f);
+            _waveformPoints[index] = (_waveformPoints[index] * waveformRetention) + (incoming * (1 - waveformRetention));
         }
 
-        _peakLevel = Math.Max(frame.PeakLevel * _sensitivity, _peakLevel * (activePlayback ? 0.90f : 0.95f));
-        _rmsLevel = Math.Max(frame.RmsLevel * _sensitivity, _rmsLevel * (activePlayback ? 0.92f : 0.96f));
+        _peakLevel = Math.Max(frame.PeakLevel * _sensitivity, _peakLevel * MathF.Pow(activePlayback ? 0.90f : 0.95f, frameScale));
+        _rmsLevel = Math.Max(frame.RmsLevel * _sensitivity, _rmsLevel * MathF.Pow(activePlayback ? 0.92f : 0.96f, frameScale));
         _midiNotes = frame.ActiveMidiNotes;
         _midiInstrumentName = frame.MidiInstrumentName;
         _waveformLeft = frame.WaveformL.Length > 0 ? frame.WaveformL : frame.Waveform;
@@ -153,7 +161,7 @@ public sealed class VisualizerSceneState
         {
             if (mode == VisualizerMode.SpinningDisk)
             {
-                _diskAngle = (_diskAngle + 0.38f) % 360f;
+                _diskAngle = (_diskAngle + 0.38f * frameScale) % 360f;
             }
 
             var phaseStep = mode switch
@@ -167,7 +175,7 @@ public sealed class VisualizerSceneState
 
             if (phaseStep > 0)
             {
-                _animationPhase = (_animationPhase + phaseStep + (frame.RmsLevel * 2.4f)) % 360f;
+                _animationPhase = (_animationPhase + (phaseStep + frame.RmsLevel * 2.4f) * frameScale) % 360f;
             }
         }
     }

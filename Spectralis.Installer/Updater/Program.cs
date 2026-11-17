@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 
 namespace Spectralis.Updater;
 
@@ -18,7 +19,7 @@ internal static class Program
         {
             Console.WriteLine("Update Spectralis\n");
             var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" :
-                OperatingSystem.IsMacOS() ? "osx-x64" : throw new PlatformNotSupportedException();
+                OperatingSystem.IsMacOS() ? (RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64") : throw new PlatformNotSupportedException();
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(12) };
             var client = new RecoveryClient(http);
             var release = await client.FindLatestAsync(rid, cancellation.Token);
@@ -49,7 +50,7 @@ internal static class Program
             temporaryDirectory = Path.Combine(Path.GetTempPath(), "spectralis-updater-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temporaryDirectory);
             var download = Path.Combine(temporaryDirectory, rid == "win-x64" ? "Spectralis-Setup.exe" :
-                rid == "osx-x64" ? "Spectralis-Setup.pkg" : "Spectralis.AppImage");
+                rid.StartsWith("osx-", StringComparison.Ordinal) ? "Spectralis-Setup.pkg" : "Spectralis.AppImage");
             var lastProgress = Stopwatch.StartNew();
             var progress = new Progress<long>(bytes =>
             {

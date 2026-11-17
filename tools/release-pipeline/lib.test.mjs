@@ -104,13 +104,17 @@ test('entries stay inside what the backend accepts', () => {
 });
 
 test('macOS installers and portable builds join the release index only with a matching feed', () => {
-  const files = ['releases.osx-x64.json', 'Spectralis-osx-x64-Setup.pkg', 'Spectralis-osx-x64-Portable.zip'];
-  const entry = releaseEntry({ version: '7.1.3', date: '2026-11-16', files });
-  assert.deepEqual(entry.platforms['osx-x64'], {
-    installer: `${REPO_URL}/releases/download/v7.1.3/Spectralis-osx-x64-Setup.pkg`,
-    portable: `${REPO_URL}/releases/download/v7.1.3/Spectralis-osx-x64-Portable.zip`,
-  });
-  assert.deepEqual(releaseEntry({ version: '7.1.3', files: files.slice(1) }).platforms, {});
+  for (const rid of ['osx-x64', 'osx-arm64']) {
+    for (const version of ['7.1.6', '7.1.6-beta.10']) {
+      const files = [`releases.${rid}.json`, `Spectralis-${rid}-Setup.pkg`, `Spectralis-${rid}-Portable.zip`];
+      const entry = releaseEntry({ version, date: '2026-11-16', files });
+      assert.deepEqual(entry.platforms[rid], {
+        installer: `${REPO_URL}/releases/download/v${version}/Spectralis-${rid}-Setup.pkg`,
+        portable: `${REPO_URL}/releases/download/v${version}/Spectralis-${rid}-Portable.zip`,
+      });
+      assert.deepEqual(releaseEntry({ version, files: files.slice(1) }).platforms, {});
+    }
+  }
 });
 
 test('the new entry goes on top and the old latest steps down', () => {

@@ -36,7 +36,7 @@ const STATIC_ROUTES = {
   '/setup': {
     title: 'Download and Setup — Spectralis',
     description:
-      'Download Spectralis for Windows 10/11, macOS 11+ (Intel or Rosetta 2) or Linux (AppImage). Free, no sign-in, updates itself.',
+      'Download Spectralis for Windows 10/11, macOS (Apple Silicon or Intel) or Linux (AppImage). Free, no sign-in, updates itself.',
     kind: 'setup',
   },
   '/terms': {
@@ -109,7 +109,7 @@ const appNode = ({ version, featureList, screenshots }) =>
     description: HOME_DESCRIPTION,
     applicationCategory: 'MultimediaApplication',
     applicationSubCategory: 'Audio player and visualizer',
-    operatingSystem: 'Windows 10, Windows 11, macOS 11 or newer, Linux x86_64',
+    operatingSystem: 'Windows 10, Windows 11, macOS 12 or newer on Intel, macOS 13 or newer on Apple Silicon, Linux x86_64',
     softwareVersion: version,
     downloadUrl: `${SITE_URL}/setup`,
     installUrl: `${SITE_URL}/setup`,

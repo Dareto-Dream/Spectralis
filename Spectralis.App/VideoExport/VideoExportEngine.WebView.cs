@@ -161,7 +161,7 @@ public static partial class VideoExportEngine
                 consumedSampleFrames = targetSamples;
                 ConsumeAnalysisSamples(visProvider, analysisBuffer, samplesToConsume, channels);
 
-                sceneState.UpdateFrame(visProvider.GetFrame(), true, elapsed, VisualizerMode.MirrorSpectrum);
+                sceneState.UpdateFrame(visProvider.GetFrame(), true, elapsed, VisualizerMode.MirrorSpectrum, 1f / fps);
                 var scene = sceneState.CreateScene("HTML");
 
                 await host.ExecuteScriptAsync(BuildFrameScript(scene, elapsed, isVideo, frameMs));

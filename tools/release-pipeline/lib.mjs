@@ -286,10 +286,10 @@ export function releaseEntry({ version, date, files = [], repoUrl = REPO_URL }) 
       portable: '',
     };
   }
-  if (has('releases.osx-x64.json')) {
-    platforms['osx-x64'] = {
-      installer: has('Spectralis-osx-x64-Setup.pkg') ? `${base}/Spectralis-osx-x64-Setup.pkg` : '',
-      portable: has('Spectralis-osx-x64-Portable.zip') ? `${base}/Spectralis-osx-x64-Portable.zip` : '',
+  for (const rid of ['osx-x64', 'osx-arm64']) {
+    if (has(`releases.${rid}.json`)) platforms[rid] = {
+      installer: has(`Spectralis-${rid}-Setup.pkg`) ? `${base}/Spectralis-${rid}-Setup.pkg` : '',
+      portable: has(`Spectralis-${rid}-Portable.zip`) ? `${base}/Spectralis-${rid}-Portable.zip` : '',
     };
   }
   return {

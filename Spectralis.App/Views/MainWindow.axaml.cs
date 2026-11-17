@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
-using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -21,21 +20,11 @@ namespace Spectralis.App.Views;
 
 public partial class MainWindow : Window
 {
-    private const int ClipboardUrlHistoryLimit = 96;
-
-    private static readonly Regex ClipboardUrlRegex = new(
-        @"https?://[^\s<>()""']+",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     private bool _placementApplied;
     private PixelRect? _lastNormalBounds;
     private readonly DispatcherTimer _clipboardMonitorTimer;
-    private readonly HashSet<string> _clipboardUrlHistory = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Queue<string> _clipboardUrlHistoryOrder = new();
-    private readonly HashSet<string> _toastedTrackHistory = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Queue<string> _toastedTrackHistoryOrder = new();
     private readonly OpenUrlService _clipboardUrlResolver = new();
-    private string _lastClipboardText = string.Empty;
+    private readonly ClipboardLinkPreview _clipboardPreview;
     private bool _checkingClipboard;
     private readonly DispatcherTimer _mixTimer;
     private PageWindowService? _pageWindows;
@@ -50,6 +39,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _clipboardPreview = new ClipboardLinkPreview(
+            (url, preview) => { if (DataContext is MainWindowViewModel vm) vm.ShowClipboardUrlToast(url, preview, null); },
+            (url, resolved, art) => DataContext is MainWindowViewModel vm && vm.UpdateClipboardUrlToast(url, resolved, art),
+            _clipboardUrlResolver.ResolveClipboardMetadataAsync,
+            OpenUrlService.TryFetchArtworkBytesAsync,
+            error => SpectralisLog.Warn($"Clipboard preview metadata: {error.Message}"));
         _mixTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background,
             (_, _) => { if (DataContext is MainWindowViewModel { Dj.Enabled: true } shell) shell.Dj.Tick(); });
 #if DEBUG
@@ -57,7 +52,7 @@ public partial class MainWindow : Window
 #endif
 
         _clipboardMonitorTimer = new DispatcherTimer(
-            TimeSpan.FromMilliseconds(1200),
+            TimeSpan.FromMilliseconds(350),
             DispatcherPriority.Background,
             OnClipboardMonitorTick);
 
@@ -135,6 +130,7 @@ public partial class MainWindow : Window
         };
         P2wBanner.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         P2wBadge.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
+        Activated += (_, _) => OnClipboardMonitorTick(this, EventArgs.Empty);
         ClipboardToastBorder.SizeChanged += (_, _) => ApplyDeadZoneAvoidance();
         Opened += async (_, _) =>
         {
@@ -148,6 +144,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _clipboardMonitorTimer.Stop();
+            _clipboardPreview.Dispose();
             _mixTimer.Stop();
             _pageWindows?.Dispose();
             (DataContext as MainWindowViewModel)?.Presentation.Dispose();
@@ -1439,83 +1436,24 @@ public partial class MainWindow : Window
 
     private async void OnClipboardMonitorTick(object? sender, EventArgs e)
     {
-        if (_checkingClipboard ||
-            DataContext is not MainWindowViewModel vm ||
-            !vm.AppSettings.EnableClipboardUrlMonitoring)
+        if (_checkingClipboard) return;
+        if (DataContext is not MainWindowViewModel vm || !vm.AppSettings.EnableClipboardUrlMonitoring)
         {
+            _clipboardPreview.Cancel();
             return;
         }
-
         vm.DismissClipboardToastIfExpired(TimeSpan.FromSeconds(30));
-
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
-        {
-            return;
-        }
-
+        if (clipboard is null) return;
         _checkingClipboard = true;
         try
         {
             var text = await clipboard.GetTextAsync();
-            if (string.IsNullOrWhiteSpace(text) ||
-                string.Equals(text, _lastClipboardText, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _lastClipboardText = text;
-            foreach (var url in EnumerateClipboardUrls(text))
-            {
-                if (!OpenUrlService.MightBeUrl(url))
-                {
-                    continue;
-                }
-
-                var historyKey = url.Trim();
-                if (_clipboardUrlHistory.Contains(historyKey))
-                {
-                    continue;
-                }
-
-                // Quick metadata-only resolve (name + art, no audio download) before
-                // suggesting playback, so a dead/private/unsupported link never gets
-                // suggested. The full resolve (and, for yt-dlp-backed services, the
-                // download) happens lazily when Play is actually clicked.
-                RemoteAudioResolveResult resolved;
-                try
-                {
-                    resolved = await _clipboardUrlResolver.ResolveAsync(historyKey, CancellationToken.None, quickOnly: true);
-                }
-                catch (Exception ex)
-                {
-                    AddClipboardHistory(historyKey);
-                    SpectralisLog.Warn($"Clipboard link did not resolve to a playable track: {ex.Message}");
-                    continue;
-                }
-
-                AddClipboardHistory(historyKey);
-
-                var trackKey = BuildTrackIdentityKey(resolved.Title, resolved.Artist) ?? historyKey;
-                if (_toastedTrackHistory.Contains(trackKey))
-                {
-                    continue;
-                }
-                AddToastedTrackHistory(trackKey);
-
-                var artwork = await OpenUrlService.TryFetchArtworkBytesAsync(resolved.ArtworkUrl, CancellationToken.None);
-                vm.ShowClipboardUrlToast(resolved.SourceUrl, resolved, artwork);
-                return;
-            }
+            // Only the clipboard read is serialized. A slow lookup must not hide a newer copy.
+            _ = _clipboardPreview.ObserveAsync(text);
         }
-        catch (Exception ex)
-        {
-            SpectralisLog.Warn($"Clipboard monitor skipped an update: {ex.Message}");
-        }
-        finally
-        {
-            _checkingClipboard = false;
-        }
+        catch (Exception ex) { SpectralisLog.Warn($"Clipboard monitor skipped an update: {ex.Message}"); }
+        finally { _checkingClipboard = false; }
     }
 
     private async void OnPlayClipboardToast(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1555,61 +1493,6 @@ public partial class MainWindow : Window
         {
             try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
             catch { }
-        }
-    }
-
-    private static IEnumerable<string> EnumerateClipboardUrls(string text)
-    {
-        foreach (Match match in ClipboardUrlRegex.Matches(text))
-        {
-            var url = TrimClipboardUrl(match.Value);
-            if (!string.IsNullOrWhiteSpace(url))
-            {
-                yield return url;
-            }
-        }
-    }
-
-    private static string TrimClipboardUrl(string value) =>
-        value.Trim().TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'');
-
-    private void AddClipboardHistory(string key)
-    {
-        if (!_clipboardUrlHistory.Add(key))
-        {
-            return;
-        }
-
-        _clipboardUrlHistoryOrder.Enqueue(key);
-        while (_clipboardUrlHistoryOrder.Count > ClipboardUrlHistoryLimit)
-        {
-            _clipboardUrlHistory.Remove(_clipboardUrlHistoryOrder.Dequeue());
-        }
-    }
-
-    /// <summary>Identifies a resolved track by title+artist so the same song doesn't toast
-    /// twice in a row from two different links (e.g. a YouTube link then its Spotify link).</summary>
-    private static string? BuildTrackIdentityKey(string? title, string? artist)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return null;
-        }
-
-        return $"{artist?.Trim().ToLowerInvariant()}|{title.Trim().ToLowerInvariant()}";
-    }
-
-    private void AddToastedTrackHistory(string key)
-    {
-        if (!_toastedTrackHistory.Add(key))
-        {
-            return;
-        }
-
-        _toastedTrackHistoryOrder.Enqueue(key);
-        while (_toastedTrackHistoryOrder.Count > ClipboardUrlHistoryLimit)
-        {
-            _toastedTrackHistory.Remove(_toastedTrackHistoryOrder.Dequeue());
         }
     }
 

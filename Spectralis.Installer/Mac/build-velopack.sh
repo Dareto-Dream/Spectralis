@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Velopack packaging for macOS. Runs on a macOS host with the .NET SDK and the
-# vpk tool (restored from .config/dotnet-tools.json). Produces the osx-x64 feed.
-# CEF's pinned redistribution is Intel-only; Apple Silicon uses Rosetta.
+# vpk tool (restored from .config/dotnet-tools.json). Build on the matching
+# Intel or Apple Silicon host so .NET, CEF, Rust and media helpers stay native.
 #
 #   ./Spectralis.Installer/Mac/build-velopack.sh <version>
 #
@@ -16,7 +16,18 @@
 #   SPECTRALIS_NOTARY_PROFILE             -> vpk --notaryProfile
 set -euo pipefail
 
-VERSION="${1:?usage: build-velopack.sh <version>}"
+VERSION="${1:?usage: build-velopack.sh <version> [osx-x64|osx-arm64]}"
+RID="${2:-osx-$(uname -m)}"
+RID="${RID/osx-x86_64/osx-x64}"
+case "$RID" in
+  osx-arm64) NATIVE_ARCH=arm64; export MACOSX_DEPLOYMENT_TARGET=13.0 ;;
+  osx-x64) NATIVE_ARCH=x86_64; export MACOSX_DEPLOYMENT_TARGET=12.0 ;;
+  *) echo "Unsupported Mac RID: $RID" >&2; exit 1 ;;
+esac
+if [[ "$(uname -m)" != "$NATIVE_ARCH" ]]; then
+  echo "Build $RID on a matching native Mac runner." >&2
+  exit 1
+fi
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP_PROJECT="$REPO_ROOT/Spectralis.App/Spectralis.App.csproj"
 RELEASE_DIR="$REPO_ROOT/releases-velopack"
@@ -47,11 +58,11 @@ if [[ -n "${SPECTRALIS_NOTARY_PROFILE:-}" ]]; then
   sign_args+=(--notaryProfile "$SPECTRALIS_NOTARY_PROFILE")
 fi
 
-bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh"
+bash "$REPO_ROOT/Spectralis.Installer/Mac/fetch-helpers.sh" "$RID"
 cargo build --release --manifest-path "$REPO_ROOT/wgpu-host/Cargo.toml"
-bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$REPO_ROOT/output/app-metadata/macos"
+bash "$REPO_ROOT/Spectralis.Installer/Mac/generate-metadata.sh" "$VERSION" "$REPO_ROOT/output/app-metadata/macos" Spectralis.App "$MACOSX_DEPLOYMENT_TARGET"
 
-for RID in osx-x64; do
+for RID in "$RID"; do
   CHANNEL="$RID"
   PUBLISH_DIR="$REPO_ROOT/publish-velopack-$RID"
   rm -rf "$PUBLISH_DIR"
@@ -80,7 +91,12 @@ for RID in osx-x64; do
   fi
   test -f "$PUBLISH_DIR/Updater/UpdateSpectralis" || { echo "Recovery updater missing" >&2; exit 1; }
   test -f "$PUBLISH_DIR/libwgpu_host.dylib" || { echo "Native visualizer missing" >&2; exit 1; }
-  chmod +x "$PUBLISH_DIR/Updater/UpdateSpectralis"
+  chmod +x "$PUBLISH_DIR/Updater/UpdateSpectralis" "$PUBLISH_DIR/Tools/yt-dlp/yt-dlp_macos" "$PUBLISH_DIR/Tools/deno/deno"
+  for native in Spectralis.App libcef.dylib libwgpu_host.dylib ffmpeg Updater/UpdateSpectralis Tools/deno/deno Tools/yt-dlp/yt-dlp_macos; do
+    lipo "$PUBLISH_DIR/$native" -verify_arch "$NATIVE_ARCH"
+  done
+  "$PUBLISH_DIR/Tools/yt-dlp/yt-dlp_macos" --version
+  "$PUBLISH_DIR/Tools/deno/deno" --version
 
   rm -f "$RELEASE_DIR/Spectralis-$VERSION-$CHANNEL-full.nupkg" \
         "$RELEASE_DIR/releases.$CHANNEL.json"
@@ -95,6 +111,7 @@ for RID in osx-x64; do
     --icon "$REPO_ROOT/output/app-metadata/macos/Spectralis.icns" \
     --plist "$REPO_ROOT/output/app-metadata/macos/Info.plist" \
     --channel "$CHANNEL" \
+    --runtime "$RID" \
     ${sign_args[@]+"${sign_args[@]}"} \
     -o "$RELEASE_DIR"
 

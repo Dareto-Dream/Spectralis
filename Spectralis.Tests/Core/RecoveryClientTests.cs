@@ -10,16 +10,20 @@ public sealed class RecoveryClientTests
 {
     private const string Installer = "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.2/Spectralis-win-x64-Setup.exe";
 
-    [Fact]
-    public void MacRecoverySelectsItsStablePkgInstaller()
+    [Theory]
+    [InlineData("osx-x64")]
+    [InlineData("osx-arm64")]
+    public void MacRecoverySelectsItsStablePkgInstaller(string rid)
     {
         const string url = "https://github.com/Dareto-Dream/Spectralis/releases/download/v7.1.3/Spectralis-osx-x64-Setup.pkg";
         var json = """
             [{"version":"7.1.3","channel":"stable","platforms":{"osx-x64":{"installer":"$URL"}}}]
-            """.Replace("$URL", url);
-        Assert.Equal(url, RecoveryClient.SelectLatest(json, "osx-x64").Installer.AbsoluteUri);
-        Assert.True(RecoveryClient.IsTrustedInstaller(new Uri(url), "osx-x64"));
-        Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(url.Replace(".pkg", ".zip")), "osx-x64"));
+            """.Replace("$URL", url).Replace("osx-x64", rid);
+        var expected = url.Replace("osx-x64", rid);
+        Assert.Equal(expected, RecoveryClient.SelectLatest(json, rid).Installer.AbsoluteUri);
+        Assert.True(RecoveryClient.IsTrustedInstaller(new Uri(expected), rid));
+        Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(expected), rid == "osx-x64" ? "osx-arm64" : "osx-x64"));
+        Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(expected.Replace(".pkg", ".zip")), rid));
         Assert.False(RecoveryClient.IsTrustedInstaller(new Uri(url), "win-x64"));
     }
 

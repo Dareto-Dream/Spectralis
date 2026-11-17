@@ -21,12 +21,13 @@ public sealed class RecoveryClient(HttpClient http)
             "win-x64" => "Spectralis-win-x64-Setup.exe",
             "linux-x64" => "Spectralis-linux-x64.AppImage",
             "osx-x64" => "Spectralis-osx-x64-Setup.pkg",
+            "osx-arm64" => "Spectralis-osx-arm64-Setup.pkg",
             _ => ""
         });
 
     public static RecoveryRelease SelectLatest(string json, string rid)
     {
-        if (rid is not ("win-x64" or "linux-x64" or "osx-x64")) throw new PlatformNotSupportedException();
+        if (rid is not ("win-x64" or "linux-x64" or "osx-x64" or "osx-arm64")) throw new PlatformNotSupportedException();
         using var document = JsonDocument.Parse(json);
         RecoveryRelease? best = null;
         Version? newest = null;

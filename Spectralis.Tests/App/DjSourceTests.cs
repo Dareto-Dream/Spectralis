@@ -89,20 +89,17 @@ public sealed class DjSourceTests : IDisposable
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var serving = Task.Run(async () =>
         {
-            // The shared resolver checks redirects before the cache downloads audio.
-            for (var attempt = 0; attempt < 2; attempt++)
-            {
+            // Direct audio skips HTML/redirect probing and goes straight to the cache download.
             using var client = await server.AcceptTcpClientAsync(timeout.Token);
             await using var stream = client.GetStream();
             using var reader = new StreamReader(stream, leaveOpen: true);
             var request = new List<string>();
             while (await reader.ReadLineAsync(timeout.Token) is { Length: > 0 } line) request.Add(line);
             Assert.StartsWith("GET /Party.wav ", request[0]);
-            if (attempt == 1) Assert.Contains(request, h => h.Equals("Range: bytes=0-", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(request, h => h.Equals("Range: bytes=0-", StringComparison.OrdinalIgnoreCase));
             var header = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: audio/wav\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
             await stream.WriteAsync(header, timeout.Token);
-            if (attempt == 1) await stream.WriteAsync(bytes, timeout.Token);
-            }
+            await stream.WriteAsync(bytes, timeout.Token);
         }, timeout.Token);
         var source = await new DjSourceService().PrepareAsync(new(url), null, timeout.Token);
         var cache = source.Path;

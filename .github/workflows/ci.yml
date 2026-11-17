@@ -46,7 +46,7 @@ jobs:
           fi
           hit() { grep -qE "$1" <<< "$files" && echo true || echo false; }
           {
-            echo "app=$(hit '^(Spectralis\.(App|Core|Tests|Installer)/|Assets/|wgpu-host/|Directory\.Build\.|global\.json|Spectralis\.sln|legal\.html|docs/legal/|ffmpeg$|ffmpeg\.exe$|yt-dlp$|yt-dlp\.exe$|\.config/dotnet-tools\.json$|\.github/workflows/)')"
+            echo "app=$(hit '^(Spectralis\.(App|Core|Tests|Installer)/|tools/performance/|Assets/|wgpu-host/|Directory\.Build\.|global\.json|Spectralis\.sln|legal\.html|docs/legal/|ffmpeg$|ffmpeg\.exe$|yt-dlp$|yt-dlp\.exe$|\.config/dotnet-tools\.json$|\.github/workflows/)')"
             echo "site=$(hit '^(frontend/|\.github/workflows/)')"
             echo "backend=$(hit '^(backend/|web-share/|\.github/workflows/)')"
             echo "tools=$(hit '^(tools/(r2|release-pipeline)/|\.github/workflows/)')"
@@ -86,13 +86,25 @@ jobs:
           retention-days: 7
 
   macos:
-    name: macOS tests
+    name: macOS tests (${{ matrix.rid }})
     needs: changes
     if: needs.changes.outputs.app == 'true'
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-x64
+            arch: x64
+            runner: macos-15-intel
+            minimum: '12.0'
+          - rid: osx-arm64
+            arch: arm64
+            runner: macos-15
+            minimum: '13.0'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
-      MACOSX_DEPLOYMENT_TARGET: '11.0'
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.minimum }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -103,26 +115,28 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: nuget-macos-x64-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
-          restore-keys: nuget-macos-x64-
+          key: nuget-macos-${{ matrix.arch }}-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-macos-${{ matrix.arch }}-
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             wgpu-host/target
-          key: cargo-macos-x64-${{ hashFiles('wgpu-host/Cargo.lock') }}
-          restore-keys: cargo-macos-x64-
+          key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('wgpu-host/Cargo.lock') }}
+          restore-keys: cargo-macos-${{ matrix.arch }}-
       - name: Fetch native media helpers
-        run: bash Spectralis.Installer/Mac/fetch-helpers.sh
+        run: bash Spectralis.Installer/Mac/fetch-helpers.sh "${{ matrix.rid }}"
       - name: Build native visualizer before project evaluation
         run: cargo build --release --manifest-path wgpu-host/Cargo.toml
       - name: Test
         run: dotnet test Spectralis.Tests/Spectralis.Tests.csproj -c Release --filter "FullyQualifiedName!~Spectralis.Tests.Performance&Category!=Performance" --logger "trx;LogFileName=macos-tests.trx"
+      - name: Measure native audio analysis and snapshot allocation
+        run: dotnet run --project tools/performance/Spectralis.AnalysisProbe.csproj -c Release
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: macos-test-results
+          name: macos-test-results-${{ matrix.rid }}
           path: '**/macos-tests.trx'
           retention-days: 7
 

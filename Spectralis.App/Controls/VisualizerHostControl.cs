@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Threading;
 using Spectralis.Core.Audio;
 using Spectralis.Core.Visualizers;
 using Spectralis.Core.Visualizers.Scripting;
@@ -10,8 +9,8 @@ namespace Spectralis.App.Controls;
 
 /// <summary>
 /// Hosts the visualizer render loop. Pulls frames from the engine on the UI
-/// thread via a timer-driven invalidation; if a frame is late the next tick
-/// simply renders the newest data (graceful frame skip - no queueing).
+/// thread in sync with the compositor. A late frame reads the latest audio;
+/// animations use elapsed time rather than assuming every callback is 16 ms.
 /// </summary>
 public sealed class VisualizerHostControl : Control
 {
@@ -41,20 +40,43 @@ public sealed class VisualizerHostControl : Control
         AvaloniaProperty.Register<VisualizerHostControl, IVisualizerRenderer?>(nameof(ScriptedRenderer));
 
     private readonly VisualizerSceneState _sceneState = new();
-    private readonly DispatcherTimer _frameTimer;
+    private Action<TimeSpan>? _animationFrame;
+    private TopLevel? _animationTopLevel;
+    private TimeSpan? _previousFrame;
+    private int _animationGeneration;
     private byte[]? _decodedArtBytes;
 
     public VisualizerHostControl()
     {
         ClipToBounds = true;
-        // 60fps target; DispatcherTimer coalesces late ticks so a slow frame
-        // skips instead of queueing.
-        _frameTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, OnFrameTick);
-        AttachedToVisualTree += (_, _) => _frameTimer.Start();
+        AttachedToVisualTree += (_, _) =>
+        {
+            _animationTopLevel = TopLevel.GetTopLevel(this);
+            var generation = ++_animationGeneration;
+            _previousFrame = null;
+            _animationFrame = timestamp => OnAnimationFrame(timestamp, generation);
+            _animationTopLevel?.RequestAnimationFrame(_animationFrame);
+        };
         DetachedFromVisualTree += (_, _) =>
         {
-            _frameTimer.Stop(); ReleaseArtwork(); _sceneState.Clear(); _ownScriptRenderer = null;
+            ++_animationGeneration;
+            _animationTopLevel = null;
+            _animationFrame = null;
+            ReleaseArtwork(); _sceneState.Clear(); _ownScriptRenderer = null;
         };
+    }
+
+    private void OnAnimationFrame(TimeSpan timestamp, int generation)
+    {
+        if (generation != _animationGeneration || _animationTopLevel is null) return;
+        var elapsed = _previousFrame is { } previous ? (float)(timestamp - previous).TotalSeconds : 1f / 60f;
+        _previousFrame = timestamp;
+        try { UpdateScene(elapsed); }
+        finally
+        {
+            if (generation == _animationGeneration && _animationFrame is { } callback)
+                _animationTopLevel?.RequestAnimationFrame(callback);
+        }
     }
 
     public AudioEngine? Engine
@@ -93,7 +115,7 @@ public sealed class VisualizerHostControl : Control
         set => SetValue(ScriptedRendererProperty, value);
     }
 
-    private void OnFrameTick(object? sender, EventArgs e)
+    private void UpdateScene(float elapsedSeconds)
     {
         var engine = Engine;
         var source = FrameSource;
@@ -126,7 +148,7 @@ public sealed class VisualizerHostControl : Control
             source?.GetFrame(includeSpectrogram: preferredMode == VisualizerMode.Spectrogram) ?? engine!.GetVisualizerFrame(includeSpectrogram: preferredMode == VisualizerMode.Spectrogram),
             source?.IsPlaying ?? (engine!.IsPlaying || hasExternalSource),
             (float)(source?.PositionSeconds ?? engine!.GetPosition()),
-            preferredMode);
+            preferredMode, elapsedSeconds);
         InvalidateVisual();
     }
 
