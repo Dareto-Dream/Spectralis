@@ -12,17 +12,20 @@
        project that picks CefGlue up transitively. The glob also keeps this from
        needing an edit whenever the CEF pin moves.
 
-       Only osx64 exists upstream, so the arm64 CefGlue platform gets the x64
-       stubs; they are inert unless a browser process actually starts, and the
-       shipped app is x64 regardless (see Spectralis.Installer/Mac/build-dmg.sh). -->
+       Select the matching redist for each architecture. An ARM-only restore
+       must not depend on Intel packages left over in a warm NuGet cache. -->
   <Target Name="StageCefMacOSNativeAssets"
           BeforeTargets="PrepareForBuild;Publish"
           Condition="$([MSBuild]::IsOSPlatform('OSX'))
                      And ('$(CefGlueTargetPlatform)' == 'osx-x64' Or '$(CefGlueTargetPlatform)' == 'osx-arm64')">
+    <PropertyGroup>
+      <CefMacOSRedistPackage Condition="'$(CefGlueTargetPlatform)' == 'osx-x64'">cef.redist.osx64</CefMacOSRedistPackage>
+      <CefMacOSRedistPackage Condition="'$(CefGlueTargetPlatform)' == 'osx-arm64'">cef.redist.osx.arm64</CefMacOSRedistPackage>
+    </PropertyGroup>
     <ItemGroup>
-      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libEGL.dylib" />
-      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libGLESv2.dylib" />
-      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)cef.redist.osx64/*/CEF/libvk_swiftshader.dylib" />
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)$(CefMacOSRedistPackage)/*/CEF/libEGL.dylib" />
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)$(CefMacOSRedistPackage)/*/CEF/libGLESv2.dylib" />
+      <CefMacOSStagedAsset Include="$(NuGetPackageRoot)$(CefMacOSRedistPackage)/*/CEF/libvk_swiftshader.dylib" />
     </ItemGroup>
     <Copy SourceFiles="@(CefMacOSStagedAsset)"
           DestinationFolder="$(OutDir)"

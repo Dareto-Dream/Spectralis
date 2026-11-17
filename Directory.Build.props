@@ -7,4 +7,12 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
+  <!-- CefGlue defaults AnyCPU Mac projects to ARM64 before the app assigns its
+       RID. Choose here, before NuGet props load; the SDK's RID is assigned later. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) And ('$(MSBuildProjectName)' == 'Spectralis.App' Or '$(MSBuildProjectName)' == 'Spectralis.Tests')">
+    <CefGlueTargetPlatform Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</CefGlueTargetPlatform>
+    <CefGlueTargetPlatform Condition="'$(CefGlueTargetPlatform)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">osx-arm64</CefGlueTargetPlatform>
+    <CefGlueTargetPlatform Condition="'$(CefGlueTargetPlatform)' == ''">osx-x64</CefGlueTargetPlatform>
+  </PropertyGroup>
+
 </Project>
