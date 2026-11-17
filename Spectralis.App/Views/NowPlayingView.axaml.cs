@@ -66,6 +66,13 @@ public partial class NowPlayingView : Grid
     private long _intervalSamples;
     private long _lastStatsTick;
 
+    private async void OnBrowseVisualizers(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not NowPlayingViewModel player || player.IsVisualizerLocked || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var selected = await VisualizerPickerWindow.ChooseAsync(owner, player.VisualizerOptions, player.SelectedVisualizer, player);
+        if (selected is not null) player.ApplyVisualizerChoice(selected);
+    }
+
 public NowPlayingView()
     {
         InitializeComponent();

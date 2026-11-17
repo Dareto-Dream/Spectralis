@@ -209,10 +209,11 @@
                                           AlbumArtBytes="{Binding CoverArtBytes}"
                                           ShowPeaks="{Binding PeakHold}"
                                           Sensitivity="{Binding VisualizerSensitivity}"
+                                          Appearance="{Binding VisualizerAppearance}"
                                           ScriptedRenderer="{Binding ScriptedVisualizerOverride}" />
           <TextBlock x:Name="VisualizerNameLabel"
                      Text="{Binding SelectedVisualizer.Label}"
-                     IsVisible="{Binding !IsVisualizerFullscreen}"
+                     IsVisible="{Binding ShowVisualizerName}"
                      HorizontalAlignment="Left" VerticalAlignment="Bottom"
                      Margin="8,0,0,6" FontSize="10" LetterSpacing="0.5"
                      Opacity="0.30" Foreground="{StaticResource Brush.Ink.Secondary}"
@@ -464,16 +465,14 @@
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
                       VerticalAlignment="Bottom" Margin="12,0,0,4"
                       IsVisible="{Binding ShowVisualizerControls}">
-            <Button Classes="ghost" Content="Fullscreen" Click="OnFullscreenVisualizer" ToolTip.Tip="Fullscreen visualizer (F11); Esc returns to the page" />
+            <Button Classes="ghost" Content="Fullscreen" Click="OnFullscreenVisualizer" ToolTip.Tip="Fullscreen (F11)" />
             <Button Classes="ghost" Content="‹"
                     Command="{Binding PreviousVisualizerCommand}"
                     IsEnabled="{Binding !IsVisualizerLocked}"
                     ToolTip.Tip="Previous visualizer" />
-            <ComboBox ItemsSource="{Binding VisualizerOptions}"
-                      SelectedItem="{Binding SelectedVisualizer}"
-                      IsEnabled="{Binding !IsVisualizerLocked}"
-                      MinWidth="140"
-                      ToolTip.Tip="Choose visualizer" />
+            <Button Content="{Binding SelectedVisualizer.Label}"
+                    Click="OnBrowseVisualizers" MinWidth="140"
+                    IsEnabled="{Binding !IsVisualizerLocked}" ToolTip.Tip="Browse visualizers" />
             <Button Classes="ghost" Content="›"
                     Command="{Binding NextVisualizerCommand}"
                     IsEnabled="{Binding !IsVisualizerLocked}"

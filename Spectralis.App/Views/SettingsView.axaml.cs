@@ -14,6 +14,15 @@ public partial class SettingsView : UserControl
         InitializeComponent();
     }
 
+    private async void OnChooseDefaultVisualizer(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel settings || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var selected = await VisualizerPickerWindow.ChooseAsync(owner,
+            settings.VisualizerOptions.Where(o => o.Script is null && o.Installed is null),
+            settings.SelectedDefaultVisualizer, settings.VisualizerPlayer, "Set app default");
+        if (selected is not null) settings.SelectedDefaultVisualizer = selected;
+    }
+
     private void OnRefreshOutputDevices(object? sender, RoutedEventArgs e) =>
         (DataContext as SettingsViewModel)?.RefreshOutputDevices();
 

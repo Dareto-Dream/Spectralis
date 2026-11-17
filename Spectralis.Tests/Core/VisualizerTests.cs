@@ -224,10 +224,8 @@ public class VisualizerRendererTests
     [Fact]
     public void Catalog_RegistersAllImplementedVisualizers()
     {
-        // Without a GPU source only the 16 CPU visualizers are selectable; the 3 GPU ones are registered
-        // (so a saved GPU mode still resolves and renders via its CPU fallback) but hidden.
-        Assert.Equal(16, VisualizerCatalog.All.Count);
-        Assert.Equal(19, VisualizerCatalog.AllRegistered.Count);
+        Assert.Equal(20, VisualizerCatalog.All.Count);
+        Assert.Equal(VisualizerCatalog.All, VisualizerCatalog.AllRegistered);
 
         // Legacy stub modes intentionally ship without renderers, mirroring WinForms.
         VisualizerMode[] stubs =
@@ -237,6 +235,9 @@ public class VisualizerRendererTests
             VisualizerMode.BounceBars,
             VisualizerMode.CircularEq,
             VisualizerMode.BlockGrid,
+            VisualizerMode.GpuBars,
+            VisualizerMode.GpuRadial,
+            VisualizerMode.GpuTunnel,
         ];
         Assert.All(
             Enum.GetValues<VisualizerMode>().Except(stubs),

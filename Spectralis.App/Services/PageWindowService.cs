@@ -32,6 +32,7 @@ public sealed class PageWindowService(ContentControl dock, object shell, Func<ob
                 Spacing = 16, Children = { new TextBlock { Text = _title + " is open in another window", FontSize = 20 }, focus, restore } };
         }
         else dock.Content = View(_current);
+        if (dock.Content is Control revealed) AppMotionService.Reveal(revealed);
     }
     public PageWindow? PopOutCurrent()
     {

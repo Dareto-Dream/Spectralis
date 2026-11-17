@@ -39,15 +39,18 @@ public abstract class VisualizerRendererBase : IVisualizerRenderer
         }
     }
 
-    protected static void DrawHud(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
+    protected static void DrawHud(IVizCanvas canvas, VizRect bounds, VisualizerScene scene, bool darkSurface = false)
     {
+        if (!scene.Appearance.ShowHud) return;
+        var labelColor = darkSurface ? VizColor.FromRgb(240, 242, 248) : scene.Theme.HudLabelColor;
+        var infoColor = darkSurface ? VizColor.FromRgb(177, 186, 205) : scene.Theme.HudInfoColor;
         var hudBounds = new VizRect(bounds.Left + 18, bounds.Top + 14, bounds.Width - 36, 40);
         const float meterWidth = 120;
         const float meterHeight = 8;
         var meterRect = new VizRect(hudBounds.Right - meterWidth, hudBounds.Top + 12, meterWidth, meterHeight);
 
-        canvas.DrawText(scene.ModeLabel, new VizRect(hudBounds.Left, hudBounds.Top, 240, 16), scene.Theme.HudLabelColor, 12, VizTextAlign.Left);
-        canvas.DrawText(scene.IsActive ? "Live" : "Idle", new VizRect(hudBounds.Left, hudBounds.Top + 18, 240, 16), scene.Theme.HudInfoColor, 12, VizTextAlign.Left);
+        canvas.DrawText(scene.ModeLabel, new VizRect(hudBounds.Left, hudBounds.Top, 240, 16), labelColor, 12, VizTextAlign.Left);
+        canvas.DrawText(scene.IsActive ? "Live" : "Idle", new VizRect(hudBounds.Left, hudBounds.Top + 18, 240, 16), infoColor, 12, VizTextAlign.Left);
 
         canvas.FillRect(meterRect, new VizColor(42, 255, 245, 230));
         canvas.FillRectGradientH(
@@ -57,7 +60,7 @@ public abstract class VisualizerRendererBase : IVisualizerRenderer
         canvas.DrawText(
             $"Peak {(int)(Math.Clamp(scene.PeakLevel, 0, 1) * 100)}%",
             new VizRect(meterRect.Left - 64, meterRect.Top - 6, 60, 16),
-            scene.Theme.HudInfoColor,
+            infoColor,
             12,
             VizTextAlign.Left);
     }

@@ -29,11 +29,14 @@ public enum VisualizerMode
     CircularEq,
     BlockGrid,
 
-    // GPU visualizers (wgpu-host viz pipeline). Appended after the legacy stubs so existing saved
-    // settings keep their meaning. They only appear in pickers while a GPU source is available.
+    // Retired proof-of-concept IDs. Keep their numeric values for saved settings.
     GpuBars,
     GpuRadial,
     GpuTunnel,
+    Wormhole,
+    Starfield,
+    Orbital,
+    Silk,
 }
 
 /// <summary>Immutable per-frame scene handed to renderers.</summary>
@@ -54,6 +57,9 @@ public sealed class VisualizerScene
     public required float AnimationPhase { get; init; }
     public required MidiNoteState[] MidiNotes { get; init; }
     public required string? MidiInstrumentName { get; init; }
+
+    public VisualizerAppearance Appearance { get; init; } = new();
+    public double MotionTimeSeconds { get; init; }
 
     // Extended audio analysis channels used by the meter/scope renderers.
     public float[] WaveformLeft { get; init; } = Array.Empty<float>();
@@ -97,6 +103,8 @@ public sealed class VisualizerSceneState
     private int _spectrogramNewestIndex;
 
     public bool ShowPeaks { get; set; } = true;
+    public VisualizerAppearance Appearance { get; set; } = new();
+    private double _motionTime;
 
     private float _sensitivity = 1f;
 
@@ -159,6 +167,9 @@ public sealed class VisualizerSceneState
 
         if (activePlayback)
         {
+            var motionScale = Appearance.ReduceMotion ? 0f : Math.Clamp(Appearance.MotionPercent, 0, 200) / 100f;
+            _motionTime += seconds * motionScale;
+            frameScale *= motionScale;
             if (mode == VisualizerMode.SpinningDisk)
             {
                 _diskAngle = (_diskAngle + 0.38f * frameScale) % 360f;
@@ -189,6 +200,7 @@ public sealed class VisualizerSceneState
         _rmsLevel = 0;
         _isActive = false;
         _diskAngle = 0;
+        _motionTime = 0;
         _animationPhase = 0;
         _playbackTimeSeconds = 0;
         _midiNotes = Array.Empty<MidiNoteState>();
@@ -208,7 +220,9 @@ public sealed class VisualizerSceneState
         new()
         {
             ModeLabel = modeLabel,
-            Theme = Palette,
+            Theme = Appearance.Apply(Palette),
+            Appearance = Appearance,
+            MotionTimeSeconds = _motionTime,
             SpectrumLevels = _spectrumLevels,
             PeakHoldLevels = _peakHoldLevels,
             WaveformPoints = _waveformPoints,

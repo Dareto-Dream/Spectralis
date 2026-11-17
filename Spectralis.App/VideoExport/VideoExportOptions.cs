@@ -15,6 +15,7 @@ public sealed class VideoExportOptions
     public IReadOnlyList<VideoExportVisualizerSelection> Visualizers { get; set; } =
         [VideoExportVisualizerSelection.BuiltIn(VisualizerMode.MirrorSpectrum)];
 
+    public VisualizerAppearance Appearance { get; set; } = new();
     public bool AutoCycle { get; set; }
     public int CycleSeconds { get; set; } = 12;
 

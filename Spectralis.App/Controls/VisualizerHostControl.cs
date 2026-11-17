@@ -39,12 +39,18 @@ public sealed class VisualizerHostControl : Control
     public static readonly StyledProperty<IVisualizerRenderer?> ScriptedRendererProperty =
         AvaloniaProperty.Register<VisualizerHostControl, IVisualizerRenderer?>(nameof(ScriptedRenderer));
 
+    public static readonly StyledProperty<VisualizerAppearance> AppearanceProperty =
+        AvaloniaProperty.Register<VisualizerHostControl, VisualizerAppearance>(nameof(Appearance), new());
+    public VisualizerAppearance Appearance { get => GetValue(AppearanceProperty); set => SetValue(AppearanceProperty, value); }
+
     private readonly VisualizerSceneState _sceneState = new();
     private Action<TimeSpan>? _animationFrame;
     private TopLevel? _animationTopLevel;
     private TimeSpan? _previousFrame;
     private int _animationGeneration;
     private byte[]? _decodedArtBytes;
+    private IVisualizerRenderer? _builtinRenderer;
+    private VisualizerMode _builtinMode;
 
     public VisualizerHostControl()
     {
@@ -62,7 +68,7 @@ public sealed class VisualizerHostControl : Control
             ++_animationGeneration;
             _animationTopLevel = null;
             _animationFrame = null;
-            ReleaseArtwork(); _sceneState.Clear(); _ownScriptRenderer = null;
+            ReleaseArtwork(); _sceneState.Clear(); _ownScriptRenderer = null; _builtinRenderer = null;
         };
     }
 
@@ -128,7 +134,7 @@ public sealed class VisualizerHostControl : Control
         if (!(source?.HasAudio ?? (engine!.IsLoaded || hasExternalSource)))
         {
             // Snap to blank immediately on session reset rather than holding the last frozen frame.
-            ReleaseArtwork(); _sceneState.Clear();
+            ReleaseArtwork(); _sceneState.Clear(); _builtinRenderer = null;
             InvalidateVisual();
             return;
         }
@@ -141,6 +147,7 @@ public sealed class VisualizerHostControl : Control
         }
 
         ApplyPaletteFromTokens();
+        _sceneState.Appearance = Appearance;
         _sceneState.ShowPeaks = ShowPeaks;
         _sceneState.Sensitivity = (float)Sensitivity;
         var preferredMode = VisualizerCatalog.GetPreferredMode(Mode, _sceneState.AlbumArt is not null);
@@ -160,6 +167,7 @@ public sealed class VisualizerHostControl : Control
 
     public override void Render(DrawingContext context)
     {
+        _sceneState.Appearance = Appearance;
         var bounds = new VizRect(0, 0, (float)Bounds.Width, (float)Bounds.Height);
         if (bounds.Width <= 0 || bounds.Height <= 0)
             return;
@@ -177,7 +185,12 @@ public sealed class VisualizerHostControl : Control
 
         var definition = VisualizerCatalog.GetDefinition(
             VisualizerCatalog.GetPreferredMode(Mode, _sceneState.AlbumArt is not null));
-        definition.Renderer.Draw(canvas, bounds, _sceneState.CreateScene(definition.Label));
+        if (_builtinRenderer is null || _builtinMode != definition.Mode)
+        {
+            _builtinRenderer = VisualizerCatalog.CreateRenderer(definition.Mode);
+            _builtinMode = definition.Mode;
+        }
+        _builtinRenderer.Draw(canvas, bounds, _sceneState.CreateScene(definition.Label));
     }
 
     private void ApplyPaletteFromTokens()

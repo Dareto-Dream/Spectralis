@@ -1,60 +1,65 @@
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
+using Spectralis.App.Controls;
 using Spectralis.App.ViewModels;
 using Spectralis.Core.Playlists;
 
 namespace Spectralis.App.Views;
 
-/// <summary>Picks a playlist's default visualizer from the same option list NowPlayingViewModel
-/// already builds (catalog + scripted + installed). Mirrors PlaylistPickerWindow's minimal style.</summary>
 public partial class VisualizerPickerWindow : Window
 {
     private bool _confirmed;
-    private VisualizerRef? _result;
-
+    private VisualizerOption? _selection;
     public VisualizerPickerWindow()
     {
         InitializeComponent();
+        Preview.FrameSource = new VisualizerDemoSource();
+        Preview.Appearance = new() { ShowHud = false };
     }
 
-    /// <summary>Confirmed is false on cancel (no change intended). Confirmed true with a null
-    /// Result means "Clear" was pressed — the playlist should stop having a default visualizer.</summary>
+    public static async Task<VisualizerOption?> ChooseAsync(Window owner, IEnumerable<VisualizerOption> options,
+        VisualizerOption selected, NowPlayingViewModel? player = null, string action = "Use visualizer")
+    {
+        var window = new VisualizerPickerWindow { DataContext = new VisualizerGalleryViewModel(options, selected, player?.CoverArtBytes) };
+        window.ClearButton.IsVisible = false;
+        window.ApplyButton.Content = action;
+        if (player is not null)
+        {
+            window.Preview.Appearance = player.VisualizerAppearance with { ShowHud = false };
+            window.Preview.Sensitivity = player.VisualizerSensitivity;
+            window.Preview.ShowPeaks = player.PeakHold;
+            window.Preview.AlbumArtBytes = player.CoverArtBytes;
+            if (player.Engine.IsPlaying || player.VisualizationSource?.IsPlaying == true)
+            {
+                window.Preview.FrameSource = player.VisualizationSource;
+                window.Preview.Engine = player.Engine;
+                window.PreviewSourceLabel.Text = "Live audio preview";
+            }
+        }
+        await window.ShowDialog(owner);
+        return window._confirmed ? window._selection : null;
+    }
+
     public static async Task<(bool Confirmed, VisualizerRef? Result)> PromptAsync(Window owner, IEnumerable<VisualizerOption> options)
     {
-        var window = new VisualizerPickerWindow();
-        window.OptionList.ItemsSource = options.ToList();
+        var window = new VisualizerPickerWindow { DataContext = new VisualizerGalleryViewModel(options) };
+        window.ApplyButton.Content = "Set playlist default";
         await window.ShowDialog(owner);
-        return (window._confirmed, window._result);
+        return (window._confirmed, window._selection is { } option ? ToVisualizerRef(option) : null);
     }
 
     private void OnSet(object? sender, RoutedEventArgs e)
     {
-        if (OptionList.SelectedItem is VisualizerOption option)
-        {
-            _result = ToVisualizerRef(option);
-            _confirmed = true;
-            Close();
-        }
-    }
-
-    private void OnClear(object? sender, RoutedEventArgs e)
-    {
-        _result = null;
+        if (DataContext is not VisualizerGalleryViewModel { SelectedVariant: { } option, IsEmpty: false }) return;
+        _selection = option;
         _confirmed = true;
         Close();
     }
-
+    private void OnClear(object? sender, RoutedEventArgs e) { _selection = null; _confirmed = true; Close(); }
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
-
-    private void OnListDoubleTapped(object? sender, TappedEventArgs e) => OnSet(sender, e);
-
     private static VisualizerRef ToVisualizerRef(VisualizerOption option) => new()
     {
-        Kind = option.Script is not null ? VisualizerRefKind.Scripted
-            : option.Installed is not null ? VisualizerRefKind.Installed
-            : VisualizerRefKind.Catalog,
-        Mode = option.Mode,
-        Id = option.Script?.Id ?? option.Installed?.Id,
+        Kind = option.Script is not null ? VisualizerRefKind.Scripted : option.Installed is not null ? VisualizerRefKind.Installed : VisualizerRefKind.Catalog,
+        Mode = option.Mode, Id = option.Script?.Id ?? option.Installed?.Id,
     };
 }

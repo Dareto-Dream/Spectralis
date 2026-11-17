@@ -1960,7 +1960,7 @@ public sealed class SettingsViewModel : ViewModelBase
             .Select(style => new SelectionOption<P2wBannerStyle>(P2wBannerStyleLabel(style), style))
             .ToArray();
         _selectedP2wBannerStyle = P2wBannerStyleOptions.First(option => option.Value == _settings.P2wBannerStyle);
-        _selectedDefaultVisualizer = VisualizerOptions.FirstOrDefault(option => option.Mode == _settings.DefaultVisualizer)
+        _selectedDefaultVisualizer = VisualizerOptions.FirstOrDefault(option => option.Mode == VisualizerCatalog.NormalizeMode(_settings.DefaultVisualizer))
             ?? VisualizerOptions.First(option => option.Mode == VisualizerMode.MirrorSpectrum);
         MidiInstrumentOptions = MidiPlaybackInstrumentCatalog.GetOptions()
             .Select(option => new SelectionOption<MidiPlaybackInstrument>(option.Label, option.Value))
@@ -1972,6 +1972,13 @@ public sealed class SettingsViewModel : ViewModelBase
         {
             switch (e.PropertyName)
             {
+                case nameof(NowPlayingViewModel.VisualizerAppearance):
+                    this.RaisePropertyChanged(nameof(VisualizerMotionPercent));
+                    this.RaisePropertyChanged(nameof(VisualizerDetail));
+                    this.RaisePropertyChanged(nameof(VisualizerColorway));
+                    this.RaisePropertyChanged(nameof(VisualizerShowHud));
+                    this.RaisePropertyChanged(nameof(VisualizerReduceMotion));
+                    break;
                 case nameof(NowPlayingViewModel.PeakHold):
                 case nameof(NowPlayingViewModel.VisualizerSensitivityPercent):
                 case nameof(NowPlayingViewModel.AutoCycleVisualizers):
@@ -2174,6 +2181,19 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    public bool EnableInterfaceAnimations
+    {
+        get => _settings.EnableInterfaceAnimations;
+        set
+        {
+            if (_settings.EnableInterfaceAnimations == value) return;
+            _settings.EnableInterfaceAnimations = value;
+            AppSettingsStore.Save(_settings);
+            AppMotionService.Apply(value);
+            this.RaisePropertyChanged();
+        }
+    }
+
     public VisualizerOption SelectedDefaultVisualizer
     {
         get => _selectedDefaultVisualizer;
@@ -2213,6 +2233,35 @@ public sealed class SettingsViewModel : ViewModelBase
             this.RaisePropertyChanged();
             this.RaisePropertyChanged(nameof(VisualizerSensitivityText));
         }
+    }
+
+    public NowPlayingViewModel VisualizerPlayer => _nowPlaying;
+    public IReadOnlyList<VisualizerDetail> VisualizerDetailOptions { get; } = Enum.GetValues<VisualizerDetail>();
+    public IReadOnlyList<VisualizerColorway> VisualizerColorwayOptions { get; } = Enum.GetValues<VisualizerColorway>();
+    public int VisualizerMotionPercent
+    {
+        get => _nowPlaying.VisualizerAppearance.MotionPercent;
+        set => _nowPlaying.VisualizerAppearance = _nowPlaying.VisualizerAppearance with { MotionPercent = value };
+    }
+    public VisualizerDetail VisualizerDetail
+    {
+        get => _nowPlaying.VisualizerAppearance.Detail;
+        set => _nowPlaying.VisualizerAppearance = _nowPlaying.VisualizerAppearance with { Detail = value };
+    }
+    public VisualizerColorway VisualizerColorway
+    {
+        get => _nowPlaying.VisualizerAppearance.Colorway;
+        set => _nowPlaying.VisualizerAppearance = _nowPlaying.VisualizerAppearance with { Colorway = value };
+    }
+    public bool VisualizerShowHud
+    {
+        get => _nowPlaying.VisualizerAppearance.ShowHud;
+        set => _nowPlaying.VisualizerAppearance = _nowPlaying.VisualizerAppearance with { ShowHud = value };
+    }
+    public bool VisualizerReduceMotion
+    {
+        get => _nowPlaying.VisualizerAppearance.ReduceMotion;
+        set => _nowPlaying.VisualizerAppearance = _nowPlaying.VisualizerAppearance with { ReduceMotion = value };
     }
 
     public string VisualizerSensitivityText => _nowPlaying.VisualizerSensitivityText;
