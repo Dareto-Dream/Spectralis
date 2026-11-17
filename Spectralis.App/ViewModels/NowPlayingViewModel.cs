@@ -4674,6 +4674,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        RemoteAudioCache.TryDelete(sessionQueue?.TemporaryPath);
         if (_mixSource is not null) _mixSource.PropertyChanged -= OnMixSourceChanged;
         FlushResume(finished: false);
         _resumeFlushTimer?.Stop();

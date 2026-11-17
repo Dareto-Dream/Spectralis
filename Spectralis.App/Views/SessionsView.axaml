@@ -1,0 +1,166 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Spectralis.App.ViewModels" xmlns:views="using:Spectralis.App.Views"
+             x:Class="Spectralis.App.Views.SessionsView" x:DataType="vm:SessionsViewModel">
+  <UserControl.Styles>
+    <Style Selector="Expander /template/ ToggleButton"><Setter Property="HorizontalContentAlignment" Value="Left" /></Style>
+  </UserControl.Styles>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource Brush.Bg.Base}">
+    <StackPanel Margin="24" Spacing="20">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="5">
+          <TextBlock Text="Sessions" FontSize="28" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding PlaybackStatus}" Classes="secondary" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Content="Start session" Command="{Binding StartCommand}" IsVisible="{Binding !Active}" Classes="accent" />
+          <Button Content="End session" Command="{Binding StopCommand}" IsVisible="{Binding Active}" />
+        </StackPanel>
+      </Grid>
+      <StackPanel Spacing="10" IsVisible="{Binding !Active}">
+        <WrapPanel>
+          <TextBox Text="{Binding JoinCode}" Watermark="Room code" AutomationProperties.Name="Room code" Width="190" Margin="0,0,8,8" />
+          <Button Content="Join session" Command="{Binding JoinCommand}" Margin="0,0,8,8" />
+          <CheckBox Content="Use my saved Ward room" IsChecked="{Binding Listening.UseSavedRoom}" IsVisible="{Binding Account.Connected}" />
+        </WrapPanel>
+      </StackPanel>
+      <WrapPanel IsVisible="{Binding Active}">
+        <Button Content="Copy listening invite" Command="{Binding Listening.CopyLinkCommand}" Margin="0,0,8,8" />
+        <Button Content="Copy request link" Command="{Binding Requests.CopySubmitUrlCommand}" Margin="0,0,8,8" IsVisible="{Binding Requests.HasRoom}" />
+        <TextBlock Text="{Binding Listening.ListenerCount, StringFormat='{}{0} listening'}" VerticalAlignment="Center" Margin="6,0,8,8" Classes="secondary" />
+        <TextBlock Text="{Binding Listening.StatusText}" VerticalAlignment="Center" Margin="6,0,8,8" Classes="secondary" />
+      </WrapPanel>
+      <StackPanel IsVisible="{Binding Listening.IsJoined}" Spacing="8">
+        <TextBlock Text="{Binding Listening.JoinedStatusText}" />
+        <WrapPanel>
+          <Button Content="Play / pause" Command="{Binding Listening.JoinPlayPauseCommand}" IsVisible="{Binding Listening.JoinedCanControl}" Margin="0,0,8,0" />
+          <Button Content="Vote skip" Command="{Binding Listening.JoinVoteSkipCommand}" Margin="0,0,8,0" />
+          <Button Content="Leave session" Command="{Binding Listening.LeaveJoinCommand}" />
+        </WrapPanel>
+      </StackPanel>
+      <TextBlock Text="{Binding Status}" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Signal}" />
+      <TextBlock Text="{Binding Listening.LastError}" IsVisible="{Binding Listening.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Classes="secondary" />
+      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Active}">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding Player.Title}" FontSize="18" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding Player.Artist}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Button Grid.Column="1" Content="Play / pause" Command="{Binding Player.PlayPauseCommand}" VerticalAlignment="Center" />
+      </Grid>
+      <Border Height="1" Background="{DynamicResource Brush.Border}" />
+      <Grid x:Name="Workbench" ColumnDefinitions="*,28,*" RowDefinitions="Auto,Auto">
+        <StackPanel x:Name="RoundPanel" Spacing="12">
+          <TextBlock Text="Requests stay open during rounds. Listening resumes between matches." TextWrapping="Wrap" Classes="secondary" IsVisible="{Binding RoundActive}" />
+          <views:SongWarsView x:Name="CompetitionView" DataContext="{Binding Competition}" />
+        </StackPanel>
+        <StackPanel x:Name="InboxPanel" Grid.Column="2" Spacing="12">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Requests" FontSize="20" FontWeight="SemiBold" />
+            <Button Grid.Column="1" Content="{Binding Requests.AcceptingToggleLabel}" Command="{Binding Requests.ToggleAcceptingCommand}" IsVisible="{Binding Requests.HasRoom}" Classes="ghost" />
+          </Grid>
+          <StackPanel Spacing="8" IsVisible="{Binding !HasRequests}">
+            <TextBlock Text="No requests yet." FontSize="16" />
+            <TextBlock Text="Start a session and share the request link. Approved tracks can join the listening queue or enter Song Wars." Classes="secondary" TextWrapping="Wrap" />
+          </StackPanel>
+          <ItemsControl ItemsSource="{Binding Inbox}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SessionRequestViewModel">
+                <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Brush.Border}" Padding="0,10">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Artist}" Classes="secondary" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Sender, StringFormat='From {0}'}" Classes="secondary" />
+                    <WrapPanel>
+                      <Button Content="Approve" Command="{Binding ApproveCommand}" IsVisible="{Binding Pending}" Margin="0,0,6,6" />
+                      <Button Content="Play / queue" Command="{Binding PlayCommand}" IsVisible="{Binding !Pending}" Margin="0,0,6,6" ToolTip.Tip="Waits while a round is playing." />
+                      <Button Content="Enter Song Wars" Command="{Binding CompeteCommand}" IsVisible="{Binding !Pending}" Margin="0,0,6,6" />
+                      <Button Content="Remove" Command="{Binding RemoveCommand}" Classes="ghost" Margin="0,0,6,6" />
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Spacing="8" IsVisible="{Binding Requests.HasRoom}">
+            <TextBox Text="{Binding Requests.AddToQueueUrl}" Watermark="Add a track link" AutomationProperties.Name="Track link" />
+            <Button Content="Add request" Command="{Binding Requests.AddToQueueCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+          <TextBlock Text="{Binding Requests.StatusText}" IsVisible="{Binding Requests.StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="secondary" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Requests.LastError}" IsVisible="{Binding Requests.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="secondary" TextWrapping="Wrap" />
+          <Button Content="Reconnect requests" Command="{Binding RetryRequestsCommand}" IsVisible="{Binding Active}" HorizontalAlignment="Left" Classes="ghost" />
+        </StackPanel>
+      </Grid>
+      <Border Height="1" Background="{DynamicResource Brush.Border}" />
+      <Expander Header="Session controls" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="12">
+          <WrapPanel>
+            <CheckBox Content="Listeners can add tracks" IsChecked="{Binding Listening.ListenersCanQueue}" Margin="0,0,20,8" />
+            <CheckBox Content="Listeners can control playback" IsChecked="{Binding Listening.ListenersCanControlPlayback}" Margin="0,0,20,8" />
+            <CheckBox Content="Audio uploads" IsChecked="{Binding Listening.ListenersCanUploadAudio}" Margin="0,0,20,8" />
+            <CheckBox Content="Vote to skip" IsChecked="{Binding Listening.VoteSkipEnabled}" Margin="0,0,20,8" />
+          </WrapPanel>
+          <ItemsControl ItemsSource="{Binding Listening.Members}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SharedPlayMemberVm">
+                <WrapPanel Margin="0,3">
+                  <TextBlock Text="{Binding Name}" Width="160" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding RoleLabel}" Width="90" VerticalAlignment="Center" Classes="secondary" />
+                  <Button Content="Make co-DJ" Command="{Binding PromoteCommand}" IsVisible="{Binding CanPromote}" Margin="0,0,8,0" />
+                  <Button Content="Make listener" Command="{Binding DemoteCommand}" IsVisible="{Binding CanDemote}" Margin="0,0,8,0" />
+                  <Button Content="Remove" Command="{Binding KickCommand}" IsVisible="{Binding !IsHost}" Classes="ghost" />
+                </WrapPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <WrapPanel IsVisible="{Binding Requests.HasRoom}">
+            <CheckBox Content="Approve requests first" IsChecked="{Binding Requests.RequireApproval}" Margin="0,0,20,8" />
+            <CheckBox Content="Allow duplicates" IsChecked="{Binding Requests.AllowDuplicates}" Margin="0,0,20,8" />
+            <Button Content="Save request settings" Command="{Binding Requests.SaveSettingsCommand}" Margin="0,0,12,8" />
+            <Button Content="Link Discord" Command="{Binding Requests.LinkDiscordCommand}" Margin="0,0,12,8" />
+            <TextBlock Text="{Binding Requests.DiscordPinDisplay}" VerticalAlignment="Center" />
+          </WrapPanel>
+        </StackPanel>
+      </Expander>
+      <Expander Header="Request priorities and payments" HorizontalAlignment="Stretch" IsVisible="{Binding Requests.HasRoom}">
+        <views:SessionRequestSettingsView DataContext="{Binding Requests}" />
+      </Expander>
+      <Expander Header="Request history" HorizontalAlignment="Stretch" IsVisible="{Binding Requests.HasRoom}">
+        <StackPanel Spacing="12">
+          <StackPanel DataContext="{Binding Requests.NowPlayingItem}" x:DataType="vm:SqItemVm" Spacing="6">
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+            <WrapPanel>
+              <Button Content="Mark played" Command="{Binding MarkPlayedCommand}" Margin="0,0,8,0" />
+              <Button Content="Mark skipped" Command="{Binding MarkSkippedCommand}" />
+            </WrapPanel>
+          </StackPanel>
+          <ItemsControl ItemsSource="{Binding Requests.HistoryItems}">
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:SqItemVm">
+              <Grid ColumnDefinitions="*,Auto" Margin="0,5">
+                <StackPanel><TextBlock Text="{Binding Title}" /><TextBlock Text="{Binding StatusLabel}" Classes="secondary" /></StackPanel>
+                <Button Grid.Column="1" Content="Return to requests" Command="{Binding MarkNotPlayedCommand}" />
+              </Grid>
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Expander>
+      <Expander Header="Ward account" HorizontalAlignment="Stretch" IsVisible="{Binding Account.Available}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Save preferences across devices and manage your saved rooms." Classes="secondary" TextWrapping="Wrap" />
+          <Button Content="Connect Ward" Command="{Binding Account.ConnectCommand}" IsVisible="{Binding !Account.Connected}" HorizontalAlignment="Left" />
+          <Button Content="Cancel sign-in" Command="{Binding Account.CancelCommand}" IsVisible="{Binding Account.Busy}" HorizontalAlignment="Left" />
+          <StackPanel Spacing="8" IsVisible="{Binding Account.Connected}">
+            <TextBlock Text="{Binding Account.Name}" FontWeight="SemiBold" />
+            <WrapPanel>
+              <Button Content="Save settings to Ward" Command="{Binding Account.SaveCommand}" Margin="0,0,8,8" />
+              <Button Content="Restore saved settings" Command="{Binding Account.RestoreCommand}" Margin="0,0,8,8" />
+              <Button Content="Manage room" Command="{Binding Listening.ManageRoomCommand}" Margin="0,0,8,8" />
+              <Button Content="Save request room" Command="{Binding Requests.LinkWardQueueCommand}" IsVisible="{Binding Requests.HasRoom}" Margin="0,0,8,8" />
+              <Button Content="Sign out" Command="{Binding Account.DisconnectCommand}" Classes="ghost" Margin="0,0,8,8" />
+            </WrapPanel>
+            <TextBlock Text="Restoring replaces appearance and playback preferences on this device. Restart to apply all changes." Classes="secondary" TextWrapping="Wrap" />
+          </StackPanel>
+          <TextBlock Text="{Binding Account.Status}" IsVisible="{Binding Account.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Classes="secondary" />
+        </StackPanel>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
