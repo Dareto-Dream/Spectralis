@@ -3,6 +3,10 @@
              x:Class="Spectralis.App.Views.SongWarsView" x:DataType="vm:SongWarsViewModel">
   <UserControl.Styles>
     <Style Selector="Expander /template/ ToggleButton"><Setter Property="HorizontalContentAlignment" Value="Left" /></Style>
+    <Style Selector="Expander /template/ ToggleButton:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Ink.Primary}" />
+    </Style>
   </UserControl.Styles>
   <Grid x:Name="ContentHost">
     <Grid x:Name="MainContentGrid">

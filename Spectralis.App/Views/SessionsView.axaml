@@ -3,6 +3,10 @@
              x:Class="Spectralis.App.Views.SessionsView" x:DataType="vm:SessionsViewModel">
   <UserControl.Styles>
     <Style Selector="Expander /template/ ToggleButton"><Setter Property="HorizontalContentAlignment" Value="Left" /></Style>
+    <Style Selector="Expander /template/ ToggleButton:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Ink.Primary}" />
+    </Style>
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource Brush.Bg.Base}">
     <StackPanel Margin="24" Spacing="20">
@@ -42,7 +46,8 @@
       <TextBlock Text="{Binding Listening.LastError}" IsVisible="{Binding Listening.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Classes="secondary" />
       <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Active}">
         <StackPanel Spacing="4">
-          <TextBlock Text="{Binding Player.Title}" FontSize="18" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding Player.Title}" FontSize="18" TextTrimming="CharacterEllipsis" IsVisible="{Binding Player.HasTrackOrAlbumWorld}" />
+          <TextBlock Text="Choose a track or play a request to begin." Classes="secondary" IsVisible="{Binding !Player.HasTrackOrAlbumWorld}" />
           <TextBlock Text="{Binding Player.Artist}" Classes="secondary" TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <Button Grid.Column="1" Content="Play / pause" Command="{Binding Player.PlayPauseCommand}" VerticalAlignment="Center" />

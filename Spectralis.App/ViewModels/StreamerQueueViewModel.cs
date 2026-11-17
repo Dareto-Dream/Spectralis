@@ -389,7 +389,7 @@ public sealed partial class StreamerQueueViewModel : ViewModelBase, IDisposable
         private set { this.RaiseAndSetIfChanged(ref _acceptingSubmissions, value); this.RaisePropertyChanged(nameof(AcceptingToggleLabel)); }
     }
 
-    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close Queue" : "Reopen Queue";
+    public string AcceptingToggleLabel => AcceptingSubmissions ? "Close requests" : "Open requests";
 
     public bool RequireApproval
     {
