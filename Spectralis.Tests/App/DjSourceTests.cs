@@ -22,6 +22,70 @@ public sealed class DjSourceTests : IDisposable
     private DjViewModel Model(IDjSourceService sources) => new(new() { UpdateChannel = "beta", DjModeEnabled = true },
         mixer: new(new FakeAudioDeviceEnumerator()), cues: new(Path.Combine(_root, "cues.json")), saveSettings: () => { }, sources: sources);
 
+    private const string SpotifyId = "4cOdK2wGLETKBW3PvgPWqT";
+    private const string SpotifyUrl = "https://open.spotify.com/track/" + SpotifyId;
+
+    [Fact]
+    public async Task Matched_spotify_audio_loads_both_seekable_decks_without_deleting_the_shared_cache()
+    {
+        var audio = Audio(); var matches = 0; var deletes = 0;
+        var service = new DjSourceService((_, _) => throw new Exception("No SDK or URL lookup needed"),
+            release: _ => deletes++, matchupEnabled: () => true, matchup: (id, known, status, ct) =>
+            {
+                matches++; Assert.Equal(SpotifyId, id);
+                Assert.Equal("Track", known?.Title); Assert.Equal(1000, known?.DurationMs);
+                return Task.FromResult<RemoteAudioResolveResult?>(Result(audio, RemoteAudioServiceKind.Spotify)
+                    with { SourceUrl = SpotifyUrl, Title = "Matched title", Artist = "Matched artist" });
+            });
+        using var vm = Model(service);
+        await vm.DeckA.LoadSourcesAsync([new(SpotifyUrl, Title: "Track", Artist: "Artist", DurationMs: 1000)]);
+        await vm.DeckB.LoadSourcesAsync([new("spotify:track:" + SpotifyId, audio, "Matched title", "Matched artist", "Spotify")]);
+        Assert.True(vm.DeckA.HasTrack); Assert.True(vm.DeckB.HasTrack);
+        Assert.Equal(1, matches); Assert.Equal(0, deletes); Assert.True(File.Exists(audio));
+        Assert.Equal("Matched title", vm.DeckA.Title);
+        Assert.Equal("Spotify / YouTube match", vm.DeckA.SourceLabel);
+        Assert.Equal(SpotifyUrl, vm.Mixer.GetDeck(0).Path);
+        vm.Mixer.Seek(1, .5); vm.Mixer.Transport(1, DjTransport.PlayPause);
+        var buffer = new float[4800]; vm.Mixer.Read(buffer, 0, buffer.Length);
+        Assert.Contains(buffer, sample => Math.Abs(sample) > .01);
+    }
+
+    [Fact]
+    public async Task Spotify_short_link_expands_then_matches_without_downloading_sdk_audio()
+    {
+        var path = Audio();
+        var service = new DjSourceService((_, _) => Task.FromResult(Result(kind: RemoteAudioServiceKind.Spotify)
+                with { SourceUrl = SpotifyUrl, ExternalId = "spotify:track:" + SpotifyId }),
+            matchupEnabled: () => true, matchup: (_, _, _, _) => Task.FromResult<RemoteAudioResolveResult?>(Result(path, RemoteAudioServiceKind.Spotify)));
+        using var source = await service.PrepareAsync(new("https://spotify.link/short"), null, default);
+        Assert.Equal(SpotifyUrl, source.Identity); Assert.Equal(path, source.Path);
+    }
+
+    [Fact]
+    public async Task Spotify_context_links_and_failed_matches_never_fall_back_to_the_sdk()
+    {
+        var service = new DjSourceService((_, _) => throw new Exception("No account fallback"),
+            matchupEnabled: () => true, matchup: (_, _, _, _) => Task.FromResult<RemoteAudioResolveResult?>(null));
+        var context = await Assert.ThrowsAsync<NotSupportedException>(() => service.PrepareAsync(new("spotify:playlist:" + SpotifyId), null, default));
+        Assert.Contains("one Spotify track", context.Message);
+        var failed = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PrepareAsync(new(SpotifyUrl), null, default));
+        Assert.Contains("No matching YouTube audio", failed.Message);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_spotify_deck_load_does_not_delete_the_matchup_cache()
+    {
+        var path = Audio(); using var cancellation = new CancellationTokenSource();
+        var service = new DjSourceService(release: _ => throw new Exception("Borrowed cache must survive"),
+            matchupEnabled: () => true, matchup: (_, _, _, _) =>
+            {
+                cancellation.Cancel();
+                return Task.FromResult<RemoteAudioResolveResult?>(Result(path, RemoteAudioServiceKind.Spotify));
+            });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.PrepareAsync(new(SpotifyUrl), null, cancellation.Token));
+        Assert.True(File.Exists(path));
+    }
+
     [Theory]
     [InlineData("https://open.spotify.com/track/123")]
     [InlineData("https://spotify.link/test")]
@@ -30,9 +94,9 @@ public sealed class DjSourceTests : IDisposable
     public async Task Spotify_is_rejected_before_network_or_cache_access(string url)
     {
         var calls = 0;
-        var service = new DjSourceService((_, _) => { calls++; throw new Exception("Network must not run"); });
+        var service = new DjSourceService((_, _) => { calls++; throw new Exception("Network must not run"); }, matchupEnabled: () => false);
         var error = await Assert.ThrowsAsync<NotSupportedException>(() => service.PrepareAsync(new(url, Audio()), null, default));
-        Assert.Contains("Coming soon", error.Message); Assert.Equal(0, calls);
+        Assert.Equal(DjSourceService.SpotifyMessage, error.Message); Assert.Equal(0, calls);
     }
 
     [Fact]
@@ -151,7 +215,7 @@ public sealed class DjSourceTests : IDisposable
         await started.Task; Assert.True(vm.DeckA.Busy); vm.DeckA.CancelLoad(); await loading;
         Assert.False(vm.DeckA.Busy); Assert.Equal(path, vm.Mixer.GetDeck(0).Path);
         await vm.DeckA.LoadFilesAsync(["https://open.spotify.com/track/test"]);
-        Assert.Contains("Coming soon", vm.Status); Assert.Equal(path, vm.Mixer.GetDeck(0).Path);
+        Assert.Contains("Enable Spotify matchup", vm.Status); Assert.Equal(path, vm.Mixer.GetDeck(0).Path);
     }
 
     [Fact]

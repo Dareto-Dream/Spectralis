@@ -509,15 +509,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             Dj.Status = "Choose Track in Now Playing to load that track, or load a file or URL directly into a deck.";
             return Task.CompletedTask;
         }
-        var remote = NowPlaying.CurrentRemoteAudio;
-        var path = NowPlaying.CurrentTrackPath;
-        if (NowPlaying.SourceLabel == "Spotify")
-            return LoadDjSourcesAsync(deck, [new DjSource("spotify:", Service: "Spotify")]);
-        if (remote is not null)
-            return LoadDjSourcesAsync(deck, [new DjSource(remote.SourceUrl, remote.IsWebViewFallback() ? null : path,
-                NowPlaying.Title, NowPlaying.Artist, remote.ServiceLabel)]);
-        if (path is not null)
-            return LoadDjSourcesAsync(deck, [new DjSource(path, Title: NowPlaying.Title, Artist: NowPlaying.Artist)]);
+        if (NowPlaying.GetCurrentDjSource() is { } source)
+            return LoadDjSourcesAsync(deck, [source]);
         Dj.Status = "Open a track in Now Playing first, or load a file or URL directly into a deck.";
         return Task.CompletedTask;
     }

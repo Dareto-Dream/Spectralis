@@ -45,6 +45,10 @@ public sealed class SpotifyMatchupPlaybackTests
             Assert.Equal(audio, engine.CurrentTrack?.SourcePath);
             Assert.Equal("Spotify title", vm.Title);
             Assert.Equal("Spotify artist", vm.Artist);
+            var djSource = vm.GetCurrentDjSource();
+            Assert.Equal(audio, djSource?.CachedPath);
+            Assert.Equal($"https://open.spotify.com/track/{TrackId}", djSource?.Reference);
+            Assert.Equal("Spotify title", djSource?.Title);
 
             await vm.LoadTrackAsync(fixture);
             Assert.True(File.Exists(audio));
@@ -58,6 +62,32 @@ public sealed class SpotifyMatchupPlaybackTests
             File.Delete(fixture);
             foreach (var file in Directory.EnumerateFiles(cacheRoot)) File.Delete(file);
             Directory.Delete(cacheRoot);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_beta_match_reports_an_error_without_requiring_the_spotify_host(bool queue)
+    {
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "spectralis-unmatched-" + Guid.NewGuid().ToString("N"));
+        var wasEnabled = BetaFeatures.SpotifyMatchup;
+        try
+        {
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = true });
+            var service = new SpotifyMatchupService(cacheRoot, () => null, null, null, null);
+            using var engine = new AudioEngine(new FakeAudioDeviceEnumerator());
+            using var vm = new NowPlayingViewModel(engine, enablePositionPolling: false, spotifyMatchup: service);
+            if (queue) await vm.PlayQueueAsync([$"spotify:track:{TrackId}"], 0);
+            else await vm.LoadUrlAsync($"https://open.spotify.com/track/{TrackId}");
+            Assert.Contains(queue ? "No matching YouTube" : "Couldn't match", vm.LoadError);
+            Assert.DoesNotContain("host", vm.LoadError, StringComparison.OrdinalIgnoreCase);
+            Assert.False(vm.IsOpeningRemote);
+        }
+        finally
+        {
+            BetaFeatures.Apply(new AppSettings { UpdateChannel = "beta", SpotifyMatchupEnabled = wasEnabled });
+            if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, true);
         }
     }
 }

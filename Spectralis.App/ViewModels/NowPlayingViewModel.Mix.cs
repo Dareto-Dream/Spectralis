@@ -1,10 +1,26 @@
 using System.ComponentModel;
 using ReactiveUI;
+using Spectralis.App.Services;
 
 namespace Spectralis.App.ViewModels;
 
 public sealed partial class NowPlayingViewModel
 {
+    internal DjSource? GetCurrentDjSource()
+    {
+        if (IsMixSource) return null;
+        if (_spotifyState is { } spotify && Spectralis.Core.Integrations.Spotify.SpotifyMatchup.IsTrackId(spotify.TrackId))
+            return new($"spotify:track:{spotify.TrackId}", Title: spotify.Name, Artist: spotify.Artist,
+                Service: "Spotify", DurationMs: (int)Math.Clamp(spotify.DurationMs, 0, int.MaxValue));
+        if (CurrentRemoteAudio is { } remote)
+        {
+            var sdkAudio = remote.Kind == RemoteAudioServiceKind.Spotify && !SpotifyMatchupService.IsMatchupResult(remote);
+            return new(remote.SourceUrl, sdkAudio || remote.IsWebViewFallback() ? null : CurrentTrackPath,
+                Title, Artist, remote.ServiceLabel, (int)Math.Clamp(remote.Duration.TotalMilliseconds, 0, int.MaxValue));
+        }
+        return CurrentTrackPath is { } path ? new(path, Title: Title, Artist: Artist) : null;
+    }
+
     private DjViewModel? _mixSource;
     private static readonly string[] TrackSources = ["Track"], MixSources = ["Track", "Mix"];
     private bool _isVisualizerFullscreen;

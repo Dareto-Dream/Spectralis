@@ -430,7 +430,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         SpotifyMatchupService? spotifyMatchup = null)
     {
         _engine = engine;
-        _spotifyMatchup = spotifyMatchup ?? new SpotifyMatchupService();
+        _spotifyMatchup = spotifyMatchup ?? SpotifyMatchupService.Shared;
         _library = library;
         _settings = settings is null
             ? new AppSettings()
@@ -1658,7 +1658,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// Spotify matchup (beta): loads a queued "spotify:track:..." entry as ordinary local audio
     /// found on YouTube, so it plays through Spectralis's own engine (visualizer, effects, gapless
     /// queueing) without the Spotify player. Returns false when the feature is off or no upload
-    /// could be matched, and the caller then uses the Spotify player.
+    /// could be matched. An opted-in failed match stays account-free and reports an error.
     /// </summary>
     private async Task<bool> TryLoadMatchedSpotifyQueueTrackAsync(string trackUri, bool startPlayback)
     {
@@ -1670,8 +1670,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         SelectTrackSource();
         _remoteLoadCts?.Cancel();
         _remoteLoadCts?.Dispose();
-        _remoteLoadCts = new CancellationTokenSource();
-        var cancellationToken = _remoteLoadCts.Token;
+        var request = _remoteLoadCts = new CancellationTokenSource();
+        var cancellationToken = request.Token;
+        bool IsCurrent() => ReferenceEquals(_remoteLoadCts, request) && !cancellationToken.IsCancellationRequested;
         LoadError = string.Empty;
         IsOpeningRemote = true;
         RemoteStatus = "Matching Spotify track...";
@@ -1684,25 +1685,31 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             var known = _queueTrackMetadata.TryGetValue(trackUri, out var meta) && !string.IsNullOrWhiteSpace(meta.Title)
                 ? new SpotifyTrackFacts(trackId, meta.Title, meta.Subtitle ?? string.Empty, 0)
                 : null;
-            matched = await _spotifyMatchup.ResolveAsync(trackId, known, status => RemoteStatus = status, cancellationToken);
+            matched = await _spotifyMatchup.ResolveAsync(trackId, known, status => { if (IsCurrent()) RemoteStatus = status; }, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            RemoteStatus = string.Empty;
-            IsOpeningRemote = false;
+            if (ReferenceEquals(_remoteLoadCts, request))
+            {
+                RemoteStatus = string.Empty;
+                IsOpeningRemote = false;
+            }
             return true; // superseded by a newer load; nothing to fall back to
         }
         catch (Exception ex)
         {
-            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            SpectralisLog.Warn("Spotify matchup failed: " + ex.Message);
+            if (IsCurrent()) LoadError = "Couldn't load the YouTube match. Retry or choose another track.";
             matched = null;
         }
 
+        if (!IsCurrent()) return true;
         if (matched is null)
         {
             RemoteStatus = string.Empty;
             IsOpeningRemote = false;
-            return false;
+            if (string.IsNullOrEmpty(LoadError)) LoadError = "No matching YouTube audio found. Try another track.";
+            return true; // Matchup is explicitly selected; don't fall through to account-based playback.
         }
 
         _queueDrivenSpotifyTrack = false;
@@ -1754,7 +1761,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            SpectralisLog.Warn("Spotify matchup failed, using the Spotify player: " + ex.Message);
+            SpectralisLog.Warn("Spotify matchup failed: " + ex.Message);
             return (null, false);
         }
     }
@@ -3025,6 +3032,11 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// that goes stale as soon as the context advances on Spotify's side.</summary>
     public async Task<bool> PlaySpotifyContextAsync(string contextUri)
     {
+        if (BetaFeatures.SpotifyMatchup)
+        {
+            await LoadUrlAsync(contextUri);
+            return HasTrack && string.IsNullOrEmpty(LoadError);
+        }
         SelectTrackSource();
         if (SpotifyHost is null)
         {
@@ -3052,6 +3064,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     /// context-offset jump.</summary>
     public async Task<bool> PlaySpotifyTrackListAsync(IReadOnlyList<string> trackUris)
     {
+        if (trackUris.Count == 0) return false;
+        if (BetaFeatures.SpotifyMatchup)
+        {
+            await PlayQueueAsync(trackUris, 0);
+            return HasTrack && string.IsNullOrEmpty(LoadError);
+        }
         SelectTrackSource();
         if (SpotifyHost is null)
         {
@@ -3849,6 +3867,10 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 if (matched is not null)
                 {
                     resolved = matched;
+                }
+                else if (BetaFeatures.SpotifyMatchup)
+                {
+                    throw new InvalidOperationException("Couldn't match this Spotify link. Try another track or load an audio file.");
                 }
             }
 

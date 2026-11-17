@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Spectralis.Core.Integrations;
 using Spectralis.Core.Integrations.Spotify;
@@ -24,11 +26,31 @@ public sealed class SpotifyMatchupService
     private static readonly HttpClient Http = CreateHttpClient();
     private static readonly SemaphoreSlim IndexLock = new(1, 1);
 
+    public static SpotifyMatchupService Shared { get; } = new();
+    private static readonly SemaphoreSlim[] ResolveGates = Enumerable.Range(0, 64).Select(static _ => new SemaphoreSlim(1, 1)).ToArray();
+    private readonly ConcurrentDictionary<string, SpotifyTrackFacts> _knownFacts = new();
+    private readonly HttpClient _http;
     private readonly string _cacheRoot;
+    private readonly Func<string?> _findExecutable;
+    private readonly Func<string, CancellationToken, Task<SpotifyTrackFacts?>> _fetchFacts;
+    private readonly Func<string, SpotifyTrackFacts, CancellationToken, Task<YouTubeCandidate?>> _findMatch;
+    private readonly Func<string, string, YouTubeCandidate, Action<string>?, CancellationToken, Task<string>> _download;
 
-    public SpotifyMatchupService(string? cacheRoot = null)
+    public SpotifyMatchupService(string? cacheRoot = null) : this(cacheRoot, null, null, null, null) { }
+
+    internal SpotifyMatchupService(string? cacheRoot,
+        Func<string?>? findExecutable,
+        Func<string, CancellationToken, Task<SpotifyTrackFacts?>>? fetchFacts,
+        Func<string, SpotifyTrackFacts, CancellationToken, Task<YouTubeCandidate?>>? findMatch,
+        Func<string, string, YouTubeCandidate, Action<string>?, CancellationToken, Task<string>>? download,
+        HttpClient? http = null)
     {
-        _cacheRoot = cacheRoot ?? DefaultCacheRoot;
+        _cacheRoot = Path.GetFullPath(cacheRoot ?? DefaultCacheRoot);
+        _http = http ?? Http;
+        _findExecutable = findExecutable ?? YtDlpService.FindExecutable;
+        _fetchFacts = fetchFacts ?? FetchFactsAsync;
+        _findMatch = findMatch ?? FindMatchAsync;
+        _download = download ?? DownloadAsync;
     }
 
     public static string DefaultCacheRoot => Path.Combine(
@@ -54,8 +76,8 @@ public sealed class SpotifyMatchupService
 
     /// <summary>
     /// Resolves a Spotify track to playable local audio, or null when no upload could be matched
-    /// with confidence (the caller then falls back to the Spotify player). <paramref name="known"/>
-    /// is used when the embed page can't be read, e.g. title and artist from the playlist row.
+    /// with confidence. Complete <paramref name="known"/> facts skip the embed lookup;
+    /// partial facts cover a page that can't be read. The beta caller reports a failed match.
     /// </summary>
     public async Task<RemoteAudioResolveResult?> ResolveAsync(
         string trackId,
@@ -68,40 +90,104 @@ public sealed class SpotifyMatchupService
             return null;
         }
 
+        // Fixed stripes bound lock memory while preventing two decks / Now Playing from
+        // racing over the same track's files. Cancellation only affects this caller's work.
+        var gate = ResolveGates[GateKey(trackId)];
+        await gate.WaitAsync(ct);
+        var elapsed = Stopwatch.StartNew();
+        try
+        {
+            return await ResolveCoreAsync(trackId, known, status, ct);
+        }
+        finally
+        {
+            gate.Release();
+            Log($"resolve {trackId} finished in {elapsed.ElapsedMilliseconds} ms");
+        }
+    }
+
+    private bool HasAudio(CachedMatch match)
+    {
+        try { return new FileInfo(Path.Combine(_cacheRoot, match.FileName)).Length > 0; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private int GateKey(string trackId)
+    {
+        var root = OperatingSystem.IsWindows() ? _cacheRoot.ToUpperInvariant() : _cacheRoot;
+        return (int)((uint)StringComparer.Ordinal.GetHashCode(root + "/" + trackId) % (uint)ResolveGates.Length);
+    }
+
+    private async Task<RemoteAudioResolveResult?> ResolveCoreAsync(string trackId, SpotifyTrackFacts? known,
+        Action<string>? status, CancellationToken ct)
+    {
         var cached = await FindCachedAsync(trackId, ct);
-        if (cached is not null)
+        if (cached is not null && HasAudio(cached))
         {
             Log($"cache hit {trackId} -> {cached.VideoId}");
             return ToResult(cached);
         }
 
-        var executable = YtDlpService.FindExecutable();
+        var executable = _findExecutable();
         if (string.IsNullOrWhiteSpace(executable))
         {
             Log("yt-dlp not found; matchup unavailable");
             return null;
         }
 
-        status?.Invoke("Looking up the track...");
-        var facts = await FetchFactsAsync(trackId, ct) ?? known;
-        if (facts is null || facts.Title.Length == 0)
+        bool Complete(SpotifyTrackFacts? value) => value is not null && value.Id == trackId &&
+            !string.IsNullOrWhiteSpace(value.Title) && !string.IsNullOrWhiteSpace(value.Artist) && value.DurationMs > 0;
+        var facts = Complete(known) ? known : null;
+        if (facts is null && _knownFacts.TryGetValue(trackId, out var remembered) && Complete(remembered)) facts = remembered;
+        if (facts is null && cached is not null)
+            facts = new(trackId, cached.Title, cached.Artist, cached.DurationMs, cached.ArtworkUrl, cached.Album);
+        if (!Complete(facts))
+        {
+            status?.Invoke("Looking up the track...");
+            facts = await _fetchFacts(trackId, ct) ?? facts ?? (known?.Id == trackId ? known : null);
+        }
+        ct.ThrowIfCancellationRequested();
+        if (facts is null || facts.Id != trackId || string.IsNullOrWhiteSpace(facts.Title) || string.IsNullOrWhiteSpace(facts.Artist))
         {
             Log($"no track details for {trackId}");
             return null;
         }
 
+        // Audio eviction shouldn't forget an already verified match. Try it once before searching.
+        if (cached is not null)
+        {
+            try
+            {
+                status?.Invoke("Loading the saved YouTube match...");
+                return await CacheMatchAsync(executable, facts,
+                    new(cached.VideoId, cached.Title, cached.Artist, cached.DurationMs / 1000d), status, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                Log($"saved match {cached.VideoId} unavailable, searching again: {ex.Message}");
+            }
+        }
+
         status?.Invoke($"Finding \"{facts.Title}\" on YouTube...");
-        var match = await FindMatchAsync(executable, facts, ct);
+        var match = await _findMatch(executable, facts, ct);
+        ct.ThrowIfCancellationRequested();
         if (match is null)
         {
             Log($"no confident match for {trackId} \"{facts.Artist} - {facts.Title}\"");
             return null;
         }
 
-        Log($"matched {trackId} \"{facts.Artist} - {facts.Title}\" -> {match.Id} \"{match.Title}\" [{match.Channel}] score={SpotifyMatchup.Score(facts, match):0.00}");
-        var fileName = await DownloadAsync(executable, trackId, match, status, ct);
-        var entry = new CachedMatch(
-            trackId, match.Id, fileName, facts.Title, facts.Artist, facts.Album, facts.ArtworkUrl,
+        Log($"matched {trackId} -> {match.Id} score={SpotifyMatchup.Score(facts, match):0.00}");
+        return await CacheMatchAsync(executable, facts, match, status, ct);
+    }
+
+    private async Task<RemoteAudioResolveResult> CacheMatchAsync(string executable, SpotifyTrackFacts facts,
+        YouTubeCandidate match, Action<string>? status, CancellationToken ct)
+    {
+        var fileName = await _download(executable, facts.Id, match, status, ct);
+        ct.ThrowIfCancellationRequested();
+        var entry = new CachedMatch(facts.Id, match.Id, fileName, facts.Title, facts.Artist, facts.Album, facts.ArtworkUrl,
             facts.DurationMs > 0 ? facts.DurationMs : (int)(match.DurationSeconds * 1000), DateTime.UtcNow);
         await RememberAsync(entry, ct);
         return ToResult(entry);
@@ -121,8 +207,11 @@ public sealed class SpotifyMatchupService
 
         try
         {
-            var html = await Http.GetStringAsync(SpotifyMatchup.EmbedUrl(parts[1], parts[2]), ct);
-            return SpotifyMatchup.ParseTrackListEmbed(html);
+            var html = await _http.GetStringAsync(SpotifyMatchup.EmbedUrl(parts[1], parts[2]), ct);
+            var tracks = SpotifyMatchup.ParseTrackListEmbed(html);
+            if (_knownFacts.Count > 1000) _knownFacts.Clear();
+            foreach (var track in tracks.Take(1000)) _knownFacts[track.Id] = track;
+            return tracks;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -131,11 +220,11 @@ public sealed class SpotifyMatchupService
         }
     }
 
-    private static async Task<SpotifyTrackFacts?> FetchFactsAsync(string trackId, CancellationToken ct)
+    private async Task<SpotifyTrackFacts?> FetchFactsAsync(string trackId, CancellationToken ct)
     {
         try
         {
-            var html = await Http.GetStringAsync(SpotifyMatchup.EmbedUrl("track", trackId), ct);
+            var html = await _http.GetStringAsync(SpotifyMatchup.EmbedUrl("track", trackId), ct);
             return SpotifyMatchup.ParseTrackEmbed(html);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -178,64 +267,57 @@ public sealed class SpotifyMatchupService
         string executable, string trackId, YouTubeCandidate match, Action<string>? status, CancellationToken ct)
     {
         Directory.CreateDirectory(_cacheRoot);
-        // The track id is 22 letters and digits (checked on the way in), so it is a safe file name.
-        var template = Path.Combine(_cacheRoot, trackId + ".%(ext)s");
-        foreach (var stale in Directory.EnumerateFiles(_cacheRoot, trackId + ".*"))
+        var jobRoot = Path.Combine(_cacheRoot, ".download-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(jobRoot);
+        try
         {
-            TryDeleteFile(stale);
-        }
-
-        status?.Invoke("Caching audio...");
-        var result = await SafeProcessRunner.RunWithProgressAsync(
-            executable,
-            [
-                .. YtDlpService.JsRuntimeArguments(),
-                "--no-playlist",
-                "--progress",
-                "--newline",
-                "--force-overwrites",
-                "--no-part",
-                "-f",
-                "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio",
-                "-o",
-                template,
-                "--",
-                match.Url,
-            ],
-            DownloadTimeout,
-            onStdoutLine: line =>
-            {
-                if (OpenUrlService.TryParseYtDlpProgress(line, out var percent))
+            using var lease = new FileStream(Path.Combine(jobRoot, ".active"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var template = Path.Combine(jobRoot, trackId + ".%(ext)s");
+            status?.Invoke("Caching audio...");
+            var result = await SafeProcessRunner.RunWithProgressAsync(
+                executable,
+                [
+                    .. YtDlpService.JsRuntimeArguments(),
+                    "--ignore-config",
+                    "--no-playlist",
+                    "--progress",
+                    "--newline",
+                    "-f",
+                    "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio",
+                    "-o", template,
+                    "--", match.Url,
+                ],
+                DownloadTimeout,
+                onStdoutLine: line =>
                 {
-                    status?.Invoke($"Caching audio... {percent}%");
-                }
-            },
-            maxOutputBytes: 2 * 1024 * 1024,
-            ct);
+                    if (OpenUrlService.TryParseYtDlpProgress(line, out var percent))
+                        status?.Invoke($"Caching audio... {percent}%");
+                },
+                maxOutputBytes: 2 * 1024 * 1024,
+                ct);
+            ct.ThrowIfCancellationRequested();
+            if (result.TimedOut) throw new InvalidOperationException("yt-dlp timed out downloading the audio.");
+            if (result.ExitCode != 0)
+            {
+                Log($"download failed for {match.Id}: {result.Stderr.Trim()}");
+                throw new InvalidOperationException(YtDlpService.DescribeFailure(result.Stderr, result.ExitCode));
+            }
 
-        ct.ThrowIfCancellationRequested();
-        if (result.TimedOut)
-        {
-            throw new InvalidOperationException("yt-dlp timed out downloading the audio.");
+            var file = Directory.EnumerateFiles(jobRoot, trackId + ".*")
+                .Where(static f => Spectralis.Core.Common.SupportedAudioFormats.IsSupportedExtension(f) && new FileInfo(f).Length > 0)
+                .OrderByDescending(static f => new FileInfo(f).Length).FirstOrDefault();
+            if (file is null) throw new InvalidOperationException("yt-dlp did not produce a playable audio file.");
+
+            // Only completed files enter the reusable cache. An interrupted download must
+            // never look like a cache hit on the next attempt.
+            var fileName = Path.GetFileName(file);
+            File.Move(file, Path.Combine(_cacheRoot, fileName), overwrite: true);
+            return fileName;
         }
-
-        if (result.ExitCode != 0)
+        finally
         {
-            Log($"download failed for {match.Id}: {result.Stderr.Trim()}");
-            throw new InvalidOperationException(YtDlpService.DescribeFailure(result.Stderr, result.ExitCode));
+            TempStorageCleanup.DeleteOwnedTree(_cacheRoot, jobRoot);
         }
-
-        var file = Directory.EnumerateFiles(_cacheRoot, trackId + ".*")
-            .Where(static f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(static f => new FileInfo(f).Length)
-            .FirstOrDefault();
-        if (file is null || !Spectralis.Core.Common.SupportedAudioFormats.IsSupportedExtension(file))
-        {
-            TryDeleteFile(file);
-            throw new InvalidOperationException("yt-dlp did not produce a playable audio file.");
-        }
-
-        return Path.GetFileName(file);
     }
 
     private RemoteAudioResolveResult ToResult(CachedMatch match)
@@ -272,13 +354,6 @@ public sealed class SpotifyMatchupService
             var index = ReadIndex();
             if (!index.TryGetValue(trackId, out var match))
             {
-                return null;
-            }
-
-            if (!File.Exists(Path.Combine(_cacheRoot, match.FileName)))
-            {
-                index.Remove(trackId);
-                WriteIndex(index);
                 return null;
             }
 
@@ -327,6 +402,12 @@ public sealed class SpotifyMatchupService
 
             total -= Size(match);
             TryDeleteFile(Path.Combine(_cacheRoot, match.FileName));
+            // Keep the small identity mapping so loading an evicted track skips the search.
+        }
+        foreach (var match in index.Values.Where(m => m.TrackId != keepTrackId)
+                     .OrderByDescending(static m => m.LastPlayedUtc).Skip(2047).ToList())
+        {
+            TryDeleteFile(Path.Combine(_cacheRoot, match.FileName));
             index.Remove(match.TrackId);
         }
     }
@@ -341,7 +422,10 @@ public sealed class SpotifyMatchupService
                 // File names come back off disk, so hold them to the shape this class writes:
                 // "<track id>.<ext>", nothing that could point outside the cache folder.
                 return entries
-                    .Where(static e => e is not null && SpotifyMatchup.IsTrackId(e.TrackId) &&
+                    .Where(static e => e is not null && SpotifyMatchup.IsTrackId(e.TrackId) && IsVideoId(e.VideoId) &&
+                                       !string.IsNullOrWhiteSpace(e.Title) && !string.IsNullOrWhiteSpace(e.Artist) &&
+                                       !string.IsNullOrEmpty(e.FileName) &&
+                                       Spectralis.Core.Common.SupportedAudioFormats.IsSupportedExtension(e.FileName) &&
                                        e.FileName == Path.GetFileName(e.FileName) &&
                                        e.FileName.StartsWith(e.TrackId + ".", StringComparison.Ordinal))
                     .GroupBy(static e => e.TrackId)
@@ -370,6 +454,8 @@ public sealed class SpotifyMatchupService
             Log($"index not saved: {ex.Message}");
         }
     }
+
+    private static bool IsVideoId(string? id) => id is { Length: 11 } && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
     private static void TryDeleteFile(string? path)
     {

@@ -109,6 +109,7 @@ public static class YtDlpService
     public static string[] BuildCandidateSearchArguments(string query, int count) =>
     [
         .. JsRuntimeArguments(),
+        "--ignore-config",
         "--flat-playlist",
         "--dump-json",
         "--no-warnings",
