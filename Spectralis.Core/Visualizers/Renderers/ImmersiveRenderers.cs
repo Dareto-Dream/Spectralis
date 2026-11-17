@@ -29,7 +29,7 @@ public abstract class ImmersiveRenderer : VisualizerRendererBase
         new(bounds.CenterX + point.X / Math.Max(.15f, point.Z) * bounds.Height * scale,
             bounds.CenterY + point.Y / Math.Max(.15f, point.Z) * bounds.Height * scale);
 
-    protected static void Finish(IVizCanvas canvas, VizRect bounds, VisualizerScene scene) => DrawHud(canvas, bounds, scene);
+    protected static void Finish(IVizCanvas canvas, VizRect bounds, VisualizerScene scene) => DrawHud(canvas, bounds, scene, darkSurface: true);
 }
 
 public sealed class WormholeRenderer : ImmersiveRenderer

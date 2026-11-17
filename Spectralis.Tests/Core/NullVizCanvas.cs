@@ -10,6 +10,8 @@ public sealed class NullVizCanvas : IVizCanvas
 
     /// <summary>How many times DrawPixels was called, and the arguments of the last call.</summary>
     public int PixelBlits { get; private set; }
+    public int TextDraws { get; private set; }
+    public VizColor? LastTextColor { get; private set; }
 
     public (byte[] Bgra, int Width, int Height, VizRect Dest)? LastBlit { get; private set; }
 
@@ -28,7 +30,7 @@ public sealed class NullVizCanvas : IVizCanvas
     public void FillRoundedRect(VizRect rect, float radius, VizColor color) => Count();
     public void FillRoundedRectGradientV(VizRect rect, float radius, VizColor top, VizColor bottom) => Count();
     public void DrawArc(VizRect rect, float startAngleDeg, float sweepDeg, VizColor color, float width) => Count();
-    public void DrawText(string text, VizRect rect, VizColor color, float fontSize, VizTextAlign align, bool bold = false) => Count();
+    public void DrawText(string text, VizRect rect, VizColor color, float fontSize, VizTextAlign align, bool bold = false) { Count(); TextDraws++; LastTextColor = color; }
     public void DrawImage(IVizImage image, VizRect dest) => Count();
     public void DrawPixels(byte[] bgra, int pixelWidth, int pixelHeight, VizRect dest)
     {

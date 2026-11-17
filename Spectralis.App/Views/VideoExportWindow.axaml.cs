@@ -298,6 +298,7 @@ public partial class VideoExportWindow : Window
 
         var options = new VideoExportOptions
         {
+            Appearance = Spectralis.App.Services.AppSettingsStore.Load().VisualizerAppearance,
             Width = res.Width,
             Height = res.Height,
             FrameRate = fps,

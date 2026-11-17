@@ -23,6 +23,13 @@ public sealed class AppSettings
     public void HoldVersion(string version, string currentVersion)
     {
         HeldVersion = version;
+        if (Spectralis.Core.Platform.ReleaseVersion.Compare(version, "8.1.0") < 0)
+        {
+            // Older builds reject unknown enum strings and reset the entire settings file.
+            // Keep their updater hold readable when installing a version without these modes.
+            CurrentVisualizer = LegacyCompatibleVisualizer(CurrentVisualizer);
+            DefaultVisualizer = LegacyCompatibleVisualizer(DefaultVisualizer);
+        }
         if (Spectralis.Core.Platform.ReleaseVersion.Compare(version, currentVersion) < 0)
         {
             // Older builds don't know HeldVersion, but they do understand these two settings.
@@ -30,6 +37,10 @@ public sealed class AppSettings
             IgnoredUpdateVersion = currentVersion;
         }
     }
+
+    private static VisualizerMode LegacyCompatibleVisualizer(VisualizerMode mode) =>
+        VisualizerCatalog.NormalizeMode(mode) is VisualizerMode.Wormhole or VisualizerMode.Starfield or VisualizerMode.Orbital or VisualizerMode.Silk
+            ? VisualizerMode.MirrorSpectrum : VisualizerCatalog.NormalizeMode(mode);
 
     public AppThemeMode ThemeMode { get; set; } = AppThemeMode.Dark;
     public AppThemeAccent ThemeAccent { get; set; } = AppThemeAccent.Amber;
@@ -43,6 +54,7 @@ public sealed class AppSettings
     public bool ShowVisualizer { get; set; } = true;
     public bool PeakHold { get; set; } = true;
     public int VisualizerSensitivity { get; set; } = 100;
+    public VisualizerAppearance VisualizerAppearance { get; set; } = new();
     public bool EnableVisualizerAutoCycle { get; set; } = false;
     public int VisualizerCycleSeconds { get; set; } = 12;
     public int PreferredSampleRate { get; set; }
@@ -186,6 +198,7 @@ public sealed class AppSettings
             ShowVisualizer = ShowVisualizer,
             PeakHold = PeakHold,
             VisualizerSensitivity = VisualizerSensitivity,
+            VisualizerAppearance = (VisualizerAppearance ?? new()) with { },
             EnableVisualizerAutoCycle = EnableVisualizerAutoCycle,
             VisualizerCycleSeconds = VisualizerCycleSeconds,
             PreferredSampleRate = PreferredSampleRate,
@@ -344,6 +357,7 @@ public static class AppSettingsStore
         settings.P2wBannerStyle = Enum.IsDefined(settings.P2wBannerStyle) ? settings.P2wBannerStyle : P2wBannerStyle.YellowBanner;
         settings.CurrentVisualizer = NormalizeVisualizer(settings.CurrentVisualizer);
         settings.DefaultVisualizer = NormalizeVisualizer(settings.DefaultVisualizer);
+        settings.VisualizerAppearance = (settings.VisualizerAppearance ?? new()).Normalize();
         settings.VisualizerSensitivity = Math.Clamp(settings.VisualizerSensitivity, 50, 200);
         settings.VisualizerCycleSeconds = Math.Clamp(settings.VisualizerCycleSeconds, 5, 60);
         settings.PreferredSampleRate = AllowedSampleRates.Contains(settings.PreferredSampleRate)
@@ -412,9 +426,7 @@ public static class AppSettingsStore
     ];
 
     private static VisualizerMode NormalizeVisualizer(VisualizerMode mode) =>
-        VisualizerCatalog.All.Any(definition => definition.Mode == mode)
-            ? mode
-            : VisualizerMode.MirrorSpectrum;
+        VisualizerCatalog.NormalizeMode(mode);
 
     private static string NormalizeObsToken(string? token)
     {

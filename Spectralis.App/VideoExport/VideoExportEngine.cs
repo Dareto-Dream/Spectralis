@@ -80,6 +80,7 @@ public static partial class VideoExportEngine
         var sceneState = new VisualizerSceneState
         {
             Palette = VisualizerPalette.Default,
+            Appearance = options.Appearance.Normalize(),
             AlbumArt = AvaloniaVizImage.FromBytes(request.AlbumArtBytes),
         };
 
@@ -244,7 +245,7 @@ public static partial class VideoExportEngine
         {
             var resolved = VisualizerCatalog.GetPreferredMode(mode, hasAlbumArt);
             var definition = VisualizerCatalog.GetDefinition(resolved);
-            return new VisualizerEntry(definition.Renderer, definition.Label, resolved);
+            return new VisualizerEntry(VisualizerCatalog.CreateRenderer(resolved), definition.Label, resolved);
         }
 
         public static VisualizerEntry Scripted(ScriptedVisualizerDefinition def) =>

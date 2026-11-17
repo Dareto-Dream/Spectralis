@@ -460,8 +460,8 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 RemoteStatus = $"Downloading... {pct}%";
         });
         _visualizerOptions = BuildVisualizerOptions();
-        _selectedVisualizer = _visualizerOptions.FirstOrDefault(option => option.Script is null && option.Mode == _settings.CurrentVisualizer)
-            ?? _visualizerOptions.FirstOrDefault(option => option.Script is null && option.Mode == _settings.DefaultVisualizer)
+        _selectedVisualizer = _visualizerOptions.FirstOrDefault(option => option.Script is null && option.Mode == VisualizerCatalog.NormalizeMode(_settings.CurrentVisualizer))
+            ?? _visualizerOptions.FirstOrDefault(option => option.Script is null && option.Mode == VisualizerCatalog.NormalizeMode(_settings.DefaultVisualizer))
             ?? _visualizerOptions.First(option => option.Mode == VisualizerMode.MirrorSpectrum);
         _showVisualizer = _settings.ShowVisualizer;
         _peakHold = _settings.PeakHold;
@@ -1913,7 +1913,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         {
             VisualizerRefKind.Scripted => option.Script?.Id == reference.Id,
             VisualizerRefKind.Installed => option.Installed?.Id == reference.Id,
-            _ => option.Script is null && option.Installed is null && option.Mode == reference.Mode,
+            _ => option.Script is null && option.Installed is null && option.Mode == VisualizerCatalog.NormalizeMode(reference.Mode ?? VisualizerMode.MirrorSpectrum),
         });
 
         if (match is not null)
@@ -2321,6 +2321,22 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             SaveSettings();
             this.RaisePropertyChanged(nameof(VisualizerSensitivity));
             this.RaisePropertyChanged(nameof(VisualizerSensitivityText));
+        }
+    }
+
+    public bool ShowVisualizerName => VisualizerAppearance.ShowHud && !IsVisualizerFullscreen;
+
+    public VisualizerAppearance VisualizerAppearance
+    {
+        get => _settings.VisualizerAppearance;
+        set
+        {
+            var normalized = (value ?? new()).Normalize();
+            if (_settings.VisualizerAppearance == normalized) return;
+            _settings.VisualizerAppearance = normalized;
+            SaveSettings();
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(ShowVisualizerName));
         }
     }
 

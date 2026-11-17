@@ -28,7 +28,7 @@ public sealed partial class NowPlayingViewModel
     private string? _lastMixTitle;
     private bool _lastMixPlaying;
     private double _lastMixVolume;
-    public bool IsVisualizerFullscreen { get => _isVisualizerFullscreen; set { this.RaiseAndSetIfChanged(ref _isVisualizerFullscreen, value); this.RaisePropertyChanged(nameof(ShowPlaybackSourcePicker)); } }
+    public bool IsVisualizerFullscreen { get => _isVisualizerFullscreen; set { this.RaiseAndSetIfChanged(ref _isVisualizerFullscreen, value); this.RaisePropertyChanged(nameof(ShowPlaybackSourcePicker)); this.RaisePropertyChanged(nameof(ShowVisualizerName)); } }
     public bool ShowPlaybackSourcePicker => DjModeEnabled && !IsVisualizerFullscreen;
     public Action? OpenDjTools { get; private set; }
     public bool IsMixSource => _mixSource is { Enabled: true, UseForVisualization: true };

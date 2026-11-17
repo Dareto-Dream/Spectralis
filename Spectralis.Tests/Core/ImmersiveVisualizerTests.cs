@@ -62,6 +62,31 @@ public sealed class ImmersiveVisualizerTests
     }
 
     [Fact]
+    public void Immersive_overlays_remain_readable_in_light_themes_and_can_be_hidden()
+    {
+        var state = new VisualizerSceneState { Palette = VisualizerPalette.Default with { HudInfoColor = VizColor.FromRgb(0, 0, 0) } };
+        var renderer = VisualizerCatalog.CreateRenderer(VisualizerMode.Wormhole);
+        var visible = new NullVizCanvas();
+        renderer.Draw(visible, new(0, 0, 640, 360), state.CreateScene("Wormhole"));
+        Assert.True(visible.TextDraws > 0);
+        Assert.True(visible.LastTextColor!.Value.R > 150);
+        state.Appearance = new() { ShowHud = false };
+        var hidden = new NullVizCanvas();
+        renderer.Draw(hidden, new(0, 0, 640, 360), state.CreateScene("Wormhole"));
+        Assert.Equal(0, hidden.TextDraws);
+    }
+
+    [Theory]
+    [InlineData(VisualizerMode.Waveform)]
+    [InlineData(VisualizerMode.Spectrum)]
+    [InlineData(VisualizerMode.MirrorSpectrum)]
+    [InlineData(VisualizerMode.Spectrogram)]
+    public void Previews_and_export_get_independent_history_and_scratch_buffers(VisualizerMode mode)
+    {
+        Assert.NotSame(VisualizerCatalog.CreateRenderer(mode), VisualizerCatalog.CreateRenderer(mode));
+    }
+
+    [Fact]
     public void Appearance_normalizes_invalid_values_and_preserves_theme_colors_by_default()
     {
         var normalized = new VisualizerAppearance { MotionPercent = -1, Detail = (VisualizerDetail)99, Colorway = (VisualizerColorway)99 }.Normalize();

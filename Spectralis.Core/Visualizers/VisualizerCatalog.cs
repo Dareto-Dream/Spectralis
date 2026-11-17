@@ -57,6 +57,16 @@ public static class VisualizerCatalog
             ? definition
             : DefinitionsByMode[VisualizerMode.MirrorSpectrum];
 
+    // History and scratch buffers belong to a surface, never to the process-wide catalog.
+    public static IVisualizerRenderer CreateRenderer(VisualizerMode mode) => NormalizeMode(mode) switch
+    {
+        VisualizerMode.Spectrum => new SpectrumBarsRenderer(mirrored: false),
+        VisualizerMode.MirrorSpectrum => new SpectrumBarsRenderer(mirrored: true),
+        VisualizerMode.Waveform => new WaveformRenderer(),
+        VisualizerMode.Spectrogram => new SpectrogramRenderer(),
+        _ => GetDefinition(mode).Renderer,
+    };
+
     public static bool IsAvailable(VisualizerMode mode, bool hasAlbumArt) =>
         !GetDefinition(mode).RequiresAlbumArt || hasAlbumArt;
 
