@@ -41,6 +41,7 @@ public abstract class VisualizerRendererBase : IVisualizerRenderer
 
     protected static void DrawHud(IVizCanvas canvas, VizRect bounds, VisualizerScene scene)
     {
+        if (!scene.Appearance.ShowHud) return;
         var hudBounds = new VizRect(bounds.Left + 18, bounds.Top + 14, bounds.Width - 36, 40);
         const float meterWidth = 120;
         const float meterHeight = 8;

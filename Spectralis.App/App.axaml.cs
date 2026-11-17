@@ -4,7 +4,6 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
-using Spectralis.App.Gpu;
 using Spectralis.App.Services;
 using Spectralis.App.ViewModels;
 using Spectralis.App.Views;
@@ -27,8 +26,6 @@ public partial class App : Application
     public override void Initialize()
     {
         InstallExceptionLogging();
-        // Before any settings load: pickers and settings normalisation ask the catalog what can run.
-        GpuVisualizers.Source = new NativeGpuFrameSource();
         ConfigureEmbeddedBrowser();
         SetHighResolutionTimer();
         AvaloniaXamlLoader.Load(this);
