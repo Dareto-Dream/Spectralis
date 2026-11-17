@@ -232,6 +232,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
     private readonly IDisposable? _positionPoll;
     private readonly OpenUrlService _openUrlService;
     private readonly SpotifyMatchupService _spotifyMatchup;
+    private readonly Func<string?, CancellationToken, Task<byte[]?>> _fetchRemoteArtwork;
     private RemoteAudioResolveResult? _currentRemoteAudio;
     private readonly SpotifyService _spotify = new();
     private readonly bool _persistSettings;
@@ -427,10 +428,12 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
         bool enablePositionPolling = true,
         EffectChain? effectChain = null,
         LibraryDatabase? library = null,
-        SpotifyMatchupService? spotifyMatchup = null)
+        SpotifyMatchupService? spotifyMatchup = null,
+        Func<string?, CancellationToken, Task<byte[]?>>? fetchRemoteArtwork = null)
     {
         _engine = engine;
         _spotifyMatchup = spotifyMatchup ?? SpotifyMatchupService.Shared;
+        _fetchRemoteArtwork = fetchRemoteArtwork ?? OpenUrlService.TryFetchArtworkBytesAsync;
         _library = library;
         _settings = settings is null
             ? new AppSettings()
@@ -3955,8 +3958,6 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
 
             TrackInfo metadata = new() { SourcePath = cachedPath };
             await Task.Run(() => metadata = TrackMetadataReader.Read(cachedPath), cancellationToken);
-            var artworkBytes = metadata.CoverArt ??
-                await OpenUrlService.TryFetchArtworkBytesAsync(resolved.ArtworkUrl, cancellationToken);
 
             var trackInfo = metadata with
             {
@@ -3969,7 +3970,7 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
                 Album = FirstNonEmpty(metadata.Album, resolved.Album, resolved.ServiceLabel),
                 Duration = metadata.Duration > TimeSpan.Zero ? metadata.Duration : resolved.Duration,
                 FormatName = FirstNonEmpty(metadata.FormatName, resolved.FormatName),
-                CoverArt = artworkBytes,
+                CoverArt = metadata.CoverArt,
                 CoverArtMimeType = metadata.CoverArt is not null ? metadata.CoverArtMimeType : null,
             };
 
@@ -4007,6 +4008,9 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             }
 
             ApplyTrack(_engine.CurrentTrack);
+            // Cover downloads are presentation work; a slow image server must not delay audio.
+            if (metadata.CoverArt is null && !string.IsNullOrWhiteSpace(resolved.ArtworkUrl))
+                _ = LoadRemoteArtworkAsync(resolved, cancellationToken);
             ApplyYouTubeVideo(resolved);
             var remoteLyrics = !string.IsNullOrWhiteSpace(resolved.LyricsText)
                 ? LrcParser.ParsePlainText(resolved.LyricsText, resolved.ServiceLabel)
@@ -4046,6 +4050,20 @@ public sealed partial class NowPlayingViewModel : ViewModelBase, IDisposable
             IsOpeningRemote = false;
             RefreshFromEngine();
         }
+    }
+
+    private async Task LoadRemoteArtworkAsync(RemoteAudioResolveResult resolved, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(6));
+            var artwork = await _fetchRemoteArtwork(resolved.ArtworkUrl, deadline.Token);
+            if (artwork is not null && !deadline.IsCancellationRequested && ReferenceEquals(CurrentRemoteAudio, resolved))
+                CoverArtBytes = artwork;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SpectralisLog.Warn("Remote artwork unavailable: " + ex.Message); }
     }
 
     private async Task LoadCurrentQueueTrackAsync(string path, bool startPlayback)

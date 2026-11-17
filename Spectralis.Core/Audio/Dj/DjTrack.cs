@@ -43,10 +43,15 @@ public sealed class DjTrack : IDisposable
                 assets.Add(await DjPcmAsset.LoadAsync(input, ct).ConfigureAwait(false));
             }
             var track = new DjTrack(assets, identityPath ?? inputs[0].Path);
-            var (bpm, offset) = await BpmAnalyzer.AnalyzeAsync(assets[0].DecodedPath, ct).ConfigureAwait(false);
+            // These analyzers open independent readers over the same immutable PCM. Let
+            // them overlap, but drain both before disposing assets on failure/cancellation.
+            var bpmTask = BpmAnalyzer.AnalyzeAsync(assets[0].DecodedPath, ct);
+            var keyTask = Task.Run(() => KeyAnalyzer.AnalyzeFile(assets[0].DecodedPath, ct), ct);
+            await Task.WhenAll(bpmTask, keyTask).ConfigureAwait(false);
+            var (bpm, offset) = await bpmTask.ConfigureAwait(false);
             track.Bpm = bpm;
             track.BeatOffset = offset.TotalSeconds;
-            track.Key = await Task.Run(() => KeyAnalyzer.AnalyzeFile(assets[0].DecodedPath, ct), ct).ConfigureAwait(false);
+            track.Key = await keyTask.ConfigureAwait(false);
             return track;
         }
         catch { foreach (var asset in assets) asset.Dispose(); throw; }
